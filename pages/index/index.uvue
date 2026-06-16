@@ -1,0 +1,360 @@
+<template>
+	<view class="page-shell" ref="shellRef">
+		<!-- 顶部标题栏（含状态栏占位） -->
+		<view class="header-wrap">
+			<share-element share-key="agent-list">
+				<view :style="{ height: statusBarHeight + 'px' }"></view>
+			</share-element>
+			<view class="header">
+				<view class="header-left">
+					<text class="back-btn" @click="goBack">‹ 返回</text>
+				</view>
+				<text class="header-title">AI 助手</text>
+				<view class="header-actions">
+					<view class="history-btn" @click="goHistory">
+						<oui-icon-unix name="time-circle" size="20px" color="#9CA3AF" />
+					</view>
+					<text class="model-badge">{{currentModel}}</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 消息列表 -->
+		<scroll-view class="message-list" :scroll-y="true" :scroll-top="scrollTop">
+			<view v-for="(msg, index) in messages" :key="index">
+				<ToolExecution
+					v-if="msg.role == 'toolResult'"
+					:toolName="msg.toolName != null ? msg.toolName : ''"
+					:status="msg.toolStatus != null ? msg.toolStatus : 'completed'"
+					:result="msg.content"
+				/>
+				<ChatBubble
+					v-else
+					:role="msg.role"
+					:content="msg.content"
+					:toolName="msg.toolName != null ? msg.toolName : ''"
+:isError="msg.isError == true"
+			:isStreaming="msg.isStreaming == true"
+				/>
+			</view>
+			<view v-if="messages.length == 0" class="empty-state">
+				<text class="empty-text">开始对话</text>
+				<text class="empty-hint">输入文字或长按语音按钮</text>
+			</view>
+		</scroll-view>
+
+		<!-- 输入区域 -->
+		<view class="input-area">
+			<input
+				class="text-input"
+				v-model="inputText"
+				placeholder="输入消息..."
+				placeholder-style="color:#9CA3AF"
+				@confirm="sendMessage"
+				:disabled="isGenerating == true"
+			/>
+			<VoiceInput :isListening="isListening" @startListening="startVoice" @stopListening="stopVoice" />
+			<rice-button type="primary" text="发送" size="small" shape="round" @click="sendMessage" style="margin-left:8px" />
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * 对话页面 - AI Agent 主聊天界面
+	 * 扁平化粉白主题
+	 */
+	import { saveConversation } from '@/utils/database.uts'
+	import { chatWithLLM } from '@/utils/llm.uts'
+
+	/** 消息数据类型 */
+	export default {
+		data() {
+			return {
+				/** 消息列表 */
+				messages: [] as UTSJSONObject[],
+				/** 当前输入文本 */
+				inputText: '',
+				/** 是否正在语音输入 */
+				isListening: false as boolean,
+				/** AI 是否正在生成回复 */
+				isGenerating: false as boolean,
+				/** 当前选择的模型名称 */
+				currentModel: 'deepseek-v4-flash',
+				/** 滚动位置 */
+				scrollTop: 0,
+				/** 状态栏高度 */
+				statusBarHeight: 0,
+				/** 当前对话唯一 ID */
+				conversationId: '' as string,
+				/** 是否已存过当前对话（防止重复存） */
+				savedFlag: false as boolean
+			}
+		},
+		onLoad() {
+			const sysInfo = uni.getSystemInfoSync()
+			this.statusBarHeight = sysInfo.statusBarHeight
+			let model = uni.getStorageSync('settings_model') as string
+			if (model != null && model != '') {
+				this.currentModel = model
+			}
+			this.conversationId = '' + Date.now()
+		},
+
+		onHide() {
+			// 离开页面时保存当前对话
+			this.saveCurrentConversation()
+		},
+		methods: {
+			sendMessage() {
+				const text = this.inputText.trim()
+				if (text == '' || this.isGenerating) {
+					return
+				}
+				// 首次发消息时生成对话 ID，并重置保存标记
+				if (this.messages.length == 0) {
+					this.conversationId = '' + Date.now()
+					this.savedFlag = false
+				}
+				this.messages.push({
+					role: 'user',
+					content: text,
+					timestamp: Date.now()
+				} as UTSJSONObject)
+				this.inputText = ''
+				this.scrollToBottom()
+				this.simulateAIResponse(text)
+			},
+
+			startVoice() {
+				this.isListening = true
+			},
+
+			stopVoice() {
+				this.isListening = false
+			},
+
+			goHistory() {
+				uni.navigateTo({
+					url: '/pages/history/history'
+				})
+			},
+
+			/** 返回智能体列表 */
+			goBack() {
+				uni.navigateBack()
+			},
+
+			/** 将当前对话保存到 SQLite */
+			saveCurrentConversation() {
+				if (this.messages.length == 0 || this.savedFlag) {
+					return
+				}
+				this.savedFlag = true
+
+				// 取第一条用户消息作为标题
+				let title = '新对话'
+				for (let i = 0; i < this.messages.length; i++) {
+					const msg = this.messages[i]
+					if (msg['role'] == 'user') {
+						const c = msg['content'] as string
+						if (c != null && c != '') {
+							title = c.length > 20 ? c.substring(0, 20) + '...' : c
+						}
+						break
+					}
+				}
+
+				saveConversation(
+					this.conversationId,
+					title,
+					this.currentModel,
+					this.messages
+				)
+			},
+
+			scrollToBottom() {
+				this.scrollTop = this.scrollTop + 9999
+			},
+
+			simulateAIResponse(_userText: string) {
+				this.isGenerating = true
+
+				const aiMsgIndex = this.messages.length
+				this.messages.push({
+					role: 'assistant',
+					content: '',
+					isStreaming: true,
+					timestamp: Date.now()
+				} as UTSJSONObject)
+				this.scrollToBottom()
+
+				// 调用真实的 LLM
+				chatWithLLM(this.messages).then((response: string | null) => {
+					const text = response ?? '抱歉，调用 LLM 失败，请检查 API 配置。'
+
+					// 逐字显示（流式效果）
+					let charIndex = 0
+					let timer: number = 0
+					timer = setInterval(() => {
+						if (charIndex < text.length) {
+							this.messages.splice(aiMsgIndex, 1, {
+								role: 'assistant',
+								content: text.substring(0, charIndex + 1),
+								isStreaming: true,
+								timestamp: Date.now()
+							} as UTSJSONObject)
+							charIndex++
+							this.scrollToBottom()
+						} else {
+							this.messages.splice(aiMsgIndex, 1, {
+								role: 'assistant',
+								content: text,
+								isStreaming: false,
+								timestamp: Date.now()
+							} as UTSJSONObject)
+							this.isGenerating = false
+							clearInterval(timer)
+							// AI 回复完成后自动保存历史
+							this.saveCurrentConversation()
+						}
+					}, 50)
+				})
+			}
+		}
+	};
+</script>
+
+<style>
+	/* rice-ui 主题色覆盖 - 粉白主题 */
+	.page-shell {
+		--rice-primary-color: #FB8FAB;
+		--rice-primary-color-1: #FDE8EF;
+		--rice-primary-color-7: #E8729A;
+	}
+
+	/* 页面内容区域 */
+	.chat-page {
+		flex: 1;
+		flex-direction: column;
+	}
+
+	/* 消息列表 */
+	.message-list {
+		flex: 1;
+		flex-direction: column;
+	}
+
+	/* 顶部标题栏 */
+	.header-wrap {
+		background-color: #FFFFFF;
+	}
+
+	.header {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding-left: 16px;
+		padding-right: 16px;
+		padding-top: 12px;
+		padding-bottom: 12px;
+		background-color: #FFFFFF;
+	}
+
+	.header-title {
+		font-size: 20px;
+		font-weight: bold;
+		color: #111827;
+		text-align: center;
+		flex: 1;
+	}
+
+	/* 左侧返回按钮区 */
+	.header-left {
+		width: 60px;
+	}
+
+	.back-btn {
+		font-size: 16px;
+		color: #6B7280;
+	}
+
+	/* 头部右侧操作区 */
+	.header-actions {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.history-btn {
+		width: 36px;
+		height: 36px;
+		justify-content: center;
+		align-items: center;
+		margin-right: 8px;
+	}
+
+	/* 模型标签 - 淡粉强调 */
+	.model-badge {
+		font-size: 12px;
+		color: #DB2777;
+		background-color: #FDE8EF;
+		padding-left: 8px;
+		padding-right: 8px;
+		padding-top: 4px;
+		padding-bottom: 4px;
+		border-radius: 10px;
+	}
+
+	/* 消息列表 */
+	.message-list {
+		flex: 1;
+		flex-direction: column;
+	}
+
+	/* 空状态 */
+	.empty-state {
+		flex: 1;
+		justify-content: center;
+		align-items: center;
+		padding-top: 120px;
+	}
+
+	.empty-text {
+		font-size: 24px;
+		color: #111827;
+		font-weight: bold;
+		margin-bottom: 8px;
+	}
+
+	.empty-hint {
+		font-size: 14px;
+		color: #9CA3AF;
+	}
+
+	/* 底部输入区域 */
+	.input-area {
+		flex-direction: row;
+		align-items: center;
+		padding-left: 12px;
+		padding-right: 12px;
+		padding-top: 8px;
+		padding-bottom: 8px;
+		background-color: #FFFFFF;
+		border-top-width: 1px;
+		border-top-color: #E5E7EB;
+	}
+
+	/* 文本输入框 - 浅灰背景 */
+	.text-input {
+		flex: 1;
+		height: 40px;
+		background-color: #F9FAFB;
+		border-radius: 20px;
+		padding-left: 16px;
+		padding-right: 16px;
+		font-size: 15px;
+		color: #111827;
+	}
+
+
+</style>

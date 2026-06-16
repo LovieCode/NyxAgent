@@ -1,0 +1,9 @@
+{
+	"id": "agent-core",
+	"displayName": "Agent Core",
+	"version": "1.0.0",
+	"description": "AI Agent 核心引擎 - LLM Provider、Agent Loop、文件工具、会话管理",
+	"uni_modules": {
+		"uni-app-x": {}
+	}
+}

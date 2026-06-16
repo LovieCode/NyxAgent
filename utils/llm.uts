@@ -1,0 +1,131 @@
+/**
+ * LLM 调用工具层
+ * 直接使用 uni.request 调用 OpenAI 兼容 API
+ */
+
+/**
+ * 规范化 baseUrl：去掉末尾的 /v1 或 /v1/
+ */
+function normalizeBaseUrl(url: string): string {
+	let result = url
+	if (result.endsWith('/v1')) {
+		result = result.substring(0, result.length - 3)
+	} else if (result.endsWith('/v1/')) {
+		result = result.substring(0, result.length - 4)
+	}
+	if (result.endsWith('/')) {
+		result = result.substring(0, result.length - 1)
+	}
+	return result
+}
+
+/**
+ * 获取默认 URL
+ */
+function getDefaultUrl(providerId: string): string {
+	if (providerId == 'anthropic') return 'https://api.anthropic.com'
+	if (providerId == 'openai') return 'https://api.openai.com'
+	if (providerId == 'deepseek') return 'https://api.deepseek.com'
+	if (providerId == 'zai') return 'https://api.z.ai/api/coding/paas/v4'
+	if (providerId == 'kimi-coding') return 'https://api.kimi.com/coding'
+	if (providerId == 'minimax-cn') return 'https://api.minimaxi.com/anthropic'
+	if (providerId == 'xiaomi') return 'https://api.xiaomimimo.com/v1'
+	if (providerId == 'ant-ling') return 'https://api.ant-ling.com/v1'
+	return ''
+}
+
+/**
+ * 发送消息给 LLM 并获取回复文本
+ */
+export function chatWithLLM(messages: UTSJSONObject[]): Promise<string | null> {
+	return new Promise<string | null>((resolve) => {
+		// 读取配置
+		const providerId = uni.getStorageSync('settings_provider_id') as string
+		const apiKey = uni.getStorageSync('settings_api_key') as string
+		const model = uni.getStorageSync('settings_model') as string
+
+		if (providerId == null || providerId == '' || apiKey == null || apiKey == '' || model == null || model == '') {
+			resolve(null)
+			return
+		}
+
+		let baseUrl = uni.getStorageSync('settings_base_url') as string
+		if (baseUrl == null || baseUrl == '') {
+			baseUrl = getDefaultUrl(providerId)
+			if (baseUrl == '') {
+				resolve(null)
+				return
+			}
+		}
+		baseUrl = normalizeBaseUrl(baseUrl)
+
+		// 构建消息列表
+		const apiMessages: UTSJSONObject[] = []
+		for (let i = 0; i < messages.length; i++) {
+			const msg = messages[i]
+			const role = msg['role'] as string | null
+			const content = msg['content'] as string | null
+			if (role == null || content == null) {
+				continue
+			}
+			if (role == 'assistant' && content == '' && msg['isStreaming'] == true) {
+				continue
+			}
+			apiMessages.push({
+				role: role,
+				content: content,
+			} as UTSJSONObject)
+		}
+
+		// 构建请求
+		const url = baseUrl + '/v1/chat/completions'
+		const headers: UTSJSONObject = {
+			'Content-Type': 'application/json',
+			'Authorization': 'Bearer ' + apiKey,
+		}
+		const body: UTSJSONObject = {
+			model: model,
+			messages: apiMessages,
+			max_tokens: 4096,
+			temperature: 0.7,
+			stream: false,
+		}
+
+		uni.request({
+			url: url,
+			method: 'POST',
+			header: headers,
+			data: body,
+			success: (res) => {
+				const statusCode = res.statusCode as number
+				if (statusCode == 200) {
+					try {
+						const responseData = res.data as UTSJSONObject
+						if (responseData == null) {
+							resolve(null)
+							return
+						}
+						const choices = responseData['choices'] as UTSJSONObject[] | null
+						if (choices != null && choices.length > 0) {
+							const choice = choices[0]
+							const message = choice['message'] as UTSJSONObject | null
+							if (message != null) {
+								const text = message['content'] as string | null
+								resolve(text ?? '')
+								return
+							}
+						}
+						resolve('')
+					} catch (_e: any) {
+						resolve(null)
+					}
+				} else {
+					resolve(null)
+				}
+			},
+			fail: (_err: any) => {
+				resolve(null)
+			}
+		})
+	})
+}

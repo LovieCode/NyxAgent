@@ -1,0 +1,58 @@
+export type LqjSqlDepotOptions = {
+	secretPhrase ?: string | null,
+	enableCipher ?: boolean | null,
+	wasmResolver ?: ((filename : string) => string) | null,
+	homeDirectory ?: string | null
+}
+
+export type LqjSqlOutcome = {
+	grid : any[][] | null,
+	fields : string[] | null,
+	affectedRows : number | null,
+	lastInsertId : number | null,
+	errorText : string | null,
+	records : Map<string, any>[] | null
+}
+
+export type LqjSqlBatchStatement = {
+	statement : string,
+	args ?: any[] | null
+}
+
+export type LqjSqlSnapshotKind = 'path' | 'bytes' | 'none'
+
+export type LqjSqlSnapshot = {
+	kind : LqjSqlSnapshotKind,
+	filePath : string | null,
+	bytes : Uint8Array | null
+}
+
+export type LqjSqlFailureCode = 9801 | 9802 | 9803 | 9804 | 9805 | 9806
+
+export type LqjSqlFailure = IUniError
+
+export type SQLiteConfig = {
+	password ?: string | null,
+	encryption ?: boolean | null,
+	locateFile ?: ((filename : string) => string) | null,
+	defaultDirectory ?: string | null
+}
+
+export type SQLiteResult = {
+	rows : any[][] | null,
+	columns : string[] | null,
+	changes : number | null,
+	lastInsertRowid : number | null,
+	error : string | null,
+	maps : Map<string, any>[] | null
+}
+
+export type SQLiteExecuteBatchParams = {
+	sql : string,
+	params ?: any[] | null
+}
+
+export type SQLiteDbFileInfo = {
+	path : string | null,
+	size : number | null
+}

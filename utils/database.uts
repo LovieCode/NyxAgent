@@ -1,0 +1,207 @@
+/**
+ * 数据库工具层 - 基于 laoqianjunzi-sqlite 的本地持久化
+ *
+ * 管理 conversations（对话列表）和 messages（消息）两张表
+ */
+import { xSqlite, SQLiteResult } from '@/uni_modules/laoqianjunzi-sqlite'
+
+/** 数据库文件名 */
+const DB_NAME = 'agent_chat.db'
+
+/**
+ * 获取数据库实例（自动打开/创建）
+ */
+function getDb(): xSqlite {
+	const db = new xSqlite()
+	db.createDb(DB_NAME)
+	return db
+}
+
+/**
+ * 将 SQLite 查询结果的 columns+rows 转换为 UTSJSONObject[]
+ */
+function rowsToObjects(result: SQLiteResult): UTSJSONObject[] {
+	const rows = result.rows
+	const columns = result.columns
+	if (rows == null || columns == null || rows.length == 0) {
+		return []
+	}
+	const list: UTSJSONObject[] = []
+	for (let r = 0; r < rows.length; r++) {
+		const row = rows[r]
+		const obj: UTSJSONObject = {}
+		for (let c = 0; c < columns.length; c++) {
+			const colName = columns[c]
+			const value = row[c]
+			if (value != null) {
+				obj[colName] = value
+			}
+		}
+		list.push(obj)
+	}
+	return list
+}
+
+/**
+ * 初始化数据库（建表）
+ * 在 App 启动时调用
+ */
+export function initDatabase(): void {
+	const db = getDb()
+
+	db.run(
+		'CREATE TABLE IF NOT EXISTS conversations (' +
+		'id TEXT PRIMARY KEY,' +
+		'title TEXT NOT NULL DEFAULT \'\',' +
+		'model TEXT NOT NULL DEFAULT \'\',' +
+		'created_at INTEGER NOT NULL,' +
+		'message_count INTEGER NOT NULL DEFAULT 0,' +
+		'preview TEXT NOT NULL DEFAULT \'\')'
+	)
+
+	db.run(
+		'CREATE TABLE IF NOT EXISTS messages (' +
+		'id INTEGER PRIMARY KEY AUTOINCREMENT,' +
+		'conversation_id TEXT NOT NULL,' +
+		'role TEXT NOT NULL,' +
+		'content TEXT NOT NULL DEFAULT \'\',' +
+		'timestamp INTEGER NOT NULL,' +
+		'extra TEXT NOT NULL DEFAULT \'{}\')'
+	)
+
+	db.close()
+}
+
+/**
+ * 保存整条对话（含消息）
+ * 先删旧数据，再写新数据，实现覆盖更新
+ */
+export function saveConversation(
+	id: string,
+	title: string,
+	model: string,
+	messages: UTSJSONObject[]
+): void {
+	const db = getDb()
+
+	// 取最后一条消息的内容作为预览
+	let preview = ''
+	if (messages.length > 0) {
+		const last = messages[messages.length - 1]
+		const c = last['content'] as string | null
+		if (c != null) {
+			preview = c.length > 50 ? c.substring(0, 50) + '...' : c
+		}
+	}
+
+	// UPSERT 对话
+	const now = Date.now()
+	db.run(
+		'INSERT OR REPLACE INTO conversations (id, title, model, created_at, message_count, preview) VALUES (?, ?, ?, ?, ?, ?)',
+		[id, title, model, now, messages.length, preview]
+	)
+
+	// 先删该对话的旧消息
+	db.run('DELETE FROM messages WHERE conversation_id = ?', [id])
+
+	// 逐条插入消息
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const role = (msg['role'] as string | null) ?? ''
+		const content = (msg['content'] as string | null) ?? ''
+		const timestamp = (msg['timestamp'] as number | null) ?? now
+
+		// 收集可选字段到 extra
+		const extra: UTSJSONObject = {}
+		const isStreaming = msg['isStreaming']
+		if (isStreaming != null) {
+			extra['isStreaming'] = isStreaming
+		}
+		const isError = msg['isError']
+		if (isError != null) {
+			extra['isError'] = isError
+		}
+		const toolName = msg['toolName']
+		if (toolName != null) {
+			extra['toolName'] = toolName
+		}
+		const toolStatus = msg['toolStatus']
+		if (toolStatus != null) {
+			extra['toolStatus'] = toolStatus
+		}
+		const extraStr = JSON.stringify(extra)
+
+		db.run(
+			'INSERT INTO messages (conversation_id, role, content, timestamp, extra) VALUES (?, ?, ?, ?, ?)',
+			[id, role, content, timestamp, extraStr]
+		)
+	}
+
+	db.close()
+}
+
+/**
+ * 获取所有对话列表（按创建时间倒序）
+ * 返回 UTSJSONObject[]
+ */
+export function getConversations(): UTSJSONObject[] {
+	const db = getDb()
+	const result = db.query(
+		'SELECT id, title, model, created_at, message_count, preview FROM conversations ORDER BY created_at DESC'
+	)
+	db.close()
+	return rowsToObjects(result)
+}
+
+/**
+ * 获取某条对话的所有消息（按时间升序）
+ */
+export function getMessages(conversationId: string): UTSJSONObject[] {
+	const db = getDb()
+	const result = db.query(
+		'SELECT id, conversation_id, role, content, timestamp, extra FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC',
+		[conversationId]
+	)
+	db.close()
+
+	const rows = rowsToObjects(result)
+
+	// 将 extra JSON 字段合并到返回对象中
+	for (let i = 0; i < rows.length; i++) {
+		const row = rows[i]
+		const extraStr = row['extra'] as string | null
+		if (extraStr != null && extraStr != '' && extraStr != '{}') {
+			try {
+				const extra = JSON.parse(extraStr)
+				const keys = Object.keys(extra)
+				for (let k = 0; k < keys.length; k++) {
+					const key = keys[k]
+					row[key] = extra[key]
+				}
+			} catch (_e: any) {
+				// ignore parse error
+			}
+		}
+	}
+	return rows
+}
+
+/**
+ * 删除某条对话及其消息
+ */
+export function deleteConversation(id: string): void {
+	const db = getDb()
+	db.run('DELETE FROM messages WHERE conversation_id = ?', [id])
+	db.run('DELETE FROM conversations WHERE id = ?', [id])
+	db.close()
+}
+
+/**
+ * 清空所有数据
+ */
+export function clearAll(): void {
+	const db = getDb()
+	db.run('DELETE FROM messages')
+	db.run('DELETE FROM conversations')
+	db.close()
+}

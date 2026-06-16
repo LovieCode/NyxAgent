@@ -1,0 +1,375 @@
+export * from '../interface.uts'
+
+import type { LqjSqlBatchStatement, LqjSqlDepotOptions, LqjSqlFailureCode, LqjSqlOutcome, LqjSqlSnapshot, SQLiteConfig, SQLiteExecuteBatchParams, SQLiteResult } from '../interface.uts'
+import { LqjSqlFailureImpl } from '../unierror.uts'
+import { buildCompatOptions, normalizeCompatAlias, normalizeCompatDirectory, toCompatBatchStatements, toCompatResult } from '../xsqlite-compat.uts'
+
+function buildOutcomeError(code : LqjSqlFailureCode, details : string | null = null) : LqjSqlOutcome {
+	const failure = new LqjSqlFailureImpl(code, details)
+	let text = failure.errMsg
+	if (details != null && details.length > 0) {
+		text = text + '：' + details
+	}
+	return {
+		grid : null,
+		fields : null,
+		affectedRows : null,
+		lastInsertId : null,
+		errorText : text,
+		records : null
+	}
+}
+
+function normalizeDirectoryValue(directory : string | null) : string | null {
+	if (directory == null) {
+		return null
+	}
+	const trimmed = directory.trim()
+	if (trimmed.length == 0) {
+		return null
+	}
+	return UTSiOS.convert2AbsFullPath(trimmed)
+}
+
+function normalizeOptions(options : LqjSqlDepotOptions) : LqjSqlDepotOptions {
+	const hasSecret = options.secretPhrase != null && options.secretPhrase!.length > 0
+	return {
+		secretPhrase : options.secretPhrase,
+		enableCipher : options.enableCipher == true || hasSecret,
+		wasmResolver : options.wasmResolver,
+		homeDirectory : normalizeDirectoryValue(options.homeDirectory)
+	} as LqjSqlDepotOptions
+}
+
+function mapNativeOutcome(source : DepotOutcomeSwift | null) : LqjSqlOutcome {
+	if (source == null) {
+		return {
+			grid : null,
+			fields : null,
+			affectedRows : null,
+			lastInsertId : null,
+			errorText : null,
+			records : null
+		} as LqjSqlOutcome
+	}
+	return {
+		grid : source.grid == null ? null : source.grid,
+		fields : source.fields == null ? null : source.fields,
+		affectedRows : source.affectedRows == null ? null : source.affectedRows,
+		lastInsertId : source.lastInsertId == null ? null : source.lastInsertId,
+		errorText : source.errorText == null ? null : source.errorText,
+		records : source.records == null ? null : source.records
+	} as LqjSqlOutcome
+}
+
+function buildPayloadMap(payload : UTSJSONObject) : Map<string, any> {
+	const result = new Map<string, any>()
+	for (fieldName in payload) {
+		result.set(fieldName, payload.getAny(fieldName))
+	}
+	return result
+}
+
+function buildSchemaMap(schema : UTSJSONObject) : Map<string, string> {
+	const result = new Map<string, string>()
+	for (fieldName in schema) {
+		const fieldType = schema.getString(fieldName)
+		if (fieldType != null) {
+			result.set(fieldName, fieldType)
+		}
+	}
+	return result
+}
+
+export class LqjSqlDepot {
+	private options : LqjSqlDepotOptions
+	private nativeDepot : LqjSqlIosDepot | null = null
+
+	constructor(options : LqjSqlDepotOptions = {}) {
+		this.options = normalizeOptions(options)
+		this.nativeDepot = new LqjSqlIosDepot(
+			config = DepotConfigSwift(
+				secretPhrase = this.options.secretPhrase,
+				enableCipher = this.options.enableCipher == true,
+				homeDirectory = this.options.homeDirectory
+			)
+		)
+	}
+
+	prepareSync(alias : string | null = null) : boolean {
+		if (this.nativeDepot == null) {
+			return false
+		}
+		return this.nativeDepot!.openStore(alias = alias) != nil
+	}
+
+	prepare(alias : string | null = null) : Promise<boolean> {
+		return Promise.resolve(this.prepareSync(alias))
+	}
+
+	execute(statement : string, args : any[] = []) : LqjSqlOutcome {
+		if (this.nativeDepot == null) {
+			return buildOutcomeError(9801)
+		}
+		return mapNativeOutcome(this.nativeDepot!.execute(statement, args = args))
+	}
+
+	select(statement : string, args : any[] = []) : LqjSqlOutcome {
+		if (this.nativeDepot == null) {
+			return buildOutcomeError(9801)
+		}
+		return mapNativeOutcome(this.nativeDepot!.select(statement, args = args))
+	}
+
+	storeRow(tableName : string, payload : UTSJSONObject) : LqjSqlOutcome {
+		if (this.nativeDepot == null) {
+			return buildOutcomeError(9801)
+		}
+		return mapNativeOutcome(this.nativeDepot!.storeRow(tableName = tableName, payload = buildPayloadMap(payload)))
+	}
+
+	reviseRow(tableName : string, payload : UTSJSONObject, filterClause : string, args : any[] = []) : LqjSqlOutcome {
+		if (this.nativeDepot == null) {
+			return buildOutcomeError(9801)
+		}
+		return mapNativeOutcome(this.nativeDepot!.reviseRow(tableName = tableName, payload = buildPayloadMap(payload), filterClause = filterClause, args = args))
+	}
+
+	discardRow(tableName : string, filterClause : string, args : any[] = []) : LqjSqlOutcome {
+		if (this.nativeDepot == null) {
+			return buildOutcomeError(9801)
+		}
+		return mapNativeOutcome(this.nativeDepot!.discardRow(tableName = tableName, filterClause = filterClause, args = args))
+	}
+
+	hasTable(tableName : string) : boolean {
+		if (this.nativeDepot == null) {
+			return false
+		}
+		return this.nativeDepot!.hasTable(tableName = tableName)
+	}
+
+	ensureTable(tableName : string, schema : UTSJSONObject) : LqjSqlOutcome {
+		if (this.nativeDepot == null) {
+			return buildOutcomeError(9801)
+		}
+		return mapNativeOutcome(this.nativeDepot!.ensureTable(tableName = tableName, schema = buildSchemaMap(schema)))
+	}
+
+	removeTable(tableName : string) : LqjSqlOutcome {
+		if (this.nativeDepot == null) {
+			return buildOutcomeError(9801)
+		}
+		return mapNativeOutcome(this.nativeDepot!.removeTable(tableName = tableName))
+	}
+
+	disconnect() : void {
+		if (this.nativeDepot != null) {
+			this.nativeDepot!.disconnect()
+		}
+	}
+
+	openTransaction() : LqjSqlOutcome {
+		if (this.nativeDepot == null) {
+			return buildOutcomeError(9801)
+		}
+		return mapNativeOutcome(this.nativeDepot!.openTransaction())
+	}
+
+	finishTransaction() : LqjSqlOutcome {
+		if (this.nativeDepot == null) {
+			return buildOutcomeError(9801)
+		}
+		return mapNativeOutcome(this.nativeDepot!.finishTransaction())
+	}
+
+	cancelTransaction() : LqjSqlOutcome {
+		if (this.nativeDepot == null) {
+			return buildOutcomeError(9801)
+		}
+		return mapNativeOutcome(this.nativeDepot!.cancelTransaction())
+	}
+
+	executeSeries(entries : LqjSqlBatchStatement[]) : LqjSqlOutcome[] {
+		if (this.nativeDepot == null) {
+			return [buildOutcomeError(9801)]
+		}
+		const nativeEntries = [] as DepotBatchSwift[]
+		for (entry in entries) {
+			nativeEntries.push(DepotBatchSwift(statement = entry.statement, args = entry.args == null ? [] as any[] : entry.args!))
+		}
+		const nativeResults = this.nativeDepot!.executeSeries(entries = nativeEntries)
+		const mappedResults = [] as LqjSqlOutcome[]
+		for (nativeItem in nativeResults) {
+			mappedResults.push(mapNativeOutcome(nativeItem))
+		}
+		return mappedResults
+	}
+
+	saveSnapshotSync(alias : string | null = null) : LqjSqlOutcome {
+		if (this.nativeDepot == null) {
+			return buildOutcomeError(9801)
+		}
+		return mapNativeOutcome(this.nativeDepot!.saveSnapshot(alias = alias))
+	}
+
+	restoreSnapshotSync(alias : string) : LqjSqlOutcome {
+		if (this.nativeDepot == null) {
+			return buildOutcomeError(9801)
+		}
+		return mapNativeOutcome(this.nativeDepot!.restoreSnapshot(alias = alias))
+	}
+
+	saveSnapshot(alias : string | null = null) : Promise<LqjSqlOutcome> {
+		return Promise.resolve(this.saveSnapshotSync(alias))
+	}
+
+	restoreSnapshot(alias : string) : Promise<LqjSqlOutcome> {
+		return Promise.resolve(this.restoreSnapshotSync(alias))
+	}
+
+	peekSnapshot() : LqjSqlSnapshot | null {
+		if (this.nativeDepot == null) {
+			return null
+		}
+		const filePath = this.nativeDepot!.peekSnapshotPath()
+		if (filePath == nil || filePath!.length == 0) {
+			return {
+				kind : 'none',
+				filePath : null,
+				bytes : null
+			} as LqjSqlSnapshot
+		}
+		return {
+			kind : 'path',
+			filePath : filePath!,
+			bytes : null
+		} as LqjSqlSnapshot
+	}
+
+	switchHome(directory : string) : void {
+		if (this.nativeDepot == null) {
+			return
+		}
+		const resolved = normalizeDirectoryValue(directory)
+		this.nativeDepot!.applyHomeDirectory(directory = resolved == null ? '' : resolved)
+	}
+
+	changeSecret(secretPhrase : string | null = null) : void {
+		if (this.nativeDepot == null) {
+			return
+		}
+		this.nativeDepot!.applySecret(secretPhrase)
+	}
+
+	restoreFromBytes(binaryData : Uint8Array) : Promise<LqjSqlOutcome> {
+		return Promise.resolve(buildOutcomeError(9802, 'iOS 端不支持从字节流直接恢复数据库'))
+	}
+
+	restoreFromFileObject(fileObject : any) : Promise<LqjSqlOutcome> {
+		return Promise.resolve(buildOutcomeError(9802, 'iOS 端不支持从浏览器文件对象恢复数据库'))
+	}
+
+	restoreFromRemote(remoteUrl : string) : Promise<LqjSqlOutcome> {
+		return Promise.resolve(buildOutcomeError(9802, 'iOS 端不支持从远程地址直接恢复数据库'))
+	}
+}
+
+export class xSqlite {
+	private config : SQLiteConfig
+	private depot : LqjSqlDepot
+
+	constructor(config : SQLiteConfig = {}) {
+		this.config = config
+		this.depot = new LqjSqlDepot(buildCompatOptions(config))
+	}
+
+	createDb(filename : string | null = null) : boolean {
+		return this.depot.prepareSync(normalizeCompatAlias(filename))
+	}
+
+	run(sql : string, params : any[] = []) : SQLiteResult {
+		return toCompatResult(this.depot.execute(sql, params))
+	}
+
+	query(sql : string, params : any[] = []) : SQLiteResult {
+		return toCompatResult(this.depot.select(sql, params))
+	}
+
+	insert(table : string, data : UTSJSONObject) : SQLiteResult {
+		return toCompatResult(this.depot.storeRow(table, data))
+	}
+
+	update(table : string, data : UTSJSONObject, where : string, params : any[] = []) : SQLiteResult {
+		return toCompatResult(this.depot.reviseRow(table, data, where, params))
+	}
+
+	delete(table : string, where : string, params : any[] = []) : SQLiteResult {
+		return toCompatResult(this.depot.discardRow(table, where, params))
+	}
+
+	tableExists(tableName : string) : boolean {
+		return this.depot.hasTable(tableName)
+	}
+
+	createTable(tableName : string, columns : UTSJSONObject) : SQLiteResult {
+		return toCompatResult(this.depot.ensureTable(tableName, columns))
+	}
+
+	dropTable(tableName : string) : SQLiteResult {
+		return toCompatResult(this.depot.removeTable(tableName))
+	}
+
+	close() : void {
+		this.depot.disconnect()
+	}
+
+	beginTransaction() : SQLiteResult {
+		return toCompatResult(this.depot.openTransaction())
+	}
+
+	commit() : SQLiteResult {
+		return toCompatResult(this.depot.finishTransaction())
+	}
+
+	rollback() : SQLiteResult {
+		return toCompatResult(this.depot.cancelTransaction())
+	}
+
+	executeBatch(statements : SQLiteExecuteBatchParams[]) : SQLiteResult[] {
+		const outcomes = this.depot.executeSeries(toCompatBatchStatements(statements))
+		const results = [] as SQLiteResult[]
+		for (outcome in outcomes) {
+			results.push(toCompatResult(outcome))
+		}
+		return results
+	}
+
+	saveLocal(filename : string | null = null) : SQLiteResult {
+		return toCompatResult(this.depot.saveSnapshotSync(normalizeCompatAlias(filename)))
+	}
+
+	loadLocal(filename : string) : SQLiteResult {
+		return toCompatResult(this.depot.restoreSnapshotSync(normalizeCompatAlias(filename)))
+	}
+
+	getDatabasePath() : string | null {
+		const snapshot = this.depot.peekSnapshot()
+		if (snapshot == null || snapshot.kind != 'path') {
+			return null
+		}
+		return snapshot.filePath
+	}
+
+	setDefaultDirectory(directory : string) : void {
+		const normalized = normalizeCompatDirectory(directory)
+		this.config.defaultDirectory = normalized
+		this.depot.switchHome(normalized == null ? '' : normalized)
+	}
+
+	setPassword(password : string | null = null) : void {
+		this.config.password = password
+		this.config.encryption = password != null && password.length > 0
+		this.depot.changeSecret(password)
+	}
+}

@@ -1,0 +1,37 @@
+/**
+ * storage 工具模块 - 本地存储管理
+ * 提供统一的本地数据存取接口，封装 uni-app 存储API
+ */
+
+/**
+ * 存储数据到本地
+ * @param key 存储键名
+ * @param value 存储值
+ */
+export function setStorage(key : string, value : string) : void {
+	uni.setStorageSync(key, value)
+}
+
+/**
+ * 从本地读取数据
+ * @param key 存储键名
+ * @returns 存储的值，不存在则返回空字符串
+ */
+export function getStorage(key : string) : string {
+	return uni.getStorageSync(key) as string
+}
+
+/**
+ * 从本地删除数据
+ * @param key 存储键名
+ */
+export function removeStorage(key : string) : void {
+	uni.removeStorageSync(key)
+}
+
+/**
+ * 清空本地存储数据
+ */
+export function clearStorage() : void {
+	uni.clearStorageSync()
+}

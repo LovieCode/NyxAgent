@@ -1,0 +1,222 @@
+<template>
+	<view class="page-shell">
+		<scroll-view class="container" :scroll-y="true">
+			<!-- 页面标题 -->
+			<view class="page-header">
+				<text class="page-title">模型设置</text>
+				<text class="page-subtitle">根据已选提供商选择 AI 对话模型</text>
+			</view>
+
+			<!-- 当前提供商信息 -->
+			<view class="provider-info">
+				<text class="provider-label">当前提供商</text>
+				<text class="provider-name">{{providerName}}</text>
+			</view>
+
+			<!-- 模型选择区域 -->
+			<view class="model-section">
+				<text class="section-title">可用模型</text>
+				<view class="model-grid">
+					<view
+						v-for="(model, index) in currentModels"
+						:key="index"
+						class="model-pill"
+						:class="selectedModel == model ? 'pill-active' : ''"
+						@click="selectModel(model)"
+					>
+						<text
+							class="pill-text"
+							:class="selectedModel == model ? 'pill-text-active' : ''"
+						>{{model}}</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 保存按钮 -->
+			<view class="save-wrap">
+				<rice-button type="primary" text="保存" size="large" shape="round" @click="saveSettings" />
+			</view>
+		</scroll-view>
+		<TabBar current="pages/settings/settings" />
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * 模型设置页面 - 选择 AI 对话模型
+	 * 根据已选择的提供商动态展示可用模型
+	 */
+
+	export default {
+		data() {
+			return {
+				selectedModel: 'deepseek-v4-flash' as string,
+				providerId: 'deepseek' as string,
+				pIds: [
+					'anthropic', 'openai', 'deepseek', 'zai',
+					'kimi-coding', 'minimax-cn', 'xiaomi', 'ant-ling', 'custom'
+				] as string[],
+				pNames: [
+					'Anthropic', 'OpenAI', 'DeepSeek', 'ZAI',
+					'Kimi', 'MiniMax', 'MiMo', 'AntLing', 'Custom'
+				] as string[],
+				pModelsArr: [
+					['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
+					['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano'],
+					['deepseek-v4-flash', 'deepseek-v4-pro'],
+					['glm-5.2', 'glm-5.1', 'glm-5-turbo', 'glm-4.7', 'glm-4.5-air'],
+					['k2p7', 'kimi-for-coding', 'kimi-k2-thinking'],
+					['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'],
+					['mimo-v2.5-pro-ultraspeed', 'mimo-v2.5-pro', 'mimo-v2-pro', 'mimo-v2-omni', 'mimo-v2-flash'],
+					['Ring-2.6-1T', 'Ling-2.6-1T', 'Ling-2.6-flash'],
+					['custom-model']
+				] as string[][]
+			}
+		},
+		computed: {
+			/** 当前提供商索引 */
+			providerIndex(): number {
+				for (let i = 0; i < this.pIds.length; i++) {
+					if (this.pIds[i] == this.providerId) {
+						return i
+					}
+				}
+				return 2 // 默认 deepseek
+			},
+			/** 当前提供商显示名称 */
+			providerName(): string {
+				const idx = this.providerIndex
+				if (idx >= 0 && idx < this.pNames.length) {
+					return this.pNames[idx]
+				}
+				return 'DeepSeek'
+			},
+			/** 当前提供商对应的模型列表 */
+			currentModels(): string[] {
+				const idx = this.providerIndex
+				if (idx >= 0 && idx < this.pModelsArr.length) {
+					return this.pModelsArr[idx]
+				}
+				return ['custom-model']
+			}
+		},
+		onLoad() {
+			this.loadSettings()
+		},
+		methods: {
+			/** 从存储中加载设置 */
+			loadSettings() {
+				let providerId = uni.getStorageSync('settings_provider_id') as string
+				this.providerId = (providerId != null && providerId != '') ? providerId : 'deepseek'
+				let model = uni.getStorageSync('settings_model') as string
+				this.selectedModel = (model != null && model != '') ? model : 'deepseek-v4-flash'
+			},
+			/** 选择模型 */
+			selectModel(model: string) {
+				this.selectedModel = model
+			},
+			/** 保存设置到存储 */
+			saveSettings() {
+				uni.setStorageSync('settings_model', this.selectedModel)
+				uni.showToast({
+					title: '已保存',
+					icon: 'success'
+				})
+			}
+		}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+		padding: 32rpx;
+	}
+
+	/* 页面标题 */
+	.page-header {
+		margin-bottom: 32rpx;
+	}
+
+	.page-title {
+		font-size: 48rpx;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	.page-subtitle {
+		font-size: 26rpx;
+		color: #9CA3AF;
+		margin-top: 8rpx;
+	}
+
+	/* 当前提供商信息 */
+	.provider-info {
+		flex-direction: row;
+		align-items: center;
+		background-color: #F9FAFB;
+		border-radius: 16rpx;
+		padding: 24rpx 28rpx;
+		margin-bottom: 32rpx;
+	}
+
+	.provider-label {
+		font-size: 26rpx;
+		color: #9CA3AF;
+		margin-right: 16rpx;
+	}
+
+	.provider-name {
+		font-size: 28rpx;
+		font-weight: bold;
+		color: #DB2777;
+	}
+
+	/* 模型选择区域 */
+	.model-section {
+		margin-bottom: 32rpx;
+	}
+
+	.section-title {
+		font-size: 28rpx;
+		font-weight: bold;
+		color: #111827;
+		margin-bottom: 20rpx;
+	}
+
+	.model-grid {
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+
+	/* 模型 pills */
+	.model-pill {
+		background-color: #F3F4F6;
+		border-radius: 10rpx;
+		padding: 14rpx 22rpx;
+		margin: 6rpx;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.pill-active {
+		background-color: #FDE8EF;
+		border-color: #FB8FAB;
+	}
+
+	.pill-text {
+		font-size: 24rpx;
+		color: #6B7280;
+	}
+
+	.pill-text-active {
+		color: #DB2777;
+		font-weight: bold;
+	}
+
+	/* 保存按钮 */
+	.save-wrap {
+		padding: 20rpx 0 60rpx 0;
+	}
+</style>

@@ -1,0 +1,24 @@
+export type IconProps = {
+	customClass?: string;
+	customStyle?: string;
+	name: string;
+	size?: string | number;
+	color?: string;
+};
+
+export const iconProps = {
+	customClass: String,
+	customStyle: String,
+	name: {
+		type: String,
+		required: true,
+	},
+	size: {
+		type: [String, Number],
+		default: 16,
+	},
+	color: {
+		type: String,
+		default: '#000000',
+	},
+};

@@ -1,0 +1,197 @@
+<template>
+	<view :class="bubbleClass">
+		<!-- AI 标签 -->
+		<view v-if="role == 'assistant'" class="ai-label">
+			<text class="ai-label-text">AI</text>
+		</view>
+		<!-- 工具名称标签 -->
+		<view v-if="role == 'toolResult'" class="tool-badge">
+			<text class="tool-badge-text">{{toolName}}</text>
+		</view>
+		<!-- 消息内容 -->
+		<text :class="textClass">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * ChatBubble 组件 - 聊天气泡
+	 * 扁平化粉白主题
+	 */
+	export default {
+		props: {
+			role: {
+				type: String,
+				default: 'user'
+			},
+			content: {
+				type: String,
+				default: ''
+			},
+			toolName: {
+				type: String,
+				default: ''
+			},
+			isError: {
+				default: false
+			},
+			isStreaming: {
+				default: false
+			}
+		},
+		computed: {
+			/** 将 any 类型转 boolean */
+			isErrorBool(): boolean {
+				return this.isError === true || this.isError === 'true'
+			},
+			isStreamingBool(): boolean {
+				return this.isStreaming === true || this.isStreaming === 'true'
+			},
+
+			bubbleClass() : string {
+				if (this.role == 'user') {
+					return 'bubble-user'
+				}
+				if (this.role == 'assistant') {
+					return 'bubble-assistant'
+				}
+				if (this.role == 'toolResult') {
+					if (this.isErrorBool) {
+						return 'bubble-tool-error'
+					}
+					return 'bubble-tool'
+				}
+				return 'bubble-user'
+			},
+			textClass() : string {
+				if (this.role == 'user') {
+					return 'text-user'
+				}
+				if (this.role == 'assistant') {
+					return 'text-assistant'
+				}
+				if (this.role == 'toolResult') {
+					return 'text-tool'
+				}
+				return 'text-user'
+			}
+		},
+	}
+</script>
+
+<style>
+	/* 用户气泡 - 右对齐粉色 */
+	.bubble-user {
+		flex-direction: column;
+		align-items: flex-end;
+		margin-left: 60px;
+		margin-right: 12px;
+		margin-top: 8px;
+		margin-bottom: 8px;
+	}
+
+	/* AI 气泡 - 左对齐白色 */
+	.bubble-assistant {
+		flex-direction: column;
+		align-items: flex-start;
+		margin-left: 12px;
+		margin-right: 60px;
+		margin-top: 8px;
+		margin-bottom: 8px;
+	}
+
+	/* 工具气泡 - 浅灰背景 */
+	.bubble-tool {
+		flex-direction: column;
+		align-items: flex-start;
+		margin-left: 32px;
+		margin-right: 32px;
+		margin-top: 4px;
+		margin-bottom: 4px;
+		background-color: #F3F4F6;
+		border-radius: 8px;
+		padding: 10px;
+	}
+
+	/* 工具错误气泡 */
+	.bubble-tool-error {
+		flex-direction: column;
+		align-items: flex-start;
+		margin-left: 32px;
+		margin-right: 32px;
+		margin-top: 4px;
+		margin-bottom: 4px;
+		background-color: rgba(239,68,68,0.08);
+		border-radius: 8px;
+		padding: 10px;
+		border-width: 1px;
+		border-color: #EF4444;
+	}
+
+	/* AI 标签 - 淡粉强调 */
+	.ai-label {
+		background-color: #FDE8EF;
+		border-radius: 4px;
+		padding-left: 6px;
+		padding-right: 6px;
+		padding-top: 2px;
+		padding-bottom: 2px;
+		margin-bottom: 6px;
+	}
+
+	.ai-label-text {
+		font-size: 10px;
+		color: #DB2777;
+		font-weight: bold;
+	}
+
+	/* 工具标签 */
+	.tool-badge {
+		background-color: #E5E7EB;
+		border-radius: 4px;
+		padding-left: 6px;
+		padding-right: 6px;
+		padding-top: 2px;
+		padding-bottom: 2px;
+		margin-bottom: 6px;
+	}
+
+	.tool-badge-text {
+		font-size: 10px;
+		color: #6B7280;
+		font-weight: bold;
+	}
+
+	/* 用户文字 - 白色字淡粉底 */
+	.text-user {
+		font-size: 15px;
+		color: #FFFFFF;
+		background-image: linear-gradient(to bottom right, #FB8FAB, #E8729A);
+		border-radius: 16px;
+		padding: 10px;
+		line-height: 22px;
+	}
+
+	/* AI 文字 - 深色字浅灰底 */
+	.text-assistant {
+		font-size: 15px;
+		color: #111827;
+		background-color: #F3F4F6;
+		border-radius: 16px;
+		padding: 10px;
+		line-height: 22px;
+	}
+
+	/* 工具文字 */
+	.text-tool {
+		font-size: 13px;
+		color: #6B7280;
+		line-height: 20px;
+	}
+
+	/* 流式光标 - 粉色 */
+	.cursor {
+		color: #FB8FAB;
+		font-weight: bold;
+	}
+</style>

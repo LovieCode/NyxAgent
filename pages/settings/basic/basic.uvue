@@ -1,0 +1,311 @@
+<template>
+	<view class="page-shell">
+		<scroll-view class="container" :scroll-y="true">
+			<!-- 页面标题 -->
+			<view class="page-header">
+				<text class="page-title">基础设置</text>
+				<text class="page-subtitle">配置 LLM 提供商、API 密钥和接口地址</text>
+			</view>
+
+			<!-- LLM 提供商 -->
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="apartment" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+					<text class="card-title">LLM 提供商</text>
+				</view>
+				<view class="provider-grid">
+					<view
+						v-for="(id, index) in pIds"
+						:key="index"
+						class="provider-chip"
+						:class="selectedProviderId == id ? 'chip-active' : ''"
+						@click="selectProvider(id)"
+					>
+						<text class="chip-label">{{ pNames[index] }}</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- API 密钥 -->
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="key" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+					<text class="card-title">API 密钥</text>
+				</view>
+				<view class="input-row">
+					<view class="input-row-input">
+						<view class="input-wrap">
+							<input
+								class="flat-input"
+								:type="showApiKey ? 'text' : 'password'"
+								v-model="apiKey"
+								:placeholder="keyPlaceholder"
+								placeholder-class="input-placeholder"
+							/>
+						</view>
+					</view>
+					<view class="toggle-vis-btn" @click="toggleShowApiKey">
+						<oui-icon-unix :name="showApiKey ? 'eyeclose-fill' : 'eye'" size="22px" color="#9CA3AF" />
+					</view>
+				</view>
+			</view>
+
+			<!-- 接口地址 -->
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="api" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+					<text class="card-title">接口地址</text>
+				</view>
+				<view class="input-wrap">
+					<input
+						class="flat-input"
+						type="text"
+						v-model="baseUrl"
+						placeholder="留空使用默认地址"
+						placeholder-class="input-placeholder"
+					/>
+				</view>
+			</view>
+
+			<!-- 保存按钮 -->
+			<view class="save-wrap">
+				<view class="save-btn" @click="saveSettings">
+					<text class="save-btn-text">保存设置</text>
+				</view>
+			</view>
+		</scroll-view>
+		<TabBar current="pages/settings/settings" />
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * 基础设置子页面 - LLM 提供商、API 密钥、接口地址
+	 */
+
+	export default {
+		data() {
+			return {
+				selectedProviderId: 'deepseek' as string,
+				apiKey: '' as string,
+				baseUrl: '' as string,
+				showApiKey: false as boolean
+			}
+		},
+		computed: {
+			pIds(): string[] {
+				return [
+					'anthropic', 'openai', 'deepseek', 'zai',
+					'kimi-coding', 'minimax-cn', 'xiaomi', 'ant-ling', 'custom'
+				]
+			},
+			pNames(): string[] {
+				return [
+					'Claude', 'OpenAI', 'DeepSeek', '零一万物',
+					'Kimi', 'MiniMax', '小米', '通义千问', '自定义'
+				]
+			},
+			pHints(): string[] {
+				return [
+					'sk-ant-...', 'sk-...', 'sk-...', 'ZAI Coding Plan Key',
+					'KIMI_API_KEY', 'MINIMAX_CN_API_KEY', 'XIAOMI_API_KEY', 'ANT_LING_API_KEY', 'Enter API Key'
+				]
+			},
+			pModels(): string[][] {
+				return [
+					['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
+					['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano'],
+					['deepseek-v4-flash', 'deepseek-v4-pro'],
+					['glm-5.2', 'glm-5.1', 'glm-5-turbo', 'glm-4.7', 'glm-4.5-air'],
+					['k2p7', 'kimi-for-coding', 'kimi-k2-thinking'],
+					['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'],
+					['mimo-v2.5-pro-ultraspeed', 'mimo-v2.5-pro', 'mimo-v2-pro', 'mimo-v2-omni', 'mimo-v2-flash'],
+					['Ring-2.6-1T', 'Ling-2.6-1T', 'Ling-2.6-flash'],
+					['custom-model']
+				]
+			},
+			keyPlaceholder(): string {
+				const idx = this.findProviderIndex(this.selectedProviderId)
+				if (idx >= 0) {
+					return this.pHints[idx]
+				}
+				return 'Enter API Key'
+			}
+		},
+		onLoad() {
+			this.loadSettings()
+		},
+		methods: {
+			findProviderIndex(id: string): number {
+				for (let i = 0; i < this.pIds.length; i++) {
+					if (this.pIds[i] == id) {
+						return i
+					}
+				}
+				return -1
+			},
+
+			loadSettings() {
+				let providerId = uni.getStorageSync('settings_provider_id') as string
+				this.selectedProviderId = (providerId != null && providerId != '') ? providerId : 'deepseek'
+				let key = uni.getStorageSync('settings_api_key') as string
+				this.apiKey = (key != null) ? key : ''
+				let url = uni.getStorageSync('settings_base_url') as string
+				this.baseUrl = (url != null) ? url : ''
+			},
+
+			saveSettings() {
+				uni.setStorageSync('settings_provider_id', this.selectedProviderId)
+				uni.setStorageSync('settings_api_key', this.apiKey)
+				uni.setStorageSync('settings_base_url', this.baseUrl)
+				uni.showToast({
+					title: '已保存',
+					icon: 'success'
+				})
+			},
+
+			selectProvider(id: string) {
+				this.selectedProviderId = id
+				this.baseUrl = ''
+			},
+
+			toggleShowApiKey() {
+				this.showApiKey = !this.showApiKey
+			}
+		}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+		padding: 32rpx;
+	}
+
+	/* 页面标题 */
+	.page-header {
+		margin-bottom: 40rpx;
+		padding-bottom: 24rpx;
+	}
+
+	.page-title {
+		font-size: 48rpx;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	.page-subtitle {
+		font-size: 26rpx;
+		color: #9CA3AF;
+		margin-top: 8rpx;
+	}
+
+	/* 通用卡片容器 */
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 20rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+	}
+
+	.card-header {
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 20rpx;
+	}
+
+	.card-icon {
+		font-size: 28rpx;
+		margin-right: 12rpx;
+	}
+
+	.card-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	/* 输入行（带切换按钮） */
+	.input-row {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.input-row-input {
+		flex: 1;
+	}
+
+	.toggle-vis-btn {
+		width: 44px;
+		height: 44px;
+		justify-content: center;
+		align-items: center;
+		margin-left: 8rpx;
+	}
+
+	.toggle-vis-icon {
+		font-size: 24px;
+	}
+
+	/* 扁平输入框 */
+	.input-wrap {
+		margin-top: 8rpx;
+	}
+
+	.flat-input {
+		background-color: #F9FAFB;
+		border-radius: 14rpx;
+		padding: 24rpx;
+		font-size: 28rpx;
+		color: #111827;
+	}
+
+	.input-placeholder {
+		color: #D1D5DB;
+	}
+
+	/* 提供商网格 */
+	.provider-grid {
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+
+	.provider-chip {
+		background-color: #F3F4F6;
+		border-radius: 12rpx;
+		padding: 14rpx 28rpx;
+		margin: 8rpx;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.chip-active {
+		background-color: #FDE8EF;
+		border-color: #FB8FAB;
+	}
+
+	.chip-label {
+		font-size: 26rpx;
+		color: #374151;
+	}
+
+	/* 保存按钮 */
+	.save-wrap {
+		padding: 20rpx 0 60rpx 0;
+	}
+
+	.save-btn {
+		background-color: #FB8FAB;
+		border-radius: 16rpx;
+		padding: 28rpx;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.save-btn-text {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #FFFFFF;
+	}
+</style>

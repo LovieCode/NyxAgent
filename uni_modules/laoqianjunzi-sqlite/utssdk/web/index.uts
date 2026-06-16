@@ -1,0 +1,621 @@
+export * from '../interface.uts'
+
+import type { LqjSqlBatchStatement, LqjSqlDepotOptions, LqjSqlFailureCode, LqjSqlOutcome, LqjSqlSnapshot, SQLiteConfig, SQLiteExecuteBatchParams, SQLiteResult } from '../interface.uts'
+import { LqjSqlFailureImpl } from '../unierror.uts'
+import { buildCompatOptions, normalizeCompatAlias, normalizeCompatDirectory, toCompatBatchStatements, toCompatResult } from '../xsqlite-compat.uts'
+
+type SqlJsLoaderConfig = {
+	scriptUrl : string,
+	wasmUrl : string
+}
+
+let sharedScriptReady = false
+let sharedSqlModule : any | null = null
+let sharedLoadingTask : Promise<void> | null = null
+
+function buildOutcomeError(code : LqjSqlFailureCode, details : string | null = null) : LqjSqlOutcome {
+	const failure = new LqjSqlFailureImpl(code, details)
+	let text = failure.errMsg
+	if (details != null && details.length > 0) {
+		text = text + '：' + details
+	}
+	return {
+		grid : null,
+		fields : null,
+		affectedRows : null,
+		lastInsertId : null,
+		errorText : text,
+		records : null
+	}
+}
+
+function appendScript(url : string) : Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+		const existing = document.querySelector('script[data-lqj-sqlite="1"]') as HTMLScriptElement | null
+		if (existing != null) {
+			if ((globalThis as any).initSqlJs != null) {
+				resolve()
+				return
+			}
+		}
+		const script = document.createElement('script')
+		script.type = 'text/javascript'
+		script.src = url
+		script.setAttribute('data-lqj-sqlite', '1')
+		script.onload = function () {
+			resolve()
+		}
+		script.onerror = function () {
+			reject(new Error('sql.js script load failed'))
+		}
+		document.head.appendChild(script)
+	})
+}
+
+function encodeBytesToBase64(payload : Uint8Array) : string {
+	let binary = ''
+	for (const byteValue of payload) {
+		binary += String.fromCharCode(byteValue)
+	}
+	return btoa(binary)
+}
+
+function decodeBase64ToBytes(encoded : string) : Uint8Array {
+	const binary = atob(encoded)
+	return Uint8Array.from(binary, (charValue : string) : number => {
+		return charValue.charCodeAt(0)
+	})
+}
+
+function buildSnapshot(alias : string, payload : Uint8Array | null) : LqjSqlSnapshot {
+	if (payload == null) {
+		return {
+			kind : 'none',
+			filePath : null,
+			bytes : null
+		} as LqjSqlSnapshot
+	}
+	return {
+		kind : 'bytes',
+		filePath : alias,
+		bytes : payload
+	} as LqjSqlSnapshot
+}
+
+export class LqjSqlDepot {
+	private options : LqjSqlDepotOptions
+	private alias : string = 'sqlite'
+	private engine : any | null = null
+	private runtimeDb : any | null = null
+	private transactionOpened : boolean = false
+
+	constructor(options : LqjSqlDepotOptions = {}) {
+		this.options = {
+			secretPhrase : options.secretPhrase,
+			enableCipher : options.enableCipher == true || (options.secretPhrase != null && options.secretPhrase!.length > 0),
+			wasmResolver : options.wasmResolver,
+			homeDirectory : options.homeDirectory
+		} as LqjSqlDepotOptions
+	}
+
+	private loaderConfig() : SqlJsLoaderConfig {
+		const wasmUrl = this.options.wasmResolver == null ? '/uni_modules/laoqianjunzi-sqlite/static/sql-wasm.wasm' : this.options.wasmResolver!('sql-wasm.wasm')
+		return {
+			scriptUrl : '/uni_modules/laoqianjunzi-sqlite/static/sql-wasm.js',
+			wasmUrl
+		} as SqlJsLoaderConfig
+	}
+
+	private ensureEngine() : Promise<void> {
+		if (sharedSqlModule != null) {
+			this.engine = sharedSqlModule
+			return Promise.resolve()
+		}
+		if (sharedLoadingTask != null) {
+			return sharedLoadingTask!
+		}
+		const config = this.loaderConfig()
+		sharedLoadingTask = new Promise<void>((resolve, reject) => {
+			const finishLoad = () => {
+				const loader = (globalThis as any).initSqlJs
+				if (loader == null) {
+					reject(new Error('initSqlJs is unavailable'))
+					return
+				}
+				loader({
+					locateFile : (_ : string) : string => {
+						return config.wasmUrl
+					}
+				}).then((SQL : any) => {
+					sharedSqlModule = SQL
+					this.engine = SQL
+					resolve()
+				}).catch((error : Error) => {
+					reject(error)
+				})
+			}
+			if (sharedScriptReady) {
+				finishLoad()
+				return
+			}
+			appendScript(config.scriptUrl).then(() => {
+				sharedScriptReady = true
+				finishLoad()
+			}).catch((error : Error) => {
+				reject(error)
+			})
+		})
+		return sharedLoadingTask!
+	}
+
+	private makeReady(alias : string | null = null) : Promise<boolean> {
+		const nextAlias = alias == null || alias.trim().length == 0 ? 'sqlite' : alias.trim()
+		this.alias = nextAlias
+		return new Promise<boolean>((resolve, reject) => {
+			this.ensureEngine().then(() => {
+				this.runtimeDb = new this.engine.Database()
+				this.transactionOpened = false
+				if (this.options.enableCipher == true && this.options.secretPhrase != null && this.options.secretPhrase!.length > 0) {
+					this.execute('PRAGMA key = ?', [this.options.secretPhrase!])
+				}
+				resolve(true)
+			}).catch((error : Error) => {
+				console.error('laoqianjunzi-sqlite web prepare failed: ' + error.message)
+				resolve(false)
+			})
+		})
+	}
+
+	prepare(alias : string | null = null) : Promise<boolean> {
+		return this.makeReady(alias)
+	}
+
+	private scalarValue(statement : string) : number | null {
+		const outcome = this.select(statement)
+		if (outcome.grid == null || outcome.grid!.length == 0) {
+			return null
+		}
+		const firstRow = outcome.grid![0]
+		if (firstRow.length == 0) {
+			return null
+		}
+		return Number.from(firstRow[0])
+	}
+
+	execute(statement : string, args : any[] = []) : LqjSqlOutcome {
+		if (this.runtimeDb == null) {
+			return buildOutcomeError(9801)
+		}
+		try {
+			this.runtimeDb.run(statement, args)
+			const upperSql = statement.trim().toUpperCase()
+			const affectedRows = this.scalarValue('SELECT changes()')
+			const lastInsertId = upperSql.startsWith('INSERT') ? this.scalarValue('SELECT last_insert_rowid()') : null
+			return {
+				grid : null,
+				fields : null,
+				affectedRows,
+				lastInsertId,
+				errorText : null,
+				records : null
+			} as LqjSqlOutcome
+		} catch (error) {
+			return buildOutcomeError(9806, (error as Error).message)
+		}
+	}
+
+	select(statement : string, args : any[] = []) : LqjSqlOutcome {
+		if (this.runtimeDb == null) {
+			return buildOutcomeError(9801)
+		}
+		try {
+			const rawResult = this.runtimeDb.exec(statement, args)
+			const fields = rawResult?.[0]?.columns ?? []
+			const grid = rawResult?.[0]?.values ?? []
+			const records = [] as Map<string, any>[]
+			for (rowValue in grid) {
+				const rowMap = new Map<string, any>()
+				for (fieldName in fields) {
+					const columnIndex = fields.indexOf(fieldName)
+					rowMap.set(fieldName, rowValue[columnIndex])
+				}
+				records.push(rowMap)
+			}
+			return {
+				grid,
+				fields,
+				affectedRows : null,
+				lastInsertId : null,
+				errorText : null,
+				records
+			} as LqjSqlOutcome
+		} catch (error) {
+			return buildOutcomeError(9806, (error as Error).message)
+		}
+	}
+
+	storeRow(tableName : string, payload : UTSJSONObject) : LqjSqlOutcome {
+		const keys = [] as string[]
+		const values = [] as any[]
+		for (fieldName in payload) {
+			keys.push(fieldName)
+			values.push(payload.getAny(fieldName))
+		}
+		const marks = keys.map((_ : string) : string => {
+			return '?'
+		}).join(',')
+		return this.execute('INSERT INTO ' + tableName + ' (' + keys.join(',') + ') VALUES (' + marks + ')', values)
+	}
+
+	reviseRow(tableName : string, payload : UTSJSONObject, filterClause : string, args : any[] = []) : LqjSqlOutcome {
+		const setters = [] as string[]
+		const values = [] as any[]
+		for (fieldName in payload) {
+			setters.push(fieldName + ' = ?')
+			values.push(payload.getAny(fieldName))
+		}
+		for (argValue in args) {
+			values.push(argValue)
+		}
+		return this.execute('UPDATE ' + tableName + ' SET ' + setters.join(',') + ' WHERE ' + filterClause, values)
+	}
+
+	discardRow(tableName : string, filterClause : string, args : any[] = []) : LqjSqlOutcome {
+		return this.execute('DELETE FROM ' + tableName + ' WHERE ' + filterClause, args)
+	}
+
+	hasTable(tableName : string) : boolean {
+		const outcome = this.select("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [tableName])
+		if (outcome.grid == null) {
+			return false
+		}
+		return outcome.grid!.length > 0
+	}
+
+	ensureTable(tableName : string, schema : UTSJSONObject) : LqjSqlOutcome {
+		const segments = [] as string[]
+		for (fieldName in schema) {
+			segments.push(fieldName + ' ' + schema.getString(fieldName))
+		}
+		return this.execute('CREATE TABLE IF NOT EXISTS ' + tableName + ' (' + segments.join(',') + ')')
+	}
+
+	removeTable(tableName : string) : LqjSqlOutcome {
+		return this.execute('DROP TABLE IF EXISTS ' + tableName)
+	}
+
+	disconnect() : void {
+		if (this.runtimeDb != null) {
+			this.runtimeDb.close()
+			this.runtimeDb = null
+		}
+		this.transactionOpened = false
+	}
+
+	openTransaction() : LqjSqlOutcome {
+		if (this.transactionOpened) {
+			return buildOutcomeError(9805, '事务已经开启')
+		}
+		const outcome = this.execute('BEGIN TRANSACTION')
+		if (outcome.errorText == null) {
+			this.transactionOpened = true
+		}
+		return outcome
+	}
+
+	finishTransaction() : LqjSqlOutcome {
+		if (!this.transactionOpened) {
+			return buildOutcomeError(9805, '当前没有事务可提交')
+		}
+		const outcome = this.execute('COMMIT')
+		if (outcome.errorText == null) {
+			this.transactionOpened = false
+		}
+		return outcome
+	}
+
+	cancelTransaction() : LqjSqlOutcome {
+		if (!this.transactionOpened) {
+			return buildOutcomeError(9805, '当前没有事务可回滚')
+		}
+		const outcome = this.execute('ROLLBACK')
+		if (outcome.errorText == null) {
+			this.transactionOpened = false
+		}
+		return outcome
+	}
+
+	executeSeries(entries : LqjSqlBatchStatement[]) : LqjSqlOutcome[] {
+		const results = [] as LqjSqlOutcome[]
+		const inherited = this.transactionOpened
+		if (!inherited) {
+			const beginResult = this.openTransaction()
+			if (beginResult.errorText != null) {
+				return [beginResult]
+			}
+		}
+		let failed = false
+		for (entry in entries) {
+			const outcome = this.execute(entry.statement, entry.args == null ? [] as any[] : entry.args!)
+			results.push(outcome)
+			if (outcome.errorText != null) {
+				failed = true
+				break
+			}
+		}
+		if (!inherited) {
+			if (failed) {
+				this.cancelTransaction()
+			} else {
+				this.finishTransaction()
+			}
+		}
+		return results
+	}
+
+	private storageKey(alias : string) : string {
+		return 'laoqianjunzi-sqlite:' + alias
+	}
+
+	saveSnapshotSync(alias : string | null = null) : LqjSqlOutcome {
+		if (this.runtimeDb == null) {
+			return buildOutcomeError(9801)
+		}
+		try {
+			const targetAlias = alias == null || alias.trim().length == 0 ? this.alias : alias.trim()
+			const bytes = this.runtimeDb.export() as Uint8Array
+			uni.setStorageSync(this.storageKey(targetAlias), encodeBytesToBase64(bytes))
+			return {
+				grid : null,
+				fields : null,
+				affectedRows : null,
+				lastInsertId : null,
+				errorText : null,
+				records : null
+			} as LqjSqlOutcome
+		} catch (error) {
+			return buildOutcomeError(9804, (error as Error).message)
+		}
+	}
+
+	saveSnapshot(alias : string | null = null) : Promise<LqjSqlOutcome> {
+		return Promise.resolve(this.saveSnapshotSync(alias))
+	}
+
+	restoreSnapshot(alias : string) : Promise<LqjSqlOutcome> {
+		const encoded = uni.getStorageSync(this.storageKey(alias)) as string
+		if (encoded == null || encoded.length == 0) {
+			return Promise.resolve(buildOutcomeError(9803))
+		}
+		return this.restoreFromBytes(decodeBase64ToBytes(encoded))
+	}
+
+	peekSnapshot() : LqjSqlSnapshot | null {
+		if (this.runtimeDb == null) {
+			return null
+		}
+		const bytes = this.runtimeDb.export() as Uint8Array
+		return buildSnapshot(this.alias, bytes)
+	}
+
+	switchHome(directory : string) : void {
+		this.options.homeDirectory = directory
+	}
+
+	changeSecret(secretPhrase : string | null = null) : void {
+		this.options.secretPhrase = secretPhrase
+		this.options.enableCipher = secretPhrase != null && secretPhrase.length > 0
+	}
+
+	restoreFromBytesSync(binaryData : Uint8Array) : LqjSqlOutcome {
+		if (this.engine == null && sharedSqlModule != null) {
+			this.engine = sharedSqlModule
+		}
+		if (this.engine == null) {
+			return buildOutcomeError(9801, '请先完成数据库初始化')
+		}
+		try {
+			this.runtimeDb = new this.engine.Database(binaryData)
+			this.transactionOpened = false
+			if (this.options.enableCipher == true && this.options.secretPhrase != null && this.options.secretPhrase!.length > 0) {
+				this.execute('PRAGMA key = ?', [this.options.secretPhrase!])
+			}
+			return {
+				grid : null,
+				fields : null,
+				affectedRows : null,
+				lastInsertId : null,
+				errorText : null,
+				records : null
+			} as LqjSqlOutcome
+		} catch (error) {
+			return buildOutcomeError(9806, (error as Error).message)
+		}
+	}
+
+	restoreFromBytes(binaryData : Uint8Array) : Promise<LqjSqlOutcome> {
+		return new Promise<LqjSqlOutcome>((resolve, reject) => {
+			this.ensureEngine().then(() => {
+				try {
+					this.runtimeDb = new this.engine.Database(binaryData)
+					this.transactionOpened = false
+					if (this.options.enableCipher == true && this.options.secretPhrase != null && this.options.secretPhrase!.length > 0) {
+						this.execute('PRAGMA key = ?', [this.options.secretPhrase!])
+					}
+					resolve({
+						grid : null,
+						fields : null,
+						affectedRows : null,
+						lastInsertId : null,
+						errorText : null,
+						records : null
+					} as LqjSqlOutcome)
+				} catch (error) {
+					resolve(buildOutcomeError(9806, (error as Error).message))
+				}
+			}).catch((error : Error) => {
+				resolve(buildOutcomeError(9806, error.message))
+			})
+		})
+	}
+
+	restoreFromFileObject(fileObject : any) : Promise<LqjSqlOutcome> {
+		return new Promise<LqjSqlOutcome>((resolve, reject) => {
+			const reader = new FileReader()
+			reader.onload = (_ : ProgressEvent<FileReader>) => {
+				const buffer = reader.result as ArrayBuffer
+				this.restoreFromBytes(new Uint8Array(buffer)).then((outcome : LqjSqlOutcome) => {
+					resolve(outcome)
+				})
+			}
+			reader.onerror = () => {
+				resolve(buildOutcomeError(9806, '文件读取失败'))
+			}
+			reader.readAsArrayBuffer(fileObject as File)
+		})
+	}
+
+	restoreFromRemote(remoteUrl : string) : Promise<LqjSqlOutcome> {
+		return new Promise<LqjSqlOutcome>((resolve, reject) => {
+			fetch(remoteUrl).then((response : Response) => {
+				if (!response.ok) {
+					resolve(buildOutcomeError(9806, '远程文件下载失败'))
+					return
+				}
+				response.arrayBuffer().then((buffer : ArrayBuffer) => {
+					this.restoreFromBytes(new Uint8Array(buffer)).then((outcome : LqjSqlOutcome) => {
+						resolve(outcome)
+					})
+				})
+			}).catch((error : Error) => {
+				resolve(buildOutcomeError(9806, error.message))
+			})
+		})
+	}
+}
+
+export class xSqlite {
+	private config : SQLiteConfig
+	private depot : LqjSqlDepot
+
+	constructor(config : SQLiteConfig = {}) {
+		this.config = config
+		this.depot = new LqjSqlDepot(buildCompatOptions(config))
+	}
+
+	async createDb(filename : string | null = null) : Promise<boolean> {
+		return await this.depot.prepare(normalizeCompatAlias(filename))
+	}
+
+	run(sql : string, params : any[] = []) : SQLiteResult {
+		return toCompatResult(this.depot.execute(sql, params))
+	}
+
+	query(sql : string, params : any[] = []) : SQLiteResult {
+		return toCompatResult(this.depot.select(sql, params))
+	}
+
+	insert(table : string, data : UTSJSONObject) : SQLiteResult {
+		return toCompatResult(this.depot.storeRow(table, data))
+	}
+
+	update(table : string, data : UTSJSONObject, where : string, params : any[] = []) : SQLiteResult {
+		return toCompatResult(this.depot.reviseRow(table, data, where, params))
+	}
+
+	delete(table : string, where : string, params : any[] = []) : SQLiteResult {
+		return toCompatResult(this.depot.discardRow(table, where, params))
+	}
+
+	tableExists(tableName : string) : boolean {
+		return this.depot.hasTable(tableName)
+	}
+
+	createTable(tableName : string, columns : UTSJSONObject) : SQLiteResult {
+		return toCompatResult(this.depot.ensureTable(tableName, columns))
+	}
+
+	dropTable(tableName : string) : SQLiteResult {
+		return toCompatResult(this.depot.removeTable(tableName))
+	}
+
+	close() : void {
+		this.depot.disconnect()
+	}
+
+	beginTransaction() : SQLiteResult {
+		return toCompatResult(this.depot.openTransaction())
+	}
+
+	commit() : SQLiteResult {
+		return toCompatResult(this.depot.finishTransaction())
+	}
+
+	rollback() : SQLiteResult {
+		return toCompatResult(this.depot.cancelTransaction())
+	}
+
+	executeBatch(statements : SQLiteExecuteBatchParams[]) : SQLiteResult[] {
+		const outcomes = this.depot.executeSeries(toCompatBatchStatements(statements))
+		const results = [] as SQLiteResult[]
+		for (outcome in outcomes) {
+			results.push(toCompatResult(outcome))
+		}
+		return results
+	}
+
+	saveLocal(filename : string | null = null) : SQLiteResult {
+		return toCompatResult(this.depot.saveSnapshotSync(normalizeCompatAlias(filename)))
+	}
+
+	async loadLocal(filename : string) : Promise<SQLiteResult> {
+		const outcome = await this.depot.restoreSnapshot(normalizeCompatAlias(filename))
+		const result = toCompatResult(outcome)
+		if (outcome.errorText != null) {
+			return Promise.reject(result)
+		}
+		return Promise.resolve(result)
+	}
+
+	getDatabasePath() : Uint8Array | null {
+		const snapshot = this.depot.peekSnapshot()
+		if (snapshot == null || snapshot.kind != 'bytes') {
+			return null
+		}
+		return snapshot.bytes
+	}
+
+	loadFromBuffer(buffer : Uint8Array) : void {
+		const outcome = this.depot.restoreFromBytesSync(buffer)
+		if (outcome.errorText != null) {
+			throw new Error(outcome.errorText!)
+		}
+	}
+
+	async loadFromFile(file : File) : Promise<void> {
+		const outcome = await this.depot.restoreFromFileObject(file)
+		if (outcome.errorText != null) {
+			return Promise.reject(new Error(outcome.errorText!))
+		}
+		return Promise.resolve()
+	}
+
+	async loadFromUrl(url : string) : Promise<void> {
+		const outcome = await this.depot.restoreFromRemote(url)
+		if (outcome.errorText != null) {
+			return Promise.reject(new Error(outcome.errorText!))
+		}
+		return Promise.resolve()
+	}
+
+	setDefaultDirectory(directory : string) : void {
+		this.config.defaultDirectory = normalizeCompatDirectory(directory)
+		this.depot.switchHome(directory)
+	}
+
+	setPassword(password : string | null = null) : void {
+		this.config.password = password
+		this.config.encryption = password != null && password.length > 0
+		this.depot.changeSecret(password)
+	}
+}

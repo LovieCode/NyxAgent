@@ -1,0 +1,244 @@
+<template>
+	<view class="page-shell" ref="shellRef">
+		<!-- 顶部标题栏 -->
+		<view class="header-wrap">
+			<view :style="{ height: statusBarHeight + 'px' }"></view>
+			<view class="header">
+				<text class="header-title">智能体</text>
+				<view class="header-actions">
+					<view class="add-btn" @click="createAgent">
+						<oui-icon-unix name="plus" size="22px" color="#FB8FAB" />
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 智能体列表 -->
+		<scroll-view class="agent-scroll" :scroll-y="true">
+			<share-element share-key="agent-list">
+				<view class="list-content">
+					<view
+						v-for="(agent, index) in agentList"
+						:key="index"
+						class="agent-item"
+						@click="openAgent(agent)"
+					>
+						<!-- 左侧头像 -->
+						<view :class="'agent-avatar avatar-' + (index + 1)">
+							<oui-icon-unix :name="agent['icon']" size="24px" color="#FFFFFF" />
+						</view>
+						<!-- 中间文字 -->
+						<view class="agent-info">
+							<view class="agent-top">
+								<text class="agent-name">{{ agent['name'] }}</text>
+								<text class="agent-time">{{ agent['time'] }}</text>
+							</view>
+							<text class="agent-desc">{{ agent['desc'] }}</text>
+						</view>
+						<!-- 右侧箭头 -->
+						<text class="agent-arrow">›</text>
+					</view>
+				</view>
+			</share-element>
+		</scroll-view>
+
+		<TabBar current="pages/agents/agents" />
+	</view>
+</template>
+
+<script lang="uts">
+	export default {
+		data() {
+			return {
+				statusBarHeight: 0,
+				agentList: [] as UTSJSONObject[],
+			}
+		},
+		onLoad() {
+			const sysInfo = uni.getSystemInfoSync()
+			this.statusBarHeight = sysInfo.statusBarHeight
+			this.loadAgents()
+		},
+		onShow() {
+			this.loadAgents()
+		},
+		methods: {
+			loadAgents() {
+				this.agentList = [
+					{
+						id: 'ai-assistant',
+						icon: 'robot',
+						name: 'AI 助手',
+						desc: '通用智能助手，回答问题、提供建议',
+						time: '刚刚',
+					} as UTSJSONObject,
+					{
+						id: 'coding-helper',
+						icon: 'code',
+						name: '编程助手',
+						desc: '帮你写代码、调试、解释技术问题',
+						time: '昨天',
+					} as UTSJSONObject,
+					{
+						id: 'writing-helper',
+						icon: 'edit',
+						name: '写作助手',
+						desc: '文章润色、翻译、创意写作',
+						time: '3天前',
+					} as UTSJSONObject,
+					{
+						id: 'translate',
+						icon: 'translate',
+						name: '翻译助手',
+						desc: '多语言翻译、本地化支持',
+						time: '5天前',
+					} as UTSJSONObject,
+					{
+						id: 'idea-lab',
+						icon: 'bulb',
+						name: '创意工坊',
+						desc: '头脑风暴、方案策划、创意发散',
+						time: '1周前',
+					} as UTSJSONObject,
+				]
+			},
+
+			openAgent(agent: UTSJSONObject) {
+				// 选中智能体后跳转到对话页（带滑动动画）
+				uni.setStorageSync('active_agent_id', agent['id'] as string)
+				uni.navigateTo({
+					url: '/pages/index/index'
+				})
+			},
+
+			goSettings() {
+				uni.redirectTo({
+					url: '/pages/settings/settings'
+				})
+			},
+
+			createAgent() {
+				// TODO: 弹出创建智能体对话框
+				uni.showToast({
+					title: '创建智能体（待实现）',
+					icon: 'none'
+				})
+			},
+		}
+	}
+</script>
+
+<style>
+	/* 顶部标题栏 */
+	.header-wrap {
+		background-color: #FFFFFF;
+	}
+
+	.header {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding-left: 16px;
+		padding-right: 16px;
+		padding-top: 12px;
+		padding-bottom: 12px;
+		background-color: #FFFFFF;
+	}
+
+	.header-title {
+		font-size: 22px;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	.header-actions {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.add-btn {
+		width: 36px;
+		height: 36px;
+		justify-content: center;
+		align-items: center;
+	}
+
+	/* 列表滚动区 */
+	.agent-scroll {
+		flex: 1;
+	}
+
+	.list-content {
+		flex-direction: column;
+		background-color: #FFFFFF;
+		margin-top: 8px;
+		border-radius: 18px;
+		margin-left: 12px;
+		margin-right: 12px;
+	}
+
+	/* 单个智能体行 */
+	.agent-item {
+		flex-direction: row;
+		align-items: center;
+		padding: 14px 16px;
+		border-bottom-width: 0.5px;
+		border-bottom-color: #F0F0F2;
+		border-bottom-style: solid;
+	}
+
+	/* 左侧头像 - 纯色背景 */
+	.agent-avatar {
+		width: 48px;
+		height: 48px;
+		border-radius: 14px;
+		justify-content: center;
+		align-items: center;
+		margin-right: 14px;
+	}
+
+	.avatar-1 { background-color: #FB8FAB; }
+	.avatar-2 { background-color: #60A5FA; }
+	.avatar-3 { background-color: #34D399; }
+	.avatar-4 { background-color: #FBBF24; }
+	.avatar-5 { background-color: #A78BFA; }
+
+	/* 中间信息 */
+	.agent-info {
+		flex: 1;
+		flex-direction: column;
+	}
+
+	.agent-top {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 4px;
+	}
+
+	.agent-name {
+		font-size: 16px;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	.agent-time {
+		font-size: 12px;
+		color: #B0B3BF;
+		margin-left: 8px;
+	}
+
+	.agent-desc {
+		font-size: 13px;
+		color: #9CA3AF;
+		lines: 1;
+		text-overflow: ellipsis;
+	}
+
+	/* 右侧箭头 */
+	.agent-arrow {
+		font-size: 22px;
+		color: #D1D5DB;
+		margin-left: 8px;
+	}
+</style>

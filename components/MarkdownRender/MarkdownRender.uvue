@@ -1,0 +1,33 @@
+<template>
+	<view class="markdown-render">
+		<text class="md-text">{{content}}</text>
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * MarkdownRender 组件 - Markdown 文本渲染
+	 * v1 版本：纯文本展示
+	 * 扁平化粉白主题
+	 */
+	export default {
+		props: {
+			content: {
+				type: String,
+				default: ''
+			}
+		},
+	}
+</script>
+
+<style>
+	.markdown-render {
+		padding: 8px;
+	}
+
+	.md-text {
+		font-size: 14px;
+		color: #2D2030;
+		line-height: 22px;
+	}
+</style>

@@ -1,0 +1,77 @@
+import type { LqjSqlBatchStatement, LqjSqlDepotOptions, LqjSqlOutcome, SQLiteConfig, SQLiteExecuteBatchParams, SQLiteResult } from './interface.uts'
+
+export function buildCompatOptions(config : SQLiteConfig) : LqjSqlDepotOptions {
+	const hasPassword = config.password != null && config.password!.length > 0
+	return {
+		secretPhrase : config.password,
+		enableCipher : config.encryption == true || hasPassword,
+		wasmResolver : config.locateFile,
+		homeDirectory : normalizeCompatDirectory(config.defaultDirectory)
+	} as LqjSqlDepotOptions
+}
+
+export function normalizeCompatAlias(filename : string | null = null) : string {
+	if (filename == null) {
+		return 'sqlite'
+	}
+	const trimmed = filename.trim()
+	if (trimmed.length == 0) {
+		return 'sqlite'
+	}
+	const lastSlashIndex = trimmed.lastIndexOf('/')
+	const lastBackslashIndex = trimmed.lastIndexOf('\\')
+	const splitIndex = Math.max(lastSlashIndex, lastBackslashIndex)
+	const basename = splitIndex >= 0 ? trimmed.substring(splitIndex + 1) : trimmed
+	if (basename.length == 0) {
+		return 'sqlite'
+	}
+	if (basename.endsWith('.db')) {
+		return basename.substring(0, basename.length - 3)
+	}
+	return basename
+}
+
+export function normalizeCompatDirectory(directory : string | null = null) : string | null {
+	if (directory == null) {
+		return null
+	}
+	const trimmed = directory.trim()
+	if (trimmed.length == 0) {
+		return null
+	}
+	return trimmed
+}
+
+export function toCompatResult(outcome : LqjSqlOutcome) : SQLiteResult {
+	return {
+		rows : outcome.grid,
+		columns : outcome.fields,
+		changes : outcome.affectedRows,
+		lastInsertRowid : outcome.lastInsertId,
+		error : outcome.errorText,
+		maps : outcome.records
+	} as SQLiteResult
+}
+
+export function emptyCompatResult() : SQLiteResult {
+	return {
+		rows : null,
+		columns : null,
+		changes : null,
+		lastInsertRowid : null,
+		error : null,
+		maps : null
+	} as SQLiteResult
+}
+
+export function toCompatBatchStatements(statements : SQLiteExecuteBatchParams[]) : LqjSqlBatchStatement[] {
+	const entries = [] as LqjSqlBatchStatement[]
+	for (let index = 0; index < statements.length; index++) {
+		const item = statements[index]
+		entries.push({
+			statement : item.sql,
+			args : item.params == null ? [] as any[] : item.params!
+		} as LqjSqlBatchStatement)
+	}
+	return entries
+}

@@ -1,0 +1,506 @@
+/**
+ * 内置文件工具集
+ * 提供 Agent 可用的文件 CRUD 操作
+ * 所有路径相对于应用私有数据目录，禁止路径穿越
+ */
+
+import { AgentTool, ToolResult } from '../types'
+
+/**
+ * 获取应用私有数据目录的基础路径
+ * 通过 UTS 的 Android 互操作获取 Context.filesDir
+ * @returns 应用文件目录的绝对路径
+ */
+function getAppBaseDir() : string {
+	// #ifdef APP-ANDROID
+	const context = UTSAndroid.getUniAppContext()!
+	return context.filesDir.absolutePath
+	// #endif
+	return ""
+}
+
+/**
+ * 验证相对路径安全性
+ * 拒绝绝对路径和包含 ".." 的路径穿越攻击
+ * @param relativePath 相对路径
+ * @returns 验证结果，安全返回 null，不安全返回错误信息
+ */
+function validatePath(relativePath : string) : string | null {
+	if (relativePath.startsWith('/')) {
+		return '不允许使用绝对路径: ' + relativePath
+	}
+	if (relativePath.indexOf('..') >= 0) {
+		return '路径不允许包含 "..": ' + relativePath
+	}
+	return null
+}
+
+/**
+ * 拼接完整文件路径
+ * @param relativePath 相对路径
+ * @returns 完整的绝对路径
+ */
+function resolvePath(relativePath : string) : string {
+	return getAppBaseDir() + '/' + relativePath
+}
+
+/**
+ * 文件读取工具
+ * 读取指定文件的全部内容
+ */
+export class FileReadTool implements AgentTool {
+	name : string = 'file_read'
+	description : string = '读取文件内容。path 为相对于应用数据目录的文件路径。'
+	parameters : UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'path': {
+				'type': 'string',
+				'description': '要读取的文件路径（相对于应用数据目录）'
+			}
+		},
+		'required': ['path']
+	} as UTSJSONObject
+
+	/**
+	 * 执行文件读取
+	 * @param args 包含 path 字段的参数对象
+	 * @returns 文件内容或错误信息
+	 */
+	execute(args : UTSJSONObject) : Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const path = args['path'] as string | null
+			if (path == null || path!.length == 0) {
+				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
+				return
+			}
+
+			const pathError = validatePath(path!)
+			if (pathError != null) {
+				resolve({ content: pathError!, isError: true } as ToolResult)
+				return
+			}
+
+			const fullPath = resolvePath(path!)
+			try {
+				const file = new File(fullPath)
+				if (!file.exists()) {
+					resolve({ content: '文件不存在: ' + path!, isError: true } as ToolResult)
+					return
+				}
+				if (file.isDirectory()) {
+					resolve({ content: '路径是目录而非文件: ' + path!, isError: true } as ToolResult)
+					return
+				}
+				const content = file.readText()
+				resolve({ content: content, isError: false } as ToolResult)
+			} catch (e) {
+				resolve({ content: '读取文件失败: ' + e, isError: true } as ToolResult)
+			}
+		})
+	}
+}
+
+/**
+ * 文件写入工具
+ * 将内容写入指定文件，若文件已存在则覆盖
+ */
+export class FileWriteTool implements AgentTool {
+	name : string = 'file_write'
+	description : string = '写入文件内容。若文件已存在则覆盖，若父目录不存在则自动创建。'
+	parameters : UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'path': {
+				'type': 'string',
+				'description': '要写入的文件路径（相对于应用数据目录）'
+			},
+			'content': {
+				'type': 'string',
+				'description': '要写入的文件内容'
+			}
+		},
+		'required': ['path', 'content']
+	} as UTSJSONObject
+
+	/**
+	 * 执行文件写入
+	 * @param args 包含 path 和 content 字段的参数对象
+	 * @returns 操作结果
+	 */
+	execute(args : UTSJSONObject) : Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const path = args['path'] as string | null
+			const content = args['content'] as string | null
+
+			if (path == null || path!.length == 0) {
+				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
+				return
+			}
+			if (content == null) {
+				resolve({ content: '缺少必要参数: content', isError: true } as ToolResult)
+				return
+			}
+
+			const pathError = validatePath(path!)
+			if (pathError != null) {
+				resolve({ content: pathError!, isError: true } as ToolResult)
+				return
+			}
+
+			const fullPath = resolvePath(path!)
+			try {
+				const file = new File(fullPath)
+				// 确保父目录存在
+				const parentDir = file.parentFile
+				if (parentDir != null && !parentDir!.exists()) {
+					parentDir!.mkdirs()
+				}
+				file.writeText(content!)
+				resolve({ content: '文件写入成功: ' + path!, isError: false } as ToolResult)
+			} catch (e) {
+				resolve({ content: '写入文件失败: ' + e, isError: true } as ToolResult)
+			}
+		})
+	}
+}
+
+/**
+ * 文件编辑工具
+ * 在文件中进行搜索替换操作
+ */
+export class FileEditTool implements AgentTool {
+	name : string = 'file_edit'
+	description : string = '编辑文件内容，通过搜索和替换修改文件。search 为要查找的文本，replace 为替换后的文本。'
+	parameters : UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'path': {
+				'type': 'string',
+				'description': '要编辑的文件路径（相对于应用数据目录）'
+			},
+			'search': {
+				'type': 'string',
+				'description': '要查找的文本'
+			},
+			'replace': {
+				'type': 'string',
+				'description': '替换后的文本'
+			}
+		},
+		'required': ['path', 'search', 'replace']
+	} as UTSJSONObject
+
+	/**
+	 * 执行文件编辑（搜索替换）
+	 * @param args 包含 path、search、replace 字段的参数对象
+	 * @returns 操作结果
+	 */
+	execute(args : UTSJSONObject) : Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const path = args['path'] as string | null
+			const search = args['search'] as string | null
+			const replace = args['replace'] as string | null
+
+			if (path == null || path!.length == 0) {
+				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
+				return
+			}
+			if (search == null || search!.length == 0) {
+				resolve({ content: '缺少必要参数: search', isError: true } as ToolResult)
+				return
+			}
+			if (replace == null) {
+				resolve({ content: '缺少必要参数: replace', isError: true } as ToolResult)
+				return
+			}
+
+			const pathError = validatePath(path!)
+			if (pathError != null) {
+				resolve({ content: pathError!, isError: true } as ToolResult)
+				return
+			}
+
+			const fullPath = resolvePath(path!)
+			try {
+				const file = new File(fullPath)
+				if (!file.exists()) {
+					resolve({ content: '文件不存在: ' + path!, isError: true } as ToolResult)
+					return
+				}
+
+				const content = file.readText()
+				const index = content.indexOf(search!)
+				if (index < 0) {
+					resolve({ content: '未找到匹配的文本: ' + search!, isError: true } as ToolResult)
+					return
+				}
+
+				// 统计匹配次数
+				let matchCount = 0
+				let searchIndex = 0
+				while (true) {
+					const found = content.indexOf(search!, searchIndex)
+					if (found < 0) break
+					matchCount++
+					searchIndex = found + 1
+				}
+
+				// 仅当唯一匹配时自动替换，多处匹配时提示用户
+				if (matchCount > 1) {
+					resolve({
+						content: '找到 ' + matchCount + ' 处匹配，请提供更精确的搜索文本以确保唯一匹配',
+						isError: true
+					} as ToolResult)
+					return
+				}
+
+				// 执行替换
+				const newContent = content.substring(0, index) + replace! + content.substring(index + search!.length)
+				file.writeText(newContent)
+				resolve({ content: '文件编辑成功: 替换了 1 处匹配', isError: false } as ToolResult)
+			} catch (e) {
+				resolve({ content: '编辑文件失败: ' + e, isError: true } as ToolResult)
+			}
+		})
+	}
+}
+
+/**
+ * 文件删除工具
+ * 删除指定的文件
+ */
+export class FileDeleteTool implements AgentTool {
+	name : string = 'file_delete'
+	description : string = '删除指定文件。path 为相对于应用数据目录的文件路径。'
+	parameters : UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'path': {
+				'type': 'string',
+				'description': '要删除的文件路径（相对于应用数据目录）'
+			}
+		},
+		'required': ['path']
+	} as UTSJSONObject
+
+	/**
+	 * 执行文件删除
+	 * @param args 包含 path 字段的参数对象
+	 * @returns 操作结果
+	 */
+	execute(args : UTSJSONObject) : Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const path = args['path'] as string | null
+			if (path == null || path!.length == 0) {
+				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
+				return
+			}
+
+			const pathError = validatePath(path!)
+			if (pathError != null) {
+				resolve({ content: pathError!, isError: true } as ToolResult)
+				return
+			}
+
+			const fullPath = resolvePath(path!)
+			try {
+				const file = new File(fullPath)
+				if (!file.exists()) {
+					resolve({ content: '文件不存在: ' + path!, isError: true } as ToolResult)
+					return
+				}
+				const deleted = file.delete()
+				if (deleted) {
+					resolve({ content: '文件删除成功: ' + path!, isError: false } as ToolResult)
+				} else {
+					resolve({ content: '文件删除失败: ' + path!, isError: true } as ToolResult)
+				}
+			} catch (e) {
+				resolve({ content: '删除文件失败: ' + e, isError: true } as ToolResult)
+			}
+		})
+	}
+}
+
+/**
+ * 目录列表工具
+ * 列出指定目录下的文件和子目录
+ */
+export class FileListTool implements AgentTool {
+	name : string = 'file_list'
+	description : string = '列出目录内容。path 为相对于应用数据目录的目录路径，默认为根目录。'
+	parameters : UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'path': {
+				'type': 'string',
+				'description': '要列出的目录路径（相对于应用数据目录，默认为根目录）'
+			}
+		},
+		'required': []
+	} as UTSJSONObject
+
+	/**
+	 * 执行目录列表
+	 * @param args 包含可选 path 字段的参数对象
+	 * @returns 目录内容列表
+	 */
+	execute(args : UTSJSONObject) : Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const path = args['path'] as string | null
+			const relativePath = (path != null && path!.length > 0) ? path! : ''
+
+			if (relativePath.length > 0) {
+				const pathError = validatePath(relativePath)
+				if (pathError != null) {
+					resolve({ content: pathError!, isError: true } as ToolResult)
+					return
+				}
+			}
+
+			const fullPath = resolvePath(relativePath)
+			try {
+				const dir = new File(fullPath)
+				if (!dir.exists()) {
+					resolve({ content: '目录不存在: ' + relativePath, isError: true } as ToolResult)
+					return
+				}
+				if (!dir.isDirectory()) {
+					resolve({ content: '路径不是目录: ' + relativePath, isError: true } as ToolResult)
+					return
+				}
+
+				const files = dir.listFiles()
+				if (files == null || files!.length == 0) {
+					resolve({ content: '目录为空', isError: false } as ToolResult)
+					return
+				}
+
+				// 构建目录列表文本
+				const lines = new Array<string>()
+				for (let i = 0; i < files!.length; i++) {
+					const f = files![i]
+					const name = f.name
+					const isDir = f.isDirectory()
+					const size = f.length()
+					if (isDir) {
+						lines.push('[DIR]  ' + name)
+					} else {
+						lines.push('[FILE] ' + name + ' (' + size + ' bytes)')
+					}
+				}
+
+				resolve({ content: lines.join('\n'), isError: false } as ToolResult)
+			} catch (e) {
+				resolve({ content: '列出目录失败: ' + e, isError: true } as ToolResult)
+			}
+		})
+	}
+}
+
+/**
+ * 文件搜索工具
+ * 在文件内容中搜索指定字符串（简单字符串匹配，不支持正则）
+ */
+export class FileSearchTool implements AgentTool {
+	name : string = 'file_search'
+	description : string = '在文件内容中搜索指定字符串。path 为要搜索的文件路径，query 为搜索关键词。返回匹配的行号和内容。'
+	parameters : UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'path': {
+				'type': 'string',
+				'description': '要搜索的文件路径（相对于应用数据目录）'
+			},
+			'query': {
+				'type': 'string',
+				'description': '要搜索的字符串'
+			}
+		},
+		'required': ['path', 'query']
+	} as UTSJSONObject
+
+	/**
+	 * 执行文件内容搜索
+	 * 逐行扫描文件内容，返回包含搜索关键词的行及其行号
+	 * @param args 包含 path 和 query 字段的参数对象
+	 * @returns 匹配结果
+	 */
+	execute(args : UTSJSONObject) : Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const path = args['path'] as string | null
+			const query = args['query'] as string | null
+
+			if (path == null || path!.length == 0) {
+				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
+				return
+			}
+			if (query == null || query!.length == 0) {
+				resolve({ content: '缺少必要参数: query', isError: true } as ToolResult)
+				return
+			}
+
+			const pathError = validatePath(path!)
+			if (pathError != null) {
+				resolve({ content: pathError!, isError: true } as ToolResult)
+				return
+			}
+
+			const fullPath = resolvePath(path!)
+			try {
+				const file = new File(fullPath)
+				if (!file.exists()) {
+					resolve({ content: '文件不存在: ' + path!, isError: true } as ToolResult)
+					return
+				}
+				if (file.isDirectory()) {
+					resolve({ content: '路径是目录而非文件: ' + path!, isError: true } as ToolResult)
+					return
+				}
+
+				const content = file.readText()
+				const lines = content.split('\n')
+				const matches = new Array<string>()
+				let matchCount = 0
+
+				for (let i = 0; i < lines.length; i++) {
+					if (lines[i].indexOf(query!) >= 0) {
+						matchCount++
+						// 最多返回 50 条匹配
+						if (matchCount <= 50) {
+							matches.push((i + 1) + ': ' + lines[i])
+						}
+					}
+				}
+
+				if (matchCount == 0) {
+					resolve({ content: '未找到匹配内容', isError: false } as ToolResult)
+				} else {
+					let result = matches.join('\n')
+					if (matchCount > 50) {
+						result += '\n... 共 ' + matchCount + ' 处匹配，仅显示前 50 处'
+					}
+					resolve({ content: result, isError: false } as ToolResult)
+				}
+			} catch (e) {
+				resolve({ content: '搜索文件失败: ' + e, isError: true } as ToolResult)
+			}
+		})
+	}
+}
+
+/**
+ * 创建所有内置文件工具
+ * @returns 包含 6 个文件工具的数组
+ */
+export function createBuiltinTools() : AgentTool[] {
+	return [
+		new FileReadTool() as AgentTool,
+		new FileWriteTool() as AgentTool,
+		new FileEditTool() as AgentTool,
+		new FileDeleteTool() as AgentTool,
+		new FileListTool() as AgentTool,
+		new FileSearchTool() as AgentTool
+	]
+}

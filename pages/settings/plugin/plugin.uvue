@@ -1,0 +1,182 @@
+<template>
+	<view class="page-shell">
+		<scroll-view class="container" :scroll-y="true">
+			<!-- 页面标题 -->
+			<view class="page-header">
+				<text class="page-title">插件设置</text>
+				<text class="page-subtitle">GitHub 代理与下载配置</text>
+			</view>
+
+			<!-- GitHub 代理开关 -->
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="appstore" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+					<text class="card-title">GitHub 代理</text>
+				</view>
+				<view class="setting-row">
+					<text class="setting-label">启用代理</text>
+					<rice-switch v-model="ghProxyEnabled" @change="toggleGhProxy" />
+				</view>
+				<view v-if="ghProxyEnabled" class="input-wrap" style="margin-top: 20rpx;">
+					<text class="input-label">代理域名</text>
+					<input
+						class="flat-input"
+						v-model="ghProxyDomain"
+						placeholder="https://ghproxy.example.com"
+						placeholder-style="color: #D1D5DB; font-size: 28rpx;"
+					/>
+				</view>
+			</view>
+
+			<!-- 保存按钮 -->
+			<view class="save-wrap">
+				<view class="save-btn" @click="saveSettings">
+					<text class="save-btn-text">保存设置</text>
+				</view>
+			</view>
+		</scroll-view>
+		<TabBar current="pages/settings/settings" />
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * 插件设置子页面 - GitHub 代理配置
+	 */
+
+	export default {
+		data() {
+			return {
+				ghProxyEnabled: false as boolean,
+				ghProxyDomain: '' as string
+			}
+		},
+		onLoad() {
+			this.loadSettings()
+		},
+		methods: {
+			loadSettings() {
+				let proxyEnabled = uni.getStorageSync('settings_gh_proxy_enabled') as string
+				this.ghProxyEnabled = (proxyEnabled != null && proxyEnabled == 'true')
+				let proxyDomain = uni.getStorageSync('settings_gh_proxy_domain') as string
+				this.ghProxyDomain = (proxyDomain != null) ? proxyDomain : ''
+			},
+
+			saveSettings() {
+				uni.setStorageSync('settings_gh_proxy_enabled', this.ghProxyEnabled ? 'true' : 'false')
+				uni.setStorageSync('settings_gh_proxy_domain', this.ghProxyDomain)
+				uni.showToast({
+					title: '已保存',
+					icon: 'success'
+				})
+			},
+
+			toggleGhProxy() {
+				// rice-switch 的 v-model 已自动同步值
+				// 此方法保留以备扩展
+			}
+		}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+		padding: 32rpx;
+	}
+
+	/* 页面标题 */
+	.page-header {
+		margin-bottom: 40rpx;
+		padding-bottom: 24rpx;
+	}
+
+	.page-title {
+		font-size: 48rpx;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	.page-subtitle {
+		font-size: 26rpx;
+		color: #9CA3AF;
+		margin-top: 8rpx;
+	}
+
+	/* 通用卡片容器 */
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 20rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+	}
+
+	.card-header {
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 20rpx;
+	}
+
+	.card-icon {
+		font-size: 28rpx;
+		margin-right: 12rpx;
+	}
+
+	.card-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	/* 设置行（用于开关行） */
+	.setting-row {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding: 12rpx 0;
+	}
+
+	.setting-label {
+		font-size: 28rpx;
+		color: #374151;
+	}
+
+	/* 输入框标签 */
+	.input-label {
+		font-size: 26rpx;
+		color: #6B7280;
+		margin-bottom: 12rpx;
+	}
+
+	/* 扁平输入框 */
+	.input-wrap {
+		margin-top: 8rpx;
+	}
+
+	.flat-input {
+		background-color: #F9FAFB;
+		border-radius: 14rpx;
+		padding: 24rpx;
+		font-size: 28rpx;
+		color: #111827;
+	}
+
+	/* 保存按钮容器 */
+	.save-wrap {
+		padding: 20rpx 0 60rpx 0;
+	}
+
+	.save-btn {
+		background-color: #111827;
+		border-radius: 16rpx;
+		padding: 28rpx 0;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.save-btn-text {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #FFFFFF;
+	}
+</style>

@@ -1,0 +1,575 @@
+<template>
+	<!-- #ifdef APP -->
+	<scroll-view class="demo-scroll">
+	<!-- #endif -->
+		<view class="demo-page">
+			<view class="hero-card">
+				<text class="hero-kicker">LAOQIANJUNZI SQLITE</text>
+				<text class="hero-title">本地数据库统一演示页</text>
+				<text class="hero-desc">这页直接调用新插件的重写接口，并同步引入 xSqlite 兼容层，覆盖建表、增删改查、事务、批处理、备份恢复与快照查看。</text>
+			</view>
+
+			<view class="panel panel-space">
+				<text class="panel-title">运行状态</text>
+				<view class="metric-row metric-space">
+					<text class="metric-label">数据库别名</text>
+					<text class="metric-value">{{ aliasText }}</text>
+				</view>
+				<view class="metric-row metric-space">
+					<text class="metric-label">数据表</text>
+					<text class="metric-value">{{ tableText }}</text>
+				</view>
+				<view class="metric-row metric-space">
+					<text class="metric-label">连接状态</text>
+					<text class="metric-value">{{ connectionText }}</text>
+				</view>
+				<view class="metric-row metric-space">
+					<text class="metric-label">最新记录数</text>
+					<text class="metric-value">{{ rowCountText }}</text>
+				</view>
+			</view>
+
+			<view class="panel panel-space">
+				<text class="panel-title">实例参数</text>
+				<view class="field-block field-space">
+					<text class="field-label">数据库别名</text>
+					<input class="field-input" v-model="aliasText" />
+				</view>
+				<view class="field-block field-space">
+					<text class="field-label">数据表名</text>
+					<input class="field-input" v-model="tableText" />
+				</view>
+				<view class="field-block field-space">
+					<text class="field-label">本地目录</text>
+					<input class="field-input" v-model="homeText" />
+				</view>
+				<view class="field-block field-space">
+					<text class="field-label">筛选姓名</text>
+					<input class="field-input" v-model="keywordText" />
+				</view>
+			</view>
+
+			<view class="action-grid panel-space">
+				<button class="action-button action-strong" @click="openDepot">打开数据库</button>
+				<button class="action-button" @click="rebuildDepot">重建实例</button>
+				<button class="action-button" @click="createSchema">创建数据表</button>
+				<button class="action-button" @click="insertExample">插入一条</button>
+				<button class="action-button" @click="queryAllRows">查询全部</button>
+				<button class="action-button" @click="updateFirstRow">更新首条</button>
+				<button class="action-button" @click="removeLastRow">删除末条</button>
+				<button class="action-button" @click="runBatchInsert">批量写入</button>
+				<button class="action-button" @click="runTransactionDemo">事务演示</button>
+				<button class="action-button" @click="saveBackup">保存备份</button>
+				<button class="action-button" @click="restoreBackup">恢复备份</button>
+				<button class="action-button" @click="inspectSnapshot">查看快照</button>
+				<button class="action-button action-warn" @click="dropSchema">删除数据表</button>
+				<button class="action-button action-light" @click="clearLogs">清空日志</button>
+			</view>
+
+			<view class="panel panel-space">
+				<text class="panel-title">最新结果</text>
+				<text class="result-text">{{ resultText }}</text>
+			</view>
+
+			<view class="panel panel-space">
+				<text class="panel-title">运行日志</text>
+				<view class="log-stack">
+					<text class="log-line" v-for="(item,index) in logLines" :key="index">{{ item }}</text>
+				</view>
+			</view>
+		</view>
+	<!-- #ifdef APP -->
+	</scroll-view>
+	<!-- #endif -->
+</template>
+
+<script setup lang="uts">
+import { LqjSqlDepot, xSqlite, type LqjSqlBatchStatement, type LqjSqlDepotOptions, type LqjSqlOutcome, type SQLiteConfig } from '@/uni_modules/laoqianjunzi-sqlite'
+
+const aliasText = ref('demo-vault')
+const tableText = ref('contacts')
+const homeText = ref('laoqianjunzi/sqlite-demo')
+const keywordText = ref('苏')
+const connectionText = ref('未连接')
+const rowCountText = ref('0')
+const resultText = ref('等待执行操作')
+const logLines = ref(['页面已就绪，等待数据库操作'] as string[])
+
+let depot : LqjSqlDepot | null = null
+let compatDepot : xSqlite | null = null
+let insertSeed = 1
+
+function appendLog(message : string) : void {
+	const stamp = new Date().toISOString()
+	logLines.value.unshift(stamp + '  ' + message)
+	if (logLines.value.length > 24) {
+		logLines.value.splice(24)
+	}
+}
+
+function createDepot() : void {
+	const options : LqjSqlDepotOptions = {
+		homeDirectory : homeText.value.length > 0 ? homeText.value : null
+	}
+	const compatOptions : SQLiteConfig = {
+		defaultDirectory : homeText.value.length > 0 ? homeText.value : null
+	}
+	depot = new LqjSqlDepot(options)
+	compatDepot = new xSqlite(compatOptions)
+	appendLog('已根据当前目录参数重建插件实例')
+}
+
+function safeStringify(value : any) : string {
+	try {
+		return JSON.stringify(value)
+	} catch (error) {
+		return '' + value
+	}
+}
+
+function applyOutcome(label : string, outcome : LqjSqlOutcome) : void {
+	if (outcome.errorText != null && outcome.errorText!.length > 0) {
+		resultText.value = label + ' 失败：' + outcome.errorText!
+		appendLog(resultText.value)
+		return
+	}
+	const rowCount = outcome.grid == null ? 0 : outcome.grid!.length
+		rowCountText.value = '' + rowCount
+	const preview = {
+		affectedRows : outcome.affectedRows,
+		lastInsertId : outcome.lastInsertId,
+		fields : outcome.fields,
+		grid : outcome.grid
+	}
+	resultText.value = label + ' 成功：' + safeStringify(preview)
+	appendLog(label + ' 成功')
+}
+
+function ensureSchemaDefinition() : UTSJSONObject {
+	return {
+		id : 'INTEGER PRIMARY KEY AUTOINCREMENT',
+		name : 'TEXT NOT NULL',
+		city : 'TEXT',
+		created_at : 'INTEGER'
+	} as UTSJSONObject
+}
+
+function nextRowPayload() : UTSJSONObject {
+	const current = insertSeed
+	insertSeed += 1
+	return {
+		name : '访客' + current,
+		city : current % 2 == 0 ? '苏州' : '杭州',
+		created_at : Date.now()
+	} as UTSJSONObject
+}
+
+function queryAllRows() : void {
+	if (depot == null) {
+		appendLog('请先打开数据库')
+		return
+	}
+	const sql = keywordText.value.length > 0
+		? 'SELECT id, name, city, created_at FROM ' + tableText.value + ' WHERE name LIKE ? OR city LIKE ? ORDER BY id DESC'
+		: 'SELECT id, name, city, created_at FROM ' + tableText.value + ' ORDER BY id DESC'
+	const queryArgs : any[] = keywordText.value.length > 0 ? ['%' + keywordText.value + '%', '%' + keywordText.value + '%'] : []
+	applyOutcome('查询记录', depot!.select(sql, queryArgs))
+}
+
+function openDepot() : void {
+	if (depot == null) {
+		createDepot()
+	}
+	depot!.prepare(aliasText.value).then((ready : boolean) => {
+		connectionText.value = ready ? '已连接' : '连接失败'
+		appendLog(ready ? '数据库已打开' : '数据库打开失败')
+		if (ready) {
+			queryAllRows()
+		}
+	})
+}
+
+function rebuildDepot() : void {
+	if (depot != null) {
+		depot!.disconnect()
+	}
+	if (compatDepot != null) {
+		compatDepot!.close()
+	}
+	createDepot()
+	connectionText.value = '未连接'
+	rowCountText.value = '0'
+	resultText.value = '实例已重建，请重新打开数据库'
+	appendLog('数据库实例已重建')
+}
+
+function createSchema() : void {
+	if (depot == null) {
+		appendLog('请先打开数据库')
+		return
+	}
+	applyOutcome('创建数据表', depot!.ensureTable(tableText.value, ensureSchemaDefinition()))
+}
+
+function insertExample() : void {
+	if (depot == null) {
+		appendLog('请先打开数据库')
+		return
+	}
+	applyOutcome('插入记录', depot!.storeRow(tableText.value, nextRowPayload()))
+	queryAllRows()
+}
+
+function updateFirstRow() : void {
+	if (depot == null) {
+		appendLog('请先打开数据库')
+		return
+	}
+	const latest = depot!.select('SELECT id FROM ' + tableText.value + ' ORDER BY id ASC LIMIT 1')
+	if (latest.grid == null || latest.grid!.length == 0) {
+		appendLog('没有可更新的数据')
+		return
+	}
+	const rowId = latest.grid![0][0] as number
+	const payload : UTSJSONObject = {
+		name : '已更新-' + rowId,
+		city : '南京'
+	}
+	applyOutcome('更新首条', depot!.reviseRow(tableText.value, payload, 'id = ?', [rowId]))
+	queryAllRows()
+}
+
+function removeLastRow() : void {
+	if (depot == null) {
+		appendLog('请先打开数据库')
+		return
+	}
+	const latest = depot!.select('SELECT id FROM ' + tableText.value + ' ORDER BY id DESC LIMIT 1')
+	if (latest.grid == null || latest.grid!.length == 0) {
+		appendLog('没有可删除的数据')
+		return
+	}
+	const rowId = latest.grid![0][0] as number
+	applyOutcome('删除末条', depot!.discardRow(tableText.value, 'id = ?', [rowId]))
+	queryAllRows()
+}
+
+function runBatchInsert() : void {
+	if (depot == null) {
+		appendLog('请先打开数据库')
+		return
+	}
+	const tasks = [
+		{
+			statement : 'INSERT INTO ' + tableText.value + ' (name, city, created_at) VALUES (?, ?, ?)',
+			args : ['批量甲', '北京', Date.now()]
+		},
+		{
+			statement : 'INSERT INTO ' + tableText.value + ' (name, city, created_at) VALUES (?, ?, ?)',
+			args : ['批量乙', '上海', Date.now()]
+		}
+	] as LqjSqlBatchStatement[]
+	const outcomes = depot!.executeSeries(tasks)
+	const failure = outcomes.find((item : LqjSqlOutcome) : boolean => {
+		return item.errorText != null
+	})
+	if (failure != null) {
+		applyOutcome('批量写入', failure)
+		return
+	}
+	applyOutcome('批量写入', {
+		grid : null,
+		fields : null,
+		affectedRows : outcomes.length,
+		lastInsertId : null,
+		errorText : null,
+		records : null
+	} as LqjSqlOutcome)
+	queryAllRows()
+}
+
+function runTransactionDemo() : void {
+	if (depot == null) {
+		appendLog('请先打开数据库')
+		return
+	}
+	const openResult = depot!.openTransaction()
+	if (openResult.errorText != null) {
+		applyOutcome('事务开启', openResult)
+		return
+	}
+	const firstInsert = depot!.storeRow(tableText.value, {
+		name : '事务记录',
+		city : '成都',
+		created_at : Date.now()
+	} as UTSJSONObject)
+	if (firstInsert.errorText != null) {
+		depot!.cancelTransaction()
+		applyOutcome('事务写入', firstInsert)
+		return
+	}
+	const closeResult = depot!.finishTransaction()
+	applyOutcome('事务演示', closeResult)
+	queryAllRows()
+}
+
+function saveBackup() : void {
+	if (depot == null) {
+		appendLog('请先打开数据库')
+		return
+	}
+	depot!.saveSnapshot(aliasText.value + '-backup').then((outcome : LqjSqlOutcome) => {
+		applyOutcome('保存备份', outcome)
+	})
+}
+
+function restoreBackup() : void {
+	if (depot == null) {
+		appendLog('请先打开数据库')
+		return
+	}
+	depot!.restoreSnapshot(aliasText.value + '-backup').then((outcome : LqjSqlOutcome) => {
+		applyOutcome('恢复备份', outcome)
+		queryAllRows()
+	})
+}
+
+function inspectSnapshot() : void {
+	if (depot == null) {
+		appendLog('请先打开数据库')
+		return
+	}
+	const snapshot = depot!.peekSnapshot()
+	if (snapshot == null) {
+		appendLog('当前没有可查看的快照')
+		return
+	}
+	let summary = 'kind=' + snapshot.kind
+	if (snapshot.filePath != null) {
+		summary += ', path=' + snapshot.filePath!
+	}
+	if (snapshot.bytes != null) {
+		summary += ', bytes=' + snapshot.bytes!.length
+	}
+	resultText.value = '快照信息：' + summary
+	appendLog('已读取快照：' + summary)
+}
+
+function dropSchema() : void {
+	if (depot == null) {
+		appendLog('请先打开数据库')
+		return
+	}
+	applyOutcome('删除数据表', depot!.removeTable(tableText.value))
+	rowCountText.value = '0'
+}
+
+function clearLogs() : void {
+	logLines.value = ['日志已清空'] as string[]
+	appendLog('后续日志将继续追加')
+}
+
+onMounted(() => {
+	createDepot()
+	appendLog('示例页已挂载')
+})
+
+onUnmounted(() => {
+	if (depot != null) {
+		depot!.disconnect()
+	}
+	if (compatDepot != null) {
+		compatDepot!.close()
+	}
+	appendLog('页面销毁，数据库连接已关闭')
+})
+</script>
+
+<style>
+.demo-scroll {
+	flex: 1;
+	background-color: #f1ead8;
+	flex-direction: column;
+}
+
+.demo-page {
+	display: flex;
+	flex-direction: column;
+	padding-top: 24px;
+	padding-right: 18px;
+	padding-bottom: 28px;
+	padding-left: 18px;
+	background-color: #f1ead8;
+}
+
+.hero-card {
+	display: flex;
+	flex-direction: column;
+	padding-top: 18px;
+	padding-right: 18px;
+	padding-bottom: 18px;
+	padding-left: 18px;
+	border-radius: 24px;
+	background-color: #23302b;
+}
+
+.hero-kicker {
+	font-size: 12px;
+	letter-spacing: 1px;
+	color: #b7d9c8;
+	font-weight: 700;
+}
+
+.hero-title {
+	margin-top: 8px;
+	font-size: 24px;
+	line-height: 32px;
+	color: #fff8eb;
+	font-weight: 700;
+}
+
+.hero-desc {
+	margin-top: 10px;
+	font-size: 14px;
+	line-height: 22px;
+	color: #d9e7de;
+}
+
+.panel {
+	display: flex;
+	flex-direction: column;
+	padding-top: 16px;
+	padding-right: 16px;
+	padding-bottom: 16px;
+	padding-left: 16px;
+	border-radius: 20px;
+	background-color: #fffaf0;
+	border-width: 1px;
+	border-style: solid;
+	border-color: #dfd1b3;
+}
+
+.panel-space {
+	margin-top: 16px;
+}
+
+.panel-title {
+	font-size: 17px;
+	line-height: 24px;
+	font-weight: 700;
+	color: #2b241c;
+}
+
+.metric-row {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.metric-space {
+	margin-top: 12px;
+}
+
+.metric-label {
+	font-size: 13px;
+	color: #7d674e;
+}
+
+.metric-value {
+	flex: 1;
+	margin-left: 12px;
+	text-align: right;
+	font-size: 14px;
+	font-weight: 600;
+	color: #2b241c;
+}
+
+.field-block {
+	display: flex;
+	flex-direction: column;
+}
+
+.field-space {
+	margin-top: 14px;
+}
+
+.field-label {
+	font-size: 13px;
+	color: #7d674e;
+}
+
+.field-input {
+	margin-top: 8px;
+	height: 40px;
+	padding-top: 0;
+	padding-right: 12px;
+	padding-bottom: 0;
+	padding-left: 12px;
+	border-radius: 12px;
+	background-color: #f8f1e2;
+	border-width: 1px;
+	border-style: solid;
+	border-color: #dbc8a3;
+	font-size: 14px;
+	color: #2b241c;
+}
+
+.action-grid {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+}
+
+.action-button {
+	min-width: 140px;
+	margin-right: 10px;
+	margin-bottom: 10px;
+	border-radius: 999px;
+	background-color: #efe0bf;
+	color: #2b241c;
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.action-strong {
+	background-color: #2d6b55;
+	color: #ffffff;
+}
+
+.action-warn {
+	background-color: #c96c4a;
+	color: #ffffff;
+}
+
+.action-light {
+	background-color: #d9cdb3;
+	color: #2b241c;
+}
+
+.result-text {
+	margin-top: 12px;
+	font-size: 13px;
+	line-height: 21px;
+	color: #3f3326;
+}
+
+.log-stack {
+	display: flex;
+	flex-direction: column;
+	margin-top: 12px;
+	padding-top: 12px;
+	padding-right: 12px;
+	padding-bottom: 12px;
+	padding-left: 12px;
+	border-radius: 14px;
+	background-color: #f8f1e2;
+}
+
+.log-line {
+	margin-bottom: 8px;
+	font-size: 12px;
+	line-height: 18px;
+	color: #5e4f3d;
+}
+</style>

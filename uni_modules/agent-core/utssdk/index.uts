@@ -1,0 +1,96 @@
+/**
+ * agent-core 原生插件入口
+ * 提供 AI Agent 的原生能力接口
+ */
+
+import { ModelConfig } from './types'
+import { LLMProvider } from './llm-provider'
+import { AnthropicProvider } from './anthropic-provider'
+import { OpenAIProvider } from './openai-provider'
+import { AgentLoop, AgentEventCallback } from './agent-loop'
+import { SessionManager } from './session-manager'
+import {
+	FileReadTool,
+	FileWriteTool,
+	FileEditTool,
+	FileDeleteTool,
+	FileListTool,
+	FileSearchTool,
+	createBuiltinTools
+} from './tools/file-tools'
+
+// 导出类型定义
+export {
+	StopReason,
+	TextContent,
+	ThinkingContent,
+	ToolCall,
+	ImageContent,
+	ContentBlock,
+	UserMessage,
+	AssistantMessage,
+	ToolResultMessage,
+	Message,
+	Usage,
+	ParamDef,
+	ToolDefinition,
+	ChatRequest,
+	ChatEvent,
+	AgentEvent,
+	ToolResult,
+	AgentTool,
+	ModelConfig
+} from './types'
+
+// 导出 LLM Provider 基类
+export { LLMProvider } from './llm-provider'
+
+// 导出具体 Provider 实现
+export { AnthropicProvider } from './anthropic-provider'
+export { OpenAIProvider } from './openai-provider'
+
+// 导出 Agent Loop
+export { AgentLoop, AgentEventCallback } from './agent-loop'
+
+// 导出 AgentLoopConfig 类型
+export { AgentLoopConfig } from './agent-loop'
+
+// 导出会话管理器
+export { SessionManager } from './session-manager'
+
+// 导出内置文件工具
+export {
+	FileReadTool,
+	FileWriteTool,
+	FileEditTool,
+	FileDeleteTool,
+	FileListTool,
+	FileSearchTool,
+	createBuiltinTools
+} from './tools/file-tools'
+
+/**
+ * 根据模型配置创建对应的 LLM Provider 实例
+ * 支持 anthropic 和 openai 两种 provider 类型
+ * 工厂函数放在入口文件中以避免循环依赖
+ * @param config 模型配置，provider 字段决定创建哪种 Provider
+ * @returns 对应的 LLMProvider 实例
+ */
+export function createProvider(config : ModelConfig) : LLMProvider {
+	if (config.provider == 'anthropic') {
+		return new AnthropicProvider(config)
+	} else if (config.provider == 'openai') {
+		return new OpenAIProvider(config)
+	} else {
+		// 默认使用 OpenAI 兼容格式（支持 GLM、DeepSeek 等）
+		return new OpenAIProvider(config)
+	}
+}
+
+/**
+ * 获取插件版本号
+ * @returns 版本号字符串
+ */
+export function getVersion() : string {
+	return "1.0.0"
+}

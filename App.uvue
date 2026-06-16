@@ -1,0 +1,119 @@
+<script lang="uts">
+	import { initDatabase } from '@/utils/database.uts'
+
+  // #ifdef APP-ANDROID || APP-HARMONY
+	let firstBackTime = 0
+  // #endif
+	export default {
+		onLaunch: function () {
+			console.log('App Launch')
+			// 初始化本地数据库（建表）
+			initDatabase()
+		},
+		onShow: function () {
+			console.log('App Show')
+		},
+		onHide: function () {
+			console.log('App Hide')
+		},
+		// #ifdef APP-ANDROID || APP-HARMONY
+		onLastPageBackPress: function () {
+			console.log('App LastPageBackPress')
+			if (firstBackTime == 0) {
+				uni.showToast({
+					title: '再按一次退出应用',
+					position: 'bottom',
+				})
+				firstBackTime = Date.now()
+				setTimeout(() => {
+					firstBackTime = 0
+				}, 2000)
+			} else if (Date.now() - firstBackTime < 2000) {
+				firstBackTime = Date.now()
+				uni.exit()
+			}
+		},
+		// #endif
+		onExit: function () {
+			console.log('App Exit')
+		},
+	}
+</script>
+
+<style>
+	/* ===== RiceUI 基础样式 ===== */
+	@import "@/uni_modules/rice-ui/libs/style/index.css";
+
+	/* ===== Pink/White 主题色覆盖 ===== */
+	.rice-theme-light {
+		--rice-primary-color: #FB8FAB;
+		--rice-primary-color-1: #FDE8EF;
+		--rice-primary-color-7: #E8729A;
+		--rice-text-color: #111827;
+		--rice-text-color-2: #6B7280;
+		--rice-text-color-3: #9CA3AF;
+		--rice-background: #F9FAFB;
+		--rice-background-2: #FFFFFF;
+		--rice-border-color: #E5E7EB;
+		--rice-cell-background: #FFFFFF;
+		--rice-button-default-background: #FFFFFF;
+		--rice-button-default-border: #E5E7EB;
+		--rice-button-primary-background: #FB8FAB;
+		--rice-button-info-background: #F3F4F6;
+		--rice-navbar-background: #FFFFFF;
+		--rice-tabs-background: #FFFFFF;
+		--rice-search-background: #F3F4F6;
+	}
+
+	/* ===== 全局字体图标 ===== */
+	@font-face {
+		font-family: 'oui-icons';
+		src: url('./uni_modules/oui-icon-unix/components/oui-icon-unix/iconfont.ttf') format('truetype');
+	}
+
+	/* ===== 全局公共样式 ===== */
+	.uni-row { flex-direction: row; }
+	.uni-column { flex-direction: column; }
+
+	/* 页面外壳 - 深灰底色让 TabBar 浮动效果更明显 */
+	.page-shell {
+		flex: 1;
+		flex-direction: column;
+		background-color: #EDEEF0;
+	}
+
+	/* 页面内容容器 - 白色内容区域 */
+	.page-content {
+		flex: 1;
+		background-color: #F5F5F7;
+		border-radius: 20px;
+		margin-left: 0px;
+		margin-right: 0px;
+		margin-top: 0px;
+		overflow: hidden;
+	}
+
+	/* 通用卡片 */
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 16px;
+		margin-bottom: 12px;
+		border-width: 1px;
+		border-color: #F0F0F2;
+		border-style: solid;
+	}
+
+	/* 通用标题 */
+	.page-title {
+		font-size: 48rpx;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	/* 通用次要文字 */
+	.text-muted {
+		font-size: 26rpx;
+		color: #9CA3AF;
+	}
+</style>

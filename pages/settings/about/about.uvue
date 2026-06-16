@@ -1,0 +1,191 @@
+<template>
+	<view class="page-shell">
+		<scroll-view class="container" :scroll-y="true">
+			<!-- 页面标题 -->
+			<view class="page-header">
+				<text class="page-title">关于</text>
+				<text class="page-subtitle">AI 助手版本信息</text>
+			</view>
+
+			<!-- Logo 和 App 名称 -->
+			<view class="about-hero">
+				<view class="logo-circle">
+					<text class="logo-text">AI</text>
+				</view>
+				<text class="app-name">AI 助手</text>
+				<text class="app-version">版本 1.0.0</text>
+			</view>
+
+			<!-- 应用说明卡片 -->
+			<view class="info-card">
+				<text class="info-title">应用简介</text>
+				<text class="info-desc">
+					AI 助手是一款智能对话应用，基于先进的 AI 模型，为你提供高效、自然的对话体验。支持多模型切换、插件扩展，帮助你完成各种任务。
+				</text>
+			</view>
+
+			<!-- 详细信息列表 -->
+			<view class="details-card">
+				<view class="detail-row">
+					<text class="detail-label">应用名称</text>
+					<text class="detail-value">AI 助手</text>
+				</view>
+				<view class="detail-divider"></view>
+				<view class="detail-row">
+					<text class="detail-label">版本号</text>
+					<text class="detail-value">1.0.0</text>
+				</view>
+				<view class="detail-divider"></view>
+				<view class="detail-row">
+					<text class="detail-label">构建版本</text>
+					<text class="detail-value">2024.06.17</text>
+				</view>
+				<view class="detail-divider"></view>
+				<view class="detail-row">
+					<text class="detail-label">开发团队</text>
+					<text class="detail-value">OhMyOpenCode</text>
+				</view>
+			</view>
+
+			<!-- 版权信息 -->
+			<view class="footer">
+				<text class="copyright">© 2024 OhMyOpenCode. All rights reserved.</text>
+			</view>
+		</scroll-view>
+		<TabBar current="pages/settings/settings" />
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * 关于页面 - 显示应用版本和版权信息
+	 */
+
+	export default {
+		data() {
+			return {}
+		},
+		methods: {}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+		padding: 32rpx;
+	}
+
+	/* 页面标题 */
+	.page-header {
+		margin-bottom: 48rpx;
+		padding-bottom: 24rpx;
+	}
+
+	.page-title {
+		font-size: 48rpx;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	.page-subtitle {
+		font-size: 26rpx;
+		color: #9CA3AF;
+		margin-top: 8rpx;
+	}
+
+	/* Logo 和 App 名称区域 - 居中展示 */
+	.about-hero {
+		align-items: center;
+		margin-bottom: 48rpx;
+	}
+
+	.logo-circle {
+		width: 120rpx;
+		height: 120rpx;
+		border-radius: 60rpx;
+		background-color: #FDE8EF;
+		justify-content: center;
+		align-items: center;
+		margin-bottom: 24rpx;
+	}
+
+	.logo-text {
+		font-size: 40rpx;
+		font-weight: bold;
+		color: #DB2777;
+	}
+
+	.app-name {
+		font-size: 40rpx;
+		font-weight: bold;
+		color: #111827;
+		margin-bottom: 8rpx;
+	}
+
+	.app-version {
+		font-size: 26rpx;
+		color: #9CA3AF;
+	}
+
+	/* 应用简介卡片 */
+	.info-card {
+		background-color: #F9FAFB;
+		border-radius: 20rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+	}
+
+	.info-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #111827;
+		margin-bottom: 16rpx;
+	}
+
+	.info-desc {
+		font-size: 26rpx;
+		color: #6B7280;
+		line-height: 40rpx;
+	}
+
+	/* 详细信息卡片 */
+	.details-card {
+		background-color: #FFFFFF;
+		border-radius: 20rpx;
+		padding: 8rpx 32rpx;
+	}
+
+	.detail-row {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding: 24rpx 0;
+	}
+
+	.detail-label {
+		font-size: 26rpx;
+		color: #6B7280;
+	}
+
+	.detail-value {
+		font-size: 26rpx;
+		color: #111827;
+		font-weight: bold;
+	}
+
+	.detail-divider {
+		height: 0.5px;
+		background-color: #F3F4F6;
+	}
+
+	/* 底部版权 */
+	.footer {
+		align-items: center;
+		padding: 60rpx 0 40rpx 0;
+	}
+
+	.copyright {
+		font-size: 22rpx;
+		color: #D1D5DB;
+	}
+</style>

@@ -1,0 +1,62 @@
+<template>
+	<view
+		class="voice-btn"
+		:class="isListening ? 'voice-btn-active' : ''"
+		@touchstart="onTouchStart"
+		@touchend="onTouchEnd"
+		@touchcancel="onTouchEnd"
+	>
+		<oui-icon-unix
+			name="audio"
+			:size="isListening ? '24px' : '20px'"
+			:color="isListening ? '#FFFFFF' : '#6B7280'"
+		/>
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * VoiceInput 组件 - 语音输入按钮
+	 * 扁平化粉白主题
+	 */
+	export default {
+		props: {
+			isListening: {
+				type: Boolean,
+				default: false
+			}
+		},
+		emits: ['startListening', 'stopListening'],
+		methods: {
+			onTouchStart() {
+				this.$emit('startListening')
+			},
+			onTouchEnd() {
+				this.$emit('stopListening')
+			}
+		}
+	}
+</script>
+
+<style>
+	/* 语音按钮 - 浅灰背景 */
+	.voice-btn {
+		width: 36px;
+		height: 36px;
+		border-radius: 18px;
+		background-color: #F3F4F6;
+		justify-content: center;
+		align-items: center;
+		margin-left: 8px;
+	}
+
+	/* 监听中 - 淡粉强调 */
+	.voice-btn-active {
+		background-color: #FB8FAB;
+		width: 42px;
+		height: 42px;
+		border-radius: 21px;
+	}
+
+	/* 图标由 oui-icon-unix 渲染 */
+</style>

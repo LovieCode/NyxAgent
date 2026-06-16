@@ -1,0 +1,267 @@
+<template>
+	<view class="page-shell">
+		<view class="container">
+		<!-- 搜索栏 -->
+		<view class="search-bar">
+			<rice-search v-model="searchQuery" placeholder="搜索笔记..." shape="round" :clearable="true" />
+		</view>
+
+		<!-- 笔记列表 -->
+		<scroll-view class="notes-list" :scroll-y="true">
+			<view v-if="filteredNotes.length == 0" class="empty-state">
+				<text class="empty-text">{{ searchQuery != '' ? '未找到匹配笔记' : '暂无笔记' }}</text>
+			</view>
+			<view v-else>
+				<view
+					v-for="note in filteredNotes"
+					:key="note['id'] as string"
+					class="note-card"
+					@click="editNote(note)"
+					@longpress="confirmDeleteNote(note['id'] as string)"
+				>
+					<text class="note-title">{{ note['title'] }}</text>
+					<text class="note-preview">{{ note['content'] }}</text>
+					<text class="note-time">{{ note['updatedAt'] }}</text>
+				</view>
+			</view>
+		</scroll-view>
+
+		<!-- 添加按钮 - FAB -->
+		<rice-float-fab icon="plus" bg-color="#FB8FAB" :gap-bottom="80" @click="createNote" />
+
+		<!-- 编辑弹窗 -->
+		<rice-dialog
+			v-model:show="isEditing"
+			:title="editingId == '' ? '新建笔记' : '编辑笔记'"
+			confirm-button-text="保存"
+			@confirm="saveNote"
+			@cancel="cancelEdit"
+		>
+			<rice-input v-model="editingTitle" placeholder="笔记标题" border="none" />
+			<view style="height: 16rpx;"></view>
+			<rice-textarea v-model="editingContent" placeholder="笔记内容" :auto-height="true" />
+		</rice-dialog>
+	</view>
+	<TabBar current="pages/notes/notes" />
+</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * 笔记页面 - 笔记管理界面
+	 * 扁平化粉白主题
+	 */
+
+	export default {
+		data() {
+			return {
+				notes: [] as UTSJSONObject[],
+				searchQuery: '' as string,
+				isEditing: false as boolean,
+				editingId: '' as string,
+				editingTitle: '' as string,
+				editingContent: '' as string
+			}
+		},
+		computed: {
+			filteredNotes() : UTSJSONObject[] {
+				if (this.searchQuery == '') {
+					return this.notes
+				}
+				let query = this.searchQuery.toLowerCase()
+				return this.notes.filter((note : UTSJSONObject) : boolean => {
+					let title = (note['title'] as string).toLowerCase()
+					let content = (note['content'] as string).toLowerCase()
+					return title.indexOf(query) >= 0 || content.indexOf(query) >= 0
+				})
+			}
+		},
+		onLoad() {
+			this.loadNotes()
+		},
+		onShow() {
+			this.loadNotes()
+		},
+		methods: {
+			loadNotes() {
+				let stored = uni.getStorageSync('notes_list') as string
+				if (stored != null && stored != '') {
+					try {
+						this.notes = JSON.parse(stored) as UTSJSONObject[]
+					} catch (e) {
+						this.notes = [] as UTSJSONObject[]
+					}
+				} else {
+					this.notes = [] as UTSJSONObject[]
+				}
+			},
+
+			saveNotes() {
+				uni.setStorageSync('notes_list', JSON.stringify(this.notes))
+			},
+
+			formatNow() : string {
+				let now = new Date()
+				return now.getFullYear() + '-' +
+					this.padZero(now.getMonth() + 1) + '-' +
+					this.padZero(now.getDate()) + ' ' +
+					this.padZero(now.getHours()) + ':' +
+					this.padZero(now.getMinutes())
+			},
+
+			padZero(n : number) : string {
+				if (n < 10) {
+					return '0' + n
+				}
+				return '' + n
+			},
+
+			createNote() {
+				this.editingId = ''
+				this.editingTitle = ''
+				this.editingContent = ''
+				this.isEditing = true
+			},
+
+			editNote(note : UTSJSONObject) {
+				this.editingId = note['id'] as string
+				this.editingTitle = note['title'] as string
+				this.editingContent = note['content'] as string
+				this.isEditing = true
+			},
+
+			cancelEdit() {
+				this.isEditing = false
+			},
+
+			saveNote() {
+				let title = this.editingTitle.trim()
+				if (title == '') {
+					title = '无标题'
+				}
+				let content = this.editingContent.trim()
+				if (content == '') {
+					uni.showToast({
+						title: '请输入内容',
+						icon: 'none'
+					})
+					return
+				}
+				let timeStr = this.formatNow()
+
+				if (this.editingId == '') {
+					let newNote = {
+						id: '' + Date.now(),
+						title: title,
+						content: content,
+						updatedAt: timeStr
+					} as UTSJSONObject
+					this.notes.unshift(newNote)
+				} else {
+					for (let i = 0; i < this.notes.length; i++) {
+						if ((this.notes[i]['id'] as string) == this.editingId) {
+							this.notes[i]['title'] = title
+							this.notes[i]['content'] = content
+							this.notes[i]['updatedAt'] = timeStr
+							break
+						}
+					}
+				}
+				this.saveNotes()
+				this.isEditing = false
+				uni.showToast({
+					title: '已保存',
+					icon: 'success'
+				})
+			},
+
+			confirmDeleteNote(id : string) {
+				uni.showModal({
+					title: '确认删除',
+					content: '确定要删除这条笔记吗？',
+					success: (res) => {
+						if (res.confirm) {
+							this.deleteNote(id)
+						}
+					}
+				})
+			},
+
+			deleteNote(id : string) {
+				let newNotes = [] as UTSJSONObject[]
+				for (let i = 0; i < this.notes.length; i++) {
+					if ((this.notes[i]['id'] as string) != id) {
+						newNotes.push(this.notes[i])
+					}
+				}
+				this.notes = newNotes
+				this.saveNotes()
+				uni.showToast({
+					title: '已删除',
+					icon: 'success'
+				})
+			}
+		}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+	}
+
+	/* 搜索栏 */
+	.search-bar {
+		padding: 20rpx 30rpx;
+		background-color: #FFFFFF;
+	}
+
+	.notes-list {
+		flex: 1;
+		padding: 16rpx 30rpx;
+	}
+
+	.empty-state {
+		flex: 1;
+		justify-content: center;
+		align-items: center;
+		padding-top: 200rpx;
+	}
+
+	.empty-text {
+		font-size: 28rpx;
+		color: #9CA3AF;
+	}
+
+	/* 笔记卡片 */
+	.note-card {
+		background-color: #FFFFFF;
+		border-radius: 16rpx;
+		padding: 24rpx;
+		margin-bottom: 16rpx;
+		border-width: 0.5px;
+		border-color: #E5E7EB;
+		border-style: solid;
+	}
+
+	.note-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #111827;
+		margin-bottom: 10rpx;
+	}
+
+	.note-preview {
+		font-size: 26rpx;
+		color: #6B7280;
+		lines: 2;
+		text-overflow: ellipsis;
+		margin-bottom: 8rpx;
+	}
+
+	.note-time {
+		font-size: 22rpx;
+		color: #9CA3AF;
+	}
+
+</style>

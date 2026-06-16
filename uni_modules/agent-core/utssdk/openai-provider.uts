@@ -1,0 +1,422 @@
+/**
+ * OpenAI 兼容 LLM Provider 实现
+ * 适配 OpenAI Chat Completions API
+ * 同时兼容 GLM、DeepSeek 等使用相同 API 格式的模型
+ * API 文档: https://platform.openai.com/docs/api-reference/chat
+ */
+
+import { LLMProvider } from './llm-provider'
+import {
+	ModelConfig,
+	ChatRequest,
+	AssistantMessage,
+	Message,
+	UserMessage,
+	ToolResultMessage,
+	ToolDefinition,
+	TextContent,
+	ToolCall,
+	ContentBlock,
+	StopReason,
+	Usage
+} from './types'
+
+/**
+ * OpenAI Chat Completions API 的停止原因到内部 StopReason 的映射
+ * @param reason OpenAI 返回的停止原因
+ * @returns 内部 StopReason
+ */
+function mapStopReason(reason : string | null) : StopReason {
+	if (reason == null) {
+		return 'error'
+	}
+	if (reason == 'stop') {
+		return 'stop'
+	} else if (reason == 'length') {
+		return 'length'
+	} else if (reason == 'tool_calls') {
+		return 'toolUse'
+	} else if (reason == 'content_filter') {
+		return 'error'
+	} else {
+		return 'error'
+	}
+}
+
+/**
+ * OpenAI 兼容 Provider
+ * 实现 OpenAI Chat Completions API 的调用逻辑
+ * 兼容所有使用 OpenAI 格式的模型服务（GLM、DeepSeek 等）
+ */
+export class OpenAIProvider extends LLMProvider {
+
+	/**
+	 * 构造函数
+	 * @param config 模型配置，baseUrl 默认为 https://api.openai.com
+	 */
+	constructor(config : ModelConfig) {
+		super(config)
+	}
+
+	/**
+	 * 发送聊天请求到 OpenAI Chat Completions API
+	 * @param request 聊天请求参数
+	 * @returns 助手消息响应
+	 */
+	override chat(request : ChatRequest) : Promise<AssistantMessage> {
+		return new Promise<AssistantMessage>((resolve, reject) => {
+			// 构建请求 URL
+			const baseUrl = this.config.baseUrl != null && this.config.baseUrl != '' ? this.config.baseUrl : 'https://api.openai.com'
+			const url = baseUrl + '/v1/chat/completions'
+
+			// 构建请求体
+			const requestBody = this.buildRequestBody(request)
+
+			// 构建请求头
+			const headers : UTSJSONObject = {
+				'Content-Type': 'application/json',
+				'Authorization': 'Bearer ' + this.config.apiKey
+			}
+
+			// 发送请求
+			uni.request({
+				url: url,
+				method: 'POST',
+				header: headers,
+				data: requestBody,
+				success: (res) => {
+					if (res.statusCode == 200) {
+						try {
+							const responseData = this.ensureJSONObject(res.data as any)
+							const message = this.parseResponse(responseData, request.model)
+							resolve(message)
+						} catch (e) {
+							reject(new Error('解析 OpenAI 响应失败: ' + e))
+						}
+					} else {
+						const responseData = this.ensureJSONObject(res.data as any)
+						const errorMsg = this.extractErrorMessage(responseData, res.statusCode)
+						reject(new Error('OpenAI API 错误 (' + res.statusCode + '): ' + errorMsg))
+					}
+				},
+				fail: (err) => {
+					reject(new Error('网络请求失败: ' + err.errMsg))
+				}
+			})
+		})
+	}
+
+	/**
+	 * 构建 OpenAI Chat Completions API 请求体
+	 * @param request 内部聊天请求
+	 * @returns OpenAI 格式的请求体
+	 */
+	private buildRequestBody(request : ChatRequest) : UTSJSONObject {
+		const body : UTSJSONObject = {
+			'model': this.config.id,
+			'max_tokens': request.maxTokens,
+			'messages': this.convertMessages(request)
+		}
+
+		// 可选参数
+		if (request.temperature != null) {
+			body['temperature'] = request.temperature
+		}
+
+		// 工具定义
+		if (request.tools.length > 0) {
+			body['tools'] = this.convertTools(request.tools)
+		}
+
+		return body
+	}
+
+	/**
+	 * 将内部消息格式转换为 OpenAI Chat Completions API 格式
+	 * 系统提示作为第一条 system 角色消息插入
+	 * @param request 内部聊天请求
+	 * @returns OpenAI 格式的消息数组
+	 */
+	private convertMessages(request : ChatRequest) : Array<UTSJSONObject> {
+		const result = new Array<UTSJSONObject>()
+
+		// 系统提示作为第一条消息
+		if (request.system.length > 0) {
+			result.push({
+				'role': 'system',
+				'content': request.system
+			} as UTSJSONObject)
+		}
+
+		// 转换消息
+		for (let i = 0; i < request.messages.length; i++) {
+			const msg = request.messages[i]
+			const role = msg['role'] as string
+
+			if (role == 'user') {
+				const userMsg = msg as UserMessage
+				result.push({
+					'role': 'user',
+					'content': userMsg.content
+				} as UTSJSONObject)
+			} else if (role == 'assistant') {
+				const assistantMsg = msg as AssistantMessage
+				const converted = this.convertAssistantMessage(assistantMsg)
+				result.push(converted)
+			} else if (role == 'toolResult') {
+				const toolMsg = msg as ToolResultMessage
+				result.push({
+					'role': 'tool',
+					'tool_call_id': toolMsg.toolCallId,
+					'content': toolMsg.content
+				} as UTSJSONObject)
+			}
+		}
+
+		return result
+	}
+
+	/**
+	 * 将内部助手消息转换为 OpenAI 格式
+	 * 文本内容放入 content 字段，工具调用放入 tool_calls 数组
+	 * @param msg 内部助手消息
+	 * @returns OpenAI 格式的助手消息
+	 */
+	private convertAssistantMessage(msg : AssistantMessage) : UTSJSONObject {
+		let textContent = ''
+		const toolCallsArray = new Array<UTSJSONObject>()
+
+		for (let i = 0; i < msg.content.length; i++) {
+			const block = msg.content[i]
+			const blockType = block['type'] as string
+
+			if (blockType == 'text') {
+				const textBlock = block as TextContent
+				textContent += textBlock.text
+			} else if (blockType == 'toolCall') {
+				const toolBlock = block as ToolCall
+				toolCallsArray.push({
+					'id': toolBlock.id,
+					'type': 'function',
+					'function': {
+						'name': toolBlock.name,
+						'arguments': JSON.stringify(toolBlock.arguments)
+					}
+				} as UTSJSONObject)
+			}
+		}
+
+		// 构建消息对象
+		if (toolCallsArray.length > 0) {
+			return {
+				'role': 'assistant',
+				'content': textContent.length > 0 ? textContent : null,
+				'tool_calls': toolCallsArray
+			} as UTSJSONObject
+		} else {
+			return {
+				'role': 'assistant',
+				'content': textContent
+			} as UTSJSONObject
+		}
+	}
+
+	/**
+	 * 将内部工具定义转换为 OpenAI tools 格式
+	 * OpenAI 使用 function 包装器格式
+	 * @param tools 内部工具定义数组
+	 * @returns OpenAI 格式的工具数组
+	 */
+	private convertTools(tools : ToolDefinition[]) : Array<UTSJSONObject> {
+		const result = new Array<UTSJSONObject>()
+
+		for (let i = 0; i < tools.length; i++) {
+			const tool = tools[i]
+			result.push({
+				'type': 'function',
+				'function': {
+					'name': tool.name,
+					'description': tool.description,
+					'parameters': tool.parameters
+				}
+			} as UTSJSONObject)
+		}
+
+		return result
+	}
+
+	/**
+	 * 解析 OpenAI Chat Completions API 响应
+	 * @param data API 响应数据
+	 * @param modelId 请求使用的模型 ID
+	 * @returns 内部助手消息
+	 */
+	private parseResponse(data : UTSJSONObject, modelId : string) : AssistantMessage {
+		// 解析 choices[0]
+		const choices = data['choices'] as Array<UTSJSONObject>
+		if (choices == null || choices.length == 0) {
+			return this.createErrorMessage('API 返回空的 choices', modelId)
+		}
+
+		const choice = choices[0]
+		const messageObj = choice['message'] as UTSJSONObject | null
+		if (messageObj == null) {
+			return this.createErrorMessage('API 响应缺少 message 字段', modelId)
+		}
+		const finishReason = choice['finish_reason'] as string | null
+
+		// 解析内容块
+		const contentBlocks = new Array<ContentBlock>()
+
+		// 解析文本内容
+		const textContent = messageObj['content'] as string | null
+		if (textContent != null && textContent!.length > 0) {
+			const textBlock : TextContent = {
+				type: 'text',
+				text: textContent!
+			} as TextContent
+			contentBlocks.push(textBlock as ContentBlock)
+		}
+
+		// 解析工具调用
+		const toolCalls = messageObj['tool_calls'] as Array<UTSJSONObject> | null
+		if (toolCalls != null) {
+			for (let i = 0; i < toolCalls!.length; i++) {
+				const toolCall = toolCalls![i]
+				const functionObj = toolCall['function'] as UTSJSONObject | null
+				if (functionObj == null) continue
+				const argsStrValue = functionObj!['arguments'] as string | null
+				const argsStr = argsStrValue != null ? argsStrValue! : '{}'
+
+				// 解析 arguments JSON 字符串
+				let argsObj : UTSJSONObject
+				try {
+					argsObj = JSON.parse(argsStr) as UTSJSONObject
+				} catch (_) {
+					argsObj = {} as UTSJSONObject
+				}
+
+				const toolBlock : ToolCall = {
+					type: 'toolCall',
+					id: toolCall['id'] as string,
+					name: functionObj['name'] as string,
+					arguments: argsObj
+				} as ToolCall
+				contentBlocks.push(toolBlock as ContentBlock)
+			}
+		}
+
+		// 如果没有任何内容块，添加一个空文本块
+		if (contentBlocks.length == 0) {
+			const emptyBlock : TextContent = {
+				type: 'text',
+				text: ''
+			} as TextContent
+			contentBlocks.push(emptyBlock as ContentBlock)
+		}
+
+		// 解析停止原因
+		const stopReason : StopReason = mapStopReason(finishReason)
+
+		// 解析用量
+		const usageObj = data['usage'] as UTSJSONObject | null
+		let inputTokens : number = 0
+		let outputTokens : number = 0
+		if (usageObj != null) {
+			const promptTokens = usageObj!['prompt_tokens'] as number | null
+			const completionTokens = usageObj!['completion_tokens'] as number | null
+			inputTokens = promptTokens != null ? promptTokens! : 0
+			outputTokens = completionTokens != null ? completionTokens! : 0
+		}
+		const usage : Usage = {
+			inputTokens: inputTokens,
+			outputTokens: outputTokens
+		}
+
+		// 解析模型名称
+		const modelValue = data['model'] as string | null
+		const modelName : string = modelValue != null ? modelValue! : modelId
+
+		// 构建助手消息
+		const message : AssistantMessage = {
+			role: 'assistant',
+			content: contentBlocks,
+			model: modelName,
+			stopReason: stopReason,
+			errorMessage: null,
+			usage: usage,
+			timestamp: Date.now()
+		}
+
+		return message
+	}
+
+	/**
+	 * 确保响应数据为 UTSJSONObject
+	 * uni.request 的 res.data 可能是 UTSJSONObject 或 string，需要统一处理
+	 * @param data 响应数据
+	 * @returns UTSJSONObject
+	 */
+	private ensureJSONObject(data : any) : UTSJSONObject {
+		if (data == null) {
+			return {} as UTSJSONObject
+		}
+		// 尝试直接转换，如果失败则按字符串解析
+		try {
+			const obj = data as UTSJSONObject
+			if (obj != null) {
+				return obj
+			}
+		} catch (_) {
+			// 转换失败，尝试 JSON 解析
+		}
+		try {
+			return JSON.parse(data as string) as UTSJSONObject
+		} catch (_) {
+			return {} as UTSJSONObject
+		}
+	}
+
+	/**
+	 * 创建错误消息
+	 * @param errorMsg 错误信息
+	 * @param modelId 模型 ID
+	 * @returns 包含错误信息的助手消息
+	 */
+	private createErrorMessage(errorMsg : string, modelId : string) : AssistantMessage {
+		const textBlock : TextContent = {
+			type: 'text',
+			text: ''
+		} as TextContent
+		const message : AssistantMessage = {
+			role: 'assistant',
+			content: [textBlock as ContentBlock],
+			model: modelId,
+			stopReason: 'error',
+			errorMessage: errorMsg,
+			usage: { inputTokens: 0, outputTokens: 0 } as Usage,
+			timestamp: Date.now()
+		}
+		return message
+	}
+
+	/**
+	 * 从错误响应中提取错误信息
+	 * @param data 响应数据
+	 * @param statusCode HTTP 状态码
+	 * @returns 错误信息字符串
+	 */
+	private extractErrorMessage(data : UTSJSONObject | null, statusCode : number) : string {
+		if (data == null) {
+			return '未知错误 (HTTP ' + statusCode + ')'
+		}
+		const errorObj = data['error'] as UTSJSONObject | null
+		if (errorObj != null) {
+			const message = errorObj!['message'] as string | null
+			if (message != null) {
+				return message!
+			}
+		}
+		return '未知错误 (HTTP ' + statusCode + ')'
+	}
+}

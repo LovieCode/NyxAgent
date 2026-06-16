@@ -1,0 +1,81 @@
+<template>
+	<text
+		class="oui-icon-unix"
+		:class="customClass"
+		:style="[rootStyle, customStyle]"
+		@tap="handleClick"
+	>
+		{{ iconUnicode }}
+	</text>
+</template>
+
+<script lang="uts">
+import icons from './icons.uts';
+
+export default {
+	name: 'oui-icon-unix',
+	options: {
+		virtualHost: true,
+		addGlobalClass: true,
+		styleIsolation: 'apply-shared',
+	},
+	emits: ['click'],
+	props: {
+		customClass: String,
+		customStyle: String,
+		name: {
+			type: String,
+			required: true,
+		},
+		size: {
+			type: String,
+			default: '16px',
+		},
+		color: {
+			type: String,
+			default: '#000000',
+		},
+	},
+	computed: {
+		rootStyle(): any {
+			const style = {
+				color: this.color,
+				fontSize: this.size,
+				lineHeight: this.size,
+				width: this.size,
+				height: this.size,
+			};
+			return style;
+		},
+		iconUnicode(): string {
+			return icons.getString(this.name) ?? '';
+		},
+	},
+	methods: {
+		handleClick(event: any) {
+			this.$emit('click', event);
+		},
+	},
+};
+</script>
+
+<style scoped lang="scss">
+@font-face {
+	font-family: 'oui-icons';
+
+	/* #ifdef MP */
+	src: url('https://at.alicdn.com/t/c/font_4666081_qd5aqo8pzil.ttf?t=1762660600975')
+		format('truetype');
+	/* #endif */
+
+	/* #ifndef MP */
+	src: url('./iconfont.ttf') format('truetype');
+	/* #endif */
+}
+
+.oui-icon-unix {
+	font-family: 'oui-icons' !important;
+	font-style: normal;
+	font-weight: normal;
+}
+</style>

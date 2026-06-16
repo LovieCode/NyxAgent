@@ -1,0 +1,2 @@
+RiceUI 官方文档地址：
+https://riceui.cn/components/quickstart.html

@@ -1,0 +1,60 @@
+/**
+ * event-bus 工具模块 - 事件总线
+ * 提供组件间通信的事件发布/订阅机制
+ */
+
+/**
+ * 事件回调函数类型
+ */
+type EventCallback = () => void
+
+/**
+ * 事件总线类 - 管理事件的注册、触发和移除
+ * 使用 UTSJSONObject 存储事件映射，避免 Map 泛型兼容性问题
+ */
+class EventBus {
+	/** 事件监听器映射表 */
+	private events : UTSJSONObject
+
+	constructor() {
+		this.events = {} as UTSJSONObject
+	}
+
+	/**
+	 * 注册事件监听器
+	 * @param eventName 事件名称
+	 * @param callback 回调函数
+	 */
+	on(eventName : string, callback : EventCallback) : void {
+		let callbacks = this.events[eventName] as Array<EventCallback> | null
+		if (callbacks == null) {
+			callbacks = new Array<EventCallback>()
+			this.events[eventName] = callbacks
+		}
+		callbacks.push(callback)
+	}
+
+	/**
+	 * 触发指定事件
+	 * @param eventName 事件名称
+	 */
+	emit(eventName : string) : void {
+		const callbacks = this.events[eventName] as Array<EventCallback> | null
+		if (callbacks != null) {
+			for (let i = 0; i < callbacks!.length; i++) {
+				callbacks![i]()
+			}
+		}
+	}
+
+	/**
+	 * 移除指定事件的监听器
+	 * @param eventName 事件名称
+	 */
+	off(eventName : string) : void {
+		this.events[eventName] = null
+	}
+}
+
+/** 全局事件总线实例 */
+export const eventBus = new EventBus()

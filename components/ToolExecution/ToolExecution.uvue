@@ -1,0 +1,122 @@
+<template>
+	<view class="tool-exec" :class="statusClass">
+		<text class="status-icon">{{statusIcon}}</text>
+		<text class="tool-name">{{toolName}}</text>
+		<text v-if="status == 'completed' && result != ''" class="tool-result">{{result}}</text>
+		<text v-if="status == 'error' && result != ''" class="tool-error-msg">{{result}}</text>
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * ToolExecution 组件 - 工具执行状态展示
+	 * 扁平化粉白主题
+	 */
+	export default {
+		props: {
+			toolName: {
+				type: String,
+				default: ''
+			},
+			status: {
+				type: String,
+				default: 'running'
+			},
+			result: {
+				type: String,
+				default: ''
+			}
+		},
+		computed: {
+			statusClass() : string {
+				if (this.status == 'running') {
+					return 'exec-running'
+				}
+				if (this.status == 'completed') {
+					return 'exec-completed'
+				}
+				if (this.status == 'error') {
+					return 'exec-error'
+				}
+				return 'exec-running'
+			},
+			statusIcon() : string {
+				if (this.status == 'running') {
+					return '...'
+				}
+				if (this.status == 'completed') {
+					return '[ok]'
+				}
+				if (this.status == 'error') {
+					return '[x]'
+				}
+				return '...'
+			}
+		},
+	}
+</script>
+
+<style>
+	/* 工具执行容器 */
+	.tool-exec {
+		flex-direction: row;
+		align-items: center;
+		margin-left: 32px;
+		margin-right: 32px;
+		margin-top: 4px;
+		margin-bottom: 4px;
+		padding: 8px;
+		border-radius: 8px;
+		background-color: #F3F4F6;
+	}
+
+	/* 运行中 */
+	.exec-running {
+		background-color: #F3F4F6;
+	}
+
+	/* 完成 - 浅绿背景 */
+	.exec-completed {
+		background-color: rgba(16,185,129,0.08);
+	}
+
+	/* 错误 - 浅红背景 */
+	.exec-error {
+		background-color: rgba(239,68,68,0.08);
+		border-width: 1px;
+		border-color: #EF4444;
+	}
+
+	/* 状态图标 */
+	.status-icon {
+		font-size: 12px;
+		color: #6B7280;
+		margin-right: 8px;
+	}
+
+	/* 工具名称 */
+	.tool-name {
+		font-size: 13px;
+		color: #111827;
+		font-weight: bold;
+		margin-right: 8px;
+	}
+
+	/* 结果预览 */
+	.tool-result {
+		font-size: 12px;
+		color: #10B981;
+		flex: 1;
+		lines: 1;
+		text-overflow: ellipsis;
+	}
+
+	/* 错误信息 */
+	.tool-error-msg {
+		font-size: 12px;
+		color: #EF4444;
+		flex: 1;
+		lines: 1;
+		text-overflow: ellipsis;
+	}
+</style>

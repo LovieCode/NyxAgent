@@ -1,0 +1,229 @@
+export * from '../interface.uts'
+
+import type { LqjSqlBatchStatement, LqjSqlDepotOptions, LqjSqlFailureCode, LqjSqlOutcome, LqjSqlSnapshot, SQLiteConfig, SQLiteExecuteBatchParams, SQLiteResult } from '../interface.uts'
+import { LqjSqlFailureImpl } from '../unierror.uts'
+import { buildCompatOptions, normalizeCompatAlias, normalizeCompatDirectory, toCompatBatchStatements, toCompatResult } from '../xsqlite-compat.uts'
+
+function buildOutcomeError(code : LqjSqlFailureCode, details : string | null = null) : LqjSqlOutcome {
+	const failure = new LqjSqlFailureImpl(code, details)
+	let text = failure.errMsg
+	if (details != null && details.length > 0) {
+		text = text + '：' + details
+	}
+	return {
+		grid : null,
+		fields : null,
+		affectedRows : null,
+		lastInsertId : null,
+		errorText : text,
+		records : null
+	} as LqjSqlOutcome
+}
+
+function unsupportedOutcome() : LqjSqlOutcome {
+	return buildOutcomeError(9802, 'mp-weixin 端暂未启用 SQLite 数据库能力')
+}
+
+export class LqjSqlDepot {
+	private options : LqjSqlDepotOptions
+	private alias : string = 'sqlite'
+
+	constructor(options : LqjSqlDepotOptions = {}) {
+		this.options = {
+			secretPhrase : options.secretPhrase,
+			enableCipher : options.enableCipher,
+			wasmResolver : options.wasmResolver,
+			homeDirectory : options.homeDirectory
+		} as LqjSqlDepotOptions
+	}
+
+	prepare(alias : string | null = null) : Promise<boolean> {
+		this.alias = alias == null || alias.trim().length == 0 ? 'sqlite' : alias.trim()
+		return Promise.resolve(false)
+	}
+
+	execute(_statement : string, _args : any[] = []) : LqjSqlOutcome {
+		return unsupportedOutcome()
+	}
+
+	select(_statement : string, _args : any[] = []) : LqjSqlOutcome {
+		return unsupportedOutcome()
+	}
+
+	storeRow(_tableName : string, _payload : UTSJSONObject) : LqjSqlOutcome {
+		return unsupportedOutcome()
+	}
+
+	reviseRow(_tableName : string, _payload : UTSJSONObject, _filterClause : string, _args : any[] = []) : LqjSqlOutcome {
+		return unsupportedOutcome()
+	}
+
+	discardRow(_tableName : string, _filterClause : string, _args : any[] = []) : LqjSqlOutcome {
+		return unsupportedOutcome()
+	}
+
+	hasTable(_tableName : string) : boolean {
+		return false
+	}
+
+	ensureTable(_tableName : string, _schema : UTSJSONObject) : LqjSqlOutcome {
+		return unsupportedOutcome()
+	}
+
+	removeTable(_tableName : string) : LqjSqlOutcome {
+		return unsupportedOutcome()
+	}
+
+	disconnect() : void {
+	}
+
+	openTransaction() : LqjSqlOutcome {
+		return unsupportedOutcome()
+	}
+
+	finishTransaction() : LqjSqlOutcome {
+		return unsupportedOutcome()
+	}
+
+	cancelTransaction() : LqjSqlOutcome {
+		return unsupportedOutcome()
+	}
+
+	executeSeries(entries : LqjSqlBatchStatement[]) : LqjSqlOutcome[] {
+		return entries.map((_entry : LqjSqlBatchStatement) : LqjSqlOutcome => {
+			return unsupportedOutcome()
+		})
+	}
+
+	saveSnapshot(_alias : string | null = null) : Promise<LqjSqlOutcome> {
+		return Promise.resolve(unsupportedOutcome())
+	}
+
+	restoreSnapshot(_alias : string) : Promise<LqjSqlOutcome> {
+		return Promise.resolve(unsupportedOutcome())
+	}
+
+	peekSnapshot() : LqjSqlSnapshot | null {
+		return {
+			kind : 'none',
+			filePath : this.alias,
+			bytes : null
+		} as LqjSqlSnapshot
+	}
+
+	switchHome(directory : string) : void {
+		this.options.homeDirectory = directory
+	}
+
+	changeSecret(secretPhrase : string | null = null) : void {
+		this.options.secretPhrase = secretPhrase
+		this.options.enableCipher = secretPhrase != null && secretPhrase.length > 0
+	}
+
+	restoreFromBytes(_binaryData : Uint8Array) : Promise<LqjSqlOutcome> {
+		return Promise.resolve(unsupportedOutcome())
+	}
+
+	restoreFromFileObject(_fileObject : any) : Promise<LqjSqlOutcome> {
+		return Promise.resolve(unsupportedOutcome())
+	}
+
+	restoreFromRemote(_remoteUrl : string) : Promise<LqjSqlOutcome> {
+		return Promise.resolve(unsupportedOutcome())
+	}
+}
+
+export class xSqlite {
+	private config : SQLiteConfig
+	private depot : LqjSqlDepot
+
+	constructor(config : SQLiteConfig = {}) {
+		this.config = config
+		this.depot = new LqjSqlDepot(buildCompatOptions(config))
+	}
+
+	async createDb(filename : string | null = null) : Promise<boolean> {
+		return await this.depot.prepare(normalizeCompatAlias(filename))
+	}
+
+	run(sql : string, params : any[] = []) : SQLiteResult {
+		return toCompatResult(this.depot.execute(sql, params))
+	}
+
+	query(sql : string, params : any[] = []) : SQLiteResult {
+		return toCompatResult(this.depot.select(sql, params))
+	}
+
+	insert(table : string, data : UTSJSONObject) : SQLiteResult {
+		return toCompatResult(this.depot.storeRow(table, data))
+	}
+
+	update(table : string, data : UTSJSONObject, where : string, params : any[] = []) : SQLiteResult {
+		return toCompatResult(this.depot.reviseRow(table, data, where, params))
+	}
+
+	delete(table : string, where : string, params : any[] = []) : SQLiteResult {
+		return toCompatResult(this.depot.discardRow(table, where, params))
+	}
+
+	tableExists(tableName : string) : boolean {
+		return this.depot.hasTable(tableName)
+	}
+
+	createTable(tableName : string, columns : UTSJSONObject) : SQLiteResult {
+		return toCompatResult(this.depot.ensureTable(tableName, columns))
+	}
+
+	dropTable(tableName : string) : SQLiteResult {
+		return toCompatResult(this.depot.removeTable(tableName))
+	}
+
+	close() : void {
+		this.depot.disconnect()
+	}
+
+	beginTransaction() : SQLiteResult {
+		return toCompatResult(this.depot.openTransaction())
+	}
+
+	commit() : SQLiteResult {
+		return toCompatResult(this.depot.finishTransaction())
+	}
+
+	rollback() : SQLiteResult {
+		return toCompatResult(this.depot.cancelTransaction())
+	}
+
+	executeBatch(statements : SQLiteExecuteBatchParams[]) : SQLiteResult[] {
+		const outcomes = this.depot.executeSeries(toCompatBatchStatements(statements))
+		const results = [] as SQLiteResult[]
+		for (let index = 0; index < outcomes.length; index++) {
+			results.push(toCompatResult(outcomes[index]))
+		}
+		return results
+	}
+
+	saveLocal(_filename : string | null = null) : SQLiteResult {
+		return toCompatResult(unsupportedOutcome())
+	}
+
+	async loadLocal(_filename : string) : Promise<SQLiteResult> {
+		return Promise.resolve(toCompatResult(unsupportedOutcome()))
+	}
+
+	getDatabasePath() : string | null {
+		return null
+	}
+
+	setDefaultDirectory(directory : string) : void {
+		const normalized = normalizeCompatDirectory(directory)
+		this.config.defaultDirectory = normalized
+		this.depot.switchHome(normalized == null ? '' : normalized)
+	}
+
+	setPassword(password : string | null = null) : void {
+		this.config.password = password
+		this.config.encryption = password != null && password.length > 0
+		this.depot.changeSecret(password)
+	}
+}

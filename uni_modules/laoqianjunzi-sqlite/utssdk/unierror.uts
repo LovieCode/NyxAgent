@@ -1,0 +1,24 @@
+import type { LqjSqlFailure, LqjSqlFailureCode } from './interface.uts'
+
+export const LqjSqlErrorSubject = 'laoqianjunzi-sqlite'
+
+export const LqjSqlErrorTexts : Map<LqjSqlFailureCode, string> = new Map([
+	[9801, '数据库尚未初始化'],
+	[9802, '当前平台暂不支持该恢复方式'],
+	[9803, '找不到本地备份文件'],
+	[9804, '数据库快照导出失败'],
+	[9805, '事务状态不正确'],
+	[9806, 'SQL 参数或表结构不合法']
+])
+
+export class LqjSqlFailureImpl extends UniError implements LqjSqlFailure {
+	details : string | null = null
+
+	constructor(errCode : LqjSqlFailureCode, details : string | null = null) {
+		super()
+		this.errSubject = LqjSqlErrorSubject
+		this.errCode = errCode
+		this.errMsg = LqjSqlErrorTexts.get(errCode) ?? ''
+		this.details = details
+	}
+}

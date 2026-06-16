@@ -1,0 +1,287 @@
+<template>
+	<view class="page-shell">
+		<view class="history-page">
+			<!-- 顶部标题栏 -->
+			<view class="header-wrap">
+				<view :style="{ height: statusBarHeight + 'px' }"></view>
+				<view class="header">
+					<view class="header-left">
+						<text class="back-btn" @click="goBack">‹ 返回</text>
+					</view>
+					<text class="header-title">历史记录</text>
+					<view class="header-right">
+						<text class="clear-btn" v-if="historyList.length > 0" @click="confirmClear">清空</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 历史列表 -->
+			<scroll-view class="list-scroll" :scroll-y="true">
+				<!-- 有数据 -->
+				<view v-if="historyList.length > 0" class="list-content">
+					<view
+						v-for="(item, index) in historyList"
+						:key="index"
+						class="history-card"
+						@click="openConversation(item)"
+					>
+						<view class="card-top">
+							<text class="card-title">{{ item['title'] }}</text>
+							<text class="card-time">{{ formatTime(item['created_at']) }}</text>
+						</view>
+						<text class="card-preview">{{ item['preview'] }}</text>
+						<view class="card-meta">
+							<text class="meta-msgs">{{ item['message_count'] }} 条消息</text>
+							<text class="meta-model">{{ item['model'] }}</text>
+						</view>
+					</view>
+				</view>
+
+				<!-- 空状态 -->
+				<view v-else class="empty-state">
+					<oui-icon-unix name="time-circle" size="48px" color="#D1D5DB" />
+					<text class="empty-text">暂无历史记录</text>
+					<text class="empty-hint">开始对话后，记录将自动保存在这里</text>
+				</view>
+			</scroll-view>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * 历史记录页面 - 展示过往对话列表
+	 */
+	import { getConversations, deleteConversation } from '@/utils/database.uts'
+
+	export default {
+		data() {
+			return {
+				statusBarHeight: 0,
+				historyList: [] as UTSJSONObject[],
+			}
+		},
+		onLoad() {
+			const sysInfo = uni.getSystemInfoSync()
+			this.statusBarHeight = sysInfo.statusBarHeight
+			this.loadHistory()
+		},
+		onShow() {
+			// 每次显示时刷新列表
+			this.loadHistory()
+		},
+		methods: {
+			loadHistory() {
+				try {
+					const list = getConversations()
+					this.historyList = list
+				} catch (_e: any) {
+					this.historyList = []
+				}
+			},
+
+			formatTime(ts: any | null): string {
+				if (ts == null) {
+					return ''
+				}
+				const d = new Date(ts as number)
+				const now = new Date()
+				const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+				const msgDate = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+				const diffDays = (today.getTime() - msgDate.getTime()) / (1000 * 60 * 60 * 24)
+
+				const h = (d.getHours() as number) < 10 ? '0' + d.getHours() : '' + d.getHours()
+				const m = (d.getMinutes() as number) < 10 ? '0' + d.getMinutes() : '' + d.getMinutes()
+
+				if (diffDays < 1) {
+					return h + ':' + m
+				} else if (diffDays < 2) {
+					return '昨天 ' + h + ':' + m
+				} else if (diffDays < 7) {
+					const days = diffDays as number
+					const daysInt = days.toFixed(0)
+					return daysInt + '天前'
+				} else {
+					return (d.getMonth() + 1) + '/' + d.getDate()
+				}
+			},
+
+			openConversation(item: UTSJSONObject) {
+				// TODO: 加载该对话的消息到聊天页
+				uni.setStorageSync('active_conversation_id', item['id'] as string)
+				uni.redirectTo({
+					url: '/pages/index/index'
+				})
+			},
+
+			goBack() {
+				uni.navigateBack()
+			},
+
+			confirmClear() {
+				uni.showModal({
+					title: '清空历史记录',
+					content: '确定要清空所有对话历史吗？此操作无法撤销。',
+					success: (res) => {
+						if (res.confirm == true) {
+							// 逐个删除
+							for (let i = 0; i < this.historyList.length; i++) {
+								const item = this.historyList[i]
+								deleteConversation(item['id'] as string)
+							}
+							this.historyList = []
+							uni.showToast({
+								title: '已清空',
+								icon: 'success'
+							})
+						}
+					}
+				})
+			}
+		}
+	}
+</script>
+
+<style>
+	.history-page {
+		flex: 1;
+		flex-direction: column;
+		background-color: #F5F5F7;
+	}
+
+	/* 顶部标题栏 */
+	.header-wrap {
+		background-color: #FFFFFF;
+	}
+
+	.header {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding-left: 16px;
+		padding-right: 16px;
+		padding-top: 12px;
+		padding-bottom: 12px;
+		background-color: #FFFFFF;
+	}
+
+	.header-left {
+		width: 60px;
+	}
+
+	.back-btn {
+		font-size: 16px;
+		color: #6B7280;
+	}
+
+	.header-title {
+		font-size: 18px;
+		font-weight: bold;
+		color: #111827;
+		text-align: center;
+		flex: 1;
+	}
+
+	.header-right {
+		width: 60px;
+		align-items: flex-end;
+	}
+
+	.clear-btn {
+		font-size: 14px;
+		color: #FB8FAB;
+	}
+
+	/* 列表滚动区 */
+	.list-scroll {
+		flex: 1;
+		padding: 16px;
+	}
+
+	.list-content {
+		flex-direction: column;
+	}
+
+	/* 历史记录卡片 */
+	.history-card {
+		background-color: #FFFFFF;
+		border-radius: 14px;
+		padding: 16px;
+		margin-bottom: 12px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #F0F0F2;
+	}
+
+	.card-top {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 8px;
+	}
+
+	.card-title {
+		font-size: 16px;
+		font-weight: bold;
+		color: #111827;
+		flex: 1;
+	}
+
+	.card-time {
+		font-size: 12px;
+		color: #9CA3AF;
+		margin-left: 8px;
+	}
+
+	.card-preview {
+		font-size: 14px;
+		color: #6B7280;
+		lines: 1;
+		text-overflow: ellipsis;
+		margin-bottom: 10px;
+	}
+
+	.card-meta {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.meta-msgs {
+		font-size: 12px;
+		color: #9CA3AF;
+		margin-right: 12px;
+	}
+
+	.meta-model {
+		font-size: 11px;
+		color: #FB8FAB;
+		background-color: #FDE8EF;
+		padding-left: 6px;
+		padding-right: 6px;
+		padding-top: 2px;
+		padding-bottom: 2px;
+		border-radius: 6px;
+	}
+
+	/* 空状态 */
+	.empty-state {
+		flex: 1;
+		justify-content: center;
+		align-items: center;
+		padding-top: 120px;
+	}
+
+	.empty-text {
+		font-size: 18px;
+		color: #9CA3AF;
+		margin-top: 16px;
+		font-weight: bold;
+	}
+
+	.empty-hint {
+		font-size: 13px;
+		color: #D1D5DB;
+		margin-top: 6px;
+		text-align: center;
+	}
+</style>

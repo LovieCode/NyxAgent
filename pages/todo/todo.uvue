@@ -1,0 +1,431 @@
+<template>
+	<view class="page-shell">
+		<view class="container">
+			<!-- 筛选标签 -->
+			<view class="filter-bar">
+				<view :class="['filter-tab', filter == 'all' ? 'filter-active' : '']" @click="setFilter('all')">
+					<text :class="['filter-text', filter == 'all' ? 'filter-text-active' : '']">全部</text>
+				</view>
+				<view :class="['filter-tab', filter == 'pending' ? 'filter-active' : '']" @click="setFilter('pending')">
+					<text :class="['filter-text', filter == 'pending' ? 'filter-text-active' : '']">待办</text>
+				</view>
+				<view :class="['filter-tab', filter == 'done' ? 'filter-active' : '']" @click="setFilter('done')">
+					<text :class="['filter-text', filter == 'done' ? 'filter-text-active' : '']">已完成</text>
+				</view>
+			</view>
+
+			<!-- Todo 列表 -->
+			<scroll-view class="todo-list" :scroll-y="true">
+				<view v-if="filteredTodos.length == 0" class="empty-state">
+					<text class="empty-text">暂无待办事项</text>
+				</view>
+				<view v-else>
+					<view
+						v-for="todo in filteredTodos"
+						:key="todo['id'] as string"
+						class="todo-item"
+						@click="toggleTodo(todo['id'] as string)"
+					>
+						<view class="todo-left">
+							<rice-checkbox
+								:model-value="(todo['completed'] as boolean)"
+								shape="round"
+								checked-color="#FB8FAB"
+								icon-size="20px"
+								@change="toggleTodo(todo['id'] as string)"
+							/>
+						</view>
+						<view class="todo-content">
+							<text :class="['todo-title', (todo['completed'] as boolean) ? 'todo-title-done' : '']">
+								{{ todo['title'] }}
+							</text>
+							<view class="todo-meta">
+								<rice-tag
+									:type="getTagType(todo['priority'] as string)"
+									:text="getPriorityLabel(todo['priority'] as string)"
+									size="small"
+									round
+								/>
+								<text class="todo-time">{{ todo['createdAt'] }}</text>
+							</view>
+						</view>
+						<view class="todo-right" @click.stop="deleteTodo(todo['id'] as string)">
+							<rice-icon name="delete" size="16px" color="#9CA3AF" />
+						</view>
+					</view>
+				</view>
+			</scroll-view>
+
+			<!-- FAB 悬浮按钮 -->
+			<rice-float-fab icon="plus" :gap-bottom="80" @click="showAddDialog" />
+
+			<!-- 添加弹窗 -->
+			<rice-dialog
+				v-model:show="showAdd"
+				title="新建待办"
+				:show-cancel-button="true"
+				:cancel-button-text="'取消'"
+				:confirm-button-text="'确认'"
+				@confirm="addTodo"
+				@cancel="cancelAdd"
+			>
+				<view class="dialog-content">
+					<rice-input v-model="newTitle" placeholder="输入待办标题" border="none" />
+					<view class="priority-selector">
+						<text class="form-label">优先级</text>
+						<view class="priority-options">
+							<view
+								:class="['priority-option', newPriority == 'high' ? 'priority-option-active-high' : '']"
+								@click="newPriority = 'high'"
+							>
+								<text class="priority-option-text">高</text>
+							</view>
+							<view
+								:class="['priority-option', newPriority == 'medium' ? 'priority-option-active-medium' : '']"
+								@click="newPriority = 'medium'"
+							>
+								<text class="priority-option-text">中</text>
+							</view>
+							<view
+								:class="['priority-option', newPriority == 'low' ? 'priority-option-active-low' : '']"
+								@click="newPriority = 'low'"
+							>
+								<text class="priority-option-text">低</text>
+							</view>
+						</view>
+					</view>
+				</view>
+			</rice-dialog>
+		</view>
+		<TabBar current="pages/todo/todo" />
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * Todo 页面 - 任务管理界面
+	 * 扁平化粉白主题，使用 rice-ui 组件
+	 */
+
+	type TabChangeEvent = {
+		index: number,
+		name: string,
+		value: string,
+		disabled: boolean
+	};
+
+	export default {
+		data() {
+			return {
+				todos: [] as UTSJSONObject[],
+				filter: 'all' as string,
+				showAdd: false as boolean,
+				newTitle: '' as string,
+				newPriority: 'medium' as string,
+				tabList: [
+					{ name: '全部', value: 'all' },
+					{ name: '待办', value: 'pending' },
+					{ name: '已完成', value: 'done' }
+				] as any[]
+			}
+		},
+		computed: {
+			filteredTodos() : UTSJSONObject[] {
+				if (this.filter == 'pending') {
+					return this.todos.filter((todo : UTSJSONObject) : boolean => {
+						return (todo['completed'] as boolean) == false
+					})
+				} else if (this.filter == 'done') {
+					return this.todos.filter((todo : UTSJSONObject) : boolean => {
+						return (todo['completed'] as boolean) == true
+					})
+				}
+				return this.todos
+			},
+			filterIndex() : number {
+				if (this.filter == 'all') return 0
+				if (this.filter == 'pending') return 1
+				return 2
+			}
+		},
+		onLoad() {
+			this.loadTodos()
+		},
+		onShow() {
+			this.loadTodos()
+		},
+		methods: {
+			loadTodos() {
+				let stored = uni.getStorageSync('todo_list') as string
+				if (stored != null && stored != '') {
+					try {
+						this.todos = JSON.parse(stored) as UTSJSONObject[]
+					} catch (e) {
+						this.todos = [] as UTSJSONObject[]
+					}
+				} else {
+					this.todos = [] as UTSJSONObject[]
+				}
+			},
+
+			saveTodos() {
+				uni.setStorageSync('todo_list', JSON.stringify(this.todos))
+			},
+
+			setFilter(f : string) {
+				this.filter = f
+			},
+
+			toggleTodo(id : string) {
+				for (let i = 0; i < this.todos.length; i++) {
+					if ((this.todos[i]['id'] as string) == id) {
+						this.todos[i]['completed'] = !((this.todos[i]['completed'] as boolean))
+						break
+					}
+				}
+				this.saveTodos()
+			},
+
+			deleteTodo(id : string) {
+				uni.showModal({
+					title: '确认删除',
+					content: '确定要删除这个待办事项吗？',
+					success: (res) => {
+						if (res.confirm) {
+							let newTodos = [] as UTSJSONObject[]
+							for (let i = 0; i < this.todos.length; i++) {
+								if ((this.todos[i]['id'] as string) != id) {
+									newTodos.push(this.todos[i])
+								}
+							}
+							this.todos = newTodos
+							this.saveTodos()
+						}
+					}
+				})
+			},
+
+			showAddDialog() {
+				this.newTitle = ''
+				this.newPriority = 'medium'
+				this.showAdd = true
+			},
+
+			cancelAdd() {
+				this.showAdd = false
+			},
+
+			addTodo() {
+				if (this.newTitle.trim() == '') {
+					uni.showToast({
+						title: '请输入标题',
+						icon: 'none'
+					})
+					return
+				}
+				let now = new Date()
+				let timeStr = now.getFullYear() + '-' +
+					this.padZero(now.getMonth() + 1) + '-' +
+					this.padZero(now.getDate()) + ' ' +
+					this.padZero(now.getHours()) + ':' +
+					this.padZero(now.getMinutes())
+				let newTodo = {
+					id: '' + Date.now(),
+					title: this.newTitle.trim(),
+					priority: this.newPriority,
+					completed: false,
+					createdAt: timeStr
+				} as UTSJSONObject
+				this.todos.unshift(newTodo)
+				this.saveTodos()
+				this.showAdd = false
+				uni.showToast({
+					title: '已添加',
+					icon: 'success'
+				})
+			},
+
+			getPriorityLabel(priority : string) : string {
+				if (priority == 'high') {
+					return '高'
+				} else if (priority == 'medium') {
+					return '中'
+				}
+				return '低'
+			},
+
+			getTagType(priority : string) : string {
+				if (priority == 'high') {
+					return 'error'
+				} else if (priority == 'medium') {
+					return 'warning'
+				}
+				return 'success'
+			},
+
+			onTabChange(e : TabChangeEvent) {
+				if (e.value != null) {
+					this.filter = e.value
+				}
+			},
+
+			padZero(n : number) : string {
+				if (n < 10) {
+					return '0' + n
+				}
+				return '' + n
+			}
+		}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+	}
+
+	.todo-list {
+		flex: 1;
+		padding: 0 30rpx;
+	}
+
+	.empty-state {
+		flex: 1;
+		justify-content: center;
+		align-items: center;
+		padding-top: 200rpx;
+	}
+
+	.empty-text {
+		font-size: 28rpx;
+		color: #9CA3AF;
+	}
+
+	/* 筛选标签栏 */
+	.filter-bar {
+		flex-direction: row;
+		padding: 16rpx 30rpx;
+		background-color: #FFFFFF;
+		border-bottom-width: 0.5px;
+		border-bottom-color: #F3F4F6;
+		border-bottom-style: solid;
+	}
+
+	.filter-tab {
+		padding: 12rpx 24rpx;
+		margin-right: 12rpx;
+		border-radius: 10rpx;
+		background-color: #F3F4F6;
+	}
+
+	.filter-active {
+		background-color: #FDE8EF;
+	}
+
+	.filter-text {
+		font-size: 26rpx;
+		color: #6B7280;
+	}
+
+	.filter-text-active {
+		color: #DB2777;
+		font-weight: bold;
+	}
+
+	/* 待办项行布局 */
+	.todo-item {
+		flex-direction: row;
+		align-items: flex-start;
+		padding: 16rpx 0;
+		border-bottom-width: 0.5px;
+		border-bottom-color: #F3F4F6;
+		border-bottom-style: solid;
+	}
+
+	.todo-left {
+		padding-right: 16rpx;
+		padding-top: 4rpx;
+	}
+
+	.todo-content {
+		flex: 1;
+	}
+
+	.todo-right {
+		padding-left: 12rpx;
+		justify-content: center;
+	}
+
+	/* 待办标题 */
+	.todo-title {
+		font-size: 28rpx;
+		color: #111827;
+	}
+
+	.todo-title-done {
+		color: #9CA3AF;
+	}
+
+	/* 待办元信息行：优先级标签 + 时间 */
+	.todo-meta {
+		flex-direction: row;
+		align-items: center;
+		margin-top: 8rpx;
+	}
+
+	.todo-time {
+		font-size: 22rpx;
+		color: #9CA3AF;
+		margin-left: 12rpx;
+	}
+
+	/* 弹窗内优先级选择器 */
+	.dialog-content {
+		width: 100%;
+	}
+
+	.priority-selector {
+		margin-top: 16rpx;
+		margin-bottom: 8rpx;
+	}
+
+	.form-label {
+		font-size: 26rpx;
+		color: #6B7280;
+		margin-bottom: 12rpx;
+	}
+
+	.priority-options {
+		flex-direction: row;
+	}
+
+	.priority-option {
+		padding: 12rpx 32rpx;
+		border-radius: 12rpx;
+		background-color: #F3F4F6;
+		margin-right: 16rpx;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.priority-option-active-high {
+		border-color: #EF4444;
+		background-color: rgba(239,68,68,0.08);
+	}
+
+	.priority-option-active-medium {
+		border-color: #F59E0B;
+		background-color: rgba(245,158,11,0.08);
+	}
+
+	.priority-option-active-low {
+		border-color: #10B981;
+		background-color: rgba(16,185,129,0.08);
+	}
+
+	.priority-option-text {
+		font-size: 26rpx;
+		color: #111827;
+	}
+</style>

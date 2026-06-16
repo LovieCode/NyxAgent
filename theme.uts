@@ -1,0 +1,79 @@
+/**
+ * 全局设计令牌 - 白色简洁主体 淡粉色加渐变强调色
+ *
+ * 本文件作为设计参考文档，定义了项目中统一使用的颜色、字号、圆角、间距规范。
+ * 由于 UTS 模板不支持 JS 模块导入，各组件通过 CSS 直接引用对应的色值。
+ *
+ * 修改本文件后，需要同步更新 App.uvue 及各组件中的硬编码色值。
+ */
+
+/** 颜色系统 */
+export const Colors = {
+	// 主色系 - 清新淡粉（仅用于强调）
+	primary: '#FB8FAB',
+	primaryLight: '#FDE8EF',
+	primaryDark: '#DB2777',
+	primaryBg: '#FFFFFF',
+
+	// 表面色
+	surface: '#FFFFFF',
+	surfaceDim: '#F3F4F6',
+	surfaceInput: '#F9FAFB',
+
+	// 文字色
+	textPrimary: '#111827',
+	textSecondary: '#6B7280',
+	textMuted: '#9CA3AF',
+	textWhite: '#FFFFFF',
+
+	// 功能色
+	success: '#10B981',
+	successBg: 'rgba(16,185,129,0.12)',
+	warning: '#F59E0B',
+	warningBg: 'rgba(245,158,11,0.12)',
+	error: '#EF4444',
+	errorBg: 'rgba(239,68,68,0.12)',
+
+	// 边框
+	border: '#E5E7EB',
+	borderLight: '#F3F4F6',
+
+	// 遮罩
+	mask: 'rgba(0,0,0,0.4)'
+}
+
+/** 字号系统 */
+export const FontSize = {
+	xs: 22,
+	sm: 24,
+	md: 26,
+	lg: 28,
+	xl: 30,
+	title: 32,
+	pageTitle: 48
+}
+
+/** 圆角系统 */
+export const Radius = {
+	sm: 10,
+	md: 14,
+	lg: 18,
+	xl: 20,
+	round: 50,
+	full: 999
+}
+
+/** 间距系统 */
+export const Spacing = {
+	xs: 8,
+	sm: 12,
+	md: 16,
+	lg: 24,
+	xl: 32,
+	xxl: 40
+}
+
+/** 阴影（通过背景色模拟） */
+export const Shadow = {
+	card: '#F3F4F6'
+}

@@ -1,0 +1,95 @@
+<template>
+	<!-- 自定义底部导航栏 - 浮动卡片风格 -->
+	<view class="tabbar">
+		<view
+			v-for="(tab, index) in tabs"
+			:key="index"
+			class="tab-item"
+			@click="switchTab(tab['pagePath'] as string)"
+		>
+			<oui-icon-unix
+				:name="tab['icon'] as string"
+				:size="'22px'"
+				:color="current == tab['pagePath'] ? '#FB8FAB' : '#B0B3BF'"
+			/>
+			<text
+				:class="'tab-label' + (current == tab['pagePath'] ? ' tab-label-active' : '')"
+			>{{ tab['text'] }}</text>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * 自定义底部导航栏组件
+	 * 使用 oui-icon-unix 渲染图标
+	 */
+	export default {
+		name: 'TabBar',
+		props: {
+			// 当前选中页面的路径，例如 "pages/index/index"
+			current: {
+				type: String,
+				default: 'pages/index/index',
+			},
+		},
+		data() {
+			return {
+				tabs: [
+					{ pagePath: 'pages/agents/agents', text: '智能体', icon: 'robot' },
+					{ pagePath: 'pages/todo/todo', text: '待办', icon: 'check-circle' },
+					{ pagePath: 'pages/notes/notes', text: '笔记', icon: 'file-text' },
+					{ pagePath: 'pages/settings/settings', text: '设置', icon: 'setting' },
+				],
+			};
+		},
+		methods: {
+			switchTab(url: string) {
+				if (url == this.current) {
+					return;
+				}
+				uni.redirectTo({
+					url: '/' + url,
+				});
+			},
+		},
+	};
+</script>
+
+<style>
+	/* 底部导航栏 - 浮动白色卡片 */
+	.tabbar {
+		flex-direction: row;
+		height: 54px;
+		background-color: #FFFFFF;
+		border-radius: 18px;
+		margin-left: 12px;
+		margin-right: 12px;
+		margin-top: 8px;
+		margin-bottom: 12px;
+		justify-content: space-around;
+		align-items: center;
+	}
+
+	/* 单个标签项 */
+	.tab-item {
+		flex-direction: column;
+		justify-content: center;
+		align-items: center;
+		flex: 1;
+		height: 100%;
+	}
+
+	/* 标签文字 */
+	.tab-label {
+		font-size: 10px;
+		color: #B0B3BF;
+		margin-top: 3px;
+	}
+
+	/* 选中标签文字 - 粉色 */
+	.tab-label-active {
+		color: #FB8FAB;
+		font-weight: bold;
+	}
+</style>

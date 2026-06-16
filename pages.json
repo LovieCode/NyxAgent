@@ -1,0 +1,80 @@
+{
+	"pages": [
+		{
+			"path": "pages/agents/agents",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/todo/todo",
+			"style": {
+				"navigationBarTitleText": "Todo"
+			}
+		},
+		{
+			"path": "pages/notes/notes",
+			"style": {
+				"navigationBarTitleText": "笔记"
+			}
+		},
+		{
+			"path": "pages/history/history",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "历史记录"
+			}
+		},
+		{
+			"path": "pages/settings/settings",
+			"style": {
+				"navigationBarTitleText": "设置"
+			}
+		},
+		{
+			"path": "pages/settings/basic/basic",
+			"style": {
+				"navigationBarTitleText": "基础设置"
+			}
+		},
+		{
+			"path": "pages/settings/model/model",
+			"style": {
+				"navigationBarTitleText": "模型设置"
+			}
+		},
+		{
+			"path": "pages/settings/plugin/plugin",
+			"style": {
+				"navigationBarTitleText": "插件设置"
+			}
+		},
+		{
+			"path": "pages/settings/about/about",
+			"style": {
+				"navigationBarTitleText": "关于"
+			}
+		}
+	,{
+    "path": "uni_modules/rice-ui/pages/action-sheet/action-sheet"
+}
+,{
+    "path": "uni_modules/rice-ui/pages/dialog/dialog"
+}
+],
+	"globalStyle": {
+		"navigationBarTextStyle": "white",
+		"navigationBarTitleText": "Agent",
+		"navigationBarBackgroundColor": "#1a1a2e",
+		"backgroundColor": "#0f0f1a"
+	},
+	"uniIdRouter": {}
+}
