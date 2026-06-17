@@ -1,5 +1,5 @@
 <script lang="uts">
-	import { initDatabase } from '@/utils/database.uts'
+	import { initDatabase, initDefaultProviders } from '@/utils/database.uts'
 
   // #ifdef APP-ANDROID || APP-HARMONY
 	let firstBackTime = 0
@@ -9,6 +9,8 @@
 			console.log('App Launch')
 			// 初始化本地数据库（建表）
 			initDatabase()
+			// 初始化默认提供商
+			initDefaultProviders()
 		},
 		onShow: function () {
 			console.log('App Show')

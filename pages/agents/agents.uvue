@@ -225,11 +225,14 @@
 				const icon = this.createData['icon'] as string ?? 'robot'
 				const avatar = this.createData['avatar'] as string ?? ''
 
+				const defaultModel = uni.getStorageSync('settings_model') as string
+
 				const newAgent: UTSJSONObject = {
 					id: id,
 					icon: icon,
 					name: name,
 					desc: desc,
+					model: defaultModel != null && defaultModel != '' ? defaultModel : 'deepseek-v4-flash',
 				}
 
 				// 写入头像
