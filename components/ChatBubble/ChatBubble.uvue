@@ -13,7 +13,8 @@
 				<!-- 文本消息 -->
 				<text v-if="msgType != 'image' || content != ''" :class="textClass">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
 			</view>
-			<view class="chat-avatar user-avatar">
+			<image v-if="userAvatar != ''" :src="userAvatar" class="chat-avatar user-avatar-image" mode="aspectFill" />
+			<view v-else class="chat-avatar user-avatar">
 				<text class="chat-avatar-text">{{userInitial}}</text>
 			</view>
 		</view>
@@ -25,9 +26,6 @@
 				<text class="chat-avatar-text">AI</text>
 			</view>
 			<view class="ai-content">
-				<view class="ai-label">
-					<text class="ai-label-text">AI 助手</text>
-				</view>
 				<image v-if="msgType == 'image' && imageUrl != ''" :src="imageUrl" class="bubble-image" mode="widthFix" />
 				<text v-if="msgType != 'image' || content != ''" :class="textClass">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
 			</view>
@@ -72,6 +70,10 @@
 				default: false
 			},
 			userNickname: {
+				type: String,
+				default: ''
+			},
+			userAvatar: {
 				type: String,
 				default: ''
 			},
@@ -193,6 +195,11 @@
 		margin-left: 8px;
 	}
 
+	/* 用户头像 - 自定义图片 */
+	.user-avatar-image {
+		margin-left: 8px;
+	}
+
 	/* AI 头像 - 灰色 */
 	.ai-avatar {
 		background-color: var(--rice-text-color-3);
@@ -240,24 +247,6 @@
 		padding: 10px;
 		border-width: 1px;
 		border-color: #EF4444;
-	}
-
-	/* AI 标签 - 淡粉强调 */
-	.ai-label {
-		background-color: var(--rice-primary-color-1);
-		border-radius: 4px;
-		padding-left: 6px;
-		padding-right: 6px;
-		padding-top: 2px;
-		padding-bottom: 2px;
-		margin-bottom: 4px;
-		align-self: flex-start;
-	}
-
-	.ai-label-text {
-		font-size: 10px;
-		color: var(--rice-primary-color-7);
-		font-weight: bold;
 	}
 
 	/* 工具标签 */

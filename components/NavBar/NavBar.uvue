@@ -63,7 +63,8 @@
 		created() {
 			try {
 				const sysInfo = uni.getSystemInfoSync()
-				this.statusBarHeight = sysInfo.statusBarHeight
+				const raw = sysInfo.statusBarHeight
+				this.statusBarHeight = raw > 20 ? raw - 8 : raw
 			} catch (_e: any) {
 				this.statusBarHeight = 0
 			}
@@ -99,8 +100,7 @@
 		justify-content: space-between;
 		padding-left: 14px;
 		padding-right: 6px;
-		padding-top: 6px;
-		padding-bottom: 6px;
+		height: 40px;
 		background-color: var(--rice-primary-color);
 	}
 

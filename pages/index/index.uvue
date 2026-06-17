@@ -15,13 +15,22 @@
 
 		<!-- 消息列表 -->
 		<scroll-view class="message-list" :scroll-y="true" :scroll-top="scrollTop">
-			<view v-for="(msg, index) in messages" :key="index">
+			<view v-for="(msg, index) in messages" :key="index" @touchstart="onMsgTouchStart(index, $event as UniTouchEvent)" @touchmove="onMsgTouchMove($event as UniTouchEvent)" @touchend="onMsgTouchEnd">
 				<ToolExecution
 					v-if="msg.role == 'toolResult'"
 					:toolName="msg.toolName != null ? msg.toolName : ''"
 					:status="msg.toolStatus != null ? msg.toolStatus : 'completed'"
 					:result="msg.content"
 				/>
+				<!-- 行内编辑模式 -->
+				<view v-else-if="editingIndex == index" class="inline-edit-wrap" :class="msg.role == 'user' ? 'inline-edit-user' : 'inline-edit-ai'">
+					<textarea class="inline-edit-input" v-model="editBuffer" auto-height />
+					<view class="inline-edit-actions">
+						<text class="inline-edit-cancel" @click="cancelEdit">取消</text>
+						<text class="inline-edit-save" @click="saveEdit">保存</text>
+						<text class="inline-edit-send" @click="saveAndSend">发送</text>
+					</view>
+				</view>
 				<ChatBubble
 					v-else
 					:role="msg.role"
@@ -29,6 +38,8 @@
 					:msgType="msg.msgType != null ? msg.msgType : 'text'"
 					:imageUrl="msg.imageUrl != null ? msg.imageUrl : ''"
 					:agentAvatar="currentAgentAvatar"
+					:userNickname="userNickname"
+					:userAvatar="userAvatar"
 					:toolName="msg.toolName != null ? msg.toolName : ''"
 					:isError="msg.isError == true"
 					:isStreaming="msg.isStreaming == true"
@@ -65,19 +76,19 @@
 			<view v-if="showToolPanel" class="toolbar-panel">
 				<view class="toolbar-grid">
 					<view class="toolbar-grid-item" @click="pickImage; showToolPanel = false">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="image" size="22px" color="var(--rice-primary-color)" /></view>
+						<view class="toolbar-grid-icon"><oui-icon-unix name="image" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">图片</text>
 					</view>
 					<view class="toolbar-grid-item" @click="takePhoto; showToolPanel = false">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="camera" size="22px" color="var(--rice-primary-color)" /></view>
+						<view class="toolbar-grid-icon"><oui-icon-unix name="camera" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">拍照</text>
 					</view>
 					<view class="toolbar-grid-item" @click="pickFile; showToolPanel = false">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="file" size="22px" color="var(--rice-primary-color)" /></view>
+						<view class="toolbar-grid-icon"><oui-icon-unix name="file" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">文件</text>
 					</view>
 					<view class="toolbar-grid-item" @click="pickLocation; showToolPanel = false">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="map-pin" size="22px" color="var(--rice-primary-color)" /></view>
+						<view class="toolbar-grid-icon"><oui-icon-unix name="location" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">位置</text>
 					</view>
 				</view>
@@ -91,7 +102,7 @@
 	 * 对话页面 - AI Agent 主聊天界面
 	 * 扁平化粉白主题
 	 */
-	import { saveConversation, getMessages } from '@/utils/database.uts'
+	import { saveConversation, getMessages, getConversationsByAgent } from '@/utils/database.uts'
 	import { chatWithLLM } from '@/utils/llm.uts'
 	import { getAgentById } from '@/utils/agent.uts'
 
@@ -112,6 +123,10 @@
 				currentAgentName: '' as string,
 				/** 当前智能体头像 */
 				currentAgentAvatar: '' as string,
+				/** 用户昵称（用于消息气泡头像） */
+				userNickname: '' as string,
+				/** 用户头像路径 */
+				userAvatar: '' as string,
 				/** 滚动位置 */
 				scrollTop: 0,
 				/** 当前对话唯一 ID */
@@ -122,6 +137,16 @@
 				inputHeight: 40,
 				/** 是否显示工具栏面板 */
 				showToolPanel: false as boolean,
+				/** 行内编辑 */
+				editingIndex: -1 as number,
+				editBuffer: '' as string,
+				/** 长按检测 */
+				touchStartX: 0 as number,
+				touchStartY: 0 as number,
+				touchStartIndex: -1 as number,
+				/** 非时间戳，用累加计数 */
+				longpressTick: 0 as number,
+				longpressTimer: -1 as number,
 			}
 		},
 		computed: {
@@ -131,17 +156,25 @@
 			}
 		},
 		onLoad() {
+			// 加载用户昵称
+			this.loadUserNickname()
 			// 加载当前智能体信息
 			this.loadCurrentAgent()
 			// 检查是否因历史记录跳转过来的（加载已有对话）
 			this.loadExistingConversation()
+			// 无指定历史时，自动加载该智能体最近对话
+			if (this.conversationId == '') {
+				this.loadRecentConversation()
+			}
+			// 仍然没有，生成新对话 ID
 			if (this.conversationId == '') {
 				this.conversationId = '' + Date.now()
 			}
 		},
 
 		onShow() {
-			// 每次显示页面时刷新智能体信息
+			// 每次显示页面时刷新智能体信息和用户昵称
+			this.loadUserNickname()
 			this.loadCurrentAgent()
 		},
 
@@ -152,6 +185,14 @@
 
 		methods: {
 			/** 加载当前智能体信息 */
+			/** 加载用户昵称 */
+			loadUserNickname() {
+				const v = uni.getStorageSync('profile_nickname') as string
+				this.userNickname = (v != null && v != '') ? v : '用户'
+				const avatar = uni.getStorageSync('profile_avatar') as string
+				this.userAvatar = (avatar != null) ? avatar : ''
+			},
+
 			loadCurrentAgent() {
 				const id = uni.getStorageSync('active_agent_id') as string
 				if (id == null || id == '') { return }
@@ -182,6 +223,29 @@
 				}
 			},
 
+			/** 自动加载当前智能体最近的一条对话 */
+			loadRecentConversation() {
+				if (this.currentAgentId == '') { return }
+				try {
+					const convs = getConversationsByAgent(this.currentAgentId)
+					if (convs != null && convs.length > 0) {
+						const latest = convs[0]
+						const convId = latest['id'] as string
+						if (convId != null && convId != '') {
+							this.conversationId = convId
+							this.savedFlag = true
+							const msgs = getMessages(convId)
+							if (msgs != null && msgs.length > 0) {
+								this.messages = msgs
+								this.scrollToBottom()
+							}
+						}
+					}
+				} catch (_e: any) {
+					// 加载失败则开始新对话
+				}
+			},
+
 			/** 根据行数 JS 动态调整输入框高度 */
 			onInputLineChange(e: UniTextareaLineChangeEvent) {
 				const lineCount = e.detail.lineCount
@@ -192,6 +256,50 @@
 				}
 			},
 
+			/** 触摸开始 — 启动长按计时（每 100ms 计数一次，5 次 = 500ms） */
+			onMsgTouchStart(index: number, e: UniTouchEvent) {
+				this.touchStartX = e.touches[0].screenX
+				this.touchStartY = e.touches[0].screenY
+				this.touchStartIndex = index
+				this.longpressTick = 0
+				if (this.longpressTimer != -1) {
+					clearInterval(this.longpressTimer)
+				}
+				this.longpressTimer = setInterval(() => {
+					this.longpressTick++
+					if (this.touchStartIndex >= 0 && this.longpressTick >= 5) {
+						clearInterval(this.longpressTimer)
+						this.longpressTimer = -1
+						const idx = this.touchStartIndex
+						this.touchStartIndex = -1
+						this.onMessageLongpress(idx)
+					}
+				}, 100)
+			},
+
+			/** 触摸移动 — 距离过大取消长按 */
+			onMsgTouchMove(e: UniTouchEvent) {
+				if (this.touchStartIndex < 0) { return }
+				const dx = e.touches[0].screenX - this.touchStartX
+				const dy = e.touches[0].screenY - this.touchStartY
+				if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
+					if (this.longpressTimer != -1) {
+						clearInterval(this.longpressTimer)
+						this.longpressTimer = -1
+					}
+					this.touchStartIndex = -1
+				}
+			},
+
+			/** 触摸结束 — 清理状态 */
+			onMsgTouchEnd() {
+				if (this.longpressTimer != -1) {
+					clearInterval(this.longpressTimer)
+					this.longpressTimer = -1
+				}
+				this.touchStartIndex = -1
+			},
+
 			sendMessage() {
 				const text = this.inputText.trim()
 				if (text == '' || this.isGenerating) {
@@ -199,12 +307,137 @@
 				}
 				if (this.messages.length == 0) {
 					this.conversationId = '' + Date.now()
-					this.savedFlag = false
 				}
+				// 发新消息时允许保存（从历史加载后 savedFlag 为 true 会阻止保存）
+				this.savedFlag = false
 				this.addTextMessage('user', text)
 				this.inputText = ''
 				this.scrollToBottom()
 				this.simulateAIResponse(text)
+			},
+
+			/** 长按消息弹出操作菜单 */
+			onMessageLongpress(index: number) {
+				if (this.isGenerating) { return }
+				const msg = this.messages[index]
+				if (msg == null) { return }
+				const roleRaw = msg['role']
+				if (roleRaw == null) { return }
+				const role = roleRaw as string
+				let actions: string[] = []
+				if (role == 'user' || role == 'assistant') {
+					actions = ['删除', '编辑']
+					if (role == 'assistant') {
+						actions.push('重新回答')
+					}
+				} else {
+					actions = ['删除']
+				}
+				const msgIndex = index
+				uni.showActionSheet({
+					itemList: actions,
+					success: (res) => {
+						const tapIdx = res.tapIndex
+						if (tapIdx < 0 || tapIdx >= actions.length) { return }
+						const action = actions[tapIdx]
+						if (action == '删除') {
+							this.deleteMessage(msgIndex)
+						} else if (action == '编辑') {
+							this.editMessage(msgIndex)
+						} else if (action == '重新回答') {
+							this.regenerateResponse(msgIndex)
+						}
+					}
+				})
+			},
+
+			/** 删除指定消息 */
+			deleteMessage(index: number) {
+				if (index < 0 || index >= this.messages.length) { return }
+				this.messages.splice(index, 1)
+				this.savedFlag = false
+			},
+
+			/** 原地编辑消息 */
+			editMessage(index: number) {
+				const msg = this.messages[index]
+				if (msg == null) { return }
+				const rawContent = msg['content']
+				this.editBuffer = rawContent != null ? (rawContent as string) : ''
+				this.editingIndex = index
+			},
+
+			/** 保存行内编辑 */
+			saveEdit() {
+				const idx = this.editingIndex
+				if (idx < 0 || idx >= this.messages.length) { return }
+				const msg = this.messages[idx]
+				if (msg == null) { return }
+				msg['content'] = this.editBuffer
+				this.messages.splice(idx, 1, msg)
+				this.cancelEdit()
+				this.savedFlag = false
+			},
+
+			/** 保存并发送：更新内容后从该消息截断并重新触发 AI */
+			saveAndSend() {
+				const idx = this.editingIndex
+				if (idx < 0 || idx >= this.messages.length) { return }
+				const msg = this.messages[idx]
+				if (msg == null) { return }
+				msg['content'] = this.editBuffer
+				this.messages.splice(idx, 1, msg)
+				this.editingIndex = -1
+				this.editBuffer = ''
+				this.savedFlag = false
+
+				// 截断该消息之后的内容，重新触发 AI
+				this.messages.splice(idx + 1, this.messages.length - idx - 1)
+				// 取最后一条用户消息发往 AI
+				let lastUserText = ''
+				for (let i = this.messages.length - 1; i >= 0; i--) {
+					const m = this.messages[i]
+					const roleRaw = m['role']
+					if (roleRaw != null && (roleRaw as string) == 'user') {
+						const contentRaw = m['content']
+						if (contentRaw != null) {
+							lastUserText = contentRaw as string
+						}
+						break
+					}
+				}
+				if (lastUserText != '') {
+					this.simulateAIResponse(lastUserText)
+				}
+			},
+
+			/** 取消行内编辑 */
+			cancelEdit() {
+				this.editingIndex = -1
+				this.editBuffer = ''
+			},
+
+			/** 重新生成 AI 回答：删除该 AI 消息，重新触发 AI */
+			regenerateResponse(index: number) {
+				// 从 index 开始截断（包括该 AI 消息和之后的消息）
+				this.messages.splice(index, this.messages.length - index)
+				this.savedFlag = false
+				// 取上一条用户消息作为输入重新触发
+				let lastUserText = ''
+				for (let i = this.messages.length - 1; i >= 0; i--) {
+					const m = this.messages[i]
+					const roleRaw = m['role']
+					if (roleRaw != null && (roleRaw as string) == 'user') {
+						const contentRaw = m['content']
+						if (contentRaw != null) {
+							lastUserText = contentRaw as string
+						}
+						break
+					}
+				}
+				if (lastUserText != '') {
+					this.simulateAIResponse(lastUserText)
+				}
 			},
 
 			/** 添加文本消息 */
@@ -403,12 +636,28 @@
 					}
 				}
 
-				const modelName = uni.getStorageSync('settings_model') as string
+				// 优先使用智能体自己的模型，回退到全局设置
+				let modelName = 'deepseek-v4-flash'
+				if (this.currentAgentId != '') {
+					const agent = getAgentById(this.currentAgentId)
+					if (agent != null) {
+						const rawModel = agent['model']
+						if (rawModel != null) {
+							modelName = rawModel as string
+						}
+					}
+				}
+				if (modelName == 'deepseek-v4-flash') {
+					const globalModel = uni.getStorageSync('settings_model') as string
+					if (globalModel != null && globalModel != '') {
+						modelName = globalModel
+					}
+				}
 
 				saveConversation(
 					this.conversationId,
 					title,
-					modelName != null && modelName != '' ? modelName : 'deepseek-v4-flash',
+					modelName,
 					this.currentAgentId,
 					this.messages
 				)
@@ -431,7 +680,24 @@
 				} as UTSJSONObject)
 				this.scrollToBottom()
 
-				chatWithLLM(this.messages).then((response: string | null) => {
+				// 读取当前智能体的系统提示词和模型
+				let systemPrompt = ''
+				let agentModel = ''
+				if (this.currentAgentId != '') {
+					const agent = getAgentById(this.currentAgentId)
+					if (agent != null) {
+						const raw = agent['systemPrompt']
+						if (raw != null) {
+							systemPrompt = raw as string
+						}
+						const rawModel = agent['model']
+						if (rawModel != null) {
+							agentModel = rawModel as string
+						}
+					}
+				}
+
+				chatWithLLM(this.messages, systemPrompt, '', agentModel).then((response: string | null) => {
 					const text = response ?? '抱歉，调用 LLM 失败，请检查 API 配置。'
 
 					let charIndex = 0
@@ -529,16 +795,16 @@
 		align-items: center;
 	}
 	.toolbar-grid-icon {
-		width: 40px;
-		height: 40px;
-		border-radius: 10px;
+		width: 52px;
+		height: 52px;
+		border-radius: 14px;
 		background-color: var(--rice-background-2);
 		justify-content: center;
 		align-items: center;
 		margin-bottom: 4px;
 	}
 	.toolbar-grid-label {
-		font-size: 11px;
+		font-size: 12px;
 		color: var(--rice-text-color-2);
 	}
 
@@ -589,5 +855,64 @@
 		color: var(--rice-text-color);
 		background-color: transparent;
 		line-height: 22px;
+	}
+
+	/* 行内编辑 */
+	.inline-edit-wrap {
+		padding: 10px;
+		margin: 8px 10px;
+		border-radius: 16px;
+	}
+
+	.inline-edit-user {
+		background-color: #FFF0F3;
+		margin-left: 50px;
+		margin-right: 10px;
+	}
+
+	.inline-edit-ai {
+		background-color: var(--rice-background-2);
+		margin-left: 10px;
+		margin-right: 50px;
+	}
+
+	.inline-edit-input {
+		width: 100%;
+		min-height: 60px;
+		font-size: 15px;
+		color: var(--rice-text-color);
+		line-height: 22px;
+		padding: 6px;
+		background-color: #FFFFFF;
+		border-radius: 8px;
+	}
+
+	.inline-edit-actions {
+		flex-direction: row;
+		justify-content: flex-end;
+		margin-top: 8px;
+		gap: 12px;
+	}
+
+	.inline-edit-save {
+		font-size: 14px;
+		color: var(--rice-primary-color);
+		font-weight: bold;
+		padding: 4px 12px;
+	}
+
+	.inline-edit-send {
+		font-size: 14px;
+		color: #FFFFFF;
+		font-weight: bold;
+		padding: 4px 12px;
+		background-color: var(--rice-primary-color);
+		border-radius: 12px;
+	}
+
+	.inline-edit-cancel {
+		font-size: 14px;
+		color: var(--rice-text-color-3);
+		padding: 4px 12px;
 	}
 </style>
