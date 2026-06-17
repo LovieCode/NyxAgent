@@ -12,6 +12,7 @@
 				placeholder="输入内容..."
 				placeholder-style="color:#D1D5DB;font-size:16px;"
 				:auto-height="true"
+				@input="onInput"
 			/>
 		</view>
 	</view>
@@ -30,7 +31,6 @@
 				editText: '' as string,
 				initialText: '' as string,
 				navTitle: '编辑' as string,
-				draftTimer: -1 as number,
 			}
 		},
 		onLoad() {
@@ -39,23 +39,49 @@
 			if (title != null && title != '') {
 				this.navTitle = title
 			}
-			// 优先读取草稿，没有则用调用方传入的内容
+			// 先加载原始内容（保证无弹窗时文本正常显示）
+			const content = (uni.getStorageSync('editor_content') as string) ?? ''
+			this.editText = content
+			this.initialText = content
+			// 检查是否有草稿需要恢复
 			const draft = uni.getStorageSync('editor_draft') as string
-			const content = (draft != null && draft != '') ? draft : (uni.getStorageSync('editor_content') as string)
-			this.editText = (content != null) ? content : ''
-			this.initialText = this.editText
-			// 定时自动保存草稿（每1.5秒）
-			this.draftTimer = setInterval(() => {
-				this.saveDraft()
-			}, 1500)
-		},
-		onUnload() {
-			if (this.draftTimer >= 0) {
-				clearInterval(this.draftTimer)
-				this.draftTimer = -1
+			if (draft != null && draft != '' && draft != content) {
+				uni.showModal({
+					title: '恢复草稿',
+					content: '检测到上次未保存的内容，是否继续编辑？',
+					cancelText: '放弃草稿',
+					confirmText: '继续编辑',
+					success: (res) => {
+						if (res.confirm == true) {
+							this.editText = draft
+							this.initialText = draft
+						} else {
+							// 二次确认放弃
+							uni.showModal({
+								title: '确认放弃',
+								content: '确定要放弃未保存的内容吗？此操作不可撤销。',
+								cancelText: '取消',
+								confirmText: '确定放弃',
+								confirmColor: '#EF4444',
+								success: (res2) => {
+									if (res2.confirm == true) {
+										uni.removeStorageSync('editor_draft')
+										this.editText = content
+										this.initialText = content
+									}
+									// 取消→保持当前显示的原始内容
+								}
+							})
+						}
+					}
+				})
 			}
 		},
 		methods: {
+			/** 输入变化时自动保存草稿 */
+			onInput() {
+				uni.setStorageSync('editor_draft', this.editText)
+			},
 			/** 保存草稿到本地 */
 			saveDraft() {
 				uni.setStorageSync('editor_draft', this.editText)
@@ -69,13 +95,11 @@
 						content: '内容尚未保存',
 						success: (res) => {
 							if (res.confirm == true) {
-								this.clearTimer()
 								uni.navigateBack()
 							}
 						}
 					})
 				} else {
-					this.clearTimer()
 					uni.navigateBack()
 				}
 			},
@@ -84,15 +108,8 @@
 				// 将结果写回调用方
 				uni.setStorageSync('editor_result', this.editText)
 				uni.removeStorageSync('editor_draft')
-				this.clearTimer()
 				uni.navigateBack()
 			},
-			clearTimer() {
-				if (this.draftTimer >= 0) {
-					clearInterval(this.draftTimer)
-					this.draftTimer = -1
-				}
-			}
 		}
 	}
 </script>

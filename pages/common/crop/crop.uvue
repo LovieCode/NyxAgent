@@ -1,0 +1,244 @@
+<template>
+	<view class="page-shell rice-theme-light">
+		<NavBar title="裁剪头像" showBack @back="goBack">
+			<template #right>
+				<text class="done-btn" @click="doCrop">完成</text>
+			</template>
+		</NavBar>
+		<view
+			class="crop-bg"
+			@touchstart="onTouchStart"
+			@touchmove="onTouchMove"
+			@touchend="onTouchEnd"
+		>
+			<view id="cropArea" class="crop-area" :style="'width:'+areaSize+'px;height:'+areaSize+'px'">
+				<view id="imageWrapper" class="image-wrapper">
+					<image
+						:src="imagePath"
+						class="crop-image"
+						mode="aspectFill"
+						@load="onImageLoad"
+					/>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	/**
+	 * 方形头像裁剪页
+	 * 使用 takeSnapshot 实现导出（App 端）
+	 * 调用方：写入 crop_image_path → 裁剪 → 写 crop_result
+	 *
+	 * 触摸事件直接操作元素样式（style.setProperty），
+	 * 不依赖 Vue 响应式绑定，因为 uni-app x UTS 中 :style 字符串
+	 * 绑定可能不会重新求值。
+	 */
+
+	import { ref, onMounted } from 'vue'
+
+	const imagePath = ref('' as string)
+	const areaSize = ref(300 as number)
+	let imgEl: UniElement | null = null
+
+	// 触摸拖动状态（普通变量，非响应式 — 直接操作 DOM）
+	let touchStartX = 0 as number
+	let touchStartY = 0 as number
+	let imgLeft = 0 as number
+	let imgTop = 0 as number
+	let imgW = 0 as number
+	let imgH = 0 as number
+
+	// 捏合缩放状态
+	let touchDist = 0 as number
+	let startImgW = 0 as number
+	let startImgH = 0 as number
+
+	let loaded = false as boolean
+
+	onMounted(() => {
+		const pathRaw = uni.getStorageSync('crop_image_path')
+		if (pathRaw != null) {
+			imagePath.value = pathRaw as string
+		}
+		const win = uni.getWindowInfo()
+		const wwRaw = win['windowWidth']
+		const ww = wwRaw != null ? (wwRaw as number) : 300
+		areaSize.value = ww
+	})
+
+	function applyImageStyle() {
+		const el = imgEl
+		if (el == null) { return }
+		el.style.setProperty('width', imgW + 'px')
+		el.style.setProperty('height', imgH + 'px')
+		// Wrapper transform（已验证 rice-popup 在 View 上可用）
+		el.style.setProperty('transform', 'translate(' + imgLeft + 'px, ' + imgTop + 'px)')
+	}
+
+	function clampPosition() {
+		const fs = areaSize.value
+		if (imgLeft > 0) { imgLeft = 0 }
+		if (imgTop > 0) { imgTop = 0 }
+		if (imgLeft + imgW < fs) { imgLeft = fs - imgW }
+		if (imgTop + imgH < fs) { imgTop = fs - imgH }
+	}
+
+	function onImageLoad(e: any) {
+		if (loaded) { return }
+
+		// 获取 wrapper View 引用
+		imgEl = uni.getElementById('imageWrapper') as UniElement | null
+		if (imgEl == null) { return }
+
+		// @load 事件不携带尺寸，用 getImageInfo 获取
+		uni.getImageInfo({
+			src: imagePath.value,
+			success: (res: any) => {
+				const raw = JSON.stringify(res)
+				if (raw == null || raw == '') { return }
+				const parsed = JSON.parse(raw) as UTSJSONObject
+				if (parsed == null) { return }
+				const wRaw = parsed['width']
+				const hRaw = parsed['height']
+				if (wRaw == null || hRaw == null) { return }
+				const nw = wRaw as number
+				const nh = hRaw as number
+				if (nw == 0 || nh == 0) { return }
+
+				const fs = areaSize.value
+				const scaleRatio = (nw > nh) ? (fs / nw) : (fs / nh)
+				imgW = nw * scaleRatio
+				imgH = nh * scaleRatio
+
+				// 居中
+				imgLeft = (fs - imgW) / 2
+				imgTop = (fs - imgH) / 2
+
+				applyImageStyle()
+				loaded = true
+			},
+			fail: () => {
+			}
+		})
+	}
+
+	function onTouchStart(e: UniTouchEvent) {
+		if (!loaded || e.touches.length == 0) { return }
+		touchStartX = e.touches[0].screenX
+		touchStartY = e.touches[0].screenY
+
+		if (e.touches.length >= 2) {
+			const dx = e.touches[1].screenX - e.touches[0].screenX
+			const dy = e.touches[1].screenY - e.touches[0].screenY
+			touchDist = Math.sqrt(dx * dx + dy * dy)
+			startImgW = imgW
+			startImgH = imgH
+		}
+	}
+
+	function onTouchMove(e: UniTouchEvent) {
+		if (!loaded || e.touches.length == 0) { return }
+
+		if (e.touches.length >= 2 && touchDist > 0) {
+			// === 捏合缩放：以手指初始距离为基准计算缩放比 ===
+			const dx = e.touches[1].screenX - e.touches[0].screenX
+			const dy = e.touches[1].screenY - e.touches[0].screenY
+			const dist = Math.sqrt(dx * dx + dy * dy)
+			const ratio = dist / touchDist
+			// 以图片中心为基准缩放
+			const cx = imgLeft + imgW / 2
+			const cy = imgTop + imgH / 2
+			imgW = startImgW * ratio
+			imgH = startImgH * ratio
+			if (imgW < 50) { imgW = 50 }
+			if (imgW > areaSize.value * 5) { imgW = areaSize.value * 5 }
+			imgLeft = cx - imgW / 2
+			imgTop = cy - imgH / 2
+			clampPosition()
+			applyImageStyle()
+		} else if (e.touches.length == 1) {
+			// === 单指拖动（增量式）===
+			const dx = e.touches[0].screenX - touchStartX
+			const dy = e.touches[0].screenY - touchStartY
+			imgLeft += dx
+			imgTop += dy
+			clampPosition()
+			applyImageStyle()
+			touchStartX = e.touches[0].screenX
+			touchStartY = e.touches[0].screenY
+		}
+	}
+
+	function onTouchEnd() {
+		touchDist = 0
+	}
+
+	function doCrop() {
+		const target = uni.getElementById('cropArea') as UniElement | null
+		if (target == null) {
+			uni.showToast({ title: '裁剪失败', icon: 'none' })
+			return
+		}
+		uni.showLoading({ title: '裁剪中...' })
+		target.takeSnapshot({
+			type: 'file',
+			format: 'png',
+			success: (res) => {
+				const path = res.tempFilePath
+				if (path != null && path != '') {
+					uni.setStorageSync('crop_result', path)
+				}
+				uni.hideLoading()
+				uni.navigateBack()
+			},
+			fail: () => {
+				uni.hideLoading()
+				uni.showToast({ title: '裁剪失败', icon: 'none' })
+			}
+		})
+	}
+
+	function goBack() {
+		uni.navigateBack()
+	}
+</script>
+
+<style>
+	.crop-bg {
+		flex: 1;
+		background-color: #000000;
+		justify-content: center;
+		align-items: center;
+		position: relative;
+	}
+
+	.crop-area {
+		overflow: hidden;
+		position: relative;
+		background-color: #000000;
+		border-width: 2px;
+		border-style: solid;
+		border-color: rgba(255,255,255,0.7);
+	}
+
+	.image-wrapper {
+		position: absolute;
+		left: 0;
+		top: 0;
+	}
+
+	.crop-image {
+		width: 100%;
+		height: 100%;
+	}
+
+	.done-btn {
+		font-size: 15px;
+		color: #FFFFFF;
+		font-weight: bold;
+		padding: 8px 4px;
+	}
+
+</style>
