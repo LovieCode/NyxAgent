@@ -1,5 +1,5 @@
-<template>
-	<view class="page-shell">
+﻿<template>
+	<view class="page-shell rice-theme-light">
 		<view class="history-page">
 			<!-- 顶部标题栏 -->
 			<view class="header-wrap">
@@ -146,12 +146,12 @@
 	.history-page {
 		flex: 1;
 		flex-direction: column;
-		background-color: #F5F5F7;
+		background-color: var(--rice-background);
 	}
 
 	/* 顶部标题栏 */
 	.header-wrap {
-		background-color: #FFFFFF;
+		background-color: var(--rice-background-2);
 	}
 
 	.header {
@@ -162,7 +162,7 @@
 		padding-right: 16px;
 		padding-top: 12px;
 		padding-bottom: 12px;
-		background-color: #FFFFFF;
+		background-color: var(--rice-background-2);
 	}
 
 	.header-left {
@@ -171,13 +171,13 @@
 
 	.back-btn {
 		font-size: 16px;
-		color: #6B7280;
+		color: var(--rice-text-color-2);
 	}
 
 	.header-title {
 		font-size: 18px;
 		font-weight: bold;
-		color: #111827;
+		color: var(--rice-text-color);
 		text-align: center;
 		flex: 1;
 	}
@@ -189,7 +189,7 @@
 
 	.clear-btn {
 		font-size: 14px;
-		color: #FB8FAB;
+		color: var(--rice-primary-color);
 	}
 
 	/* 列表滚动区 */
@@ -204,13 +204,13 @@
 
 	/* 历史记录卡片 */
 	.history-card {
-		background-color: #FFFFFF;
+		background-color: var(--rice-background-2);
 		border-radius: 14px;
 		padding: 16px;
 		margin-bottom: 12px;
 		border-width: 1px;
 		border-style: solid;
-		border-color: #F0F0F2;
+		border-color: var(--rice-border-color);
 	}
 
 	.card-top {
@@ -223,19 +223,19 @@
 	.card-title {
 		font-size: 16px;
 		font-weight: bold;
-		color: #111827;
+		color: var(--rice-text-color);
 		flex: 1;
 	}
 
 	.card-time {
 		font-size: 12px;
-		color: #9CA3AF;
+		color: var(--rice-text-color-3);
 		margin-left: 8px;
 	}
 
 	.card-preview {
 		font-size: 14px;
-		color: #6B7280;
+		color: var(--rice-text-color-2);
 		lines: 1;
 		text-overflow: ellipsis;
 		margin-bottom: 10px;
@@ -248,14 +248,14 @@
 
 	.meta-msgs {
 		font-size: 12px;
-		color: #9CA3AF;
+		color: var(--rice-text-color-3);
 		margin-right: 12px;
 	}
 
 	.meta-model {
 		font-size: 11px;
-		color: #FB8FAB;
-		background-color: #FDE8EF;
+		color: var(--rice-primary-color);
+		background-color: var(--rice-primary-color-1);
 		padding-left: 6px;
 		padding-right: 6px;
 		padding-top: 2px;
@@ -273,14 +273,14 @@
 
 	.empty-text {
 		font-size: 18px;
-		color: #9CA3AF;
+		color: var(--rice-text-color-3);
 		margin-top: 16px;
 		font-weight: bold;
 	}
 
 	.empty-hint {
 		font-size: 13px;
-		color: #D1D5DB;
+		color: var(--rice-text-color-3);
 		margin-top: 6px;
 		text-align: center;
 	}

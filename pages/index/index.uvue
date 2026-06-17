@@ -1,6 +1,6 @@
-<template>
-	<view class="page-shell" ref="shellRef">
-		<!-- 顶部标题栏（含状态栏占位） -->
+﻿<template>
+	<view class="page-shell rice-theme-light" ref="shellRef">
+		<!-- 顶部标题栏 -->
 		<view class="header-wrap">
 			<share-element share-key="agent-list">
 				<view :style="{ height: statusBarHeight + 'px' }"></view>
@@ -9,10 +9,13 @@
 				<view class="header-left">
 					<text class="back-btn" @click="goBack">‹ 返回</text>
 				</view>
-				<text class="header-title">AI 助手</text>
+				<text class="header-title">{{headerTitle}}</text>
 				<view class="header-actions">
+					<view class="agent-settings-btn" @click="goAgentSettings">
+						<oui-icon-unix name="setting" size="18px" color="var(--rice-text-color-3)" />
+					</view>
 					<view class="history-btn" @click="goHistory">
-						<oui-icon-unix name="time-circle" size="20px" color="#9CA3AF" />
+						<oui-icon-unix name="time-circle" size="20px" color="var(--rice-text-color-3)" />
 					</view>
 					<text class="model-badge">{{currentModel}}</text>
 				</view>
@@ -32,9 +35,12 @@
 					v-else
 					:role="msg.role"
 					:content="msg.content"
+					:msgType="msg.msgType != null ? msg.msgType : 'text'"
+					:imageUrl="msg.imageUrl != null ? msg.imageUrl : ''"
+					:agentAvatar="currentAgentAvatar"
 					:toolName="msg.toolName != null ? msg.toolName : ''"
-:isError="msg.isError == true"
-			:isStreaming="msg.isStreaming == true"
+					:isError="msg.isError == true"
+					:isStreaming="msg.isStreaming == true"
 				/>
 			</view>
 			<view v-if="messages.length == 0" class="empty-state">
@@ -43,17 +49,38 @@
 			</view>
 		</scroll-view>
 
+		<!-- 工具栏 -->
+		<view v-if="showToolbar" class="toolbar">
+			<view class="toolbar-item" @click="pickImage">
+				<oui-icon-unix name="image" size="22px" color="var(--rice-text-color-2)" />
+			</view>
+			<view class="toolbar-item" @click="takePhoto">
+				<oui-icon-unix name="camera" size="22px" color="var(--rice-text-color-2)" />
+			</view>
+			<view class="toolbar-item" @click="pickFile">
+				<oui-icon-unix name="file" size="22px" color="var(--rice-text-color-2)" />
+			</view>
+			<view class="toolbar-item" @click="pickLocation">
+				<oui-icon-unix name="map-pin" size="22px" color="var(--rice-text-color-2)" />
+			</view>
+		</view>
+
 		<!-- 输入区域 -->
 		<view class="input-area">
-			<input
-				class="text-input"
-				v-model="inputText"
-				placeholder="输入消息..."
-				placeholder-style="color:#9CA3AF"
-				@confirm="sendMessage"
-				:disabled="isGenerating == true"
-			/>
-			<VoiceInput :isListening="isListening" @startListening="startVoice" @stopListening="stopVoice" />
+			<view class="input-wrap">
+				<view class="toolbar-toggle" @click="showToolbar = !showToolbar">
+					<oui-icon-unix :name="showToolbar ? 'close' : 'add'" size="18px" color="var(--rice-text-color-3)" />
+				</view>
+				<textarea
+					class="text-input"
+					v-model="inputText"
+					placeholder="输入消息..."
+					placeholder-style="color:var(--rice-text-color-3)"
+					@linechange="onInputLineChange"
+					:disabled="isGenerating == true"
+				/>
+				<VoiceInput :isListening="isListening ? true : false" @startListening="startVoice" @stopListening="stopVoice" />
+			</view>
 			<rice-button type="primary" text="发送" size="small" shape="round" @click="sendMessage" style="margin-left:8px" />
 		</view>
 	</view>
@@ -64,10 +91,12 @@
 	 * 对话页面 - AI Agent 主聊天界面
 	 * 扁平化粉白主题
 	 */
-	import { saveConversation } from '@/utils/database.uts'
+	import { saveConversation, getMessages } from '@/utils/database.uts'
 	import { chatWithLLM } from '@/utils/llm.uts'
+	import { getAgentById } from '@/utils/agent.uts'
 
-	/** 消息数据类型 */
+	const MAX_INPUT_HEIGHT = 200
+
 	export default {
 		data() {
 			return {
@@ -81,6 +110,12 @@
 				isGenerating: false as boolean,
 				/** 当前选择的模型名称 */
 				currentModel: 'deepseek-v4-flash',
+				/** 当前智能体 ID */
+				currentAgentId: '' as string,
+				/** 当前智能体名称 */
+				currentAgentName: '' as string,
+				/** 当前智能体头像 */
+				currentAgentAvatar: '' as string,
 				/** 滚动位置 */
 				scrollTop: 0,
 				/** 状态栏高度 */
@@ -88,7 +123,17 @@
 				/** 当前对话唯一 ID */
 				conversationId: '' as string,
 				/** 是否已存过当前对话（防止重复存） */
-				savedFlag: false as boolean
+				savedFlag: false as boolean,
+				/** 输入框当前高度（行数） */
+				inputLines: 1,
+				/** 是否显示工具栏 */
+				showToolbar: true as boolean,
+			}
+		},
+		computed: {
+			/** 头部标题 */
+			headerTitle(): string {
+				return this.currentAgentName != '' ? this.currentAgentName : 'AI 助手'
 			}
 		},
 		onLoad() {
@@ -98,40 +143,244 @@
 			if (model != null && model != '') {
 				this.currentModel = model
 			}
-			this.conversationId = '' + Date.now()
+			// 加载当前智能体信息
+			this.loadCurrentAgent()
+			// 检查是否因历史记录跳转过来的（加载已有对话）
+			this.loadExistingConversation()
+			if (this.conversationId == '') {
+				this.conversationId = '' + Date.now()
+			}
+		},
+
+		onShow() {
+			// 每次显示页面时刷新智能体信息
+			this.loadCurrentAgent()
 		},
 
 		onHide() {
 			// 离开页面时保存当前对话
 			this.saveCurrentConversation()
 		},
+
 		methods: {
+			/** 加载当前智能体信息 */
+			loadCurrentAgent() {
+				const id = uni.getStorageSync('active_agent_id') as string
+				if (id == null || id == '') { return }
+				this.currentAgentId = id
+				const agent = getAgentById(id)
+				if (agent != null) {
+					this.currentAgentName = agent['name'] as string
+					const rawAvatar = agent['avatar']
+					this.currentAgentAvatar = rawAvatar != null ? (rawAvatar as string) : ''
+				}
+			},
+
+			/** 从历史记录跳转时加载已有对话 */
+			loadExistingConversation() {
+				const convId = uni.getStorageSync('active_conversation_id') as string
+				if (convId == null || convId == '') { return }
+				uni.removeStorageSync('active_conversation_id')
+				this.conversationId = convId
+				this.savedFlag = true
+				try {
+					const msgs = getMessages(convId)
+					if (msgs != null && msgs.length > 0) {
+						this.messages = msgs
+						this.scrollToBottom()
+					}
+				} catch (_e: any) {
+					// 加载失败，开始新对话
+				}
+			},
+
+			/** 输入框行高变化时自动调整 */
+			onInputLineChange(e: UniTextareaLineChangeEvent) {
+				const lineCount = e.detail.lineCount
+				this.inputLines = lineCount > 0 ? lineCount : 1
+			},
+
 			sendMessage() {
 				const text = this.inputText.trim()
 				if (text == '' || this.isGenerating) {
 					return
 				}
-				// 首次发消息时生成对话 ID，并重置保存标记
 				if (this.messages.length == 0) {
 					this.conversationId = '' + Date.now()
 					this.savedFlag = false
 				}
-				this.messages.push({
-					role: 'user',
-					content: text,
-					timestamp: Date.now()
-				} as UTSJSONObject)
+				this.addTextMessage('user', text)
 				this.inputText = ''
 				this.scrollToBottom()
 				this.simulateAIResponse(text)
 			},
 
+			/** 添加文本消息 */
+			addTextMessage(role: string, content: string) {
+				this.messages.push({
+					role: role,
+					content: content,
+					msgType: 'text',
+					timestamp: Date.now()
+				} as UTSJSONObject)
+			},
+
+			/** 添加图片消息 */
+			addImageMessage(imagePath: string) {
+				if (imagePath == '') { return }
+				this.messages.push({
+					role: 'user',
+					content: '[图片]',
+					msgType: 'image',
+					imageUrl: imagePath,
+					timestamp: Date.now()
+				} as UTSJSONObject)
+				this.scrollToBottom()
+			},
+
+			/** 添加文件消息 */
+			addFileMessage(fileInfo: UTSJSONObject) {
+				const name = fileInfo['name'] as string ?? '文件'
+				const path = fileInfo['path'] as string ?? ''
+				this.messages.push({
+					role: 'user',
+					content: '[文件] ' + name,
+					msgType: 'file',
+					imageUrl: path,
+					timestamp: Date.now()
+				} as UTSJSONObject)
+				this.scrollToBottom()
+			},
+
+			/** 添加位置消息 */
+			addLocationMessage(location: UTSJSONObject) {
+				const name = location['name'] as string ?? '未知位置'
+				const addr = location['address'] as string ?? ''
+				const lat = location['latitude'] as number ?? 0
+				const lng = location['longitude'] as number ?? 0
+				const content = '📍 ' + name + (addr != '' ? ' - ' + addr : '') + ' (' + lat + ', ' + lng + ')'
+				this.messages.push({
+					role: 'user',
+					content: content,
+					msgType: 'location',
+					timestamp: Date.now()
+				} as UTSJSONObject)
+				this.scrollToBottom()
+			},
+
+			/** 添加语音消息 */
+			addVoiceMessage(tempPath: string) {
+				if (tempPath == '') { return }
+				this.messages.push({
+					role: 'user',
+					content: '[语音消息]',
+					msgType: 'voice',
+					imageUrl: tempPath,
+					timestamp: Date.now()
+				} as UTSJSONObject)
+				this.scrollToBottom()
+			},
+
+			// ===== 工具栏 =====
+
+			/** 从相册选择图片 */
+			pickImage() {
+				this.showToolbar = false
+				uni.chooseImage({
+					count: 1,
+					sourceType: ['album'],
+					sizeType: ['compressed'],
+					success: (res: any) => {
+						const raw = JSON.stringify(res)
+						if (raw == null || raw == '') { return }
+						const parsed = JSON.parse(raw) as UTSJSONObject
+						const paths = parsed['tempFilePaths'] as string[]
+						if (paths != null && paths.length > 0) {
+							this.addImageMessage(paths[0])
+							// 发完图片后调用 AI
+							this.simulateAIResponse('用户发送了一张图片')
+						}
+					}
+				})
+			},
+
+			/** 拍照 */
+			takePhoto() {
+				this.showToolbar = false
+				uni.chooseImage({
+					count: 1,
+					sourceType: ['camera'],
+					sizeType: ['compressed'],
+					success: (res: any) => {
+						const raw = JSON.stringify(res)
+						if (raw == null || raw == '') { return }
+						const parsed = JSON.parse(raw) as UTSJSONObject
+						const paths = parsed['tempFilePaths'] as string[]
+						if (paths != null && paths.length > 0) {
+							this.addImageMessage(paths[0])
+							this.simulateAIResponse('用户拍摄了一张照片')
+						}
+					}
+				})
+			},
+
+			/** 选择文件 */
+			pickFile() {
+				this.showToolbar = false
+				uni.chooseFile({
+					count: 1,
+					success: (res: any) => {
+						const raw = JSON.stringify(res)
+						if (raw == null || raw == '') { return }
+						const parsed = JSON.parse(raw) as UTSJSONObject
+						this.addFileMessage(parsed)
+					}
+				})
+			},
+
+			/** 选择位置 */
+			pickLocation() {
+				this.showToolbar = false
+				uni.chooseLocation({
+					success: (res: any) => {
+						const raw = JSON.stringify(res)
+						if (raw == null || raw == '') { return }
+						const parsed = JSON.parse(raw) as UTSJSONObject
+						this.addLocationMessage(parsed)
+					}
+				})
+			},
+
+			// ===== 语音输入 =====
+
 			startVoice() {
 				this.isListening = true
+				const recorder = uni.getRecorderManager()
+				recorder.onStop((res: any): void => {
+					this.isListening = false
+					const raw = JSON.stringify(res)
+					if (raw == null || raw == '') { return }
+					const parsed = JSON.parse(raw) as UTSJSONObject
+					const tempPath = parsed['tempFilePath'] as string ?? ''
+					if (tempPath != '') {
+						this.addVoiceMessage(tempPath)
+					}
+				})
+				const startOpts: RecorderManagerStartOptions = {
+					format: 'aac',
+				}
+				recorder.start(startOpts)
 			},
 
 			stopVoice() {
-				this.isListening = false
+				const recorder = uni.getRecorderManager()
+				recorder.stop()
+			},
+
+			goAgentSettings() {
+				uni.navigateTo({
+					url: '/pages/agent-settings/agent-settings'
+				})
 			},
 
 			goHistory() {
@@ -140,19 +389,16 @@
 				})
 			},
 
-			/** 返回智能体列表 */
 			goBack() {
 				uni.navigateBack()
 			},
 
-			/** 将当前对话保存到 SQLite */
 			saveCurrentConversation() {
 				if (this.messages.length == 0 || this.savedFlag) {
 					return
 				}
 				this.savedFlag = true
 
-				// 取第一条用户消息作为标题
 				let title = '新对话'
 				for (let i = 0; i < this.messages.length; i++) {
 					const msg = this.messages[i]
@@ -169,6 +415,7 @@
 					this.conversationId,
 					title,
 					this.currentModel,
+					this.currentAgentId,
 					this.messages
 				)
 			},
@@ -184,16 +431,15 @@
 				this.messages.push({
 					role: 'assistant',
 					content: '',
+					msgType: 'text',
 					isStreaming: true,
 					timestamp: Date.now()
 				} as UTSJSONObject)
 				this.scrollToBottom()
 
-				// 调用真实的 LLM
 				chatWithLLM(this.messages).then((response: string | null) => {
 					const text = response ?? '抱歉，调用 LLM 失败，请检查 API 配置。'
 
-					// 逐字显示（流式效果）
 					let charIndex = 0
 					let timer: number = 0
 					timer = setInterval(() => {
@@ -201,6 +447,7 @@
 							this.messages.splice(aiMsgIndex, 1, {
 								role: 'assistant',
 								content: text.substring(0, charIndex + 1),
+								msgType: 'text',
 								isStreaming: true,
 								timestamp: Date.now()
 							} as UTSJSONObject)
@@ -210,12 +457,12 @@
 							this.messages.splice(aiMsgIndex, 1, {
 								role: 'assistant',
 								content: text,
+								msgType: 'text',
 								isStreaming: false,
 								timestamp: Date.now()
 							} as UTSJSONObject)
 							this.isGenerating = false
 							clearInterval(timer)
-							// AI 回复完成后自动保存历史
 							this.saveCurrentConversation()
 						}
 					}, 50)
@@ -226,13 +473,6 @@
 </script>
 
 <style>
-	/* rice-ui 主题色覆盖 - 粉白主题 */
-	.page-shell {
-		--rice-primary-color: #FB8FAB;
-		--rice-primary-color-1: #FDE8EF;
-		--rice-primary-color-7: #E8729A;
-	}
-
 	/* 页面内容区域 */
 	.chat-page {
 		flex: 1;
@@ -247,7 +487,7 @@
 
 	/* 顶部标题栏 */
 	.header-wrap {
-		background-color: #FFFFFF;
+		background-color: var(--rice-background-2);
 	}
 
 	.header {
@@ -258,13 +498,13 @@
 		padding-right: 16px;
 		padding-top: 12px;
 		padding-bottom: 12px;
-		background-color: #FFFFFF;
+		background-color: var(--rice-background-2);
 	}
 
 	.header-title {
 		font-size: 20px;
 		font-weight: bold;
-		color: #111827;
+		color: var(--rice-text-color);
 		text-align: center;
 		flex: 1;
 	}
@@ -276,13 +516,21 @@
 
 	.back-btn {
 		font-size: 16px;
-		color: #6B7280;
+		color: var(--rice-text-color-2);
 	}
 
 	/* 头部右侧操作区 */
 	.header-actions {
 		flex-direction: row;
 		align-items: center;
+	}
+
+	.agent-settings-btn {
+		width: 32px;
+		height: 32px;
+		justify-content: center;
+		align-items: center;
+		margin-right: 4px;
 	}
 
 	.history-btn {
@@ -293,22 +541,15 @@
 		margin-right: 8px;
 	}
 
-	/* 模型标签 - 淡粉强调 */
 	.model-badge {
 		font-size: 12px;
-		color: #DB2777;
-		background-color: #FDE8EF;
+		color: var(--rice-primary-color-7);
+		background-color: var(--rice-primary-color-1);
 		padding-left: 8px;
 		padding-right: 8px;
 		padding-top: 4px;
 		padding-bottom: 4px;
 		border-radius: 10px;
-	}
-
-	/* 消息列表 */
-	.message-list {
-		flex: 1;
-		flex-direction: column;
 	}
 
 	/* 空状态 */
@@ -321,40 +562,86 @@
 
 	.empty-text {
 		font-size: 24px;
-		color: #111827;
+		color: var(--rice-text-color);
 		font-weight: bold;
 		margin-bottom: 8px;
 	}
 
 	.empty-hint {
 		font-size: 14px;
-		color: #9CA3AF;
+		color: var(--rice-text-color-3);
+	}
+
+	/* ===== 工具栏 ===== */
+	.toolbar {
+		flex-direction: row;
+		align-items: center;
+		padding-left: 12px;
+		padding-right: 12px;
+		padding-top: 6px;
+		padding-bottom: 4px;
+		background-color: var(--rice-background-2);
+		border-top-width: 1px;
+		border-top-color: var(--rice-border-color);
+		border-top-style: solid;
+	}
+
+	.toolbar-item {
+		width: 40px;
+		height: 40px;
+		border-radius: 10px;
+		justify-content: center;
+		align-items: center;
+		margin-right: 4px;
+		background-color: var(--rice-background);
 	}
 
 	/* 底部输入区域 */
 	.input-area {
 		flex-direction: row;
-		align-items: center;
+		align-items: flex-end;
 		padding-left: 12px;
 		padding-right: 12px;
 		padding-top: 8px;
 		padding-bottom: 8px;
-		background-color: #FFFFFF;
+		background-color: var(--rice-background-2);
 		border-top-width: 1px;
-		border-top-color: #E5E7EB;
+		border-top-color: var(--rice-border-color);
 	}
 
-	/* 文本输入框 - 浅灰背景 */
+	/* 输入框容器 */
+	.input-wrap {
+		flex: 1;
+		flex-direction: row;
+		align-items: flex-end;
+		background-color: var(--rice-background);
+		border-radius: 20px;
+		padding-left: 4px;
+		padding-right: 4px;
+	}
+
+	/* 工具栏切换按钮 */
+	.toolbar-toggle {
+		width: 32px;
+		height: 32px;
+		border-radius: 16px;
+		justify-content: center;
+		align-items: center;
+		margin-bottom: 4px;
+	}
+
+	/* 文本输入框 */
 	.text-input {
 		flex: 1;
-		height: 40px;
-		background-color: #F9FAFB;
-		border-radius: 20px;
-		padding-left: 16px;
-		padding-right: 16px;
+		min-height: 32px;
+		max-height: 200px;
+		padding-left: 4px;
+		padding-right: 4px;
+		padding-top: 8px;
+		padding-bottom: 8px;
 		font-size: 15px;
-		color: #111827;
+		color: var(--rice-text-color);
+		background-color: transparent;
+		line-height: 22px;
 	}
-
-
 </style>
