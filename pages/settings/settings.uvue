@@ -19,19 +19,19 @@
 					<view class="menu-item-left">
 						<oui-icon-unix name="setting" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
 						<view class="menu-text">
-							<text class="menu-title">基础设置</text>
-							<text class="menu-desc">LLM 提供商、API 密钥、接口地址</text>
+							<text class="menu-title">提供商管理</text>
+							<text class="menu-desc">管理多个 LLM 提供商、API 密钥</text>
 						</view>
 					</view>
 					<text class="menu-arrow">›</text>
 				</view>
 				<view class="menu-divider"></view>
-				<view class="menu-item" @click="goSubPage('model')">
+				<view class="menu-item" @click="goSubPage('default-models')">
 					<view class="menu-item-left">
 						<oui-icon-unix name="robot" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
 						<view class="menu-text">
-							<text class="menu-title">模型设置</text>
-							<text class="menu-desc">选择 AI 对话模型</text>
+							<text class="menu-title">默认模型</text>
+							<text class="menu-desc">对话、识图、语音识别、语音合成模型分配</text>
 						</view>
 					</view>
 					<text class="menu-arrow">›</text>

@@ -1,24 +1,19 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NavBar title="智能体设置" showBack />
+		<NavBar title="智能体设置" showBack @back="goBack" />
 		<scroll-view class="container" :scroll-y="true">
-			<!-- 头像卡片 -->
-			<view class="card avatar-card" @click="pickAvatar">
-				<view class="card-header">
-					<oui-icon-unix name="account" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
-					<text class="card-label">头像</text>
+			<!-- 头部：头像 -->
+			<view class="profile-header" @click="pickAvatar">
+				<image v-if="agentAvatar != ''" :src="agentAvatar" class="agent-avatar" mode="aspectFill" />
+				<view v-else class="agent-avatar agent-avatar-placeholder">
+					<text class="agent-avatar-text">{{agentName.substring(0, 1)}}</text>
 				</view>
-				<view class="avatar-row">
-					<image v-if="agentAvatar != ''" :src="agentAvatar" class="agent-settings-avatar" mode="aspectFill" />
-					<view v-else class="agent-settings-avatar agent-settings-avatar-placeholder">
-						<text class="agent-settings-avatar-text">{{agentName.substring(0, 1)}}</text>
-					</view>
-					<text class="avatar-change-hint">点击更换</text>
-				</view>
+				<text class="avatar-hint">点击更换头像</text>
 			</view>
 
-			<!-- 名称 -->
+			<!-- 全部设置项合并到一个卡片 -->
 			<view class="card">
+				<!-- 名称 -->
 				<view class="card-header">
 					<oui-icon-unix name="edit" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
 					<text class="card-label">名称</text>
@@ -30,11 +25,8 @@
 					placeholder="输入智能体名称"
 					placeholder-class="input-placeholder"
 				/>
-			</view>
 
-			<!-- 描述 -->
-			<view class="card">
-				<view class="card-header">
+				<view class="card-header" style="margin-top:20rpx;">
 					<oui-icon-unix name="file-text" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
 					<text class="card-label">描述</text>
 				</view>
@@ -44,17 +36,64 @@
 						<text class="desc-edit-text">全屏编辑</text>
 					</view>
 				</view>
-			</view>
 
-			<!-- 当前模型，点击跳转设置 -->
-			<view class="card model-card" @click="goModelSettings">
-				<view class="card-header">
-					<oui-icon-unix name="robot" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
-					<text class="card-label">对话模型</text>
+				<view class="card-header" style="margin-top:20rpx;">
+					<oui-icon-unix name="info-circle" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<text class="card-label">提示词</text>
 				</view>
-				<view class="model-row">
-					<text class="model-value">{{currentModel}}</text>
-					<text class="model-arrow">›</text>
+				<view class="desc-wrap" @click="openSystemPromptEditor">
+					<scroll-view class="prompt-scroll" :scroll-y="true">
+						<text class="desc-preview">{{agentSystemPrompt}}</text>
+					</scroll-view>
+					<view class="desc-edit-btn">
+						<text class="desc-edit-text">全屏编辑</text>
+					</view>
+				</view>
+
+				<!-- 模型 -->
+				<view class="model-row" style="margin-top:20rpx;" @click="toggleModelPanel">
+					<view class="card-header" style="margin-bottom:0;">
+						<oui-icon-unix name="robot" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+						<text class="card-label">对话模型</text>
+					</view>
+					<view class="model-right">
+						<text class="model-value">{{currentModelLabel}}</text>
+						<text class="model-arrow">{{showModelPanel ? '▾' : '›'}}</text>
+					</view>
+				</view>
+
+				<!-- 展开模型选择 -->
+				<view v-if="showModelPanel" class="model-panel">
+					<text class="panel-label">选择提供商</text>
+					<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
+						<view class="chip-row">
+							<view
+								v-for="(p, pi) in enabledProviders"
+								:key="pi"
+								class="chip"
+								:class="selectedProviderId == (p['id'] as string) ? 'chip-active' : ''"
+								@click="selectProvider(p['id'] as string)"
+							>
+								<text class="chip-text">{{p['name']}}</text>
+							</view>
+						</view>
+					</scroll-view>
+
+					<text class="panel-label" style="margin-top:16rpx;">选择模型</text>
+					<view v-if="providerModels.length == 0" class="panel-empty">
+						<text class="panel-empty-text">请先在提供商管理中配置模型</text>
+					</view>
+					<view v-else class="model-grid">
+						<view
+							v-for="(m, mi) in providerModels"
+							:key="mi"
+							class="model-pill"
+							:class="selectedModelId == m.id ? 'pill-active' : ''"
+							@click="selectModel(m.id)"
+						>
+							<text class="pill-text" :class="selectedModelId == m.id ? 'pill-text-active' : ''">{{m.id}}</text>
+						</view>
+					</view>
 				</view>
 			</view>
 
@@ -79,7 +118,8 @@
 	/**
 	 * 智能体设置页面 - 编辑名称/描述/头像/删除智能体
 	 */
-	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar } from '@/utils/agent.uts'
+	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel } from '@/utils/agent.uts'
+	import { getAllProviders, getProviderModels, type ModelInfo } from '@/utils/provider.uts'
 
 	export default {
 		data() {
@@ -87,20 +127,77 @@
 				agentId: '' as string,
 				agentName: '' as string,
 				agentDesc: '' as string,
+				agentSystemPrompt: '' as string,
 				agentAvatar: '' as string,
-				currentModel: 'deepseek-v4-flash'
+				currentModel: 'deepseek-v4-flash',
+				allProviders: [] as UTSJSONObject[],
+				showModelPanel: false as boolean,
+				selectedProviderId: '' as string,
+				selectedModelId: '' as string,
+				/** 编辑器返回后标记未保存 */
+				hasUnsaved: false as boolean,
+			}
+		},
+		computed: {
+			/** 已启用的提供商列表 */
+			enabledProviders(): UTSJSONObject[] {
+				const list: UTSJSONObject[] = []
+				for (let i = 0; i < this.allProviders.length; i++) {
+					if ((this.allProviders[i]['enabled'] as number) == 1) {
+						list.push(this.allProviders[i])
+					}
+				}
+				return list
+			},
+			/** 当前选中提供商的模型列表 */
+			providerModels(): ModelInfo[] {
+				if (this.selectedProviderId == '') return []
+				return getProviderModels(this.selectedProviderId)
+			},
+			/** 显示文本：提供商 / 模型 或纯模型名（向后兼容） */
+			currentModelLabel(): string {
+				const sep = '||'
+				const idx = this.currentModel.indexOf(sep)
+				if (idx >= 0) {
+					const providerId = this.currentModel.substring(0, idx)
+					const modelId = this.currentModel.substring(idx + sep.length)
+					// 查找提供商名称
+					for (let i = 0; i < this.allProviders.length; i++) {
+						if ((this.allProviders[i]['id'] as string) == providerId) {
+							return (this.allProviders[i]['name'] as string) + ' / ' + modelId
+						}
+					}
+					return providerId + ' / ' + modelId
+				}
+				return this.currentModel
 			}
 		},
 		onLoad() {
 			this.loadAgent()
-			this.loadModel()
 		},
 		onShow() {
+			// 先从数据库加载（避免后续被覆盖）
+			this.loadAgent()
 			// 检查全屏编辑器是否有返回结果
 			const result = uni.getStorageSync('editor_result') as string
 			if (result != null && result != '') {
-				this.agentDesc = result
+				const target = uni.getStorageSync('editor_target') as string
+				if (target == 'systemPrompt') {
+					this.agentSystemPrompt = result
+				} else {
+					this.agentDesc = result
+				}
 				uni.removeStorageSync('editor_result')
+				uni.removeStorageSync('editor_target')
+				// 标记有未保存的更改
+				this.hasUnsaved = true
+			}
+			// 检查裁剪页面是否有返回结果
+			const cropResult = uni.getStorageSync('crop_result') as string
+			if (cropResult != null && cropResult != '') {
+				this.agentAvatar = cropResult
+				updateAgentAvatar(this.agentId, cropResult)
+				uni.removeStorageSync('crop_result')
 			}
 		},
 		methods: {
@@ -114,13 +211,59 @@
 					return
 				}
 				this.agentId = id
+				this.hasUnsaved = false
+				this.allProviders = getAllProviders()
 				const agent = getAgentById(id)
 				if (agent != null) {
 					this.agentName = agent['name'] as string
 					this.agentDesc = agent['desc'] as string
+					const rawPrompt = agent['systemPrompt']
+					this.agentSystemPrompt = rawPrompt != null ? (rawPrompt as string) : ''
 					const rawAvatar = agent['avatar']
 					this.agentAvatar = rawAvatar != null ? (rawAvatar as string) : ''
+					const rawModel = agent['model']
+					if (rawModel != null) {
+						this.currentModel = rawModel as string
+					}
 				}
+				this.initModelSelection()
+			},
+
+			/** 从 currentModel 解析出选中的提供商和模型 */
+			initModelSelection() {
+				const sep = '||'
+				const idx = this.currentModel.indexOf(sep)
+				if (idx >= 0) {
+					this.selectedProviderId = this.currentModel.substring(0, idx)
+					this.selectedModelId = this.currentModel.substring(idx + sep.length)
+				} else {
+					this.selectedModelId = this.currentModel
+					// 尝试从已启用的提供商中找匹配
+					const enabled = this.enabledProviders
+					if (enabled.length > 0) {
+						this.selectedProviderId = enabled[0]['id'] as string
+					}
+				}
+			},
+
+			toggleModelPanel() {
+				this.showModelPanel = !this.showModelPanel
+				if (this.showModelPanel) {
+					this.initModelSelection()
+				}
+			},
+
+			selectProvider(id: string) {
+				this.selectedProviderId = id
+				this.selectedModelId = ''
+			},
+
+			selectModel(id: string) {
+				this.selectedModelId = id
+				this.currentModel = this.selectedProviderId + '||' + id
+				this.hasUnsaved = true
+				// 选择后自动收起面板
+				this.showModelPanel = false
 			},
 
 			/** 上传/更换智能体头像 */
@@ -135,11 +278,9 @@
 						const parsed = JSON.parse(raw) as UTSJSONObject
 						const paths = parsed['tempFilePaths'] as string[]
 						if (paths != null && paths.length > 0) {
-							this.agentAvatar = paths[0]
-							updateAgentAvatar(this.agentId, paths[0])
-							uni.showToast({
-								title: '头像已更新',
-								icon: 'success'
+							uni.setStorageSync('crop_image_path', paths[0])
+							uni.navigateTo({
+								url: '/pages/common/crop/crop'
 							})
 						}
 					}
@@ -148,8 +289,21 @@
 
 			/** 打开全屏编辑器编辑智能体描述 */
 			openDescEditor() {
+				uni.removeStorageSync('editor_draft')
 				uni.setStorageSync('editor_content', this.agentDesc)
 				uni.setStorageSync('editor_title', '编辑描述')
+				uni.setStorageSync('editor_target', 'desc')
+				uni.navigateTo({
+					url: '/pages/common/editor/editor'
+				})
+			},
+
+			/** 打开全屏编辑器编辑系统提示词 */
+			openSystemPromptEditor() {
+				uni.removeStorageSync('editor_draft')
+				uni.setStorageSync('editor_content', this.agentSystemPrompt)
+				uni.setStorageSync('editor_title', '编辑提示词')
+				uni.setStorageSync('editor_target', 'systemPrompt')
 				uni.navigateTo({
 					url: '/pages/common/editor/editor'
 				})
@@ -162,12 +316,6 @@
 				}
 			},
 
-			goModelSettings() {
-				uni.navigateTo({
-					url: '/pages/settings/model/model'
-				})
-			},
-
 			saveSettings() {
 				const name = this.agentName.trim()
 				const desc = this.agentDesc.trim()
@@ -178,7 +326,8 @@
 					})
 					return
 				}
-				updateAgent(this.agentId, name, desc)
+				updateAgent(this.agentId, name, desc, '', this.agentSystemPrompt)
+				this.hasUnsaved = false
 				uni.showToast({
 					title: '已保存',
 					icon: 'success'
@@ -202,16 +351,35 @@
 								title: '已删除',
 								icon: 'success'
 							})
-							// 返回智能体列表页（列表页会在 onShow 中刷新）
-							uni.navigateBack()
+							// 跳转到智能体列表页
+							uni.redirectTo({
+								url: '/pages/agents/agents'
+							})
 						}
 					}
 				})
 			},
 
 			goBack() {
-				uni.navigateBack()
-			}
+				if (this.hasUnsaved) {
+					uni.showModal({
+						title: '未保存的更改',
+						content: '有未保存的更改，是否保存？',
+						cancelText: '不保存',
+						confirmText: '保存',
+						success: (res) => {
+							if (res.confirm == true) {
+								this.saveSettings()
+							} else {
+								this.hasUnsaved = false
+								uni.navigateBack()
+							}
+						}
+					})
+				} else {
+					uni.navigateBack()
+				}
+			},
 		}
 	}
 </script>
@@ -230,38 +398,42 @@
 		margin-bottom: 24rpx;
 	}
 
-	/* 头像卡片 */
-	.avatar-card {
-		/* 点击触发 pickAvatar */
-	}
-
-	.avatar-row {
-		flex-direction: row;
+	/* 头部：头像 + 名称 */
+	.profile-header {
 		align-items: center;
+		padding: 40rpx 0 16rpx;
 	}
 
-	.agent-settings-avatar {
-		width: 80rpx;
-		height: 80rpx;
-		border-radius: 16rpx;
+	.agent-avatar {
+		width: 200rpx;
+		height: 200rpx;
+		border-radius: 40rpx;
 	}
 
-	.agent-settings-avatar-placeholder {
+	.agent-avatar-placeholder {
 		background-color: #FB8FAB;
 		justify-content: center;
 		align-items: center;
 	}
 
-	.agent-settings-avatar-text {
-		font-size: 32rpx;
+	.agent-avatar-text {
+		font-size: 80rpx;
 		color: #FFFFFF;
 		font-weight: bold;
 	}
 
-	.avatar-change-hint {
-		font-size: 26rpx;
+	.avatar-hint {
+		font-size: 24rpx;
 		color: var(--rice-text-color-3);
-		margin-left: 24rpx;
+		margin-top: 16rpx;
+	}
+
+	.flat-input {
+		background-color: var(--rice-background);
+		border-radius: 14rpx;
+		padding: 24rpx;
+		font-size: 28rpx;
+		color: var(--rice-text-color);
 	}
 
 	.card-header {
@@ -273,15 +445,6 @@
 	.card-label {
 		font-size: 28rpx;
 		font-weight: bold;
-		color: var(--rice-text-color);
-	}
-
-	/* 扁平输入框 */
-	.flat-input {
-		background-color: var(--rice-background);
-		border-radius: 14rpx;
-		padding: 24rpx;
-		font-size: 28rpx;
 		color: var(--rice-text-color);
 	}
 
@@ -298,6 +461,11 @@
 		font-size: 28rpx;
 		color: var(--rice-text-color);
 		line-height: 40rpx;
+	}
+
+	.prompt-scroll {
+		max-height: 240rpx;
+		overflow: hidden;
 	}
 
 	.desc-edit-btn {
@@ -332,6 +500,11 @@
 		align-items: center;
 	}
 
+	.model-right {
+		flex-direction: row;
+		align-items: center;
+	}
+
 	.model-value {
 		font-size: 28rpx;
 		color: var(--rice-primary-color-7);
@@ -342,6 +515,89 @@
 		font-size: 32rpx;
 		color: var(--rice-text-color-3);
 		padding-left: 8rpx;
+	}
+
+	/* 展开模型面板 */
+	.model-panel {
+		margin-top: 20rpx;
+		padding-top: 20rpx;
+		border-top-width: 0.5px;
+		border-top-style: solid;
+		border-top-color: #F3F4F6;
+	}
+
+	.panel-label {
+		font-size: 24rpx;
+		color: #6B7280;
+		margin-bottom: 12rpx;
+	}
+
+	.panel-empty {
+		padding: 20rpx 0;
+	}
+
+	.panel-empty-text {
+		font-size: 24rpx;
+		color: #9CA3AF;
+	}
+
+	.chip-scroll {
+		flex-direction: row;
+	}
+
+	.chip-row {
+		flex-direction: row;
+	}
+
+	.chip {
+		background-color: #F3F4F6;
+		border-radius: 12rpx;
+		padding: 12rpx 24rpx;
+		margin: 4rpx;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.chip-active {
+		background-color: #FDE8EF;
+		border-color: #FB8FAB;
+	}
+
+	.chip-text {
+		font-size: 24rpx;
+		color: #374151;
+		white-space: nowrap;
+	}
+
+	.model-grid {
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+
+	.model-pill {
+		background-color: #F3F4F6;
+		border-radius: 10rpx;
+		padding: 12rpx 20rpx;
+		margin: 4rpx;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.pill-active {
+		background-color: #FDE8EF;
+		border-color: #FB8FAB;
+	}
+
+	.pill-text {
+		font-size: 22rpx;
+		color: #6B7280;
+	}
+
+	.pill-text-active {
+		color: #DB2777;
+		font-weight: bold;
 	}
 
 	/* 保存按钮 */
