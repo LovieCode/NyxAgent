@@ -1,30 +1,52 @@
 ﻿<template>
 	<view class="page-shell rice-theme-light">
-		<NavBar title="历史记录" showBack>
+		<NavBar title="历史记录" showBack @back="exitEditMode">
 			<template #right>
-				<text class="clear-btn" v-if="historyList.length > 0" @click="confirmClear">清空</text>
+				<view v-if="!editMode" class="nav-right">
+					<text class="nav-btn" v-if="historyList.length > 0" @click="enterEditMode">管理</text>
+					<text class="nav-btn" v-if="historyList.length > 0" @click="confirmClear">清空</text>
+				</view>
+				<view v-else class="nav-right">
+					<text class="nav-btn" @click="selectAll">全选</text>
+					<text class="nav-btn nav-btn-danger" @click="batchDelete">删除({{selectedIds.length}})</text>
+					<text class="nav-btn" @click="exitEditMode">取消</text>
+				</view>
 			</template>
 		</NavBar>
 		<view class="history-page">
 
 			<!-- 历史列表 -->
 			<scroll-view class="list-scroll" :scroll-y="true">
-				<!-- 有数据 -->
 				<view v-if="historyList.length > 0" class="list-content">
 					<view
 						v-for="(item, index) in historyList"
 						:key="index"
 						class="history-card"
-						@click="openConversation(item)"
+						:class="isSelected(item['id'] as string) ? 'card-selected' : ''"
+						@click="onCardClick(item)"
+						@longpress="onCardLongpress(item)"
 					>
-						<view class="card-top">
-							<text class="card-title">{{ item['title'] }}</text>
-							<text class="card-time">{{ formatTime(item['created_at']) }}</text>
-						</view>
-						<text class="card-preview">{{ item['preview'] }}</text>
-						<view class="card-meta">
-							<text class="meta-msgs">{{ item['message_count'] }} 条消息</text>
-							<text class="meta-model">{{ item['model'] }}</text>
+						<view class="card-row">
+							<!-- 编辑模式下的复选框 -->
+							<view v-if="editMode" class="check-col" @click.stop="toggleItem(item['id'] as string)">
+								<view
+									class="checkbox"
+									:class="isSelected(item['id'] as string) ? 'checkbox-checked' : ''"
+								>
+									<text v-if="isSelected(item['id'] as string)" class="checkmark">✓</text>
+								</view>
+							</view>
+							<view class="card-body">
+								<view class="card-top">
+									<text class="card-title">{{ item['title'] }}</text>
+									<text class="card-time">{{ formatTime(item['created_at']) }}</text>
+								</view>
+								<text class="card-preview">{{ item['preview'] }}</text>
+								<view class="card-meta">
+									<text class="meta-msgs">{{ item['message_count'] }} 条消息</text>
+									<text class="meta-model">{{ item['model'] }}</text>
+								</view>
+							</view>
 						</view>
 					</view>
 				</view>
@@ -42,7 +64,7 @@
 
 <script lang="uts">
 	/**
-	 * 历史记录页面 - 展示过往对话列表
+	 * 历史记录页面 - 展示过往对话列表，支持批量管理
 	 */
 	import { getConversations, deleteConversation } from '@/utils/database.uts'
 
@@ -50,13 +72,15 @@
 		data() {
 			return {
 				historyList: [] as UTSJSONObject[],
+				editMode: false as boolean,
+				/** 选中的对话 id 列表 */
+				selectedIds: [] as string[],
 			}
 		},
 		onLoad() {
 			this.loadHistory()
 		},
 		onShow() {
-			// 每次显示时刷新列表
 			this.loadHistory()
 		},
 		methods: {
@@ -88,15 +112,113 @@
 					return '昨天 ' + h + ':' + m
 				} else if (diffDays < 7) {
 					const days = diffDays as number
-					const daysInt = days.toFixed(0)
-					return daysInt + '天前'
+					return days.toFixed(0) + '天前'
 				} else {
 					return (d.getMonth() + 1) + '/' + d.getDate()
 				}
 			},
 
+			// ===== 编辑模式 =====
+
+			enterEditMode() {
+				this.editMode = true
+				this.selectedIds = []
+			},
+
+			exitEditMode() {
+				this.editMode = false
+				this.selectedIds = []
+			},
+
+			isSelected(id: string): boolean {
+				for (let i = 0; i < this.selectedIds.length; i++) {
+					if (this.selectedIds[i] == id) {
+						return true
+					}
+				}
+				return false
+			},
+
+			toggleItem(id: string) {
+				const idx = this.indexOfSelected(id)
+				if (idx >= 0) {
+					const newList: string[] = []
+					for (let i = 0; i < this.selectedIds.length; i++) {
+						if (i != idx) {
+							newList.push(this.selectedIds[i])
+						}
+					}
+					this.selectedIds = newList
+				} else {
+					this.selectedIds.push(id)
+				}
+			},
+
+			indexOfSelected(id: string): number {
+				for (let i = 0; i < this.selectedIds.length; i++) {
+					if (this.selectedIds[i] == id) {
+						return i
+					}
+				}
+				return -1
+			},
+
+			selectAll() {
+				if (this.selectedIds.length == this.historyList.length) {
+					// 已全选 → 取消全选
+					this.selectedIds = []
+				} else {
+					const all: string[] = []
+					for (let i = 0; i < this.historyList.length; i++) {
+						all.push(this.historyList[i]['id'] as string)
+					}
+					this.selectedIds = all
+				}
+			},
+
+			batchDelete() {
+				if (this.selectedIds.length == 0) {
+					uni.showToast({ title: '请选择要删除的对话', icon: 'none' })
+					return
+				}
+				uni.showModal({
+					title: '批量删除',
+					content: '确定要删除选中的 ' + this.selectedIds.length +  ' 条对话吗？',
+					success: (res) => {
+						if (res.confirm == true) {
+							for (let i = 0; i < this.selectedIds.length; i++) {
+								deleteConversation(this.selectedIds[i])
+							}
+							this.selectedIds = []
+							this.editMode = false
+							this.loadHistory()
+							uni.showToast({
+								title: '已删除',
+								icon: 'success'
+							})
+						}
+					}
+				})
+			},
+
+			// ===== 卡片交互 =====
+
+			onCardClick(item: UTSJSONObject) {
+				if (this.editMode) {
+					this.toggleItem(item['id'] as string)
+				} else {
+					this.openConversation(item)
+				}
+			},
+
+			onCardLongpress(item: UTSJSONObject) {
+				if (!this.editMode) {
+					this.enterEditMode()
+					this.toggleItem(item['id'] as string)
+				}
+			},
+
 			openConversation(item: UTSJSONObject) {
-				// TODO: 加载该对话的消息到聊天页
 				uni.setStorageSync('active_conversation_id', item['id'] as string)
 				uni.redirectTo({
 					url: '/pages/index/index'
@@ -104,7 +226,11 @@
 			},
 
 			goBack() {
-				uni.navigateBack()
+				if (this.editMode) {
+					this.exitEditMode()
+				} else {
+					uni.navigateBack()
+				}
 			},
 
 			confirmClear() {
@@ -113,10 +239,8 @@
 					content: '确定要清空所有对话历史吗？此操作无法撤销。',
 					success: (res) => {
 						if (res.confirm == true) {
-							// 逐个删除
 							for (let i = 0; i < this.historyList.length; i++) {
-								const item = this.historyList[i]
-								deleteConversation(item['id'] as string)
+								deleteConversation(this.historyList[i]['id'] as string)
 							}
 							this.historyList = []
 							uni.showToast({
@@ -138,9 +262,20 @@
 		background-color: var(--rice-background);
 	}
 
-	.clear-btn {
-		font-size: 14px;
+	.nav-right {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.nav-btn {
+		font-size: 28rpx;
 		color: var(--rice-primary-color);
+		margin-left: 16rpx;
+		font-weight: bold;
+	}
+
+	.nav-btn-danger {
+		color: #EF4444;
 	}
 
 	/* 列表滚动区 */
@@ -162,6 +297,52 @@
 		border-width: 1px;
 		border-style: solid;
 		border-color: var(--rice-border-color);
+	}
+
+	.card-selected {
+		border-color: var(--rice-primary-color);
+		background-color: var(--rice-primary-color-1);
+	}
+
+	.card-row {
+		flex-direction: row;
+		align-items: flex-start;
+	}
+
+	/* 复选框列 */
+	.check-col {
+		width: 40px;
+		height: 100%;
+		justify-content: center;
+		align-items: center;
+		margin-right: 8px;
+		padding-top: 2px;
+	}
+
+	.checkbox {
+		width: 22px;
+		height: 22px;
+		border-radius: 11px;
+		border-width: 2px;
+		border-style: solid;
+		border-color: #D1D5DB;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.checkbox-checked {
+		background-color: var(--rice-primary-color);
+		border-color: var(--rice-primary-color);
+	}
+
+	.checkmark {
+		font-size: 14px;
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+
+	.card-body {
+		flex: 1;
 	}
 
 	.card-top {
