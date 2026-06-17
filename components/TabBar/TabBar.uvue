@@ -10,7 +10,7 @@
 			<oui-icon-unix
 				:name="tab['icon'] as string"
 				:size="'22px'"
-				:color="current == tab['pagePath'] ? '#FB8FAB' : '#B0B3BF'"
+				:color="current == tab['pagePath'] ? 'var(--rice-primary-color)' : 'var(--rice-text-color-3)'"
 			/>
 			<text
 				:class="'tab-label' + (current == tab['pagePath'] ? ' tab-label-active' : '')"
@@ -61,7 +61,7 @@
 	.tabbar {
 		flex-direction: row;
 		height: 54px;
-		background-color: #FFFFFF;
+		background-color: var(--rice-background-2);
 		border-radius: 18px;
 		margin-left: 12px;
 		margin-right: 12px;
@@ -83,13 +83,13 @@
 	/* 标签文字 */
 	.tab-label {
 		font-size: 10px;
-		color: #B0B3BF;
+		color: var(--rice-text-color-3);
 		margin-top: 3px;
 	}
 
 	/* 选中标签文字 - 粉色 */
 	.tab-label-active {
-		color: #FB8FAB;
+		color: var(--rice-primary-color);
 		font-weight: bold;
 	}
 </style>

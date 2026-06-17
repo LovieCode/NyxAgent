@@ -1,5 +1,5 @@
 <template>
-	<view class="page-shell">
+	<view class="page-shell rice-theme-light">
 		<view class="container">
 			<!-- 筛选标签 -->
 			<view class="filter-bar">

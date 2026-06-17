@@ -1,0 +1,279 @@
+<template>
+	<view class="page-shell rice-theme-light">
+		<NavBar title="用户资料" showBack />
+		<scroll-view class="container" :scroll-y="true">
+
+			<!-- 头像区域 -->
+			<view class="avatar-section" @click="pickAvatar">
+				<image v-if="avatarPath != ''" :src="avatarPath" class="avatar-image" mode="aspectFill" />
+				<view v-else class="avatar-circle">
+					<text class="avatar-text">{{avatarText}}</text>
+				</view>
+				<text class="avatar-hint">点击更换头像</text>
+			</view>
+
+			<!-- 资料表单卡片 -->
+			<view class="form-card">
+				<view class="form-item">
+					<text class="form-label">昵称</text>
+					<input class="form-input" v-model="nickname" placeholder="输入昵称" placeholder-style="color:#9CA3AF" />
+				</view>
+				<view class="form-divider"></view>
+				<view class="form-item">
+					<text class="form-label">简介</text>
+					<input class="form-input" v-model="bio" placeholder="一句话介绍自己" placeholder-style="color:#9CA3AF" />
+				</view>
+				<view class="form-divider"></view>
+				<view class="form-item">
+					<text class="form-label">邮箱</text>
+					<input class="form-input" v-model="email" placeholder="邮箱地址" placeholder-style="color:#9CA3AF" inputmode="email" />
+				</view>
+				<view class="form-divider"></view>
+				<view class="form-item form-item-textarea">
+					<text class="form-label">个人简介</text>
+					<view class="textarea-wrap">
+						<textarea class="form-textarea" v-model="description" placeholder="详细介绍一下自己…" placeholder-style="color:#9CA3AF" />
+						<view class="fullscreen-btn" @click="openFullEditor">
+							<text class="fullscreen-btn-text">全屏编辑</text>
+						</view>
+					</view>
+				</view>
+			</view>
+
+			<!-- 保存按钮 -->
+			<view class="save-btn-wrap">
+				<view class="save-btn" @click="saveProfile">
+					<text class="save-btn-text">保存</text>
+				</view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * 用户资料页面 - 扁平化粉白主题
+	 * 支持头像选择（拍照/相册）、资料编辑
+	 */
+	export default {
+		data() {
+			return {
+				nickname: '' as string,
+				bio: '' as string,
+				email: '' as string,
+				description: '' as string,
+				/** 头像路径（空字符串表示使用默认文字头像） */
+				avatarPath: '' as string
+			}
+		},
+		computed: {
+			/** 头像占位文字：取昵称首字符或默认 */
+			avatarText() : string {
+				if (this.nickname != null && this.nickname != '') {
+					return this.nickname.substring(0, 1)
+				}
+				return 'U'
+			}
+		},
+		onLoad() {
+			this.loadProfile()
+		},
+		onShow() {
+			// 检查全屏编辑器是否有返回结果
+			const result = uni.getStorageSync('editor_result') as string
+			if (result != null && result != '') {
+				this.description = result
+				uni.removeStorageSync('editor_result')
+				// 自动保存
+				this.saveProfile()
+			}
+		},
+		methods: {
+			loadProfile() {
+				const v1 = uni.getStorageSync('profile_nickname') as string
+				this.nickname = (v1 != null && v1 != '') ? v1 : '用户'
+				const v2 = uni.getStorageSync('profile_bio') as string
+				this.bio = (v2 != null && v2 != '') ? v2 : ''
+				const v3 = uni.getStorageSync('profile_email') as string
+				this.email = (v3 != null && v3 != '') ? v3 : ''
+				const v4 = uni.getStorageSync('profile_description') as string
+				this.description = (v4 != null && v4 != '') ? v4 : ''
+				const avatar = uni.getStorageSync('profile_avatar') as string
+				this.avatarPath = (avatar != null) ? avatar : ''
+			},
+			saveProfile() {
+				uni.setStorageSync('profile_nickname', this.nickname)
+				uni.setStorageSync('profile_bio', this.bio)
+				uni.setStorageSync('profile_email', this.email)
+				uni.setStorageSync('profile_description', this.description)
+				uni.showToast({
+					title: '已保存',
+					icon: 'success'
+				})
+			},
+			/** 弹出选择头像（拍照或从相册选取）*/
+			pickAvatar() {
+				uni.chooseImage({
+					count: 1,
+					sourceType: ['album', 'camera'],
+					sizeType: ['compressed'],
+					success: (res: any) => {
+						const raw = JSON.stringify(res)
+						if (raw == null || raw == '') { return }
+						const parsed = JSON.parse(raw) as UTSJSONObject
+						const paths = parsed['tempFilePaths'] as string[]
+						if (paths != null && paths.length > 0) {
+							this.avatarPath = paths[0]
+							uni.setStorageSync('profile_avatar', this.avatarPath)
+						}
+					}
+				})
+			},
+			/** 打开全屏编辑器 */
+			openFullEditor() {
+				uni.setStorageSync('editor_content', this.description)
+				uni.setStorageSync('editor_title', '编辑个人简介')
+				uni.navigateTo({
+					url: '/pages/common/editor/editor'
+				})
+			},
+		}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+		padding: 16px 16px 0;
+	}
+
+	/* 头像区域 */
+	.avatar-section {
+		align-items: center;
+		padding: 24px 0 20px;
+	}
+
+	.avatar-circle {
+		width: 80px;
+		height: 80px;
+		border-radius: 40px;
+		background-image: linear-gradient(to bottom right, #FB8FAB, #E8729A);
+		justify-content: center;
+		align-items: center;
+		margin-bottom: 8px;
+	}
+
+	.avatar-image {
+		width: 80px;
+		height: 80px;
+		border-radius: 40px;
+		margin-bottom: 8px;
+	}
+
+	.avatar-text {
+		font-size: 32px;
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+
+	.avatar-hint {
+		font-size: 12px;
+		color: #9CA3AF;
+	}
+
+	/* 表单卡片 */
+	.form-card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 0 16px;
+	}
+
+	.form-item {
+		flex-direction: row;
+		align-items: center;
+		padding: 6px 0;
+		min-height: 40px;
+	}
+
+	.form-item-textarea {
+		align-items: flex-start;
+		padding: 6px 0;
+	}
+
+	.textarea-wrap {
+		flex: 1;
+		position: relative;
+	}
+
+	/* 全屏编辑按钮 - 浮动在输入框右上角 */
+	.fullscreen-btn {
+		position: absolute;
+		top: 6px;
+		right: 6px;
+		padding: 4px 10px;
+		border-radius: 8px;
+		background-color: var(--rice-primary-color-1);
+		justify-content: center;
+		align-items: center;
+	}
+
+	.fullscreen-btn-text {
+		font-size: 12px;
+		color: var(--rice-primary-color);
+		font-weight: bold;
+	}
+
+	.form-label {
+		font-size: 15px;
+		color: #374151;
+		width: 70px;
+		font-weight: bold;
+		flex-shrink: 0;
+	}
+
+	.form-input {
+		flex: 1;
+		font-size: 15px;
+		color: #111827;
+		padding: 0;
+		height: 36px;
+	}
+
+	.form-textarea {
+		flex: 1;
+		background-color: #F9FAFB;
+		border-radius: 12px;
+		padding: 8px 12px;
+		font-size: 15px;
+		color: #111827;
+		min-height: 36px;
+		line-height: 22px;
+	}
+
+	.form-divider {
+		height: 0.5px;
+		background-color: #F3F4F6;
+		margin-left: 70px;
+	}
+
+	/* 保存按钮 */
+	.save-btn-wrap {
+		padding: 12px 0 40px;
+		align-items: center;
+	}
+
+	.save-btn {
+		background-image: linear-gradient(to bottom right, #FB8FAB, #E8729A);
+		border-radius: 22px;
+		height: 44px;
+		width: 200px;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.save-btn-text {
+		font-size: 16px;
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+</style>

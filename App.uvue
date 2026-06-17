@@ -79,7 +79,7 @@
 	.page-shell {
 		flex: 1;
 		flex-direction: column;
-		background-color: #EDEEF0;
+		background-color: var(--rice-background);
 	}
 
 	/* 页面内容容器 - 白色内容区域 */

@@ -1,5 +1,5 @@
-<template>
-	<view class="page-shell">
+﻿<template>
+	<view class="page-shell rice-theme-light">
 		<scroll-view class="container" :scroll-y="true">
 			<!-- 页面标题 -->
 			<view class="page-header">
@@ -9,6 +9,17 @@
 
 			<!-- 设置菜单列表 -->
 			<view class="settings-menu">
+				<view class="menu-item" @click="goSubPage('profile')">
+					<view class="menu-item-left">
+						<oui-icon-unix name="account" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
+						<view class="menu-text">
+							<text class="menu-title">用户资料</text>
+							<text class="menu-desc">昵称、头像、个人简介</text>
+						</view>
+					</view>
+					<text class="menu-arrow">›</text>
+				</view>
+				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('basic')">
 					<view class="menu-item-left">
 						<oui-icon-unix name="setting" size="28rpx" color="#6B7280" style="margin-right:20rpx" />

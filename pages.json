@@ -17,50 +17,67 @@
 		{
 			"path": "pages/todo/todo",
 			"style": {
-				"navigationBarTitleText": "Todo"
+				"navigationStyle": "custom"
 			}
 		},
 		{
 			"path": "pages/notes/notes",
 			"style": {
-				"navigationBarTitleText": "笔记"
+				"navigationStyle": "custom"
 			}
 		},
 		{
 			"path": "pages/history/history",
 			"style": {
-				"navigationStyle": "custom",
-				"navigationBarTitleText": "历史记录"
+				"navigationStyle": "custom"
 			}
 		},
 		{
 			"path": "pages/settings/settings",
 			"style": {
-				"navigationBarTitleText": "设置"
+				"navigationStyle": "custom"
 			}
 		},
 		{
 			"path": "pages/settings/basic/basic",
 			"style": {
-				"navigationBarTitleText": "基础设置"
+				"navigationStyle": "custom"
 			}
 		},
 		{
 			"path": "pages/settings/model/model",
 			"style": {
-				"navigationBarTitleText": "模型设置"
+				"navigationStyle": "custom"
 			}
 		},
 		{
 			"path": "pages/settings/plugin/plugin",
 			"style": {
-				"navigationBarTitleText": "插件设置"
+				"navigationStyle": "custom"
 			}
 		},
 		{
 			"path": "pages/settings/about/about",
 			"style": {
-				"navigationBarTitleText": "关于"
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/settings/profile/profile",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/agent-settings/agent-settings",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		}
+	,{
+			"path": "pages/common/editor/editor",
+			"style": {
+				"navigationStyle": "custom"
 			}
 		}
 	,{
