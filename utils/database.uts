@@ -1,7 +1,7 @@
 /**
  * 数据库工具层 - 基于 laoqianjunzi-sqlite 的本地持久化
  *
- * 管理 conversations（对话列表）和 messages（消息）两张表
+ * 管理 providers（提供商）、conversations（对话列表）和 messages（消息）三张表
  */
 import { xSqlite, SQLiteResult } from '@/uni_modules/laoqianjunzi-sqlite'
 
@@ -19,6 +19,8 @@ function getDb(): xSqlite {
 
 /**
  * 将 SQLite 查询结果的 columns+rows 转换为 UTSJSONObject[]
+ * 仅用于多行结果查询（getAllProviders、getConversations、getMessages），
+ * 单行结果分别用其他方式处理。
  */
 function rowsToObjects(result: SQLiteResult): UTSJSONObject[] {
 	const rows = result.rows
@@ -55,7 +57,8 @@ export function initDatabase(): void {
 		'title TEXT NOT NULL DEFAULT \'\',' +
 		'model TEXT NOT NULL DEFAULT \'\',' +
 		'agent_id TEXT NOT NULL DEFAULT \'\',' +
-		'created_at INTEGER NOT NULL,' +
+		'created_at INTEGER NOT NULL DEFAULT (CAST(strftime(\'%s\',\'now\') AS INTEGER) * 1000),' +
+		'updated_at INTEGER NOT NULL DEFAULT (CAST(strftime(\'%s\',\'now\') AS INTEGER) * 1000),' +
 		'message_count INTEGER NOT NULL DEFAULT 0,' +
 		'preview TEXT NOT NULL DEFAULT \'\')'
 	)
@@ -66,6 +69,31 @@ export function initDatabase(): void {
 	} catch (_e: any) {
 		// 列已存在，忽略
 	}
+
+	// 兼容旧表：尝试添加 updated_at 列
+	try {
+		db.run('ALTER TABLE conversations ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0')
+	} catch (_e: any) {
+		// 列已存在，忽略
+	}
+
+	db.run(
+		'CREATE TABLE IF NOT EXISTS providers (' +
+		'id TEXT PRIMARY KEY,' +
+		'name TEXT NOT NULL DEFAULT \'\',' +
+		'api_base TEXT NOT NULL DEFAULT \'\',' +
+		'api_key TEXT NOT NULL DEFAULT \'\',' +
+		'models TEXT NOT NULL DEFAULT \'[]\',' +
+		'enabled INTEGER NOT NULL DEFAULT 1,' +
+		'created_at INTEGER NOT NULL DEFAULT 0,' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+
+	db.run(
+		'CREATE TABLE IF NOT EXISTS app_settings (' +
+		'key TEXT PRIMARY KEY,' +
+		'value TEXT NOT NULL DEFAULT \'\')'
+	)
 
 	db.run(
 		'CREATE TABLE IF NOT EXISTS messages (' +
@@ -106,8 +134,8 @@ export function saveConversation(
 	// UPSERT 对话
 	const now = Date.now()
 	db.run(
-		'INSERT OR REPLACE INTO conversations (id, title, model, agent_id, created_at, message_count, preview) VALUES (?, ?, ?, ?, ?, ?, ?)',
-		[id, title, model, agentId, now, messages.length, preview]
+		'INSERT OR REPLACE INTO conversations (id, title, model, agent_id, created_at, updated_at, message_count, preview) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+		[id, title, model, agentId, now, now, messages.length, preview]
 	)
 
 	// 先删该对话的旧消息
@@ -164,7 +192,7 @@ export function saveConversation(
 export function getConversations(): UTSJSONObject[] {
 	const db = getDb()
 	const result = db.query(
-		'SELECT id, title, model, agent_id, created_at, message_count, preview FROM conversations ORDER BY created_at DESC'
+		'SELECT id, title, model, agent_id, created_at, updated_at, message_count, preview FROM conversations ORDER BY updated_at DESC'
 	)
 	db.close()
 	return rowsToObjects(result)
@@ -176,7 +204,7 @@ export function getConversations(): UTSJSONObject[] {
 export function getConversationsByAgent(agentId: string): UTSJSONObject[] {
 	const db = getDb()
 	const result = db.query(
-		'SELECT id, title, model, agent_id, created_at, message_count, preview FROM conversations WHERE agent_id = ? ORDER BY created_at DESC',
+		'SELECT id, title, model, agent_id, created_at, updated_at, message_count, preview FROM conversations WHERE agent_id = ? ORDER BY updated_at DESC',
 		[agentId]
 	)
 	db.close()
@@ -247,5 +275,140 @@ export function clearAll(): void {
 	const db = getDb()
 	db.run('DELETE FROM messages')
 	db.run('DELETE FROM conversations')
+	db.run('DELETE FROM providers')
 	db.close()
+}
+
+// ==================== 提供商 CRUD ====================
+
+/**
+ * 获取所有提供商
+ */
+export function getAllProviders(): UTSJSONObject[] {
+	const db = getDb()
+	const result = db.query('SELECT * FROM providers ORDER BY enabled DESC, created_at ASC, id ASC')
+	db.close()
+	return rowsToObjects(result)
+}
+
+/**
+ * 根据 id 获取单个提供商
+ * 用 getAllProviders 替代直接 SQL 查询，避免 Android SingletonList 问题
+ */
+export function getProviderById(id: string): UTSJSONObject | null {
+	const all = getAllProviders()
+	for (let i = 0; i < all.length; i++) {
+		if ((all[i]['id'] as string) == id) {
+			return all[i]
+		}
+	}
+	return null
+}
+
+/**
+ * 初始化默认提供商（首次使用时填充）
+ */
+export function initDefaultProviders(): void {
+	// 用 getAllProviders 检查，避免 SingletonList 问题
+	const existing = getAllProviders()
+	if (existing.length > 0) {
+		return
+	}
+
+	const defaults: UTSJSONObject[] = [
+		{ id: 'deepseek', name: 'DeepSeek', api_base: 'https://api.deepseek.com', api_key: '', models: '["deepseek-v4-flash","deepseek-v4-pro"]', enabled: 1 },
+		{ id: 'openai', name: 'OpenAI', api_base: 'https://api.openai.com', api_key: '', models: '["gpt-4o","gpt-4o-mini","gpt-4.1","gpt-4.1-mini","gpt-4.1-nano"]', enabled: 0 },
+		{ id: 'anthropic', name: 'Anthropic', api_base: 'https://api.anthropic.com', api_key: '', models: '["claude-sonnet-4-20250514","claude-3-5-sonnet-20241022","claude-3-5-haiku-20241022"]', enabled: 0 },
+		{ id: 'zai', name: '零一万物', api_base: 'https://api.z.ai/api/coding/paas/v4', api_key: '', models: '["glm-5.2","glm-5.1","glm-5-turbo","glm-4.7","glm-4.5-air"]', enabled: 0 },
+		{ id: 'kimi-coding', name: 'Kimi', api_base: 'https://api.kimi.com/coding', api_key: '', models: '["k2p7","kimi-for-coding","kimi-k2-thinking"]', enabled: 0 },
+		{ id: 'minimax-cn', name: 'MiniMax', api_base: 'https://api.minimaxi.com/anthropic', api_key: '', models: '["MiniMax-M3","MiniMax-M2.7","MiniMax-M2.7-highspeed"]', enabled: 0 },
+		{ id: 'xiaomi', name: '小米', api_base: 'https://api.xiaomimimo.com/v1', api_key: '', models: '["mimo-v2.5-pro-ultraspeed","mimo-v2.5-pro","mimo-v2-pro","mimo-v2-omni","mimo-v2-flash"]', enabled: 0 },
+		{ id: 'ant-ling', name: '通义千问', api_base: 'https://api.ant-ling.com/v1', api_key: '', models: '["Ring-2.6-1T","Ling-2.6-1T","Ling-2.6-flash"]', enabled: 0 },
+		{ id: 'siliconflow', name: '硅基流动', api_base: 'https://api.siliconflow.cn/v1', api_key: '', models: '[]', enabled: 0 },
+	]
+
+	const db = getDb()
+	const now = Date.now()
+	for (let i = 0; i < defaults.length; i++) {
+		const p = defaults[i]
+		const id: string = p['id'] as string
+		const name: string = p['name'] as string
+		const apiBase: string = p['api_base'] as string
+		const apiKey: string = p['api_key'] as string
+		const models: string = p['models'] as string
+		const enabled: number = p['enabled'] as number
+		db.run(
+			'INSERT INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+			[id, name, apiBase, apiKey, models, enabled, now, now]
+		)
+	}
+	db.close()
+}
+
+/**
+ * 保存提供商（插入或替换）
+ */
+export function saveProvider(
+	id: string,
+	name: string,
+	apiBase: string,
+	apiKey: string,
+	models: string,
+	enabled: boolean
+): void {
+	const db = getDb()
+	const now = Date.now()
+	// 用 tableExists 替代 SELECT 查询，避免 Android 单行结果问题
+	const tableExists = db.tableExists('providers')
+	if (!tableExists) {
+		// 表不存在时直接 INSERT
+		db.run(
+			'INSERT INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+			[id, name, apiBase, apiKey, models, enabled ? 1 : 0, now, now]
+		)
+	} else {
+		// 直接用 INSERT OR REPLACE 简化逻辑
+		db.run(
+			'INSERT OR REPLACE INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+			[id, name, apiBase, apiKey, models, enabled ? 1 : 0, now, now]
+		)
+	}
+	db.close()
+}
+
+/**
+ * 删除提供商
+ */
+export function deleteProvider(id: string): void {
+	const db = getDb()
+	db.run('DELETE FROM providers WHERE id = ?', [id])
+	db.close()
+}
+
+/**
+ * 切换提供商启用状态
+ */
+export function toggleProvider(id: string, enabled: boolean): void {
+	const db = getDb()
+	db.run('UPDATE providers SET enabled=?, updated_at=? WHERE id=?', [enabled ? 1 : 0, Date.now(), id])
+	db.close()
+}
+
+// ==================== 应用设置（基于 uni.storage，避免 SQLite 单行结果问题） ====================
+
+const SETTINGS_PREFIX = 'app_setting_'
+
+/**
+ * 获取应用设置值
+ */
+export function getAppSetting(key: string): string | null {
+	const val = uni.getStorageSync(SETTINGS_PREFIX + key) as string
+	return (val != null && val != '') ? val : null
+}
+
+/**
+ * 保存应用设置
+ */
+export function setAppSetting(key: string, value: string): void {
+	uni.setStorageSync(SETTINGS_PREFIX + key, value)
 }

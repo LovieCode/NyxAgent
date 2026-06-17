@@ -1,0 +1,361 @@
+/**
+ * 提供商管理工具
+ *
+ * 管理多个 LLM 提供商的注册信息，以及各任务类型的默认模型分配
+ */
+
+import {
+	getAllProviders as dbGetAllProviders,
+	getProviderById as dbGetProviderById,
+	saveProvider as dbSaveProvider,
+	deleteProvider as dbDeleteProvider,
+	toggleProvider as dbToggleProvider,
+	getAppSetting,
+	setAppSetting,
+} from '@/utils/database.uts'
+
+// ==================== 模型数据结构 ====================
+
+/**
+ * 单个模型信息
+ *
+ * ctxStr / maxTokensStr / expanded 是 UI 状态，序列化时忽略
+ */
+export type ModelInfo = {
+	id: string
+	name?: string
+	context?: number
+	maxTokens?: number
+	/** 自定义参数 JSON 字符串，用于传递 provider-specific 的参数 */
+	params?: string
+	// === UI state (不序列化) ===
+	ctxStr?: string
+	maxTokensStr?: string
+	expanded?: boolean
+}
+
+// ==================== 提供商 CRUD ====================
+
+/**
+ * 获取所有提供商
+ */
+export function getAllProviders(): UTSJSONObject[] {
+	return dbGetAllProviders()
+}
+
+/**
+ * 根据 id 获取提供商
+ */
+export function getProviderById(id: string): UTSJSONObject | null {
+	return dbGetProviderById(id)
+}
+
+/**
+ * 将模型数组序列化为 JSON 字符串（存数据库用）
+ */
+export function serializeModels(models: ModelInfo[]): string {
+	const list: UTSJSONObject[] = []
+	for (let i = 0; i < models.length; i++) {
+		const m = models[i]
+		const obj: UTSJSONObject = { id: m.id } as UTSJSONObject
+		if (m.name != null && m.name != '') {
+			obj['name'] = m.name
+		}
+		if (m.context != null && m.context > 0) {
+			obj['context'] = m.context
+		}
+		if (m.maxTokens != null && m.maxTokens > 0) {
+			obj['maxTokens'] = m.maxTokens
+		}
+		if (m.params != null && m.params != '') {
+			obj['params'] = m.params
+		}
+		// UI state 不存
+		list.push(obj)
+	}
+	return JSON.stringify(list)
+}
+
+/**
+ * 从 JSON 字符串解析模型列表（兼容旧格式 ["id1","id2"]）
+ */
+export function parseModels(modelsStr: string): ModelInfo[] {
+	if (modelsStr == '' || modelsStr == '[]') {
+		return []
+	}
+	try {
+		const raw = JSON.parse(modelsStr) as any[]
+		const result: ModelInfo[] = []
+		for (let i = 0; i < raw.length; i++) {
+			const item = raw[i]
+			if (typeof item == 'string') {
+				// 旧格式 ["model-id"]
+				result.push({ id: item } as ModelInfo)
+			} else if (typeof item == 'object' && item != null) {
+				// 新格式 [{"id":"...","context":...}]
+				const obj = item as UTSJSONObject
+				const mid = obj['id'] as string | null
+				if (mid != null && mid != '') {
+					const mi: ModelInfo = { id: mid, ctxStr: '', maxTokensStr: '', expanded: false } as ModelInfo
+					// name
+					const nm = obj['name'] as string | null
+					if (nm != null && nm != '') {
+						mi.name = nm
+					}
+					// context
+					const ctx = obj['context'] as number | null
+					if (ctx != null && ctx > 0) {
+						mi.context = ctx
+						mi.ctxStr = ctx + ''
+					}
+					// maxTokens
+					const mt = obj['maxTokens'] as number | null
+					if (mt != null && mt > 0) {
+						mi.maxTokens = mt
+						mi.maxTokensStr = mt + ''
+					}
+					// custom params
+					const pms = obj['params'] as string | null
+					if (pms != null && pms != '') {
+						mi.params = pms
+					}
+					result.push(mi)
+				}
+			}
+		}
+		return result
+	} catch (_e: any) {
+		return []
+	}
+}
+
+/**
+ * 获取提供商的模型列表（返回 ModelInfo[]）
+ */
+export function getProviderModels(id: string): ModelInfo[] {
+	const p = dbGetProviderById(id)
+	if (p == null) {
+		return []
+	}
+	const modelsStr = p['models'] as string | null
+	if (modelsStr == null || modelsStr == '') {
+		return []
+	}
+	return parseModels(modelsStr)
+}
+
+/**
+ * 获取提供商的模型 ID 列表（向后兼容）
+ */
+export function getProviderModelIds(id: string): string[] {
+	const models = getProviderModels(id)
+	const ids: string[] = []
+	for (let i = 0; i < models.length; i++) {
+		ids.push(models[i].id)
+	}
+	return ids
+}
+
+/**
+ * 保存提供商（models 传 ModelInfo[]）
+ */
+export function saveProvider(
+	id: string,
+	name: string,
+	apiBase: string,
+	apiKey: string,
+	models: ModelInfo[],
+	enabled: boolean
+): void {
+	dbSaveProvider(id, name, apiBase, apiKey, serializeModels(models), enabled)
+}
+
+/**
+ * 删除提供商
+ */
+export function deleteProvider(id: string): void {
+	dbDeleteProvider(id)
+}
+
+/**
+ * 设置提供商启用状态
+ */
+export function setProviderEnabled(id: string, enabled: boolean): void {
+	dbToggleProvider(id, enabled)
+}
+
+/**
+ * 启用一个提供商（同时禁用其他）
+ */
+export function setActiveProvider(id: string): void {
+	const all = dbGetAllProviders()
+	for (let i = 0; i < all.length; i++) {
+		const p = all[i]
+		const pid = p['id'] as string
+		dbToggleProvider(pid, pid == id)
+	}
+}
+
+/**
+ * 获取提供商的有效 API 配置
+ */
+export function getProviderApiConfig(id: string): UTSJSONObject | null {
+	const p = dbGetProviderById(id)
+	if (p == null) {
+		return null
+	}
+	return {
+		api_base: p['api_base'] ?? '',
+		api_key: p['api_key'] ?? '',
+		models: p['models'] ?? '[]',
+		enabled: p['enabled'] ?? 0,
+	} as UTSJSONObject
+}
+
+// ==================== 获取模型列表 ====================
+
+/**
+ * 从提供商的 API 获取模型列表
+ * 调用 GET {baseUrl}/v1/models
+ */
+export function fetchProviderModels(apiBase: string, apiKey: string): Promise<string[]> {
+	return new Promise<string[]>((resolve) => {
+		let baseUrl = apiBase
+		if (baseUrl == '') {
+			resolve([])
+			return
+		}
+		// 去掉末尾 /
+		if (baseUrl.endsWith('/')) {
+			baseUrl = baseUrl.substring(0, baseUrl.length - 1)
+		}
+		const url = baseUrl + '/v1/models'
+
+		uni.request({
+			url: url,
+			method: 'GET',
+			header: {
+				'Authorization': 'Bearer ' + apiKey,
+			} as UTSJSONObject,
+			success: (res) => {
+				const statusCode = res.statusCode as number
+				if (statusCode == 200) {
+					try {
+						const data = res.data as UTSJSONObject
+						if (data == null) {
+							resolve([])
+							return
+						}
+						const modelList = data['data'] as any[] | null
+						if (modelList == null || modelList.length == 0) {
+							resolve([])
+							return
+						}
+						const ids: string[] = []
+						for (let i = 0; i < modelList.length; i++) {
+							const item = modelList[i] as UTSJSONObject
+							const mid = item['id'] as string | null
+							if (mid != null && mid != '') {
+								ids.push(mid)
+							}
+						}
+						resolve(ids)
+					} catch (_e: any) {
+						resolve([])
+					}
+				} else {
+					resolve([])
+				}
+			},
+			fail: (_err: any) => {
+				resolve([])
+			}
+		})
+	})
+}
+
+// ==================== 默认模型分配 ====================
+
+/** 任务类型中文名 */
+const taskTypeNames: UTSJSONObject = {
+	chat: '对话',
+	vision: '识图',
+	stt: '语音识别',
+	tts: '语音合成',
+} as UTSJSONObject
+
+/** 任务类型 key 前缀 */
+const TASK_KEY_PREFIX = 'default_task_'
+
+/**
+ * 获取任务类型中文名
+ */
+export function getTaskTypeName(type: string): string {
+	const name = taskTypeNames[type] as string | null
+	return name ?? type
+}
+
+/**
+ * 获取某个任务的默认提供商 + 模型
+ * 返回 { providerId, model }
+ */
+export function getDefaultTaskModel(type: string): UTSJSONObject | null {
+	const key = TASK_KEY_PREFIX + type
+	const val = getAppSetting(key)
+	if (val == null || val == '') {
+		// 回退到旧版存储（迁移）
+		if (type == 'chat') {
+			const oldModel = uni.getStorageSync('settings_model') as string
+			const oldProvider = uni.getStorageSync('settings_provider_id') as string
+			if (oldModel != null && oldModel != '') {
+				return {
+					providerId: (oldProvider != null && oldProvider != '') ? oldProvider : 'deepseek',
+					model: oldModel,
+				} as UTSJSONObject
+			}
+		}
+		return null
+	}
+	try {
+		return JSON.parse(val) as UTSJSONObject
+	} catch (_e: any) {
+		return null
+	}
+}
+
+/**
+ * 设置某个任务的默认提供商 + 模型
+ */
+export function setDefaultTaskModel(type: string, providerId: string, model: string): void {
+	const key = TASK_KEY_PREFIX + type
+	const val = JSON.stringify({
+		providerId: providerId,
+		model: model,
+	})
+	setAppSetting(key, val)
+
+	// 兼容旧版：如果是 chat 类型，同步更新旧存储 key
+	if (type == 'chat') {
+		uni.setStorageSync('settings_model', model)
+		uni.setStorageSync('settings_provider_id', providerId)
+	}
+}
+
+/**
+ * 获取所有任务的默认配置
+ */
+export function getAllDefaultTaskModels(): UTSJSONObject[] {
+	const taskTypes: string[] = ['chat', 'vision', 'stt', 'tts']
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < taskTypes.length; i++) {
+		const t = taskTypes[i]
+		const config = getDefaultTaskModel(t)
+		result.push({
+			type: t,
+			typeName: getTaskTypeName(t),
+			providerId: config != null ? (config['providerId'] as string) : '',
+			model: config != null ? (config['model'] as string) : '',
+		} as UTSJSONObject)
+	}
+	return result
+}
