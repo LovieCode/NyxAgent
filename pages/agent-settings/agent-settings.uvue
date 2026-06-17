@@ -1,0 +1,387 @@
+<template>
+	<view class="page-shell rice-theme-light">
+		<NavBar title="智能体设置" showBack />
+		<scroll-view class="container" :scroll-y="true">
+			<!-- 头像卡片 -->
+			<view class="card avatar-card" @click="pickAvatar">
+				<view class="card-header">
+					<oui-icon-unix name="account" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<text class="card-label">头像</text>
+				</view>
+				<view class="avatar-row">
+					<image v-if="agentAvatar != ''" :src="agentAvatar" class="agent-settings-avatar" mode="aspectFill" />
+					<view v-else class="agent-settings-avatar agent-settings-avatar-placeholder">
+						<text class="agent-settings-avatar-text">{{agentName.substring(0, 1)}}</text>
+					</view>
+					<text class="avatar-change-hint">点击更换</text>
+				</view>
+			</view>
+
+			<!-- 名称 -->
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="edit" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<text class="card-label">名称</text>
+				</view>
+				<input
+					class="flat-input"
+					type="text"
+					v-model="agentName"
+					placeholder="输入智能体名称"
+					placeholder-class="input-placeholder"
+				/>
+			</view>
+
+			<!-- 描述 -->
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="file-text" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<text class="card-label">描述</text>
+				</view>
+				<view class="desc-wrap" @click="openDescEditor">
+					<text class="desc-preview" lines="2" text-overflow="ellipsis">{{agentDesc != '' ? agentDesc : '点击输入智能体描述'}}</text>
+					<view class="desc-edit-btn">
+						<text class="desc-edit-text">全屏编辑</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 当前模型，点击跳转设置 -->
+			<view class="card model-card" @click="goModelSettings">
+				<view class="card-header">
+					<oui-icon-unix name="robot" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<text class="card-label">对话模型</text>
+				</view>
+				<view class="model-row">
+					<text class="model-value">{{currentModel}}</text>
+					<text class="model-arrow">›</text>
+				</view>
+			</view>
+
+			<!-- 保存按钮 -->
+			<view class="save-wrap">
+				<view class="save-btn" @click="saveSettings">
+					<text class="save-btn-text">保存修改</text>
+				</view>
+			</view>
+
+			<!-- 删除按钮 -->
+			<view class="delete-wrap">
+				<view class="delete-btn" @click="confirmDelete">
+					<text class="delete-btn-text">删除该智能体</text>
+				</view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * 智能体设置页面 - 编辑名称/描述/头像/删除智能体
+	 */
+	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar } from '@/utils/agent.uts'
+
+	export default {
+		data() {
+			return {
+				agentId: '' as string,
+				agentName: '' as string,
+				agentDesc: '' as string,
+				agentAvatar: '' as string,
+				currentModel: 'deepseek-v4-flash'
+			}
+		},
+		onLoad() {
+			this.loadAgent()
+			this.loadModel()
+		},
+		onShow() {
+			// 检查全屏编辑器是否有返回结果
+			const result = uni.getStorageSync('editor_result') as string
+			if (result != null && result != '') {
+				this.agentDesc = result
+				uni.removeStorageSync('editor_result')
+			}
+		},
+		methods: {
+			loadAgent() {
+				const id = uni.getStorageSync('active_agent_id') as string
+				if (id == null || id == '') {
+					uni.showToast({
+						title: '未选择智能体',
+						icon: 'none'
+					})
+					return
+				}
+				this.agentId = id
+				const agent = getAgentById(id)
+				if (agent != null) {
+					this.agentName = agent['name'] as string
+					this.agentDesc = agent['desc'] as string
+					const rawAvatar = agent['avatar']
+					this.agentAvatar = rawAvatar != null ? (rawAvatar as string) : ''
+				}
+			},
+
+			/** 上传/更换智能体头像 */
+			pickAvatar() {
+				uni.chooseImage({
+					count: 1,
+					sourceType: ['album', 'camera'],
+					sizeType: ['compressed'],
+					success: (res: any) => {
+						const raw = JSON.stringify(res)
+						if (raw == null || raw == '') { return }
+						const parsed = JSON.parse(raw) as UTSJSONObject
+						const paths = parsed['tempFilePaths'] as string[]
+						if (paths != null && paths.length > 0) {
+							this.agentAvatar = paths[0]
+							updateAgentAvatar(this.agentId, paths[0])
+							uni.showToast({
+								title: '头像已更新',
+								icon: 'success'
+							})
+						}
+					}
+				})
+			},
+
+			/** 打开全屏编辑器编辑智能体描述 */
+			openDescEditor() {
+				uni.setStorageSync('editor_content', this.agentDesc)
+				uni.setStorageSync('editor_title', '编辑描述')
+				uni.navigateTo({
+					url: '/pages/common/editor/editor'
+				})
+			},
+
+			loadModel() {
+				const model = uni.getStorageSync('settings_model') as string
+				if (model != null && model != '') {
+					this.currentModel = model
+				}
+			},
+
+			goModelSettings() {
+				uni.navigateTo({
+					url: '/pages/settings/model/model'
+				})
+			},
+
+			saveSettings() {
+				const name = this.agentName.trim()
+				const desc = this.agentDesc.trim()
+				if (name == '') {
+					uni.showToast({
+						title: '名称不能为空',
+						icon: 'none'
+					})
+					return
+				}
+				updateAgent(this.agentId, name, desc)
+				uni.showToast({
+					title: '已保存',
+					icon: 'success'
+				})
+				uni.navigateBack()
+			},
+
+			confirmDelete() {
+				uni.showModal({
+					title: '删除智能体',
+					content: '确定要删除「' + this.agentName + '」吗？此操作无法撤销。',
+					success: (res) => {
+						if (res.confirm == true) {
+							deleteAgent(this.agentId)
+							// 如果删除的是当前选中的智能体，清除 active_agent_id
+							const activeId = uni.getStorageSync('active_agent_id') as string
+							if (activeId == this.agentId) {
+								uni.removeStorageSync('active_agent_id')
+							}
+							uni.showToast({
+								title: '已删除',
+								icon: 'success'
+							})
+							// 返回智能体列表页（列表页会在 onShow 中刷新）
+							uni.navigateBack()
+						}
+					}
+				})
+			},
+
+			goBack() {
+				uni.navigateBack()
+			}
+		}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+		padding: 32rpx;
+	}
+
+	/* 卡片 */
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 20rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+	}
+
+	/* 头像卡片 */
+	.avatar-card {
+		/* 点击触发 pickAvatar */
+	}
+
+	.avatar-row {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.agent-settings-avatar {
+		width: 80rpx;
+		height: 80rpx;
+		border-radius: 16rpx;
+	}
+
+	.agent-settings-avatar-placeholder {
+		background-color: #FB8FAB;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.agent-settings-avatar-text {
+		font-size: 32rpx;
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+
+	.avatar-change-hint {
+		font-size: 26rpx;
+		color: var(--rice-text-color-3);
+		margin-left: 24rpx;
+	}
+
+	.card-header {
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 16rpx;
+	}
+
+	.card-label {
+		font-size: 28rpx;
+		font-weight: bold;
+		color: var(--rice-text-color);
+	}
+
+	/* 扁平输入框 */
+	.flat-input {
+		background-color: var(--rice-background);
+		border-radius: 14rpx;
+		padding: 24rpx;
+		font-size: 28rpx;
+		color: var(--rice-text-color);
+	}
+
+	/* 描述区域 - 跳转全屏编辑 */
+	.desc-wrap {
+		position: relative;
+		background-color: var(--rice-background);
+		border-radius: 14rpx;
+		padding: 16rpx 20rpx;
+		min-height: 80rpx;
+	}
+
+	.desc-preview {
+		font-size: 28rpx;
+		color: var(--rice-text-color);
+		line-height: 40rpx;
+	}
+
+	.desc-edit-btn {
+		position: absolute;
+		top: 8rpx;
+		right: 8rpx;
+		padding: 4rpx 12rpx;
+		border-radius: 10rpx;
+		background-color: var(--rice-primary-color-1);
+		justify-content: center;
+		align-items: center;
+	}
+
+	.desc-edit-text {
+		font-size: 22rpx;
+		color: var(--rice-primary-color);
+		font-weight: bold;
+	}
+
+	.input-placeholder {
+		color: var(--rice-text-color-3);
+	}
+
+	/* 模型卡片 - 可点击跳转 */
+	.model-card {
+		/* 点击触发 goModelSettings */
+	}
+
+	.model-row {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.model-value {
+		font-size: 28rpx;
+		color: var(--rice-primary-color-7);
+		font-weight: bold;
+	}
+
+	.model-arrow {
+		font-size: 32rpx;
+		color: var(--rice-text-color-3);
+		padding-left: 8rpx;
+	}
+
+	/* 保存按钮 */
+	.save-wrap {
+		padding: 8rpx 0;
+	}
+
+	.save-btn {
+		background-color: var(--rice-primary-color);
+		border-radius: 16rpx;
+		padding: 28rpx;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.save-btn-text {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #FFFFFF;
+	}
+
+	/* 删除按钮 */
+	.delete-wrap {
+		padding: 16rpx 0 60rpx 0;
+	}
+
+	.delete-btn {
+		background-color: #FFFFFF;
+		border-radius: 16rpx;
+		padding: 28rpx;
+		align-items: center;
+		justify-content: center;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #FCA5A5;
+	}
+
+	.delete-btn-text {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #EF4444;
+	}
+</style>

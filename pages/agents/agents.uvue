@@ -1,13 +1,13 @@
-<template>
-	<view class="page-shell" ref="shellRef">
+﻿<template>
+	<view class="page-shell rice-theme-light" ref="shellRef">
 		<!-- 顶部标题栏 -->
 		<view class="header-wrap">
 			<view :style="{ height: statusBarHeight + 'px' }"></view>
 			<view class="header">
 				<text class="header-title">智能体</text>
 				<view class="header-actions">
-					<view class="add-btn" @click="createAgent">
-						<oui-icon-unix name="plus" size="22px" color="#FB8FAB" />
+					<view class="add-btn" @click="showCreateDialog = true">
+						<oui-icon-unix name="plus" size="22px" color="var(--rice-primary-color)" />
 					</view>
 				</view>
 			</view>
@@ -23,17 +23,17 @@
 						class="agent-item"
 						@click="openAgent(agent)"
 					>
-						<!-- 左侧头像 -->
-						<view :class="'agent-avatar avatar-' + (index + 1)">
-							<oui-icon-unix :name="agent['icon']" size="24px" color="#FFFFFF" />
+						<!-- 左侧头像：有自定义头像则显示图片，否则显示图标色块 -->
+						<image v-if="getAgentAvatar(agent) != ''" :src="getAgentAvatar(agent)" class="agent-avatar-img" mode="aspectFill" />
+						<view v-else :class="'agent-avatar avatar-' + ((index % 5) + 1)">
+							<oui-icon-unix :name="agent['icon']" size="24px" color="var(--rice-background-2)" />
 						</view>
 						<!-- 中间文字 -->
 						<view class="agent-info">
 							<view class="agent-top">
 								<text class="agent-name">{{ agent['name'] }}</text>
-								<text class="agent-time">{{ agent['time'] }}</text>
 							</view>
-							<text class="agent-desc">{{ agent['desc'] }}</text>
+							<text class="agent-desc">{{ getAgentStatus(agent) }}</text>
 						</view>
 						<!-- 右侧箭头 -->
 						<text class="agent-arrow">›</text>
@@ -42,16 +42,101 @@
 			</share-element>
 		</scroll-view>
 
+		<!-- 创建智能体弹窗 -->
+		<view v-if="showCreateDialog" class="dialog-overlay" @click="closeCreateDialog">
+			<view class="dialog-card" @click.stop>
+				<view class="dialog-header">
+					<text class="dialog-title">创建新智能体</text>
+					<view class="dialog-close" @click="closeCreateDialog">
+						<oui-icon-unix name="close" size="20px" color="var(--rice-text-color-3)" />
+					</view>
+				</view>
+
+				<!-- 图标选择器 -->
+				<view class="dialog-section">
+					<text class="dialog-label">选择图标</text>
+					<view class="icon-grid">
+						<view
+							v-for="(icon, i) in iconList"
+							:key="i"
+							:class="['icon-item', createData.icon == icon ? 'icon-item-active' : '']"
+							@click="createData.icon = icon"
+						>
+							<oui-icon-unix :name="icon" size="22px" :color="createData.icon == icon ? '#FFFFFF' : 'var(--rice-text-color-2)'" />
+						</view>
+					</view>
+				</view>
+
+				<!-- 头像上传 -->
+				<view class="dialog-section">
+					<text class="dialog-label">头像（可选）</text>
+					<view class="create-avatar-row">
+						<image v-if="createData.avatar != ''" :src="createData.avatar" class="create-avatar" mode="aspectFill" />
+						<view v-else class="create-avatar create-avatar-placeholder">
+							<oui-icon-unix name="account" size="28px" color="#FFFFFF" />
+						</view>
+						<view class="create-avatar-btn" @click="pickCreateAvatar">
+							<text class="create-avatar-btn-text">选择图片</text>
+						</view>
+					</view>
+				</view>
+
+				<!-- 名称输入 -->
+				<view class="dialog-section">
+					<text class="dialog-label">名称</text>
+					<input class="dialog-input" v-model="createData.name" placeholder="输入智能体名称" placeholder-style="color:var(--rice-text-color-3)" />
+				</view>
+
+				<!-- 描述输入 -->
+				<view class="dialog-section">
+					<text class="dialog-label">描述</text>
+					<input class="dialog-input" v-model="createData.desc" placeholder="一句话描述这个智能体的功能" placeholder-style="color:var(--rice-text-color-3)" />
+				</view>
+
+				<!-- 创建按钮 -->
+				<view class="dialog-btn" @click="doCreateAgent">
+					<text class="dialog-btn-text">创建</text>
+				</view>
+			</view>
+		</view>
+
 		<TabBar current="pages/agents/agents" />
 	</view>
 </template>
 
 <script lang="uts">
+	/**
+	 * 智能体列表页
+	 * 扁平化粉白主题
+	 */
+	import { getAgents, saveAgents } from '@/utils/agent.uts'
+	import { getConversationsByAgent } from '@/utils/database.uts'
+
+	/** 可用图标列表 */
+	const AVAILABLE_ICONS: string[] = [
+		'robot', 'code', 'edit', 'translate', 'bulb',
+		'star', 'heart', 'camera', 'music', 'fire'
+	]
+	const DEFAULT_ICON = 'robot'
+
 	export default {
 		data() {
 			return {
 				statusBarHeight: 0,
 				agentList: [] as UTSJSONObject[],
+				showCreateDialog: false as boolean,
+				/** 创建表单数据 */
+				createData: {
+					icon: DEFAULT_ICON,
+					name: '' as string,
+					desc: '' as string,
+					avatar: '' as string,
+				} as UTSJSONObject,
+			}
+		},
+		computed: {
+			iconList(): string[] {
+				return AVAILABLE_ICONS
 			}
 		},
 		onLoad() {
@@ -64,47 +149,38 @@
 		},
 		methods: {
 			loadAgents() {
-				this.agentList = [
-					{
-						id: 'ai-assistant',
-						icon: 'robot',
-						name: 'AI 助手',
-						desc: '通用智能助手，回答问题、提供建议',
-						time: '刚刚',
-					} as UTSJSONObject,
-					{
-						id: 'coding-helper',
-						icon: 'code',
-						name: '编程助手',
-						desc: '帮你写代码、调试、解释技术问题',
-						time: '昨天',
-					} as UTSJSONObject,
-					{
-						id: 'writing-helper',
-						icon: 'edit',
-						name: '写作助手',
-						desc: '文章润色、翻译、创意写作',
-						time: '3天前',
-					} as UTSJSONObject,
-					{
-						id: 'translate',
-						icon: 'translate',
-						name: '翻译助手',
-						desc: '多语言翻译、本地化支持',
-						time: '5天前',
-					} as UTSJSONObject,
-					{
-						id: 'idea-lab',
-						icon: 'bulb',
-						name: '创意工坊',
-						desc: '头脑风暴、方案策划、创意发散',
-						time: '1周前',
-					} as UTSJSONObject,
-				]
+				this.agentList = getAgents()
+			},
+
+			/** 安全获取智能体头像路径 */
+			getAgentAvatar(agent: UTSJSONObject): string {
+				const avatar = agent['avatar']
+				if (avatar != null) {
+					return avatar as string
+				}
+				return ''
+			},
+
+			/** 获取智能体的状态描述（优先显示最新对话预览） */
+			getAgentStatus(agent: UTSJSONObject): string {
+				const id = agent['id'] as string
+				if (id == null || id == '') { return agent['desc'] as string }
+				try {
+					const convs = getConversationsByAgent(id)
+					if (convs != null && convs.length > 0) {
+						const latest = convs[0]
+						const preview = latest['preview'] as string
+						if (preview != null && preview != '') {
+							return preview
+						}
+					}
+				} catch (_e: any) {
+					// 忽略错误，回退到静态描述
+				}
+				return agent['desc'] as string
 			},
 
 			openAgent(agent: UTSJSONObject) {
-				// 选中智能体后跳转到对话页（带滑动动画）
 				uni.setStorageSync('active_agent_id', agent['id'] as string)
 				uni.navigateTo({
 					url: '/pages/index/index'
@@ -117,13 +193,80 @@
 				})
 			},
 
-			createAgent() {
-				// TODO: 弹出创建智能体对话框
-				uni.showToast({
-					title: '创建智能体（待实现）',
-					icon: 'none'
+			/** 关闭创建弹窗 */
+			closeCreateDialog() {
+				this.showCreateDialog = false
+			},
+
+			/** 为新建智能体选择头像 */
+			pickCreateAvatar() {
+				uni.chooseImage({
+					count: 1,
+					sourceType: ['album', 'camera'],
+					sizeType: ['compressed'],
+					success: (res: any) => {
+						const raw = JSON.stringify(res)
+						if (raw == null || raw == '') { return }
+						const parsed = JSON.parse(raw) as UTSJSONObject
+						const paths = parsed['tempFilePaths'] as string[]
+						if (paths != null && paths.length > 0) {
+							this.createData['avatar'] = paths[0]
+						}
+					}
 				})
 			},
+
+			/** 执行创建智能体 */
+			doCreateAgent() {
+				const name = (this.createData['name'] as string ?? '').trim()
+				const desc = (this.createData['desc'] as string ?? '').trim()
+				if (name == '') {
+					uni.showToast({
+						title: '请输入名称',
+						icon: 'none'
+					})
+					return
+				}
+
+				// 生成唯一 ID
+				const id = 'custom-' + Date.now()
+				const icon = this.createData['icon'] as string ?? 'robot'
+				const avatar = this.createData['avatar'] as string ?? ''
+
+				const newAgent: UTSJSONObject = {
+					id: id,
+					icon: icon,
+					name: name,
+					desc: desc,
+				}
+
+				// 写入头像
+				if (avatar != '') {
+					newAgent['avatar'] = avatar
+				}
+
+				// 添加到列表并保存
+				const agents = getAgents()
+				agents.push(newAgent)
+				saveAgents(agents)
+
+				this.showCreateDialog = false
+				// 重置表单
+				this.createData = {
+					icon: 'robot',
+					name: '',
+					desc: '',
+					avatar: '',
+				} as UTSJSONObject
+
+				// 刷新列表
+				this.loadAgents()
+
+				uni.showToast({
+					title: '创建成功',
+					icon: 'success'
+				})
+			}
 		}
 	}
 </script>
@@ -131,7 +274,7 @@
 <style>
 	/* 顶部标题栏 */
 	.header-wrap {
-		background-color: #FFFFFF;
+		background-color: var(--rice-background-2);
 	}
 
 	.header {
@@ -142,13 +285,13 @@
 		padding-right: 16px;
 		padding-top: 12px;
 		padding-bottom: 12px;
-		background-color: #FFFFFF;
+		background-color: var(--rice-background-2);
 	}
 
 	.header-title {
 		font-size: 22px;
 		font-weight: bold;
-		color: #111827;
+		color: var(--rice-text-color);
 	}
 
 	.header-actions {
@@ -170,7 +313,7 @@
 
 	.list-content {
 		flex-direction: column;
-		background-color: #FFFFFF;
+		background-color: var(--rice-background-2);
 		margin-top: 8px;
 		border-radius: 18px;
 		margin-left: 12px;
@@ -183,7 +326,7 @@
 		align-items: center;
 		padding: 14px 16px;
 		border-bottom-width: 0.5px;
-		border-bottom-color: #F0F0F2;
+		border-bottom-color: var(--rice-border-color);
 		border-bottom-style: solid;
 	}
 
@@ -197,7 +340,15 @@
 		margin-right: 14px;
 	}
 
-	.avatar-1 { background-color: #FB8FAB; }
+	/* 自定义头像图片 */
+	.agent-avatar-img {
+		width: 48px;
+		height: 48px;
+		border-radius: 14px;
+		margin-right: 14px;
+	}
+
+	.avatar-1 { background-color: var(--rice-primary-color); }
 	.avatar-2 { background-color: #60A5FA; }
 	.avatar-3 { background-color: #34D399; }
 	.avatar-4 { background-color: #FBBF24; }
@@ -219,18 +370,12 @@
 	.agent-name {
 		font-size: 16px;
 		font-weight: bold;
-		color: #111827;
-	}
-
-	.agent-time {
-		font-size: 12px;
-		color: #B0B3BF;
-		margin-left: 8px;
+		color: var(--rice-text-color);
 	}
 
 	.agent-desc {
 		font-size: 13px;
-		color: #9CA3AF;
+		color: var(--rice-text-color-3);
 		lines: 1;
 		text-overflow: ellipsis;
 	}
@@ -238,7 +383,142 @@
 	/* 右侧箭头 */
 	.agent-arrow {
 		font-size: 22px;
-		color: #D1D5DB;
+		color: var(--rice-text-color-3);
 		margin-left: 8px;
+	}
+
+	/* ===== 创建智能体弹窗 ===== */
+	.dialog-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(0, 0, 0, 0.4);
+		justify-content: center;
+		align-items: center;
+		z-index: 1000;
+	}
+
+	.dialog-card {
+		width: 320px;
+		background-color: #FFFFFF;
+		border-radius: 20px;
+		padding: 24px 20px;
+		max-height: 500px;
+	}
+
+	.dialog-header {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 20px;
+	}
+
+	.dialog-title {
+		font-size: 18px;
+		font-weight: bold;
+		color: var(--rice-text-color);
+	}
+
+	.dialog-close {
+		width: 32px;
+		height: 32px;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.dialog-section {
+		margin-bottom: 16px;
+	}
+
+	.dialog-label {
+		font-size: 13px;
+		font-weight: bold;
+		color: var(--rice-text-color-2);
+		margin-bottom: 8px;
+	}
+
+	/* 图标网格 */
+	.icon-grid {
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+
+	.icon-item {
+		width: 44px;
+		height: 44px;
+		border-radius: 10px;
+		background-color: var(--rice-background);
+		justify-content: center;
+		align-items: center;
+		margin-right: 8px;
+		margin-bottom: 8px;
+	}
+
+	.icon-item-active {
+		background-color: var(--rice-primary-color);
+	}
+
+	/* 创建时的头像选择 */
+	.create-avatar-row {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.create-avatar {
+		width: 56px;
+		height: 56px;
+		border-radius: 12px;
+		margin-right: 12px;
+	}
+
+	.create-avatar-placeholder {
+		background-color: var(--rice-primary-color-1);
+		justify-content: center;
+		align-items: center;
+	}
+
+	.create-avatar-btn {
+		padding: 8px 16px;
+		border-radius: 8px;
+		border-width: 1px;
+		border-color: var(--rice-primary-color);
+		border-style: solid;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.create-avatar-btn-text {
+		font-size: 13px;
+		color: var(--rice-primary-color);
+		font-weight: bold;
+	}
+
+	/* 弹窗输入框 */
+	.dialog-input {
+		height: 40px;
+		background-color: var(--rice-background);
+		border-radius: 10px;
+		padding-left: 12px;
+		padding-right: 12px;
+		font-size: 15px;
+		color: var(--rice-text-color);
+	}
+
+	/* 创建按钮 */
+	.dialog-btn {
+		background-color: var(--rice-primary-color);
+		border-radius: 12px;
+		padding: 14px;
+		align-items: center;
+		justify-content: center;
+		margin-top: 8px;
+	}
+
+	.dialog-btn-text {
+		font-size: 16px;
+		font-weight: bold;
+		color: #FFFFFF;
 	}
 </style>

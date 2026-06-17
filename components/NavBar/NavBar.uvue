@@ -1,0 +1,154 @@
+<template>
+	<view>
+		<view v-if="!noStatusBar" class="nb-status">
+			<share-element v-if="shareKey != ''" :share-key="shareKey">
+				<view :style="{ height: statusBarHeight + 'px' }"></view>
+			</share-element>
+			<view v-else :style="{ height: statusBarHeight + 'px' }"></view>
+		</view>
+	<view class="nb-wrap">
+			<view class="nb-header">
+			<view class="nb-left">
+				<slot name="left">
+					<view v-if="showBack" class="back-btn" @click="onBack">
+						<text class="back-arrow">‹</text>
+						<text class="back-text">{{backText}}</text>
+					</view>
+				</slot>
+			</view>
+			<text :class="['nb-title', leftAligned ? '' : 'nb-title-center']">{{title}}</text>
+			<view class="nb-right">
+				<slot name="right"></slot>
+			</view>
+		</view>
+		<view class="nb-shadow"></view>
+	</view>
+	</view>
+</template>
+
+<script lang="uts">
+	export default {
+		name: 'NavBar',
+		props: {
+			title: {
+				type: String,
+				default: ''
+			},
+			showBack: {
+				type: Boolean,
+				default: false
+			},
+			backText: {
+				type: String,
+				default: '返回'
+			},
+			leftAligned: {
+				type: Boolean,
+				default: false
+			},
+			noStatusBar: {
+				type: Boolean,
+				default: false
+			},
+			shareKey: {
+				type: String,
+				default: ''
+			}
+		},
+		data() {
+			return {
+				statusBarHeight: 0
+			}
+		},
+		created() {
+			try {
+				const sysInfo = uni.getSystemInfoSync()
+				this.statusBarHeight = sysInfo.statusBarHeight
+			} catch (_e: any) {
+				this.statusBarHeight = 0
+			}
+		},
+		methods: {
+			onBack() {
+				// $attrs 不含 emits 声明的事件监听器
+				// 有 onBack 说明父组件注册了 @back → 由页面自己处理返回
+				// 没有 onBack → NavBar 默认执行返回
+				const hasBackListener = this.$attrs != null && this.$attrs['onBack'] != null
+				if (hasBackListener) {
+					this.$emit('back')
+				} else {
+					uni.navigateBack()
+				}
+			}
+		}
+	}
+</script>
+
+<style>
+	.nb-status {
+		background-color: var(--rice-primary-color);
+	}
+
+	.nb-wrap {
+		background-color: var(--rice-primary-color);
+	}
+
+	.nb-header {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding-left: 14px;
+		padding-right: 6px;
+		padding-top: 6px;
+		padding-bottom: 6px;
+		background-color: var(--rice-primary-color);
+	}
+
+	/* 阴影线 */
+	.nb-shadow {
+		height: 1px;
+		background-color: rgba(0,0,0,0.06);
+	}
+
+	.nb-left {
+		width: 70px;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.nb-title {
+		font-size: 16px;
+		font-weight: bold;
+		color: var(--rice-text-color-white);
+	}
+
+	.nb-title-center {
+		flex: 1;
+		text-align: center;
+	}
+
+	.nb-right {
+		width: 80px;
+		flex-direction: row;
+		align-items: center;
+		justify-content: flex-end;
+	}
+
+	/* 返回按钮 */
+	.back-btn {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.back-arrow {
+		font-size: 20px;
+		color: var(--rice-text-color-white);
+	}
+
+	.back-text {
+		font-size: 14px;
+		color: var(--rice-text-color-white);
+		margin-left: 2px;
+		padding-top: 2px;
+	}
+</style>

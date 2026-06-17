@@ -54,10 +54,18 @@ export function initDatabase(): void {
 		'id TEXT PRIMARY KEY,' +
 		'title TEXT NOT NULL DEFAULT \'\',' +
 		'model TEXT NOT NULL DEFAULT \'\',' +
+		'agent_id TEXT NOT NULL DEFAULT \'\',' +
 		'created_at INTEGER NOT NULL,' +
 		'message_count INTEGER NOT NULL DEFAULT 0,' +
 		'preview TEXT NOT NULL DEFAULT \'\')'
 	)
+
+	// 兼容旧表：尝试添加 agent_id 列（表已存在时忽略）
+	try {
+		db.run('ALTER TABLE conversations ADD COLUMN agent_id TEXT NOT NULL DEFAULT \'\'')
+	} catch (_e: any) {
+		// 列已存在，忽略
+	}
 
 	db.run(
 		'CREATE TABLE IF NOT EXISTS messages (' +
@@ -80,6 +88,7 @@ export function saveConversation(
 	id: string,
 	title: string,
 	model: string,
+	agentId: string,
 	messages: UTSJSONObject[]
 ): void {
 	const db = getDb()
@@ -97,8 +106,8 @@ export function saveConversation(
 	// UPSERT 对话
 	const now = Date.now()
 	db.run(
-		'INSERT OR REPLACE INTO conversations (id, title, model, created_at, message_count, preview) VALUES (?, ?, ?, ?, ?, ?)',
-		[id, title, model, now, messages.length, preview]
+		'INSERT OR REPLACE INTO conversations (id, title, model, agent_id, created_at, message_count, preview) VALUES (?, ?, ?, ?, ?, ?, ?)',
+		[id, title, model, agentId, now, messages.length, preview]
 	)
 
 	// 先删该对话的旧消息
@@ -129,6 +138,14 @@ export function saveConversation(
 		if (toolStatus != null) {
 			extra['toolStatus'] = toolStatus
 		}
+		const msgType = msg['msgType']
+		if (msgType != null) {
+			extra['msgType'] = msgType
+		}
+		const imageUrl = msg['imageUrl']
+		if (imageUrl != null) {
+			extra['imageUrl'] = imageUrl
+		}
 		const extraStr = JSON.stringify(extra)
 
 		db.run(
@@ -147,7 +164,20 @@ export function saveConversation(
 export function getConversations(): UTSJSONObject[] {
 	const db = getDb()
 	const result = db.query(
-		'SELECT id, title, model, created_at, message_count, preview FROM conversations ORDER BY created_at DESC'
+		'SELECT id, title, model, agent_id, created_at, message_count, preview FROM conversations ORDER BY created_at DESC'
+	)
+	db.close()
+	return rowsToObjects(result)
+}
+
+/**
+ * 获取某个智能体的对话列表（按创建时间倒序）
+ */
+export function getConversationsByAgent(agentId: string): UTSJSONObject[] {
+	const db = getDb()
+	const result = db.query(
+		'SELECT id, title, model, agent_id, created_at, message_count, preview FROM conversations WHERE agent_id = ? ORDER BY created_at DESC',
+		[agentId]
 	)
 	db.close()
 	return rowsToObjects(result)
@@ -172,11 +202,25 @@ export function getMessages(conversationId: string): UTSJSONObject[] {
 		const extraStr = row['extra'] as string | null
 		if (extraStr != null && extraStr != '' && extraStr != '{}') {
 			try {
-				const extra = JSON.parse(extraStr)
-				const keys = Object.keys(extra)
-				for (let k = 0; k < keys.length; k++) {
-					const key = keys[k]
-					row[key] = extra[key]
+				const extra = JSON.parse(extraStr) as UTSJSONObject
+				// 手动合并已知的 extra 字段（UTS 不支持 Object.keys）
+				if (extra['isStreaming'] != null) {
+					row['isStreaming'] = extra['isStreaming']
+				}
+				if (extra['isError'] != null) {
+					row['isError'] = extra['isError']
+				}
+				if (extra['toolName'] != null) {
+					row['toolName'] = extra['toolName']
+				}
+				if (extra['toolStatus'] != null) {
+					row['toolStatus'] = extra['toolStatus']
+				}
+				if (extra['msgType'] != null) {
+					row['msgType'] = extra['msgType']
+				}
+				if (extra['imageUrl'] != null) {
+					row['imageUrl'] = extra['imageUrl']
 				}
 			} catch (_e: any) {
 				// ignore parse error
