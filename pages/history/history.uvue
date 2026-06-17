@@ -1,19 +1,11 @@
 ﻿<template>
 	<view class="page-shell rice-theme-light">
+		<NavBar title="历史记录" showBack>
+			<template #right>
+				<text class="clear-btn" v-if="historyList.length > 0" @click="confirmClear">清空</text>
+			</template>
+		</NavBar>
 		<view class="history-page">
-			<!-- 顶部标题栏 -->
-			<view class="header-wrap">
-				<view :style="{ height: statusBarHeight + 'px' }"></view>
-				<view class="header">
-					<view class="header-left">
-						<text class="back-btn" @click="goBack">‹ 返回</text>
-					</view>
-					<text class="header-title">历史记录</text>
-					<view class="header-right">
-						<text class="clear-btn" v-if="historyList.length > 0" @click="confirmClear">清空</text>
-					</view>
-				</view>
-			</view>
 
 			<!-- 历史列表 -->
 			<scroll-view class="list-scroll" :scroll-y="true">
@@ -57,13 +49,10 @@
 	export default {
 		data() {
 			return {
-				statusBarHeight: 0,
 				historyList: [] as UTSJSONObject[],
 			}
 		},
 		onLoad() {
-			const sysInfo = uni.getSystemInfoSync()
-			this.statusBarHeight = sysInfo.statusBarHeight
 			this.loadHistory()
 		},
 		onShow() {
@@ -147,44 +136,6 @@
 		flex: 1;
 		flex-direction: column;
 		background-color: var(--rice-background);
-	}
-
-	/* 顶部标题栏 */
-	.header-wrap {
-		background-color: var(--rice-background-2);
-	}
-
-	.header {
-		flex-direction: row;
-		align-items: center;
-		justify-content: space-between;
-		padding-left: 16px;
-		padding-right: 16px;
-		padding-top: 12px;
-		padding-bottom: 12px;
-		background-color: var(--rice-background-2);
-	}
-
-	.header-left {
-		width: 60px;
-	}
-
-	.back-btn {
-		font-size: 16px;
-		color: var(--rice-text-color-2);
-	}
-
-	.header-title {
-		font-size: 18px;
-		font-weight: bold;
-		color: var(--rice-text-color);
-		text-align: center;
-		flex: 1;
-	}
-
-	.header-right {
-		width: 60px;
-		align-items: flex-end;
 	}
 
 	.clear-btn {

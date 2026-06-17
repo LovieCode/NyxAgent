@@ -1,11 +1,7 @@
 ﻿<template>
 	<view class="page-shell rice-theme-light">
+		<NavBar title="关于" showBack />
 		<scroll-view class="container" :scroll-y="true">
-			<!-- 页面标题 -->
-			<view class="page-header">
-				<text class="page-title">关于</text>
-				<text class="page-subtitle">AI 助手版本信息</text>
-			</view>
 
 			<!-- Logo 和 App 名称 -->
 			<view class="about-hero">
@@ -75,23 +71,6 @@
 		padding: 32rpx;
 	}
 
-	/* 页面标题 */
-	.page-header {
-		margin-bottom: 48rpx;
-		padding-bottom: 24rpx;
-	}
-
-	.page-title {
-		font-size: 48rpx;
-		font-weight: bold;
-		color: #111827;
-	}
-
-	.page-subtitle {
-		font-size: 26rpx;
-		color: #9CA3AF;
-		margin-top: 8rpx;
-	}
 
 	/* Logo 和 App 名称区域 - 居中展示 */
 	.about-hero {

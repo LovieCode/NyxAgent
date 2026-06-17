@@ -1,11 +1,7 @@
 ﻿<template>
 	<view class="page-shell rice-theme-light">
+		<NavBar title="插件设置" showBack />
 		<scroll-view class="container" :scroll-y="true">
-			<!-- 页面标题 -->
-			<view class="page-header">
-				<text class="page-title">插件设置</text>
-				<text class="page-subtitle">GitHub 代理与下载配置</text>
-			</view>
 
 			<!-- GitHub 代理开关 -->
 			<view class="card">
@@ -85,23 +81,6 @@
 		padding: 32rpx;
 	}
 
-	/* 页面标题 */
-	.page-header {
-		margin-bottom: 40rpx;
-		padding-bottom: 24rpx;
-	}
-
-	.page-title {
-		font-size: 48rpx;
-		font-weight: bold;
-		color: #111827;
-	}
-
-	.page-subtitle {
-		font-size: 26rpx;
-		color: #9CA3AF;
-		margin-top: 8rpx;
-	}
 
 	/* 通用卡片容器 */
 	.card {

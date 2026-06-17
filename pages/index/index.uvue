@@ -1,26 +1,17 @@
 ﻿<template>
 	<view class="page-shell rice-theme-light" ref="shellRef">
-		<!-- 顶部标题栏 -->
-		<view class="header-wrap">
-			<share-element share-key="agent-list">
-				<view :style="{ height: statusBarHeight + 'px' }"></view>
-			</share-element>
-			<view class="header">
-				<view class="header-left">
-					<text class="back-btn" @click="goBack">‹ 返回</text>
-				</view>
-				<text class="header-title">{{headerTitle}}</text>
-				<view class="header-actions">
-					<view class="agent-settings-btn" @click="goAgentSettings">
-						<oui-icon-unix name="setting" size="18px" color="var(--rice-text-color-3)" />
+		<NavBar :title="headerTitle" showBack @back="goBack">
+			<template #right>
+				<view style="flex-direction:row;align-items:center;">
+					<view class="nav-icon-btn" @click="goAgentSettings">
+						<oui-icon-unix name="setting" size="18px" color="#FFFFFF" />
 					</view>
-					<view class="history-btn" @click="goHistory">
-						<oui-icon-unix name="time-circle" size="20px" color="var(--rice-text-color-3)" />
+					<view class="nav-icon-btn" @click="goHistory" style="margin-left:4px;">
+						<oui-icon-unix name="time-circle" size="20px" color="#FFFFFF" />
 					</view>
-					<text class="model-badge">{{currentModel}}</text>
 				</view>
-			</view>
-		</view>
+			</template>
+		</NavBar>
 
 		<!-- 消息列表 -->
 		<scroll-view class="message-list" :scroll-y="true" :scroll-top="scrollTop">
@@ -49,39 +40,48 @@
 			</view>
 		</scroll-view>
 
-		<!-- 工具栏 -->
-		<view v-if="showToolbar" class="toolbar">
-			<view class="toolbar-item" @click="pickImage">
-				<oui-icon-unix name="image" size="22px" color="var(--rice-text-color-2)" />
-			</view>
-			<view class="toolbar-item" @click="takePhoto">
-				<oui-icon-unix name="camera" size="22px" color="var(--rice-text-color-2)" />
-			</view>
-			<view class="toolbar-item" @click="pickFile">
-				<oui-icon-unix name="file" size="22px" color="var(--rice-text-color-2)" />
-			</view>
-			<view class="toolbar-item" @click="pickLocation">
-				<oui-icon-unix name="map-pin" size="22px" color="var(--rice-text-color-2)" />
-			</view>
-		</view>
-
-		<!-- 输入区域 -->
-		<view class="input-area">
-			<view class="input-wrap">
-				<view class="toolbar-toggle" @click="showToolbar = !showToolbar">
-					<oui-icon-unix :name="showToolbar ? 'close' : 'add'" size="18px" color="var(--rice-text-color-3)" />
+		<!-- 底部区域（输入栏 + 工具栏） -->
+		<view class="chat-bottom">
+			<!-- 输入栏 -->
+			<view class="input-bar">
+				<view class="toolbar-toggle" @click="showToolPanel = !showToolPanel">
+					<oui-icon-unix name="plus" size="18px" color="#374151" />
 				</view>
-				<textarea
-					class="text-input"
-					v-model="inputText"
-					placeholder="输入消息..."
-					placeholder-style="color:var(--rice-text-color-3)"
-					@linechange="onInputLineChange"
-					:disabled="isGenerating == true"
-				/>
+				<view class="input-wrap">
+					<textarea
+						class="text-input"
+						v-model="inputText"
+						:style="{ height: inputHeight + 'px' }"
+						placeholder="输入消息..."
+						placeholder-style="color:var(--rice-text-color-3)"
+						@linechange="onInputLineChange"
+						:disabled="isGenerating == true"
+					/>
+				</view>
 				<VoiceInput :isListening="isListening ? true : false" @startListening="startVoice" @stopListening="stopVoice" />
+				<rice-button type="primary" text="发送" size="small" shape="round" @click="sendMessage" style="margin-left:6px" />
 			</view>
-			<rice-button type="primary" text="发送" size="small" shape="round" @click="sendMessage" style="margin-left:8px" />
+			<!-- 工具栏面板（输入栏下方展开） -->
+			<view v-if="showToolPanel" class="toolbar-panel">
+				<view class="toolbar-grid">
+					<view class="toolbar-grid-item" @click="pickImage; showToolPanel = false">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="image" size="22px" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">图片</text>
+					</view>
+					<view class="toolbar-grid-item" @click="takePhoto; showToolPanel = false">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="camera" size="22px" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">拍照</text>
+					</view>
+					<view class="toolbar-grid-item" @click="pickFile; showToolPanel = false">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="file" size="22px" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">文件</text>
+					</view>
+					<view class="toolbar-grid-item" @click="pickLocation; showToolPanel = false">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="map-pin" size="22px" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">位置</text>
+					</view>
+				</view>
+			</view>
 		</view>
 	</view>
 </template>
@@ -95,8 +95,6 @@
 	import { chatWithLLM } from '@/utils/llm.uts'
 	import { getAgentById } from '@/utils/agent.uts'
 
-	const MAX_INPUT_HEIGHT = 200
-
 	export default {
 		data() {
 			return {
@@ -108,8 +106,6 @@
 				isListening: false as boolean,
 				/** AI 是否正在生成回复 */
 				isGenerating: false as boolean,
-				/** 当前选择的模型名称 */
-				currentModel: 'deepseek-v4-flash',
 				/** 当前智能体 ID */
 				currentAgentId: '' as string,
 				/** 当前智能体名称 */
@@ -118,16 +114,14 @@
 				currentAgentAvatar: '' as string,
 				/** 滚动位置 */
 				scrollTop: 0,
-				/** 状态栏高度 */
-				statusBarHeight: 0,
 				/** 当前对话唯一 ID */
 				conversationId: '' as string,
 				/** 是否已存过当前对话（防止重复存） */
 				savedFlag: false as boolean,
-				/** 输入框当前高度（行数） */
-				inputLines: 1,
-				/** 是否显示工具栏 */
-				showToolbar: true as boolean,
+				/** 输入框 JS 驱动高度 */
+				inputHeight: 40,
+				/** 是否显示工具栏面板 */
+				showToolPanel: false as boolean,
 			}
 		},
 		computed: {
@@ -137,12 +131,6 @@
 			}
 		},
 		onLoad() {
-			const sysInfo = uni.getSystemInfoSync()
-			this.statusBarHeight = sysInfo.statusBarHeight
-			let model = uni.getStorageSync('settings_model') as string
-			if (model != null && model != '') {
-				this.currentModel = model
-			}
 			// 加载当前智能体信息
 			this.loadCurrentAgent()
 			// 检查是否因历史记录跳转过来的（加载已有对话）
@@ -194,10 +182,14 @@
 				}
 			},
 
-			/** 输入框行高变化时自动调整 */
+			/** 根据行数 JS 动态调整输入框高度 */
 			onInputLineChange(e: UniTextareaLineChangeEvent) {
 				const lineCount = e.detail.lineCount
-				this.inputLines = lineCount > 0 ? lineCount : 1
+				if (lineCount <= 1) {
+					this.inputHeight = 40
+				} else {
+					this.inputHeight = Math.min(lineCount * 22 + 16, 200)
+				}
 			},
 
 			sendMessage() {
@@ -285,7 +277,7 @@
 
 			/** 从相册选择图片 */
 			pickImage() {
-				this.showToolbar = false
+				this.showToolPanel = false
 				uni.chooseImage({
 					count: 1,
 					sourceType: ['album'],
@@ -306,7 +298,7 @@
 
 			/** 拍照 */
 			takePhoto() {
-				this.showToolbar = false
+				this.showToolPanel = false
 				uni.chooseImage({
 					count: 1,
 					sourceType: ['camera'],
@@ -326,7 +318,7 @@
 
 			/** 选择文件 */
 			pickFile() {
-				this.showToolbar = false
+				this.showToolPanel = false
 				uni.chooseFile({
 					count: 1,
 					success: (res: any) => {
@@ -340,7 +332,7 @@
 
 			/** 选择位置 */
 			pickLocation() {
-				this.showToolbar = false
+				this.showToolPanel = false
 				uni.chooseLocation({
 					success: (res: any) => {
 						const raw = JSON.stringify(res)
@@ -411,10 +403,12 @@
 					}
 				}
 
+				const modelName = uni.getStorageSync('settings_model') as string
+
 				saveConversation(
 					this.conversationId,
 					title,
-					this.currentModel,
+					modelName != null && modelName != '' ? modelName : 'deepseek-v4-flash',
 					this.currentAgentId,
 					this.messages
 				)
@@ -485,71 +479,12 @@
 		flex-direction: column;
 	}
 
-	/* 顶部标题栏 */
-	.header-wrap {
-		background-color: var(--rice-background-2);
-	}
-
-	.header {
-		flex-direction: row;
-		align-items: center;
-		justify-content: space-between;
-		padding-left: 16px;
-		padding-right: 16px;
-		padding-top: 12px;
-		padding-bottom: 12px;
-		background-color: var(--rice-background-2);
-	}
-
-	.header-title {
-		font-size: 20px;
-		font-weight: bold;
-		color: var(--rice-text-color);
-		text-align: center;
-		flex: 1;
-	}
-
-	/* 左侧返回按钮区 */
-	.header-left {
-		width: 60px;
-	}
-
-	.back-btn {
-		font-size: 16px;
-		color: var(--rice-text-color-2);
-	}
-
-	/* 头部右侧操作区 */
-	.header-actions {
-		flex-direction: row;
-		align-items: center;
-	}
-
-	.agent-settings-btn {
+	/* NavBar 右侧图标按钮 */
+	.nav-icon-btn {
 		width: 32px;
 		height: 32px;
 		justify-content: center;
 		align-items: center;
-		margin-right: 4px;
-	}
-
-	.history-btn {
-		width: 36px;
-		height: 36px;
-		justify-content: center;
-		align-items: center;
-		margin-right: 8px;
-	}
-
-	.model-badge {
-		font-size: 12px;
-		color: var(--rice-primary-color-7);
-		background-color: var(--rice-primary-color-1);
-		padding-left: 8px;
-		padding-right: 8px;
-		padding-top: 4px;
-		padding-bottom: 4px;
-		border-radius: 10px;
 	}
 
 	/* 空状态 */
@@ -572,41 +507,49 @@
 		color: var(--rice-text-color-3);
 	}
 
-	/* ===== 工具栏 ===== */
-	.toolbar {
-		flex-direction: row;
-		align-items: center;
-		padding-left: 12px;
-		padding-right: 12px;
-		padding-top: 6px;
-		padding-bottom: 4px;
+	/* 底部区域（工具栏面板 + 输入栏） */
+	.chat-bottom {
 		background-color: var(--rice-background-2);
 		border-top-width: 1px;
 		border-top-color: var(--rice-border-color);
 		border-top-style: solid;
 	}
 
-	.toolbar-item {
+	/* 工具栏面板（输入栏上方展开） */
+	.toolbar-panel {
+		background-color: var(--rice-background);
+		padding: 12px 8px 8px 8px;
+	}
+	.toolbar-grid {
+		flex-direction: row;
+		justify-content: flex-start;
+	}
+	.toolbar-grid-item {
+		width: 25%;
+		align-items: center;
+	}
+	.toolbar-grid-icon {
 		width: 40px;
 		height: 40px;
 		border-radius: 10px;
+		background-color: var(--rice-background-2);
 		justify-content: center;
 		align-items: center;
-		margin-right: 4px;
-		background-color: var(--rice-background);
+		margin-bottom: 4px;
+	}
+	.toolbar-grid-label {
+		font-size: 11px;
+		color: var(--rice-text-color-2);
 	}
 
-	/* 底部输入区域 */
-	.input-area {
+	/* 输入栏 */
+	.input-bar {
 		flex-direction: row;
-		align-items: flex-end;
-		padding-left: 12px;
-		padding-right: 12px;
-		padding-top: 8px;
-		padding-bottom: 8px;
-		background-color: var(--rice-background-2);
-		border-top-width: 1px;
-		border-top-color: var(--rice-border-color);
+		align-items: center;
+		padding-left: 6px;
+		padding-right: 8px;
+		padding-top: 6px;
+		padding-bottom: 6px;
 	}
 
 	/* 输入框容器 */
@@ -615,9 +558,11 @@
 		flex-direction: row;
 		align-items: flex-end;
 		background-color: var(--rice-background);
-		border-radius: 20px;
-		padding-left: 4px;
-		padding-right: 4px;
+		border-radius: 16px;
+		padding-left: 8px;
+		padding-right: 8px;
+		margin-left: 6px;
+		margin-right: 6px;
 	}
 
 	/* 工具栏切换按钮 */
@@ -627,12 +572,13 @@
 		border-radius: 16px;
 		justify-content: center;
 		align-items: center;
-		margin-bottom: 4px;
 	}
+
+
 
 	/* 文本输入框 */
 	.text-input {
-		flex: 1;
+		width: 100%;
 		min-height: 32px;
 		max-height: 200px;
 		padding-left: 4px;

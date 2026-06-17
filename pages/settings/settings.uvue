@@ -1,12 +1,7 @@
 ﻿<template>
 	<view class="page-shell rice-theme-light">
+		<NavBar title="设置" />
 		<scroll-view class="container" :scroll-y="true">
-			<!-- 页面标题 -->
-			<view class="page-header">
-				<text class="page-title">设置</text>
-				<text class="page-subtitle">配置你的 AI 助手</text>
-			</view>
-
 			<!-- 设置菜单列表 -->
 			<view class="settings-menu">
 				<view class="menu-item" @click="goSubPage('profile')">
@@ -228,25 +223,7 @@
 <style>
 	.container {
 		flex: 1;
-		padding: 32rpx;
-	}
-
-	/* 页面标题 */
-	.page-header {
-		margin-bottom: 40rpx;
-		padding-bottom: 24rpx;
-	}
-
-	.page-title {
-		font-size: 48rpx;
-		font-weight: bold;
-		color: #111827;
-	}
-
-	.page-subtitle {
-		font-size: 26rpx;
-		color: #9CA3AF;
-		margin-top: 8rpx;
+		padding: 16rpx;
 	}
 
 	/* 通用卡片容器 */

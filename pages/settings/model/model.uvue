@@ -1,11 +1,7 @@
 ﻿<template>
 	<view class="page-shell rice-theme-light">
+		<NavBar title="模型设置" showBack />
 		<scroll-view class="container" :scroll-y="true">
-			<!-- 页面标题 -->
-			<view class="page-header">
-				<text class="page-title">模型设置</text>
-				<text class="page-subtitle">根据已选提供商选择 AI 对话模型</text>
-			</view>
 
 			<!-- 当前提供商信息 -->
 			<view class="provider-info">
@@ -133,22 +129,6 @@
 		padding: 32rpx;
 	}
 
-	/* 页面标题 */
-	.page-header {
-		margin-bottom: 32rpx;
-	}
-
-	.page-title {
-		font-size: 48rpx;
-		font-weight: bold;
-		color: #111827;
-	}
-
-	.page-subtitle {
-		font-size: 26rpx;
-		color: #9CA3AF;
-		margin-top: 8rpx;
-	}
 
 	/* 当前提供商信息 */
 	.provider-info {

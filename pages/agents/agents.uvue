@@ -1,17 +1,12 @@
 ﻿<template>
 	<view class="page-shell rice-theme-light" ref="shellRef">
-		<!-- 顶部标题栏 -->
-		<view class="header-wrap">
-			<view :style="{ height: statusBarHeight + 'px' }"></view>
-			<view class="header">
-				<text class="header-title">智能体</text>
-				<view class="header-actions">
-					<view class="add-btn" @click="showCreateDialog = true">
-						<oui-icon-unix name="plus" size="22px" color="var(--rice-primary-color)" />
-					</view>
+		<NavBar title="智能体">
+			<template #right>
+				<view class="add-btn" @click="showCreateDialog = true">
+					<oui-icon-unix name="plus" size="22px" color="#FFFFFF" />
 				</view>
-			</view>
-		</view>
+			</template>
+		</NavBar>
 
 		<!-- 智能体列表 -->
 		<scroll-view class="agent-scroll" :scroll-y="true">
@@ -122,7 +117,6 @@
 	export default {
 		data() {
 			return {
-				statusBarHeight: 0,
 				agentList: [] as UTSJSONObject[],
 				showCreateDialog: false as boolean,
 				/** 创建表单数据 */
@@ -140,8 +134,6 @@
 			}
 		},
 		onLoad() {
-			const sysInfo = uni.getSystemInfoSync()
-			this.statusBarHeight = sysInfo.statusBarHeight
 			this.loadAgents()
 		},
 		onShow() {
@@ -272,33 +264,6 @@
 </script>
 
 <style>
-	/* 顶部标题栏 */
-	.header-wrap {
-		background-color: var(--rice-background-2);
-	}
-
-	.header {
-		flex-direction: row;
-		align-items: center;
-		justify-content: space-between;
-		padding-left: 16px;
-		padding-right: 16px;
-		padding-top: 12px;
-		padding-bottom: 12px;
-		background-color: var(--rice-background-2);
-	}
-
-	.header-title {
-		font-size: 22px;
-		font-weight: bold;
-		color: var(--rice-text-color);
-	}
-
-	.header-actions {
-		flex-direction: row;
-		align-items: center;
-	}
-
 	.add-btn {
 		width: 36px;
 		height: 36px;
@@ -404,7 +369,7 @@
 		width: 320px;
 		background-color: #FFFFFF;
 		border-radius: 20px;
-		padding: 24px 20px;
+		padding: 16px 16px;
 		max-height: 500px;
 	}
 
@@ -412,7 +377,7 @@
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 20px;
+		margin-bottom: 12px;
 	}
 
 	.dialog-title {
