@@ -3,27 +3,48 @@
 		<NavBar title="模型设置" showBack />
 		<scroll-view class="container" :scroll-y="true">
 
-			<!-- 当前提供商信息 -->
-			<view class="provider-info">
-				<text class="provider-label">当前提供商</text>
-				<text class="provider-name">{{providerName}}</text>
+			<!-- 选择提供商 -->
+			<view class="card">
+				<view class="section-header">
+					<oui-icon-unix name="apartment" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<text class="section-title">提供商</text>
+				</view>
+				<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
+					<view class="chip-row">
+						<view
+							v-for="(p, pi) in enabledProviders"
+							:key="pi"
+							class="chip"
+							:class="selectedProvider == (p['id'] as string) ? 'chip-active' : ''"
+							@click="selectProvider(p['id'] as string)"
+						>
+							<text class="chip-text">{{p['name']}}</text>
+							<text v-if="(p['enabled'] as number) == 1" class="chip-badge">已启用</text>
+						</view>
+					</view>
+				</scroll-view>
 			</view>
 
-			<!-- 模型选择区域 -->
-			<view class="model-section">
-				<text class="section-title">可用模型</text>
-				<view class="model-grid">
+			<!-- 选择模型 -->
+			<view v-if="selectedProvider != ''" class="card">
+				<view class="section-header">
+					<oui-icon-unix name="robot" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<text class="section-title">模型</text>
+					<text class="section-count">{{currentModels.length}} 个</text>
+				</view>
+				<view v-if="currentModels.length == 0" class="empty-models">
+					<text class="empty-models-text">该提供商没有配置模型，请先在提供商管理中设置</text>
+				</view>
+				<view v-else class="model-grid">
 					<view
-						v-for="(model, index) in currentModels"
-						:key="index"
+						v-for="(m, mi) in currentModels"
+						:key="mi"
 						class="model-pill"
-						:class="selectedModel == model ? 'pill-active' : ''"
-						@click="selectModel(model)"
+						:class="selectedModel == m.id ? 'pill-active' : ''"
+						@click="selectModel(m.id)"
 					>
-						<text
-							class="pill-text"
-							:class="selectedModel == model ? 'pill-text-active' : ''"
-						>{{model}}</text>
+						<text class="pill-text" :class="selectedModel == m.id ? 'pill-text-active' : ''">{{m.id}}</text>
+        <text v-if="m.context != null && m.context > 0" class="pill-ctx">{{m.context}}k</text>
 					</view>
 				</view>
 			</view>
@@ -38,86 +59,142 @@
 </template>
 
 <script lang="uts">
-	/**
-	 * 模型设置页面 - 选择 AI 对话模型
-	 * 根据已选择的提供商动态展示可用模型
-	 */
+	import { getAgentById, updateAgentModel } from '@/utils/agent.uts'
+	import { getAllProviders, getProviderModels, setDefaultTaskModel, getDefaultTaskModel, type ModelInfo } from '@/utils/provider.uts'
 
 	export default {
 		data() {
 			return {
-				selectedModel: 'deepseek-v4-flash' as string,
-				providerId: 'deepseek' as string,
-				pIds: [
-					'anthropic', 'openai', 'deepseek', 'zai',
-					'kimi-coding', 'minimax-cn', 'xiaomi', 'ant-ling', 'custom'
-				] as string[],
-				pNames: [
-					'Anthropic', 'OpenAI', 'DeepSeek', 'ZAI',
-					'Kimi', 'MiniMax', 'MiMo', 'AntLing', 'Custom'
-				] as string[],
-				pModelsArr: [
-					['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
-					['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano'],
-					['deepseek-v4-flash', 'deepseek-v4-pro'],
-					['glm-5.2', 'glm-5.1', 'glm-5-turbo', 'glm-4.7', 'glm-4.5-air'],
-					['k2p7', 'kimi-for-coding', 'kimi-k2-thinking'],
-					['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'],
-					['mimo-v2.5-pro-ultraspeed', 'mimo-v2.5-pro', 'mimo-v2-pro', 'mimo-v2-omni', 'mimo-v2-flash'],
-					['Ring-2.6-1T', 'Ling-2.6-1T', 'Ling-2.6-flash'],
-					['custom-model']
-				] as string[][]
+				allProviders: [] as UTSJSONObject[],
+				selectedProvider: '' as string,
+				selectedModel: '' as string,
+				pendingAgentId: '' as string,
 			}
 		},
 		computed: {
-			/** 当前提供商索引 */
-			providerIndex(): number {
-				for (let i = 0; i < this.pIds.length; i++) {
-					if (this.pIds[i] == this.providerId) {
-						return i
+			/** 只显示已启用的提供商 */
+			enabledProviders(): UTSJSONObject[] {
+				const list: UTSJSONObject[] = []
+				for (let i = 0; i < this.allProviders.length; i++) {
+					const p = this.allProviders[i]
+					if ((p['enabled'] as number) == 1) {
+						list.push(p)
 					}
 				}
-				return 2 // 默认 deepseek
+				return list
 			},
-			/** 当前提供商显示名称 */
-			providerName(): string {
-				const idx = this.providerIndex
-				if (idx >= 0 && idx < this.pNames.length) {
-					return this.pNames[idx]
-				}
-				return 'DeepSeek'
-			},
-			/** 当前提供商对应的模型列表 */
-			currentModels(): string[] {
-				const idx = this.providerIndex
-				if (idx >= 0 && idx < this.pModelsArr.length) {
-					return this.pModelsArr[idx]
-				}
-				return ['custom-model']
+			/** 当前提供商的模型列表 */
+			currentModels(): ModelInfo[] {
+				if (this.selectedProvider == '') return []
+				return getProviderModels(this.selectedProvider)
 			}
 		},
 		onLoad() {
-			this.loadSettings()
+			const pid = uni.getStorageSync('pending_agent_model_id') as string
+			if (pid != null && pid != '') {
+				this.pendingAgentId = pid
+				uni.removeStorageSync('pending_agent_model_id')
+			}
+			this.loadData()
 		},
 		methods: {
-			/** 从存储中加载设置 */
-			loadSettings() {
-				let providerId = uni.getStorageSync('settings_provider_id') as string
-				this.providerId = (providerId != null && providerId != '') ? providerId : 'deepseek'
-				let model = uni.getStorageSync('settings_model') as string
-				this.selectedModel = (model != null && model != '') ? model : 'deepseek-v4-flash'
+			loadData() {
+				this.allProviders = getAllProviders()
+				this.loadSelection()
 			},
-			/** 选择模型 */
-			selectModel(model: string) {
-				this.selectedModel = model
+			/** 解析当前选中的提供商+模型 */
+			loadSelection() {
+				let providerId = ''
+				let modelId = ''
+
+				// 1. 智能体专用模式
+				if (this.pendingAgentId != '') {
+					const agent = getAgentById(this.pendingAgentId)
+					if (agent != null) {
+						const rawModel = agent['model'] as string | null
+						if (rawModel != null) {
+		const parsed = this.parseModelKey(rawModel)
+						providerId = parsed['providerId'] as string
+						modelId = parsed['modelId'] as string
+						}
+					}
+				}
+
+				// 2. 回退到全局默认
+				if (providerId == '') {
+					const defaultConfig = getDefaultTaskModel('chat')
+					if (defaultConfig != null) {
+						providerId = defaultConfig['providerId'] as string
+						modelId = defaultConfig['model'] as string
+					}
+				}
+
+				// 3. 回退到旧版 storage
+				if (providerId == '') {
+					providerId = uni.getStorageSync('settings_provider_id') as string
+				}
+				if (modelId == '') {
+					modelId = uni.getStorageSync('settings_model') as string
+				}
+
+				// 检查选中的提供商是否已启用，否则用第一个启用的
+				if (providerId != '') {
+					const enabled = this.enabledProviders
+					let found = false
+					for (let i = 0; i < enabled.length; i++) {
+						if ((enabled[i]['id'] as string) == providerId) {
+							found = true
+							break
+						}
+					}
+					if (!found && enabled.length > 0) {
+						providerId = enabled[0]['id'] as string
+					}
+				} else {
+					if (this.enabledProviders.length > 0) {
+						providerId = this.enabledProviders[0]['id'] as string
+					}
+				}
+
+				this.selectedProvider = providerId
+				this.selectedModel = modelId
 			},
-			/** 保存设置到存储 */
+
+			/** 解析模型键 "providerId||modelId" 或旧格式 "modelId" */
+			parseModelKey(key: string): UTSJSONObject {
+				const sep = '||'
+				const idx = key.indexOf(sep)
+				if (idx >= 0) {
+					return {
+						providerId: key.substring(0, idx),
+						modelId: key.substring(idx + sep.length),
+					} as UTSJSONObject
+				}
+				return { providerId: '', modelId: key } as UTSJSONObject
+			},
+
+			selectProvider(id: string) {
+				this.selectedProvider = id
+				this.selectedModel = ''
+			},
+
+			selectModel(id: string) {
+				this.selectedModel = id
+			},
+
 			saveSettings() {
-				uni.setStorageSync('settings_model', this.selectedModel)
-				uni.showToast({
-					title: '已保存',
-					icon: 'success'
-				})
+				if (this.selectedProvider == '' || this.selectedModel == '') {
+					uni.showToast({ title: '请选择提供商和模型', icon: 'none' })
+					return
+				}
+				if (this.pendingAgentId != '') {
+					// 智能体专用：存 "providerId||modelId"
+					updateAgentModel(this.pendingAgentId, this.selectedProvider + '||' + this.selectedModel)
+				} else {
+					setDefaultTaskModel('chat', this.selectedProvider, this.selectedModel)
+					uni.setStorageSync('settings_model', this.selectedModel)
+				}
+				uni.showToast({ title: '已保存', icon: 'success' })
 			}
 		}
 	}
@@ -129,48 +206,81 @@
 		padding: 32rpx;
 	}
 
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 20rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+	}
 
-	/* 当前提供商信息 */
-	.provider-info {
+	.section-header {
 		flex-direction: row;
 		align-items: center;
-		background-color: #F9FAFB;
-		border-radius: 16rpx;
-		padding: 24rpx 28rpx;
-		margin-bottom: 32rpx;
-	}
-
-	.provider-label {
-		font-size: 26rpx;
-		color: #9CA3AF;
-		margin-right: 16rpx;
-	}
-
-	.provider-name {
-		font-size: 28rpx;
-		font-weight: bold;
-		color: #DB2777;
-	}
-
-	/* 模型选择区域 */
-	.model-section {
-		margin-bottom: 32rpx;
-	}
-
-	.section-title {
-		font-size: 28rpx;
-		font-weight: bold;
-		color: #111827;
 		margin-bottom: 20rpx;
 	}
 
+	.section-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #111827;
+		margin-right: 12rpx;
+	}
+
+	.section-count {
+		font-size: 24rpx;
+		color: #9CA3AF;
+	}
+
+	/* 提供商 chips */
+	.chip-scroll {
+		flex-direction: row;
+	}
+
+	.chip-row {
+		flex-direction: row;
+	}
+
+	.chip {
+		flex-direction: row;
+		align-items: center;
+		background-color: #F3F4F6;
+		border-radius: 12rpx;
+		padding: 14rpx 24rpx;
+		margin: 4rpx;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.chip-active {
+		background-color: #FDE8EF;
+		border-color: #FB8FAB;
+	}
+
+	.chip-text {
+		font-size: 26rpx;
+		color: #374151;
+		white-space: nowrap;
+	}
+
+	.chip-badge {
+		font-size: 20rpx;
+		color: #FB8FAB;
+		margin-left: 8rpx;
+		background-color: #FDE8EF;
+		padding: 2rpx 8rpx;
+		border-radius: 6rpx;
+	}
+
+	/* 模型网格 */
 	.model-grid {
 		flex-direction: row;
 		flex-wrap: wrap;
 	}
 
-	/* 模型 pills */
 	.model-pill {
+		flex-direction: row;
+		align-items: center;
 		background-color: #F3F4F6;
 		border-radius: 10rpx;
 		padding: 14rpx 22rpx;
@@ -195,7 +305,26 @@
 		font-weight: bold;
 	}
 
-	/* 保存按钮 */
+	.pill-ctx {
+		font-size: 20rpx;
+		color: #9CA3AF;
+		margin-left: 8rpx;
+		background-color: #F3F4F6;
+		padding: 2rpx 8rpx;
+		border-radius: 6rpx;
+	}
+
+	.empty-models {
+		padding: 40rpx 0;
+		align-items: center;
+	}
+
+	.empty-models-text {
+		font-size: 26rpx;
+		color: #9CA3AF;
+		text-align: center;
+	}
+
 	.save-wrap {
 		padding: 20rpx 0 60rpx 0;
 	}
