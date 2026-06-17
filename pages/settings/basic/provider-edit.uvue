@@ -1,0 +1,477 @@
+<template>
+	<view class="page-shell rice-theme-light">
+		<NavBar :title="isNew ? '添加提供商' : '编辑提供商'" showBack @back="goBack" />
+		<scroll-view class="container" :scroll-y="true">
+			<view class="card">
+				<!-- 标识 -->
+				<text class="field-label">标识 (ID)</text>
+				<input
+					class="field-input"
+					type="text"
+					v-model="editId"
+					:disabled="!isNew"
+					placeholder="例如 deepseek"
+					placeholder-class="ph"
+				/>
+
+				<!-- 显示名称 -->
+				<text class="field-label">显示名称</text>
+				<input
+					class="field-input"
+					type="text"
+					v-model="editName"
+					placeholder="例如 DeepSeek"
+					placeholder-class="ph"
+				/>
+
+				<!-- API Key -->
+				<text class="field-label">API Key</text>
+				<input
+					class="field-input"
+					type="text"
+					v-model="editApiKey"
+					placeholder="输入 API Key"
+					placeholder-class="ph"
+				/>
+
+				<!-- 接口地址 -->
+				<text class="field-label">接口地址</text>
+				<input
+					class="field-input"
+					type="text"
+					v-model="editApiBase"
+					placeholder="留空使用默认地址"
+					placeholder-class="ph"
+				/>
+			</view>
+
+			<!-- 模型管理卡片 -->
+			<view class="card">
+				<view class="model-card-header">
+					<text class="model-card-title">模型列表</text>
+					<view class="fetch-btn" @click="fetchModels">
+						<text class="fetch-btn-text">获取模型列表</text>
+					</view>
+				</view>
+
+				<!-- 加载中 -->
+				<view v-if="fetchingModels" class="fetching-row">
+					<text class="fetching-text">正在获取模型列表...</text>
+				</view>
+
+				<!-- 模型列表 -->
+				<view v-for="(m, mi) in editModels" :key="mi" class="model-card" @click="toggleExpand(mi)">
+					<!-- 折叠态概要 -->
+					<view class="model-row">
+						<view class="model-row-left">
+							<text class="model-index">{{mi + 1}}</text>
+							<view class="model-summary">
+								<text class="model-summary-id">{{m.id != '' ? m.id : '新模型'}}</text>
+								<text class="model-summary-meta">
+									{{getModelSummary(m)}}
+								</text>
+							</view>
+						</view>
+						<view class="model-row-right">
+							<text class="model-expand-icon">{{(m.expanded == true) ? '▾' : '▸'}}</text>
+							<text class="model-del-btn" @click.stop="removeModel(mi)">✕</text>
+						</view>
+					</view>
+
+					<!-- 展开详情 -->
+					<view v-if="m.expanded" class="model-detail">
+						<view class="detail-field">
+							<text class="detail-field-label">模型 ID</text>
+							<input class="detail-field-input" type="text" v-model="m.id" placeholder="deepseek-v4-flash" placeholder-class="ph" />
+						</view>
+						<view class="detail-field">
+							<text class="detail-field-label">显示名称</text>
+							<input class="detail-field-input" type="text" v-model="m.name" placeholder="DeepSeek V4 Flash" placeholder-class="ph" />
+						</view>
+						<view class="detail-row">
+							<view class="detail-field" style="flex:1;margin-right:12rpx;">
+								<text class="detail-field-label">上下文窗口 (tokens)</text>
+								<input class="detail-field-input" type="number" v-model="m.ctxStr" placeholder="128000" placeholder-class="ph" />
+							</view>
+							<view class="detail-field" style="flex:1;">
+								<text class="detail-field-label">最大输出 (tokens)</text>
+								<input class="detail-field-input" type="number" v-model="m.maxTokensStr" placeholder="4096" placeholder-class="ph" />
+							</view>
+						</view>
+						<view class="detail-field">
+							<text class="detail-field-label">自定义参数 (JSON)</text>
+							<input class="detail-field-input detail-params-input" type="text" v-model="m.params" placeholder='{"key": "value"}' placeholder-class="ph" />
+							<text class="detail-field-hint">额外的 API 参数，例如温度、top_p 等</text>
+						</view>
+					</view>
+				</view>
+
+				<!-- 添加模型 -->
+				<view class="add-model-btn" @click="addModel">
+					<text class="add-model-text">+ 添加模型</text>
+				</view>
+			</view>
+
+			<!-- 保存 -->
+			<view class="save-wrap">
+				<rice-button type="primary" text="保存" size="large" shape="round" @click="saveProvider" />
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script lang="uts">
+	import { saveProvider, fetchProviderModels, parseModels, ModelInfo } from '@/utils/provider.uts'
+
+	export default {
+			data() {
+			return {
+				isNew: true as boolean,
+				editId: '' as string,
+				editName: '' as string,
+				editApiKey: '' as string,
+				editApiBase: '' as string,
+				editModels: [] as ModelInfo[],
+				fetchingModels: false as boolean,
+			}
+		},
+		onLoad() {
+			const editData = uni.getStorageSync('provider_edit_data') as string
+			if (editData != null && editData != '') {
+				try {
+					const data = JSON.parse(editData) as UTSJSONObject
+					const id = data['id'] as string | null
+					if (id != null && id != '') {
+						this.isNew = false
+						this.editId = id
+						this.editName = (data['name'] as string | null) ?? ''
+						this.editApiKey = (data['apiKey'] as string | null) ?? ''
+						this.editApiBase = (data['apiBase'] as string | null) ?? ''
+						const modelsStr = data['models'] as string | null
+						if (modelsStr != null) {
+							this.editModels = parseModels(modelsStr)
+						}
+					}
+				} catch (_e: any) {}
+				uni.removeStorageSync('provider_edit_data')
+			}
+		},
+		methods: {
+			goBack() {
+				uni.navigateBack()
+			},
+
+			getModelSummary(m: ModelInfo): string {
+				const parts: string[] = []
+				if (m.name != null && m.name != '') {
+					parts.push(m.name)
+				}
+				if (m.context != null && m.context > 0) {
+					parts.push(m.context + 'k ctx')
+				}
+				return parts.join(' · ')
+			},
+
+			toggleExpand(index: number) {
+				const m = this.editModels[index]
+				if (m != null) {
+					m.expanded = !(m.expanded == true)
+				}
+			},
+
+			addModel() {
+				const m: ModelInfo = { id: '', ctxStr: '', maxTokensStr: '', expanded: true } as ModelInfo
+				this.editModels.push(m)
+			},
+
+			removeModel(index: number) {
+				const newList: ModelInfo[] = []
+				for (let i = 0; i < this.editModels.length; i++) {
+					if (i != index) {
+						newList.push(this.editModels[i])
+					}
+				}
+				this.editModels = newList
+			},
+
+			async fetchModels() {
+				if (this.editApiBase == '') {
+					uni.showToast({ title: '请先输入接口地址', icon: 'none' })
+					return
+				}
+				if (this.editApiKey == '') {
+					uni.showToast({ title: '请先输入 API Key', icon: 'none' })
+					return
+				}
+				this.fetchingModels = true
+				const ids = await fetchProviderModels(this.editApiBase, this.editApiKey)
+				this.fetchingModels = false
+				if (ids.length == 0) {
+					uni.showToast({ title: '获取失败，请检查地址和 Key', icon: 'none' })
+					return
+				}
+				// 合并：保留已有模型的参数，新增不存在的模型
+				const existingMap: UTSJSONObject = {} as UTSJSONObject
+				for (let i = 0; i < this.editModels.length; i++) {
+					const mid = this.editModels[i].id
+					if (mid != '') {
+						existingMap[mid] = true
+					}
+				}
+				const merged: ModelInfo[] = []
+				for (let i = 0; i < this.editModels.length; i++) {
+					merged.push(this.editModels[i])
+				}
+				for (let i = 0; i < ids.length; i++) {
+					const mid = ids[i]
+					if (existingMap[mid] != null) {
+						continue
+					}
+					merged.push({ id: mid, ctxStr: '' } as ModelInfo)
+				}
+				this.editModels = merged
+				uni.showToast({ title: `获取到 ${ids.length} 个模型`, icon: 'success' })
+			},
+
+			saveProvider() {
+				if (this.editId == '') {
+					uni.showToast({ title: '请输入标识', icon: 'none' })
+					return
+				}
+				if (this.editName == '') {
+					this.editName = this.editId
+				}
+				// 同步字符串 → 数字，清理空模型
+				const validModels: ModelInfo[] = []
+				for (let i = 0; i < this.editModels.length; i++) {
+					const m = this.editModels[i]
+					if (m.id == '') {
+						continue
+					}
+					// ctxStr → context
+					const ctxVal = m.ctxStr
+					if (ctxVal != null && ctxVal != '') {
+						const parsed = Number.parseInt(ctxVal)
+						if (!isNaN(parsed) && parsed > 0) {
+							m.context = parsed
+						}
+					}
+					// maxTokensStr → maxTokens
+					const mtVal = m.maxTokensStr
+					if (mtVal != null && mtVal != '') {
+						const parsed = Number.parseInt(mtVal)
+						if (!isNaN(parsed) && parsed > 0) {
+							m.maxTokens = parsed
+						}
+					}
+					validModels.push(m)
+				}
+				saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, false)
+				uni.showToast({ title: '已保存', icon: 'success' })
+				setTimeout(() => {
+					uni.navigateBack()
+				}, 500)
+			}
+		}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+		padding: 32rpx;
+	}
+
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 20rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+	}
+
+	/* 字段 */
+	.field-label {
+		font-size: 26rpx;
+		color: #6B7280;
+		margin-top: 20rpx;
+		margin-bottom: 8rpx;
+	}
+
+	.field-label:first-child {
+		margin-top: 0;
+	}
+
+	.field-input {
+		background-color: #F9FAFB;
+		border-radius: 14rpx;
+		padding: 20rpx;
+		font-size: 28rpx;
+		color: #111827;
+	}
+
+	.ph {
+		color: #D1D5DB;
+	}
+
+	/* 模型卡片头 */
+	.model-card-header {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 20rpx;
+	}
+
+	.model-card-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	.fetch-btn {
+		background-color: #FB8FAB;
+		border-radius: 10rpx;
+		padding: 10rpx 20rpx;
+	}
+
+	.fetch-btn-text {
+		font-size: 24rpx;
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+
+	.fetching-row {
+		padding: 24rpx 0;
+		align-items: center;
+	}
+
+	.fetching-text {
+		font-size: 26rpx;
+		color: #9CA3AF;
+	}
+
+	/* 模型卡片 */
+	.model-card {
+		background-color: #F9FAFB;
+		border-radius: 14rpx;
+		margin-bottom: 12rpx;
+		overflow: hidden;
+	}
+
+	.model-row {
+		flex-direction: row;
+		align-items: center;
+		padding: 16rpx 12rpx;
+	}
+
+	.model-row-left {
+		flex-direction: row;
+		align-items: center;
+		flex: 1;
+	}
+
+	.model-index {
+		font-size: 22rpx;
+		color: #9CA3AF;
+		width: 40rpx;
+		text-align: center;
+	}
+
+	.model-summary {
+		flex-direction: column;
+		flex: 1;
+	}
+
+	.model-summary-id {
+		font-size: 28rpx;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	.model-summary-meta {
+		font-size: 22rpx;
+		color: #9CA3AF;
+		margin-top: 4rpx;
+	}
+
+	.model-row-right {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.model-expand-icon {
+		font-size: 28rpx;
+		color: #9CA3AF;
+		padding: 8rpx;
+		width: 40rpx;
+		text-align: center;
+	}
+
+	.model-del-btn {
+		font-size: 32rpx;
+		color: #EF4444;
+		padding: 8rpx 12rpx;
+	}
+
+	/* 展开详情 */
+	.model-detail {
+		padding: 0 12rpx 16rpx 12rpx;
+		border-top-width: 0.5px;
+		border-top-style: solid;
+		border-top-color: #E5E7EB;
+	}
+
+	.detail-field {
+		margin-top: 14rpx;
+	}
+
+	.detail-field-label {
+		font-size: 24rpx;
+		color: #6B7280;
+		margin-bottom: 6rpx;
+	}
+
+	.detail-field-input {
+		background-color: #FFFFFF;
+		border-radius: 10rpx;
+		padding: 16rpx;
+		font-size: 26rpx;
+		color: #111827;
+	}
+
+	.detail-params-input {
+		font-family: monospace;
+		font-size: 24rpx;
+	}
+
+	.detail-field-hint {
+		font-size: 20rpx;
+		color: #9CA3AF;
+		margin-top: 4rpx;
+	}
+
+	.detail-row {
+		flex-direction: row;
+		margin-top: 14rpx;
+	}
+
+	.add-model-btn {
+		background-color: #F9FAFB;
+		border-radius: 12rpx;
+		border-width: 1px;
+		border-style: dashed;
+		border-color: #D1D5DB;
+		padding: 18rpx;
+		align-items: center;
+		margin-top: 8rpx;
+	}
+
+	.add-model-text {
+		font-size: 26rpx;
+		color: #6B7280;
+	}
+
+	.save-wrap {
+		padding: 20rpx 0 60rpx 0;
+	}
+</style>
+
