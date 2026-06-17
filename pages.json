@@ -45,6 +45,12 @@
 			}
 		},
 		{
+			"path": "pages/settings/basic/provider-edit",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/settings/model/model",
 			"style": {
 				"navigationStyle": "custom"
@@ -52,6 +58,12 @@
 		},
 		{
 			"path": "pages/settings/plugin/plugin",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/settings/default-models/default-models",
 			"style": {
 				"navigationStyle": "custom"
 			}
@@ -70,6 +82,12 @@
 		},
 		{
 			"path": "pages/agent-settings/agent-settings",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		}
+	,{
+			"path": "pages/common/crop/crop",
 			"style": {
 				"navigationStyle": "custom"
 			}

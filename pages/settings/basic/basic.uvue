@@ -1,173 +1,162 @@
 ﻿<template>
 	<view class="page-shell rice-theme-light">
-		<NavBar title="基础设置" showBack />
+		<NavBar title="提供商管理" showBack>
+			<template #right>
+				<view class="nav-add-btn" @click="addProvider">
+					<text class="nav-add-text">+ 添加</text>
+				</view>
+			</template>
+		</NavBar>
 		<scroll-view class="container" :scroll-y="true">
 
-			<!-- LLM 提供商 -->
-			<view class="card">
-				<view class="card-header">
-					<oui-icon-unix name="apartment" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
-					<text class="card-title">LLM 提供商</text>
-				</view>
-				<view class="provider-grid">
-					<view
-						v-for="(id, index) in pIds"
-						:key="index"
-						class="provider-chip"
-						:class="selectedProviderId == id ? 'chip-active' : ''"
-						@click="selectProvider(id)"
-					>
-						<text class="chip-label">{{ pNames[index] }}</text>
+			<!-- 提供商列表 -->
+			<view class="card" v-for="(item, index) in providerList" :key="index">
+				<view class="provider-header">
+					<view class="provider-left">
+						<text class="provider-name">{{item['name']}}</text>
+						<text class="provider-id">{{item['id']}}</text>
 					</view>
+					<view class="provider-right">
+						<rice-switch
+							v-model="switchStates[index]"
+							@change="toggleEnabled(index)"
+						/>
+					</view>
+				</view>
+				<view class="provider-detail">
+					<text class="detail-label">API Key</text>
+					<text class="detail-value">{{maskString(item['api_key'] as string)}}</text>
+				</view>
+				<view class="provider-detail">
+					<text class="detail-label">接口地址</text>
+					<text class="detail-value">{{(item['api_base'] as string) != '' ? item['api_base'] : '默认'}}</text>
+				</view>
+				<view class="provider-detail" style="flex-direction:column;align-items:flex-start;">
+					<view style="flex-direction:row;align-items:center;width:100%;">
+						<text class="detail-label">模型</text>
+						<text class="detail-value">{{getModelsPreview(item['models'] as string)}}</text>
+					</view>
+				</view>
+				<view class="provider-actions">
+					<text class="action-btn action-edit" @click="editProvider(index)">编辑</text>
+					<text class="action-btn action-delete" @click="deleteProvider(index)">删除</text>
 				</view>
 			</view>
 
-			<!-- API 密钥 -->
-			<view class="card">
-				<view class="card-header">
-					<oui-icon-unix name="key" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
-					<text class="card-title">API 密钥</text>
-				</view>
-				<view class="input-row">
-					<view class="input-row-input">
-						<view class="input-wrap">
-							<input
-								class="flat-input"
-								:type="showApiKey ? 'text' : 'password'"
-								v-model="apiKey"
-								:placeholder="keyPlaceholder"
-								placeholder-class="input-placeholder"
-							/>
-						</view>
-					</view>
-					<view class="toggle-vis-btn" @click="toggleShowApiKey">
-						<oui-icon-unix :name="showApiKey ? 'eyeclose-fill' : 'eye'" size="22px" color="#9CA3AF" />
-					</view>
-				</view>
+			<!-- 空状态 -->
+			<view v-if="providerList.length == 0" class="empty-state">
+				<text class="empty-text">暂无提供商，点击右上角添加</text>
 			</view>
 
-			<!-- 接口地址 -->
-			<view class="card">
-				<view class="card-header">
-					<oui-icon-unix name="api" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
-					<text class="card-title">接口地址</text>
-				</view>
-				<view class="input-wrap">
-					<input
-						class="flat-input"
-						type="text"
-						v-model="baseUrl"
-						placeholder="留空使用默认地址"
-						placeholder-class="input-placeholder"
-					/>
-				</view>
-			</view>
-
-			<!-- 保存按钮 -->
-			<view class="save-wrap">
-				<view class="save-btn" @click="saveSettings">
-					<text class="save-btn-text">保存设置</text>
-				</view>
-			</view>
 		</scroll-view>
-		<TabBar current="pages/settings/settings" />
 	</view>
 </template>
 
 <script lang="uts">
-	/**
-	 * 基础设置子页面 - LLM 提供商、API 密钥、接口地址
-	 */
+	import { getAllProviders, deleteProvider, setProviderEnabled, parseModels } from '@/utils/provider.uts'
 
 	export default {
 		data() {
 			return {
-				selectedProviderId: 'deepseek' as string,
-				apiKey: '' as string,
-				baseUrl: '' as string,
-				showApiKey: false as boolean
+				providerList: [] as UTSJSONObject[],
+				switchStates: [] as boolean[],
 			}
 		},
-		computed: {
-			pIds(): string[] {
-				return [
-					'anthropic', 'openai', 'deepseek', 'zai',
-					'kimi-coding', 'minimax-cn', 'xiaomi', 'ant-ling', 'custom'
-				]
-			},
-			pNames(): string[] {
-				return [
-					'Claude', 'OpenAI', 'DeepSeek', '零一万物',
-					'Kimi', 'MiniMax', '小米', '通义千问', '自定义'
-				]
-			},
-			pHints(): string[] {
-				return [
-					'sk-ant-...', 'sk-...', 'sk-...', 'ZAI Coding Plan Key',
-					'KIMI_API_KEY', 'MINIMAX_CN_API_KEY', 'XIAOMI_API_KEY', 'ANT_LING_API_KEY', 'Enter API Key'
-				]
-			},
-			pModels(): string[][] {
-				return [
-					['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
-					['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano'],
-					['deepseek-v4-flash', 'deepseek-v4-pro'],
-					['glm-5.2', 'glm-5.1', 'glm-5-turbo', 'glm-4.7', 'glm-4.5-air'],
-					['k2p7', 'kimi-for-coding', 'kimi-k2-thinking'],
-					['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'],
-					['mimo-v2.5-pro-ultraspeed', 'mimo-v2.5-pro', 'mimo-v2-pro', 'mimo-v2-omni', 'mimo-v2-flash'],
-					['Ring-2.6-1T', 'Ling-2.6-1T', 'Ling-2.6-flash'],
-					['custom-model']
-				]
-			},
-			keyPlaceholder(): string {
-				const idx = this.findProviderIndex(this.selectedProviderId)
-				if (idx >= 0) {
-					return this.pHints[idx]
-				}
-				return 'Enter API Key'
-			}
-		},
-		onLoad() {
-			this.loadSettings()
+		onShow() {
+			this.loadProviders()
 		},
 		methods: {
-			findProviderIndex(id: string): number {
-				for (let i = 0; i < this.pIds.length; i++) {
-					if (this.pIds[i] == id) {
-						return i
-					}
+			loadProviders() {
+				this.providerList = getAllProviders()
+				this.switchStates = []
+				for (let i = 0; i < this.providerList.length; i++) {
+					const enabled = this.providerList[i]['enabled'] as number
+					this.switchStates.push(enabled == 1)
 				}
-				return -1
 			},
 
-			loadSettings() {
-				let providerId = uni.getStorageSync('settings_provider_id') as string
-				this.selectedProviderId = (providerId != null && providerId != '') ? providerId : 'deepseek'
-				let key = uni.getStorageSync('settings_api_key') as string
-				this.apiKey = (key != null) ? key : ''
-				let url = uni.getStorageSync('settings_base_url') as string
-				this.baseUrl = (url != null) ? url : ''
+			maskString(s: string): string {
+				if (s == null || s == '') {
+					return '未设置'
+				}
+				if (s.length <= 8) {
+					return s.substring(0, 4) + '****'
+				}
+				return s.substring(0, 8) + '****'
 			},
 
-			saveSettings() {
-				uni.setStorageSync('settings_provider_id', this.selectedProviderId)
-				uni.setStorageSync('settings_api_key', this.apiKey)
-				uni.setStorageSync('settings_base_url', this.baseUrl)
-				uni.showToast({
-					title: '已保存',
-					icon: 'success'
+			getModelsPreview(modelsStr: string): string {
+				const models = parseModels(modelsStr)
+				if (models.length == 0) {
+					return '未设置'
+				}
+				const names: string[] = []
+				for (let i = 0; i < models.length && i < 3; i++) {
+					names.push(models[i].id)
+				}
+				if (models.length <= 3) {
+					return names.join(', ')
+				}
+				return names.join(', ') + ` 等${models.length}个`
+			},
+
+			toggleEnabled(index: number) {
+				const item = this.providerList[index]
+				if (item == null) {
+					return
+				}
+				const id = item['id'] as string
+				const newEnabled = this.switchStates[index]
+				setProviderEnabled(id, newEnabled)
+				item['enabled'] = newEnabled ? 1 : 0
+			},
+
+			addProvider() {
+				uni.setStorageSync('provider_edit_data', '')
+				uni.navigateTo({
+					url: '/pages/settings/basic/provider-edit'
 				})
 			},
 
-			selectProvider(id: string) {
-				this.selectedProviderId = id
-				this.baseUrl = ''
+			editProvider(index: number) {
+				const item = this.providerList[index]
+				if (item == null) {
+					return
+				}
+				const data: UTSJSONObject = {
+					id: item['id'],
+					name: item['name'],
+					apiKey: item['api_key'],
+					apiBase: item['api_base'],
+					models: item['models'],
+				} as UTSJSONObject
+				uni.setStorageSync('provider_edit_data', JSON.stringify(data))
+				uni.navigateTo({
+					url: '/pages/settings/basic/provider-edit'
+				})
 			},
 
-			toggleShowApiKey() {
-				this.showApiKey = !this.showApiKey
-			}
+			deleteProvider(index: number) {
+				const item = this.providerList[index]
+				if (item == null) {
+					return
+				}
+				const id = item['id'] as string
+				uni.showModal({
+					title: '确认删除',
+					content: `确定删除提供商「${item['name']}」吗？`,
+					success: (res) => {
+						if (res.confirm) {
+							deleteProvider(id)
+							this.loadProviders()
+							uni.showToast({
+								title: '已删除',
+								icon: 'success'
+							})
+						}
+					}
+				})
+			},
 		}
 	}
 </script>
@@ -178,8 +167,18 @@
 		padding: 32rpx;
 	}
 
+	/* 添加按钮 */
+	.nav-add-btn {
+		padding: 8rpx 16rpx;
+	}
 
-	/* 通用卡片容器 */
+	.nav-add-text {
+		font-size: 28rpx;
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+
+	/* 提供商卡片 */
 	.card {
 		background-color: #FFFFFF;
 		border-radius: 20rpx;
@@ -187,104 +186,90 @@
 		margin-bottom: 24rpx;
 	}
 
-	.card-header {
+	.provider-header {
 		flex-direction: row;
+		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 20rpx;
+		margin-bottom: 16rpx;
 	}
 
-	.card-icon {
-		font-size: 28rpx;
-		margin-right: 12rpx;
-	}
-
-	.card-title {
-		font-size: 30rpx;
-		font-weight: bold;
-		color: #111827;
-	}
-
-	/* 输入行（带切换按钮） */
-	.input-row {
-		flex-direction: row;
-		align-items: center;
-	}
-
-	.input-row-input {
+	.provider-left {
+		flex-direction: column;
 		flex: 1;
 	}
 
-	.toggle-vis-btn {
-		width: 44px;
-		height: 44px;
-		justify-content: center;
-		align-items: center;
-		margin-left: 8rpx;
-	}
-
-	.toggle-vis-icon {
-		font-size: 24px;
-	}
-
-	/* 扁平输入框 */
-	.input-wrap {
-		margin-top: 8rpx;
-	}
-
-	.flat-input {
-		background-color: #F9FAFB;
-		border-radius: 14rpx;
-		padding: 24rpx;
-		font-size: 28rpx;
+	.provider-name {
+		font-size: 32rpx;
+		font-weight: bold;
 		color: #111827;
 	}
 
-	.input-placeholder {
-		color: #D1D5DB;
+	.provider-id {
+		font-size: 22rpx;
+		color: #9CA3AF;
+		margin-top: 4rpx;
 	}
 
-	/* 提供商网格 */
-	.provider-grid {
+	.provider-right {
+		padding-left: 16rpx;
+	}
+
+	/* 详情行 */
+	.provider-detail {
 		flex-direction: row;
-		flex-wrap: wrap;
-	}
-
-	.provider-chip {
-		background-color: #F3F4F6;
-		border-radius: 12rpx;
-		padding: 14rpx 28rpx;
-		margin: 8rpx;
-		border-width: 1px;
-		border-style: solid;
-		border-color: #E5E7EB;
-	}
-
-	.chip-active {
-		background-color: #FDE8EF;
-		border-color: #FB8FAB;
-	}
-
-	.chip-label {
-		font-size: 26rpx;
-		color: #374151;
-	}
-
-	/* 保存按钮 */
-	.save-wrap {
-		padding: 20rpx 0 60rpx 0;
-	}
-
-	.save-btn {
-		background-color: #FB8FAB;
-		border-radius: 16rpx;
-		padding: 28rpx;
 		align-items: center;
-		justify-content: center;
+		padding: 6rpx 0;
 	}
 
-	.save-btn-text {
-		font-size: 30rpx;
-		font-weight: bold;
-		color: #FFFFFF;
+	.detail-label {
+		font-size: 24rpx;
+		color: #9CA3AF;
+		width: 120rpx;
+		flex-shrink: 0;
+	}
+
+	.detail-value {
+		font-size: 24rpx;
+		color: #374151;
+		flex: 1;
+	}
+
+	/* 操作按钮 */
+	.provider-actions {
+		flex-direction: row;
+		justify-content: flex-end;
+		margin-top: 16rpx;
+		padding-top: 16rpx;
+		border-top-width: 0.5px;
+		border-top-style: solid;
+		border-top-color: #F3F4F6;
+	}
+
+	.action-btn {
+		padding: 10rpx 24rpx;
+		border-radius: 10rpx;
+		font-size: 26rpx;
+		margin-left: 16rpx;
+	}
+
+	.action-edit {
+		background-color: #FDE8EF;
+		color: #FB8FAB;
+	}
+
+	.action-delete {
+		background-color: #FEE2E2;
+		color: #EF4444;
+	}
+
+	/* 空状态 */
+	.empty-state {
+		align-items: center;
+		padding: 80rpx 0;
+	}
+
+	.empty-text {
+		font-size: 28rpx;
+		color: #9CA3AF;
 	}
 </style>

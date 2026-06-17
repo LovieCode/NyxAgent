@@ -1,0 +1,241 @@
+<template>
+	<view class="page-shell rice-theme-light">
+		<NavBar title="默认模型" showBack />
+		<scroll-view class="container" :scroll-y="true">
+
+			<view class="card" v-for="(task, index) in taskList" :key="index">
+				<view class="task-header">
+					<text class="task-type-icon">{{taskIcon(task['type'] as string)}}</text>
+					<text class="task-type-name">{{task['typeName']}}</text>
+				</view>
+
+				<!-- 选择提供商 -->
+				<text class="field-label">提供商</text>
+				<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
+					<view class="chip-row">
+						<view
+							v-for="(p, pi) in allProviders"
+							:key="pi"
+							class="chip"
+							:class="(task['providerId'] as string) == (p['id'] as string) ? 'chip-active' : ''"
+							@click="selectProvider(index, p['id'] as string, p['models'] as string)"
+						>
+							<text
+								class="chip-text"
+								:class="(task['providerId'] as string) == (p['id'] as string) ? 'chip-text-active' : ''"
+							>{{p['name']}}</text>
+						</view>
+					</view>
+				</scroll-view>
+
+				<!-- 选择模型 -->
+				<text class="field-label" style="margin-top:16rpx;">模型</text>
+				<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
+					<view class="chip-row">
+						<view
+							v-for="(m, mi) in getTaskModels(task)"
+							:key="mi"
+							class="chip"
+							:class="(task['model'] as string) == m ? 'chip-active' : ''"
+							@click="selectModel(index, m)"
+						>
+							<text
+								class="chip-text"
+								:class="(task['model'] as string) == m ? 'chip-text-active' : ''"
+							>{{m}}</text>
+						</view>
+						<!-- 没有模型时提示 -->
+						<text v-if="getTaskModels(task).length == 0" class="no-models-hint">该提供商未配置模型</text>
+					</view>
+				</scroll-view>
+			</view>
+
+			<view class="save-wrap">
+				<rice-button type="primary" text="保存设置" size="large" shape="round" @click="saveAll" />
+			</view>
+
+		</scroll-view>
+		<TabBar current="pages/settings/settings" />
+	</view>
+</template>
+
+<script lang="uts">
+	import { getAllProviders, setDefaultTaskModel, getAllDefaultTaskModels, getProviderModels, parseModels } from '@/utils/provider.uts'
+
+	export default {
+		data() {
+			return {
+				allProviders: [] as UTSJSONObject[],
+				taskList: [] as UTSJSONObject[],
+			}
+		},
+		onShow() {
+			this.loadData()
+		},
+		methods: {
+			loadData() {
+				this.allProviders = getAllProviders()
+				this.taskList = getAllDefaultTaskModels()
+			},
+
+			taskIcon(type: string): string {
+				if (type == 'chat') return 'Chat'
+				if (type == 'vision') return 'Vision'
+				if (type == 'stt') return 'STT'
+				if (type == 'tts') return 'TTS'
+				return ''
+			},
+
+			/** 获取某个任务当前选择的提供商下可用的模型 ID 列表 */
+			getTaskModels(task: UTSJSONObject): string[] {
+				const providerId = task['providerId'] as string
+				if (providerId == '') return []
+				// 从内存中的提供商列表获取
+				for (let i = 0; i < this.allProviders.length; i++) {
+					const p = this.allProviders[i]
+					if ((p['id'] as string) == providerId) {
+						const modelsStr = p['models'] as string
+						if (modelsStr != null && modelsStr != '') {
+							const parsed = parseModels(modelsStr)
+							const ids: string[] = []
+							for (let mi = 0; mi < parsed.length; mi++) {
+								ids.push(parsed[mi].id)
+							}
+							return ids
+						}
+						return []
+					}
+				}
+				const models = getProviderModels(providerId)
+				const ids: string[] = []
+				for (let mi = 0; mi < models.length; mi++) {
+					ids.push(models[mi].id)
+				}
+				return ids
+			},
+
+			/** 选择提供商后自动选第一个模型 */
+			selectProvider(taskIndex: number, providerId: string, modelsStr: string) {
+				const task = this.taskList[taskIndex]
+				if (task == null) return
+				task['providerId'] = providerId
+				// 自动选第一个模型
+				if (modelsStr != null && modelsStr != '') {
+					const parsed = parseModels(modelsStr)
+					if (parsed.length > 0) {
+						task['model'] = parsed[0].id
+						return
+					}
+				}
+				task['model'] = ''
+			},
+
+			selectModel(taskIndex: number, model: string) {
+				const task = this.taskList[taskIndex]
+				if (task == null) return
+				task['model'] = model
+			},
+
+			saveAll() {
+				for (let i = 0; i < this.taskList.length; i++) {
+					const task = this.taskList[i]
+					const type = task['type'] as string
+					const providerId = task['providerId'] as string
+					const model = task['model'] as string
+					if (providerId != '' && model != '') {
+						setDefaultTaskModel(type, providerId, model)
+					}
+				}
+				uni.showToast({
+					title: '已保存',
+					icon: 'success'
+				})
+			}
+		}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+		padding: 32rpx;
+	}
+
+	/* 任务卡片 */
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 20rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+	}
+
+	.task-header {
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 20rpx;
+	}
+
+	.task-type-icon {
+		font-size: 32rpx;
+		margin-right: 12rpx;
+	}
+
+	.task-type-name {
+		font-size: 32rpx;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	/* 字段标签 */
+	.field-label {
+		font-size: 26rpx;
+		color: #6B7280;
+		margin-bottom: 12rpx;
+	}
+
+	/* 选项 chips */
+	.chip-scroll {
+		flex-direction: row;
+	}
+
+	.chip-row {
+		flex-direction: row;
+	}
+
+	.chip {
+		background-color: #F3F4F6;
+		border-radius: 12rpx;
+		padding: 14rpx 28rpx;
+		margin: 4rpx;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.chip-active {
+		background-color: #FDE8EF;
+		border-color: #FB8FAB;
+	}
+
+	.chip-text {
+		font-size: 26rpx;
+		color: #374151;
+		white-space: nowrap;
+	}
+
+	.chip-text-active {
+		color: #DB2777;
+		font-weight: bold;
+	}
+
+	.no-models-hint {
+		font-size: 24rpx;
+		color: #9CA3AF;
+		padding: 14rpx 0;
+	}
+
+	/* 保存按钮 */
+	.save-wrap {
+		padding: 20rpx 0 60rpx 0;
+	}
+</style>
