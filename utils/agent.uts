@@ -10,6 +10,8 @@ const defaultAgents: UTSJSONObject[] = [
 		icon: 'robot',
 		name: 'AI 助手',
 		desc: '通用智能助手，回答问题、提供建议',
+		systemPrompt: '你是一位乐于助人的通用 AI 助手，知识渊博，回答简洁准确。请用中文回复用户的问题。',
+		model: 'deepseek-v4-flash',
 		time: '刚刚'
 	},
 	{
@@ -17,6 +19,8 @@ const defaultAgents: UTSJSONObject[] = [
 		icon: 'code',
 		name: '编程助手',
 		desc: '帮你写代码、调试、解释技术问题',
+		systemPrompt: '你是一位资深编程专家，精通多种编程语言和技术栈。帮助用户解决编程问题、代码调试、架构设计。用中文回答，需要时提供代码示例。',
+		model: 'deepseek-v4-flash',
 		time: '昨天'
 	},
 	{
@@ -24,6 +28,8 @@ const defaultAgents: UTSJSONObject[] = [
 		icon: 'edit',
 		name: '写作助手',
 		desc: '文章润色、翻译、创意写作',
+		systemPrompt: '你是一位专业写作助手，擅长文章润色、翻译、创意写作。帮助用户改进文字表达，注意语法和用词准确性。用中文回复。',
+		model: 'deepseek-v4-flash',
 		time: '3天前'
 	},
 	{
@@ -31,6 +37,8 @@ const defaultAgents: UTSJSONObject[] = [
 		icon: 'translate',
 		name: '翻译助手',
 		desc: '多语言翻译、本地化支持',
+		systemPrompt: '你是一位专业翻译专家，精通多语种互译。准确传达原文意思，注重语言风格和语境适配。用户问什么语言就用什么语言回答，翻译任务则同时输出原文和译文。',
+		model: 'deepseek-v4-flash',
 		time: '5天前'
 	},
 	{
@@ -38,6 +46,8 @@ const defaultAgents: UTSJSONObject[] = [
 		icon: 'bulb',
 		name: '创意工坊',
 		desc: '头脑风暴、方案策划、创意发散',
+		systemPrompt: '你是一位创意策划专家，擅长头脑风暴和发散思维。帮助用户产生新颖的想法、规划方案、突破思维定式。回答富有创造力，用中文回复。',
+		model: 'deepseek-v4-flash',
 		time: '1周前'
 	}
 ]
@@ -72,17 +82,42 @@ export function getAgentById(id: string): UTSJSONObject | null {
 	return null
 }
 
-/** 更新智能体的名称、描述和头像 */
-export function updateAgent(id: string, name: string, desc: string, avatar: string = ''): void {
+/** 更新智能体的名称、描述、头像和系统提示词 */
+export function updateAgent(id: string, name: string, desc: string, avatar: string = '', systemPrompt: string = ''): void {
 	const agents = getAgents()
 	for (let i = 0; i < agents.length; i++) {
 		if ((agents[i]['id'] as string) == id) {
 			agents[i]['name'] = name
 			agents[i]['desc'] = desc
+			agents[i]['systemPrompt'] = systemPrompt
 			agents[i]['time'] = '刚刚'
 			if (avatar != '') {
 				agents[i]['avatar'] = avatar
 			}
+			break
+		}
+	}
+	saveAgents(agents)
+}
+
+/** 仅更新智能体系统提示词 */
+export function updateAgentSystemPrompt(id: string, systemPrompt: string): void {
+	const agents = getAgents()
+	for (let i = 0; i < agents.length; i++) {
+		if ((agents[i]['id'] as string) == id) {
+			agents[i]['systemPrompt'] = systemPrompt
+			break
+		}
+	}
+	saveAgents(agents)
+}
+
+/** 更新智能体使用的模型 */
+export function updateAgentModel(id: string, model: string): void {
+	const agents = getAgents()
+	for (let i = 0; i < agents.length; i++) {
+		if ((agents[i]['id'] as string) == id) {
+			agents[i]['model'] = model
 			break
 		}
 	}
