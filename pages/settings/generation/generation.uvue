@@ -1,0 +1,247 @@
+<template>
+	<view class="page-shell rice-theme-light">
+		<NavBar title="生成参数" showBack />
+		<scroll-view class="container" :scroll-y="true">
+			<view class="hero-card">
+				<text class="hero-title">全局默认生成参数</text>
+				<text class="hero-desc">这里是所有对话和 Agent 的默认值。单个智能体可以在「智能体设置」里覆盖它，像装备词条一样单独调校。</text>
+			</view>
+
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="experiment" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+					<text class="card-title">模型采样</text>
+				</view>
+				<text class="field-label">温度 temperature</text>
+				<input
+					class="flat-input"
+					type="text"
+					v-model="temperatureStr"
+					placeholder="0 - 2，默认 0.7"
+					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+				/>
+				<text class="field-tip">越低越稳，越高越发散。写代码建议 0.2 - 0.8，脑洞任务可以高一点。</text>
+			</view>
+
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="file-text" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+					<text class="card-title">输出与循环</text>
+				</view>
+				<text class="field-label">输出上限 max_tokens</text>
+				<input
+					class="flat-input"
+					type="text"
+					v-model="maxTokensStr"
+					placeholder="256 - 65536，默认 4096"
+					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+				/>
+				<text class="field-tip">限制单次回复长度，太低会被截断，太高会更吃额度。</text>
+
+				<text class="field-label" style="margin-top:24rpx;">Agent 最大迭代次数</text>
+				<input
+					class="flat-input"
+					type="text"
+					v-model="maxIterationsStr"
+					placeholder="1 - 100，默认 20"
+					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+				/>
+				<text class="field-tip">Agent 每次「思考 → 工具 → 继续」算一轮。遇到“达到最大迭代次数”就调这里。</text>
+			</view>
+
+			<view class="card">
+				<view class="setting-row">
+					<view class="setting-text">
+						<text class="setting-title">流式显示</text>
+						<text class="setting-desc">开启后边生成边显示；关闭后等完整回复再展示，画面更稳但反馈慢一点。</text>
+					</view>
+					<rice-switch v-model="streamEnabled" />
+				</view>
+			</view>
+
+			<view class="save-wrap">
+				<view class="save-btn" @click="saveSettings">
+					<text class="save-btn-text">保存设置</text>
+				</view>
+			</view>
+		</scroll-view>
+		<TabBar current="pages/settings/settings" />
+	</view>
+</template>
+
+<script lang="uts">
+	import { getGlobalGenerationSettings, saveGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
+
+	export default {
+		data() {
+			return {
+				temperatureStr: '' as string,
+				maxTokensStr: '' as string,
+				maxIterationsStr: '' as string,
+				streamEnabled: true as boolean,
+			}
+		},
+		onLoad() {
+			this.loadSettings()
+		},
+		methods: {
+			clampNumber(value: number, min: number, max: number): number {
+				if (value < min) return min
+				if (value > max) return max
+				return value
+			},
+
+			parseFloatSetting(value: string, fallback: number, min: number, max: number): number {
+				const parsed = parseFloat(value)
+				if (isNaN(parsed)) {
+					return fallback
+				}
+				return this.clampNumber(parsed, min, max)
+			},
+
+			parseIntSetting(value: string, fallback: number, min: number, max: number): number {
+				const parsed = parseInt(value)
+				if (isNaN(parsed)) {
+					return fallback
+				}
+				return this.clampNumber(parsed, min, max)
+			},
+
+			loadSettings() {
+				const settings = getGlobalGenerationSettings()
+				this.temperatureStr = settings.temperature + ''
+				this.maxTokensStr = settings.maxTokens + ''
+				this.maxIterationsStr = settings.maxIterations + ''
+				this.streamEnabled = settings.streamEnabled
+			},
+
+			saveSettings() {
+				const oldSettings = getGlobalGenerationSettings()
+				const settings: GenerationSettings = {
+					temperature: this.parseFloatSetting(this.temperatureStr, oldSettings.temperature, 0, 2),
+					maxTokens: this.parseIntSetting(this.maxTokensStr, oldSettings.maxTokens, 256, 65536),
+					maxIterations: this.parseIntSetting(this.maxIterationsStr, oldSettings.maxIterations, 1, 100),
+					streamEnabled: this.streamEnabled,
+				}
+				saveGlobalGenerationSettings(settings)
+				this.temperatureStr = settings.temperature + ''
+				this.maxTokensStr = settings.maxTokens + ''
+				this.maxIterationsStr = settings.maxIterations + ''
+				uni.showToast({
+					title: '已保存',
+					icon: 'success'
+				})
+			},
+		}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+		padding: 32rpx;
+	}
+
+	.hero-card {
+		background-color: #111827;
+		border-radius: 24rpx;
+		padding: 34rpx;
+		margin-bottom: 24rpx;
+	}
+
+	.hero-title {
+		font-size: 34rpx;
+		font-weight: bold;
+		color: #FFFFFF;
+		margin-bottom: 12rpx;
+	}
+
+	.hero-desc {
+		font-size: 25rpx;
+		color: #FCE7F3;
+		line-height: 38rpx;
+	}
+
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 20rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+	}
+
+	.card-header {
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 22rpx;
+	}
+
+	.card-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	.field-label {
+		font-size: 26rpx;
+		color: #374151;
+		font-weight: bold;
+		margin-bottom: 12rpx;
+	}
+
+	.field-tip {
+		font-size: 23rpx;
+		color: #9CA3AF;
+		line-height: 34rpx;
+		margin-top: 10rpx;
+	}
+
+	.flat-input {
+		background-color: #F9FAFB;
+		border-radius: 14rpx;
+		padding: 24rpx;
+		font-size: 28rpx;
+		color: #111827;
+	}
+
+	.setting-row {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.setting-text {
+		flex: 1;
+		padding-right: 24rpx;
+	}
+
+	.setting-title {
+		font-size: 28rpx;
+		font-weight: bold;
+		color: #111827;
+		margin-bottom: 8rpx;
+	}
+
+	.setting-desc {
+		font-size: 24rpx;
+		color: #6B7280;
+		line-height: 36rpx;
+	}
+
+	.save-wrap {
+		padding: 20rpx 0 60rpx 0;
+	}
+
+	.save-btn {
+		background-color: #111827;
+		border-radius: 16rpx;
+		padding: 28rpx 0;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.save-btn-text {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #FFFFFF;
+	}
+</style>

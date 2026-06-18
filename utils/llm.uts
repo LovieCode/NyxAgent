@@ -9,6 +9,8 @@
  */
 
 import { resolveLLMConfig, normalizeBaseUrl } from '@/utils/provider.uts'
+import { getAgentById } from '@/utils/agent.uts'
+import { getGlobalGenerationSettings, getEffectiveGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
 import { createAgentTools, AgentTool, ToolResult } from '@/utils/agent-tools.uts'
 import { AgentEventStream } from '@/utils/event.uts'
 
@@ -41,6 +43,7 @@ function callChatAPI(
 	systemPrompt: string,
 	messages: UTSJSONObject[],
 	tools: UTSJSONObject[],
+	settings: GenerationSettings,
 	done: (text: string | null, toolCalls: ToolCallInfo[] | null) => void
 ): void {
 	// 构建请求消息
@@ -96,8 +99,8 @@ function callChatAPI(
 	const body: UTSJSONObject = {
 		model: model,
 		messages: apiMessages,
-		max_tokens: 4096,
-		temperature: 0.7,
+		max_tokens: settings.maxTokens,
+		temperature: settings.temperature,
 		stream: false,
 	}
 	if (tools.length > 0) {
@@ -298,6 +301,7 @@ function callChatAPIStream(
 	systemPrompt: string,
 	messages: UTSJSONObject[],
 	tools: UTSJSONObject[],
+	settings: GenerationSettings,
 	onChunk: ((text: string) => void) | null,
 	done: (text: string | null, toolCalls: ToolCallInfo[] | null) => void
 ): void {
@@ -345,8 +349,8 @@ function callChatAPIStream(
 	const body: UTSJSONObject = {
 		model: model,
 		messages: apiMessages,
-		max_tokens: 4096,
-		temperature: 0.7,
+		max_tokens: settings.maxTokens,
+		temperature: settings.temperature,
 		stream: true,
 	}
 	if (tools.length > 0) {
@@ -450,7 +454,7 @@ function runAgentLoop(
 	providerId: string,
 	model: string,
 	agentId: string,
-	maxIterations: number,
+	settings: GenerationSettings,
 	stream: AgentEventStream
 ): void {
 	const config = resolveLLMConfig(providerId, model)
@@ -499,8 +503,8 @@ function runAgentLoop(
 		runLoop?.invoke()
 	}
 	runLoop = (): void => {
-		if (iteration >= maxIterations) {
-			stream.push({ type: 'error', error: '（已达到最大迭代次数，无法完成请求）' })
+		if (iteration >= settings.maxIterations) {
+			stream.push({ type: 'error', error: '（已达到最大迭代次数 ' + settings.maxIterations + '，无法完成请求）' })
 			stream.end()
 			return
 		}
@@ -508,11 +512,16 @@ function runAgentLoop(
 
 		stream.push({ type: 'turn_start' })
 
-		callChatAPIStream(baseUrl, apiKey, mdl, '', workingMessages, toolDefs,
-			// onChunk: 文本增量
-			(text: string) => {
+		let chunkHandler: ((text: string) => void) | null = null
+		if (settings.streamEnabled == true) {
+			chunkHandler = (text: string): void => {
 				stream.push({ type: 'text_delta', text: text })
-			},
+			}
+		}
+
+		callChatAPIStream(baseUrl, apiKey, mdl, '', workingMessages, toolDefs, settings,
+			// onChunk: 文本增量
+			chunkHandler,
 			// done: 一轮完成
 			(text: string | null, toolCalls: ToolCallInfo[] | null) => {
 				if (toolCalls == null || toolCalls.length == 0) {
@@ -683,9 +692,10 @@ export function chatWithLLM(
 		const mdl = config.model
 
 		baseUrl = normalizeBaseUrl(baseUrl)
+		const settings = getGlobalGenerationSettings()
 
 		// 构建 API 请求并发送
-		callChatAPI(baseUrl, apiKey, mdl, systemPrompt, messages, [], (text, toolCalls) => {
+		callChatAPI(baseUrl, apiKey, mdl, systemPrompt, messages, [], settings, (text, toolCalls) => {
 			resolve(text != null ? text : null)
 		})
 	})
@@ -701,7 +711,7 @@ export function chatWithLLM(
  * @param providerId 提供商 ID
  * @param model 模型名
  * @param agentId 智能体 ID（用于沙箱文件工具）
- * @param maxIterations 最大循环次数，默认 10
+ * @param maxIterations 临时最大循环次数；传 0 时使用全局/智能体设置
  * @returns AgentEventStream 事件流
  */
 export function agentChat(
@@ -710,13 +720,18 @@ export function agentChat(
 	providerId: string,
 	model: string,
 	agentId: string,
-	maxIterations: number = 10
+	maxIterations: number = 0
 ): AgentEventStream {
 	const stream = new AgentEventStream()
+	const agent = getAgentById(agentId)
+	const settings = getEffectiveGenerationSettings(agent)
+	if (maxIterations > 0) {
+		settings.maxIterations = maxIterations
+	}
 
 	// 异步执行 Agent 循环
 	setTimeout(() => {
-		runAgentLoop(messages, systemPrompt, providerId, model, agentId, maxIterations, stream)
+		runAgentLoop(messages, systemPrompt, providerId, model, agentId, settings, stream)
 	}, 0)
 
 	return stream

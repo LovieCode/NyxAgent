@@ -69,6 +69,12 @@
 			}
 		},
 		{
+			"path": "pages/settings/generation/generation",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/settings/about/about",
 			"style": {
 				"navigationStyle": "custom"
