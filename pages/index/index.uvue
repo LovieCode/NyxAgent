@@ -102,6 +102,14 @@
 						<view class="toolbar-grid-icon"><oui-icon-unix name="location" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">位置</text>
 					</view>
+					<view class="toolbar-grid-item" @click="showCompressPlaceholder">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="compress" size="26px" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">压缩上下文</text>
+					</view>
+					<view class="toolbar-grid-item" @click="stopTaskFromToolbar">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="stop" size="26px" color="#EF4444" /></view>
+						<text class="toolbar-grid-label">终止任务</text>
+					</view>
 				</view>
 			</view>
 		</view>
@@ -552,6 +560,33 @@
 				})
 			},
 
+			/** 压缩上下文占位：暂不实现，避免破坏上下文缓存。 */
+			showCompressPlaceholder() {
+				this.showToolPanel = false
+				uni.showModal({
+					title: '压缩上下文',
+					content: '这个功能先占位，暂不执行压缩。计划参数：保留最近 N 条、达到 N 条自动压缩、每次压缩 N 条。直接插入摘要会破坏上下文缓存，等确定策略后再开。',
+					showCancel: false
+				})
+			},
+
+			/** 工具栏终止当前任务。 */
+			stopTaskFromToolbar() {
+				this.showToolPanel = false
+				if (this.isGenerating == true) {
+					this.stopGenerating()
+					uni.showToast({
+						title: '已终止',
+						icon: 'none'
+					})
+					return
+				}
+				uni.showToast({
+					title: '当前没有运行中的任务',
+					icon: 'none'
+				})
+			},
+
 			// ===== 语音输入 =====
 
 			startVoice() {
@@ -880,8 +915,7 @@
 					systemPrompt,
 					'',           // providerId → 自动从 DB 读取
 					agentModel,
-					this.currentAgentId,
-					10
+					this.currentAgentId
 				)
 				this.currentStream = stream
 				stream.on((event: AgentEvent) => {
@@ -950,10 +984,12 @@
 	.toolbar-grid {
 		flex-direction: row;
 		justify-content: flex-start;
+		flex-wrap: wrap;
 	}
 	.toolbar-grid-item {
 		width: 25%;
 		align-items: center;
+		margin-bottom: 12px;
 	}
 	.toolbar-grid-icon {
 		width: 52px;

@@ -67,7 +67,9 @@ export class AgentEventStream {
 	private queue: AgentEvent[] = []
 	private consumers: AgentEventConsumer[] = []
 	private _ended: boolean = false
+	private _aborted: boolean = false
 	private _error: string | null = null
+	private abortHandler: (() => void) | null = null
 
 	/** 推送事件 */
 	push(event: AgentEvent): void {
@@ -79,14 +81,27 @@ export class AgentEventStream {
 	/** 结束流 */
 	end(): void {
 		if (this._ended) return
+		this.abortHandler = null
 		this.push({ type: 'agent_end' })
 		this._ended = true
+	}
+
+	/** 注册底层任务中断函数 */
+	setAbortHandler(handler: (() => void) | null): void {
+		this.abortHandler = handler
 	}
 
 	/** 中止流：通知消费者结束，然后丢弃后续事件 */
 	abort(): void {
 		if (this._ended) return
-		this.push({ type: 'agent_end' })
+		this._aborted = true
+		const handler = this.abortHandler
+		this.abortHandler = null
+		if (handler != null) {
+			handler.invoke()
+		}
+		this.queue.push({ type: 'agent_end' })
+		this.notifyConsumers()
 		this._ended = true
 		this.queue = []
 		this.offAll()
@@ -95,6 +110,7 @@ export class AgentEventStream {
 	/** 以错误结束 */
 	error(message: string): void {
 		if (this._ended) return
+		this.abortHandler = null
 		this._error = message
 		this.push({ type: 'error', error: message })
 		this.push({ type: 'agent_end' })
@@ -104,6 +120,11 @@ export class AgentEventStream {
 	/** 是否已结束 */
 	get ended(): boolean {
 		return this._ended
+	}
+
+	/** 是否被用户中止 */
+	get aborted(): boolean {
+		return this._aborted
 	}
 
 	/** 错误信息 */
