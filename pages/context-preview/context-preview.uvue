@@ -254,7 +254,17 @@
 			},
 
 			cacheLayoutMetrics(): void {
-				const ids: string[] = ['context-scroll', 'anchor-top', 'anchor-bottom', 'section-summary', 'section-system', 'section-settings', 'section-important-memory', 'section-buffer-memory', 'section-messages', 'section-tools', 'section-request', 'section-full-json']
+				const ids: string[] = ['context-scroll', 'anchor-top', 'anchor-bottom', 'section-summary', 'section-system', 'section-settings']
+				if (this.importantMemory != '') {
+					ids.push('section-important-memory')
+				}
+				if (this.bufferInjection != '') {
+					ids.push('section-buffer-memory')
+				}
+				ids.push('section-messages')
+				ids.push('section-tools')
+				ids.push('section-request')
+				ids.push('section-full-json')
 				for (let i = 0; i < this.messagesChunks.length; i++) {
 					ids.push(this.chunkAnchorId(this.messagesChunks[i]))
 				}
@@ -282,7 +292,8 @@
 					const map: UTSJSONObject = {}
 					const scrollRect = rows[0] as NodeInfo | null
 					const baseTop = scrollRect?.top ?? 0
-					for (let i = 1; i < ids.length; i++) {
+					const limit = rows.length < ids.length ? rows.length : ids.length
+					for (let i = 1; i < limit; i++) {
 						const id = ids[i]
 						if (id == '') {
 							continue
