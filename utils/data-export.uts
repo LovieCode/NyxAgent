@@ -1,0 +1,229 @@
+/**
+ * 全量数据导出工具
+ * 聚合 SQLite、uni.storage、智能体配置等本地数据，生成可备份 JSON。
+ */
+
+import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings } from '@/utils/database.uts'
+import { getAllDefaultTaskModels } from '@/utils/provider.uts'
+import { getAgents } from '@/utils/agent.uts'
+import { listAgentFiles, readAgentFile } from '@/utils/agent-fs.uts'
+import { writeExportFile } from '@/utssdk/app-data-export/index.uts'
+
+const EXPORT_SCHEMA_VERSION = 1
+
+function sanitizeFilePart(text: string): string {
+	let result = text
+	result = result.replace(/:/g, '-')
+	result = result.replace(/\./g, '-')
+	result = result.replace(/\//g, '-')
+	result = result.replace(/\\/g, '-')
+	result = result.replace(/ /g, '_')
+	return result
+}
+
+function readStorageValue(key: string): any | null {
+	const value = uni.getStorageSync(key)
+	if (value == null) {
+		return null
+	}
+	return value
+}
+
+function addStorageValue(target: UTSJSONObject, key: string): void {
+	const value = readStorageValue(key)
+	if (value != null) {
+		target[key] = value
+	}
+}
+
+function appendUniqueKey(keys: string[], key: string): void {
+	if (key == '') {
+		return
+	}
+	for (let i = 0; i < keys.length; i++) {
+		if (keys[i] == key) {
+			return
+		}
+	}
+	keys.push(key)
+}
+
+function buildKnownStorageKeys(): string[] {
+	return [
+		'agent_list',
+		'active_agent_id',
+		'active_conversation_id',
+		'settings_provider_id',
+		'settings_api_key',
+		'settings_base_url',
+		'settings_model',
+		'settings_gh_proxy_enabled',
+		'settings_gh_proxy_domain',
+		'app_setting_default_task_chat',
+		'app_setting_default_task_vision',
+		'app_setting_default_task_stt',
+		'app_setting_default_task_tts',
+		'profile_nickname',
+		'profile_bio',
+		'profile_email',
+		'profile_description',
+		'profile_avatar',
+		'notes_list',
+		'todo_list',
+		'provider_edit_data',
+		'pending_agent_model_id',
+		'editor_title',
+		'editor_content',
+		'editor_draft',
+		'editor_target',
+		'editor_result',
+		'crop_image_path',
+		'crop_result',
+	]
+}
+
+function collectStorageKeys(): string[] {
+	const keys = buildKnownStorageKeys()
+	try {
+		const infoText = JSON.stringify(uni.getStorageInfoSync())
+		const info = JSON.parse(infoText) as UTSJSONObject
+		const dynamicKeys = info['keys'] as string[] | null
+		if (dynamicKeys != null) {
+			for (let i = 0; i < dynamicKeys.length; i++) {
+				appendUniqueKey(keys, dynamicKeys[i])
+			}
+		}
+	} catch (_e: any) {
+		// getStorageInfoSync 不可用时，保留已知 key。
+	}
+	return keys
+}
+
+function collectKnownStorage(): UTSJSONObject {
+	const storage: UTSJSONObject = {}
+	const keys = collectStorageKeys()
+	for (let i = 0; i < keys.length; i++) {
+		addStorageValue(storage, keys[i])
+	}
+	return storage
+}
+
+function parseStorageArray(key: string): UTSJSONObject[] {
+	const value = uni.getStorageSync(key) as string | null
+	if (value == null || value == '') {
+		return []
+	}
+	try {
+		return JSON.parse(value) as UTSJSONObject[]
+	} catch (_e: any) {
+		return []
+	}
+}
+
+function appendAgentFileEntries(agentId: string, dirPath: string, result: UTSJSONObject[], depth: number): void {
+	if (depth > 8) {
+		return
+	}
+	const files = listAgentFiles(agentId, dirPath)
+	for (let i = 0; i < files.length; i++) {
+		const item = files[i]
+		const name = item.name
+		if (name == '') {
+			continue
+		}
+		const relPath = dirPath == '' ? name : dirPath + '/' + name
+		if (item.isDirectory == true) {
+			result.push({
+				agentId: agentId,
+				path: relPath,
+				isDirectory: true,
+				size: item.size,
+				lastModified: item.lastModified,
+			} as UTSJSONObject)
+			appendAgentFileEntries(agentId, relPath, result, depth + 1)
+		} else {
+			const content = readAgentFile(agentId, relPath)
+			const entry: UTSJSONObject = {
+				agentId: agentId,
+				path: relPath,
+				isDirectory: false,
+				size: item.size,
+				lastModified: item.lastModified,
+			} as UTSJSONObject
+			if (content != null) {
+				entry['content'] = content
+			} else {
+				entry['content'] = ''
+				entry['skipped'] = true
+				entry['reason'] = 'file too large or unreadable'
+			}
+			result.push(entry)
+		}
+	}
+}
+
+function collectAgentFiles(agents: UTSJSONObject[]): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < agents.length; i++) {
+		const rawId = agents[i]['id'] as string | null
+		if (rawId != null && rawId != '') {
+			appendAgentFileEntries(rawId, '', result, 0)
+		}
+	}
+	return result
+}
+
+function buildFileName(exportedAt: string): string {
+	return 'agent-full-export-' + sanitizeFilePart(exportedAt) + '.json'
+}
+
+/**
+ * 构建全量导出对象。
+ * 注意：providers 中包含 api_key，storage 中也可能包含 legacy api key。
+ */
+export function buildAllDataExport(): UTSJSONObject {
+	const exportedAt = new Date().toISOString()
+	const conversations = getAllConversationsForExport()
+	const messages = getAllMessagesForExport()
+	const storage = collectKnownStorage()
+	const notes = parseStorageArray('notes_list')
+	const todos = parseStorageArray('todo_list')
+	const agents = getAgents()
+	return {
+		schemaVersion: EXPORT_SCHEMA_VERSION,
+		exportedAt: exportedAt,
+		app: 'agent',
+		warning: 'This export may contain API keys, conversation history, prompts and personal data.',
+		data: {
+			providers: getAllProviders(),
+			appSettings: getAllAppSettings(),
+			defaultTaskModels: getAllDefaultTaskModels(),
+			agents: agents,
+			agentFiles: collectAgentFiles(agents),
+			conversations: conversations,
+			messages: messages,
+			notes: notes,
+			todos: todos,
+			storage: storage,
+		} as UTSJSONObject,
+	} as UTSJSONObject
+}
+
+/**
+ * 导出到本地文件。APP-ANDROID 返回文件路径；其他平台返回空字符串。
+ */
+export function exportAllDataToFile(): string {
+	const exportedAt = new Date().toISOString()
+	const payload = buildAllDataExport()
+	payload['exportedAt'] = exportedAt
+	const json = JSON.stringify(payload)
+	const fileName = buildFileName(exportedAt)
+	return writeExportFile(fileName, json)
+}
+
+/**
+ * 剪贴板兜底：文件系统不可用时使用。
+ */
+export function exportAllDataToJson(): string {
+	return JSON.stringify(buildAllDataExport())
+}

@@ -226,6 +226,16 @@ export function getConversations(): UTSJSONObject[] {
 }
 
 /**
+ * 导出所有对话原始字段。
+ */
+export function getAllConversationsForExport(): UTSJSONObject[] {
+	const db = getDb()
+	const result = db.query('SELECT * FROM conversations ORDER BY updated_at DESC')
+	db.close()
+	return rowsToObjects(result)
+}
+
+/**
  * 获取某个智能体的对话列表（按创建时间倒序）
  */
 export function getConversationsByAgent(agentId: string): UTSJSONObject[] {
@@ -295,6 +305,16 @@ export function getMessages(conversationId: string): UTSJSONObject[] {
 		}
 	}
 	return rows
+}
+
+/**
+ * 导出所有消息原始字段，包含 extra JSON 字段。
+ */
+export function getAllMessagesForExport(): UTSJSONObject[] {
+	const db = getDb()
+	const result = db.query('SELECT * FROM messages ORDER BY conversation_id ASC, timestamp ASC, id ASC')
+	db.close()
+	return rowsToObjects(result)
 }
 
 /**
@@ -458,4 +478,15 @@ export function getAppSetting(key: string): string | null {
  */
 export function setAppSetting(key: string, value: string): void {
 	uni.setStorageSync(SETTINGS_PREFIX + key, value)
+}
+
+/**
+ * 导出 SQLite app_settings 表中的原始设置。
+ * 当前运行时设置主要走 uni.storage，这里用于兼容旧数据或未来迁移数据。
+ */
+export function getAllAppSettings(): UTSJSONObject[] {
+	const db = getDb()
+	const result = db.query('SELECT key, value FROM app_settings ORDER BY key ASC')
+	db.close()
+	return rowsToObjects(result)
 }

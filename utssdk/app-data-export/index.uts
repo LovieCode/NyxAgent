@@ -1,0 +1,37 @@
+/**
+ * 全量数据导出 - 原生文件写入插件
+ * 当前先覆盖 APP-ANDROID，其他平台走剪贴板兜底。
+ */
+
+// #ifdef APP-ANDROID
+import File from 'java.io.File'
+// #endif
+
+/**
+ * 写入导出 JSON 文件，返回文件绝对路径；失败返回空字符串。
+ */
+export function writeExportFile(fileName: string, content: string): string {
+	// #ifdef APP-ANDROID
+	try {
+		const context = UTSAndroid.getAppContext()
+		if (context == null) {
+			return ''
+		}
+		let baseDir = context.filesDir as File
+		const external = context.getExternalFilesDir(null)
+		if (external != null) {
+			baseDir = external as File
+		}
+		const root = new File(baseDir.absolutePath + '/exports')
+		if (!root.exists()) {
+			root.mkdirs()
+		}
+		const file = new File(root.absolutePath + '/' + fileName)
+		file.writeText(content)
+		return file.absolutePath as string
+	} catch (_e: any) {
+		return ''
+	}
+	// #endif
+	return ''
+}
