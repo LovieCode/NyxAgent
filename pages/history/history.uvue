@@ -1,6 +1,6 @@
 ﻿<template>
 	<view class="page-shell rice-theme-light">
-		<NavBar title="历史记录" showBack @back="exitEditMode">
+		<NavBar title="历史记录" showBack @back="handleBack">
 			<template #right>
 				<view v-if="!editMode" class="nav-right">
 					<text class="nav-btn" v-if="historyList.length > 0" @click="enterEditMode">管理</text>
@@ -128,6 +128,14 @@
 			exitEditMode() {
 				this.editMode = false
 				this.selectedIds = []
+			},
+
+			handleBack() {
+				if (this.editMode) {
+					this.exitEditMode()
+					return
+				}
+				uni.navigateBack()
 			},
 
 			isSelected(id: string): boolean {
