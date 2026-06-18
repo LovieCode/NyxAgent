@@ -72,7 +72,7 @@
 				<view v-for="(chunk, index) in messagesChunks" :key="'msg-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
 					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active">
 						<text>{{activeChunkPrefix(chunk)}}</text>
-						<text :id="activeChunkHitAnchorId(chunk)" class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
 						<text>{{activeChunkSuffix(chunk)}}</text>
 					</text>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
@@ -84,7 +84,7 @@
 				<view v-for="(chunk, index) in toolsChunks" :key="'tool-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
 					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active">
 						<text>{{activeChunkPrefix(chunk)}}</text>
-						<text :id="activeChunkHitAnchorId(chunk)" class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
 						<text>{{activeChunkSuffix(chunk)}}</text>
 					</text>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
@@ -96,7 +96,7 @@
 				<view v-for="(chunk, index) in requestBodyChunks" :key="'req-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
 					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active">
 						<text>{{activeChunkPrefix(chunk)}}</text>
-						<text :id="activeChunkHitAnchorId(chunk)" class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
 						<text>{{activeChunkSuffix(chunk)}}</text>
 					</text>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
@@ -111,7 +111,7 @@
 				<view v-for="(chunk, index) in fullJsonChunks" :key="'json-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
 					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active">
 						<text>{{activeChunkPrefix(chunk)}}</text>
-						<text :id="activeChunkHitAnchorId(chunk)" class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
 						<text>{{activeChunkSuffix(chunk)}}</text>
 					</text>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
@@ -186,7 +186,7 @@
 			this.previewText = raw
 			this.previewDisplayText = this.decodeDisplayEscapes(raw)
 			this.previewJsonShortText = this.buildPreviewBlock(this.previewDisplayText, 12000)
-			this.fullJsonChunks = this.buildChunks('section-full-json', '完整 JSON', this.previewDisplayText, 3200)
+			this.fullJsonChunks = this.buildChunks('section-full-json', '完整 JSON', this.previewDisplayText, 640)
 			try {
 				const parsed = JSON.parse(raw) as UTSJSONObject
 				const providerId = parsed['providerId'] as string | null
@@ -213,17 +213,17 @@
 				if (openaiMessages != null) {
 					this.messagesText = this.decodeDisplayEscapes(this.formatJsonArraySegment(openaiMessages, '[]'))
 					this.messagesPreviewText = this.buildPreviewBlock(this.messagesText, 12000)
-					this.messagesChunks = this.buildChunks('section-messages', '发送 messages', this.messagesText, 2400)
+					this.messagesChunks = this.buildChunks('section-messages', '发送 messages', this.messagesText, 520)
 				}
 				if (openaiTools != null) {
 					this.toolsText = this.decodeDisplayEscapes(this.formatJsonArraySegment(openaiTools, '[]'))
 					this.toolsPreviewText = this.buildPreviewBlock(this.toolsText, 8000)
-					this.toolsChunks = this.buildChunks('section-tools', '工具定义', this.toolsText, 2200)
+					this.toolsChunks = this.buildChunks('section-tools', '工具定义', this.toolsText, 520)
 				}
 				if (requestBody != null) {
 					this.requestBodyText = this.decodeDisplayEscapes(this.formatJsonObjectSegment(requestBody, '{}'))
 					this.requestBodyPreviewText = this.buildPreviewBlock(this.requestBodyText, 12000)
-					this.requestBodyChunks = this.buildChunks('section-request', '最终 request body', this.requestBodyText, 2400)
+					this.requestBodyChunks = this.buildChunks('section-request', '最终 request body', this.requestBodyText, 520)
 				}
 			} catch (_e: any) {
 			}
@@ -273,13 +273,6 @@
 			chunkAnchorId(chunk: UTSJSONObject): string {
 				const value = chunk['id'] as string | null
 				return value != null ? value : ''
-			},
-
-			buildChunkHitAnchorId(chunkId: string): string {
-				if (chunkId == '') {
-					return ''
-				}
-				return chunkId + '-hit'
 			},
 
 			pushChunkMatches(list: UTSJSONObject[], chunks: UTSJSONObject[], query: string): void {
@@ -488,7 +481,7 @@
 				this.showFloatingSearchBar = true
 				this.floatingMetaText = (index + 1) + ' / ' + this.searchResults.length + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
 				if (anchorId != null && anchorId != '') {
-					this.scrollToSearchTarget(anchorId, sectionId != null ? sectionId : '')
+					this.scrollToSection(anchorId)
 				} else if (sectionId != null && sectionId != '') {
 					this.scrollToSection(sectionId)
 				}
@@ -539,26 +532,6 @@
 				}, 0)
 			},
 
-			scrollToSearchTarget(anchorId: string, sectionId: string): void {
-				if (anchorId == '') {
-					if (sectionId != '') {
-						this.scrollToSection(sectionId)
-					}
-					return
-				}
-				this.scrollToSection(anchorId)
-				if (this.activeMatchStart < 0 || this.activeMatchLength <= 0) {
-					return
-				}
-				const hitAnchorId = this.buildChunkHitAnchorId(anchorId)
-				if (hitAnchorId == '') {
-					return
-				}
-				setTimeout(() => {
-					this.scrollToSection(hitAnchorId)
-				}, 48)
-			},
-
 			scrollToTop() {
 				this.activeSectionId = ''
 				this.activeChunkId = ''
@@ -586,11 +559,6 @@
 			chunkText(chunk: UTSJSONObject): string {
 				const content = chunk['text'] as string | null
 				return content != null ? content : ''
-			},
-
-			activeChunkHitAnchorId(chunk: UTSJSONObject): string {
-				const chunkId = this.chunkAnchorId(chunk)
-				return this.buildChunkHitAnchorId(chunkId)
 			},
 
 			hasActiveChunkMatch(chunk: UTSJSONObject): boolean {
@@ -837,10 +805,12 @@
 	}
 
 	.chunk-wrap-active {
-		border-radius: 16px;
-		padding: 4px;
-		background-color: rgba(251, 143, 171, 0.16);
-		box-shadow: 0 0 0 2px rgba(251, 143, 171, 0.32);
+		border-radius: 12px;
+		padding: 2px;
+		background-color: rgba(251, 143, 171, 0.1);
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(251, 143, 171, 0.28);
 	}
 
 	.block-text {
@@ -869,11 +839,10 @@
 	}
 
 	.code-text-active {
-		background-color: #1F2937;
-		border-width: 2px;
+		background-color: #18212F;
+		border-width: 1px;
 		border-style: solid;
 		border-color: #FB8FAB;
-		box-shadow: 0 12px 28px rgba(17, 24, 39, 0.28);
 	}
 
 	.code-inline-hit {
