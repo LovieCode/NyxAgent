@@ -5,7 +5,39 @@
 
 // #ifdef APP-ANDROID
 import File from 'java.io.File'
+import ZipEntry from 'java.util.zip.ZipEntry'
+import ZipOutputStream from 'java.util.zip.ZipOutputStream'
+import FileOutputStream from 'java.io.FileOutputStream'
 // #endif
+
+const MAX_ZIP_SOURCE_BYTES: number = 50 * 1024 * 1024
+
+function normalizeSourcePath(sourcePath: string): string {
+	let result = sourcePath
+	if (result.startsWith('file://')) {
+		result = result.substring(7)
+	}
+	// #ifdef APP-ANDROID
+	if (!result.startsWith('/')) {
+		result = UTSAndroid.convert2AbsFullPath(result)
+		if (result.startsWith('file://')) {
+			result = result.substring(7)
+		}
+	}
+	// #endif
+	return result
+}
+
+function isSafeZipPath(zipPath: string): boolean {
+	if (zipPath == '') return false
+	if (zipPath.startsWith('/')) return false
+	if (zipPath.indexOf('\\') >= 0) return false
+	const parts = zipPath.split('/')
+	for (let i = 0; i < parts.length; i++) {
+		if (parts[i] == '..') return false
+	}
+	return true
+}
 
 /**
  * 写入导出 JSON 文件，返回文件绝对路径；失败返回空字符串。
@@ -29,6 +61,112 @@ export function writeExportFile(fileName: string, content: string): string {
 		const file = new File(root.absolutePath + '/' + fileName)
 		file.writeText(content)
 		return file.absolutePath as string
+	} catch (_e: any) {
+		return ''
+	}
+	// #endif
+	return ''
+}
+
+// #ifdef APP-ANDROID
+function getExportRoot(): File | null {
+	const context = UTSAndroid.getAppContext()
+	if (context == null) {
+		return null
+	}
+	let baseDir = context.filesDir as File
+	const external = context.getExternalFilesDir(null)
+	if (external != null) {
+		baseDir = external as File
+	}
+	const root = new File(baseDir.absolutePath + '/exports')
+	if (!root.exists()) {
+		root.mkdirs()
+	}
+	return root
+}
+
+function addDirectoryEntry(zip: ZipOutputStream, zipPath: string): boolean {
+	if (!isSafeZipPath(zipPath)) return false
+	let entryPath = zipPath
+	if (!entryPath.endsWith('/')) {
+		entryPath = entryPath + '/'
+	}
+	try {
+		zip.putNextEntry(new ZipEntry(entryPath))
+		zip.closeEntry()
+		return true
+	} catch (_e: any) {
+		try {
+			zip.closeEntry()
+		} catch (_err: any) {
+		}
+		return false
+	}
+}
+
+function addFileEntry(zip: ZipOutputStream, zipPath: string, source: File): boolean {
+	if (!isSafeZipPath(zipPath)) return false
+	if (!source.exists()) return false
+	if (source.isDirectory()) return false
+	if (source.length() > MAX_ZIP_SOURCE_BYTES) return false
+	try {
+		zip.putNextEntry(new ZipEntry(zipPath))
+		zip.write(source.readBytes())
+		zip.closeEntry()
+		return true
+	} catch (_e: any) {
+		try {
+			zip.closeEntry()
+		} catch (_err: any) {
+		}
+		return false
+	}
+}
+// #endif
+
+/**
+ * 写入导出 ZIP 文件。
+ * ZIP 内固定包含 export.json，并按 fileSpecsJson 追加本地文件条目。
+ */
+export function writeExportZipFile(fileName: string, manifestJson: string, fileSpecsJson: string): string {
+	// #ifdef APP-ANDROID
+	try {
+		const root = getExportRoot()
+		if (root == null) {
+			return ''
+		}
+		const zipFile = new File(root.absolutePath + '/' + fileName)
+		const tempManifest = new File(root.absolutePath + '/.export-manifest.tmp')
+		tempManifest.writeText(manifestJson)
+
+		const zip = new ZipOutputStream(new FileOutputStream(zipFile))
+		addFileEntry(zip, 'export.json', tempManifest)
+
+		try {
+			const specs = JSON.parse(fileSpecsJson) as UTSJSONObject[]
+			for (let i = 0; i < specs.length; i++) {
+				const spec = specs[i]
+				const rawKind = spec['kind'] as string | null
+				const rawSourcePath = spec['sourcePath'] as string | null
+				const rawZipPath = spec['zipPath'] as string | null
+				if (rawZipPath != null && rawZipPath != '') {
+					const kind = rawKind != null ? rawKind : 'file'
+					if (kind == 'directory') {
+						addDirectoryEntry(zip, rawZipPath)
+					} else if (rawSourcePath != null && rawSourcePath != '') {
+						const source = new File(normalizeSourcePath(rawSourcePath))
+						addFileEntry(zip, rawZipPath, source)
+					}
+				}
+			}
+		} catch (_jsonErr: any) {
+			// 清单写入成功即可，文件列表解析失败时返回仅包含 export.json 的压缩包。
+		}
+
+		zip.close()
+		tempManifest.delete()
+		return zipFile.absolutePath as string
 	} catch (_e: any) {
 		return ''
 	}
