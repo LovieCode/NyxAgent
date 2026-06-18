@@ -52,7 +52,7 @@
 					:isError="msg.isError == true"
 					:isStreaming="msg.isStreaming == true"
 					:cancelToken="longpressCancelToken"
-					@longpress="onMessageLongpress(index)"
+					@bubbleLongpress="onMessageLongpress(index)"
 				/>
 			</view>
 			<view v-if="messages.length == 0" class="empty-state">
@@ -168,6 +168,8 @@
 				editBuffer: '' as string,
 				/** 滚动时通知 ChatBubble 取消长按的 token */
 				longpressCancelToken: 0 as number,
+				/** 消息长按菜单锁，避免重复弹出 */
+				messageActionSheetOpen: false as boolean,
 			}
 		},
 		computed: {
@@ -301,6 +303,7 @@
 			/** 长按消息弹出操作菜单 */
 			onMessageLongpress(index: number) {
 				if (this.isGenerating) { return }
+				if (this.messageActionSheetOpen) { return }
 				const msg = this.messages[index]
 				if (msg == null) { return }
 				const roleRaw = msg['role']
@@ -316,6 +319,7 @@
 					actions = ['删除']
 				}
 				const msgIndex = index
+				this.messageActionSheetOpen = true
 				uni.showActionSheet({
 					itemList: actions,
 					success: (res) => {
@@ -329,6 +333,11 @@
 						} else if (action == '重新回答') {
 							this.regenerateResponse(msgIndex)
 						}
+					},
+					fail: (_err) => {
+					},
+					complete: () => {
+						this.messageActionSheetOpen = false
 					}
 				})
 			},

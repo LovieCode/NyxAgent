@@ -93,6 +93,7 @@
 				touchStartY: 0 as number,
 				longpressTick: 0 as number,
 				longpressTimer: -1 as number,
+				longpressTriggered: false as boolean,
 			}
 		},
 		watch: {
@@ -155,6 +156,7 @@
 					clearInterval(this.longpressTimer)
 					this.longpressTimer = -1
 				}
+				this.longpressTriggered = false
 			},
 
 			/** 触摸开始 — 启动长按计时 */
@@ -162,6 +164,7 @@
 				this.touchStartX = e.touches[0].screenX
 				this.touchStartY = e.touches[0].screenY
 				this.longpressTick = 0
+				this.longpressTriggered = false
 				if (this.longpressTimer != -1) {
 					clearInterval(this.longpressTimer)
 				}
@@ -170,7 +173,11 @@
 					if (this.longpressTick >= 5) {
 						clearInterval(this.longpressTimer)
 						this.longpressTimer = -1
-						this.$emit('longpress')
+						if (this.longpressTriggered == true) {
+							return
+						}
+						this.longpressTriggered = true
+						this.$emit('bubbleLongpress')
 					}
 				}, 100)
 			},
@@ -188,6 +195,7 @@
 			/** 触摸结束 — 清理状态 */
 			onBubbleTouchEnd() {
 				this.cancelLongpress()
+				this.longpressTriggered = false
 			},
 		}
 	}
