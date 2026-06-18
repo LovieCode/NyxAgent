@@ -43,10 +43,10 @@
 					class="flat-input"
 					type="text"
 					v-model="maxIterationsStr"
-					placeholder="1 - 100，默认 20"
+					placeholder="0 - 100，默认 20"
 					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
 				/>
-				<text class="field-tip">Agent 每次「思考 → 工具 → 继续」算一轮。遇到“达到最大迭代次数”就调这里。</text>
+				<text class="field-tip">Agent 每次「思考 → 工具 → 继续」算一轮。填 0 表示不限制，遇到“达到最大迭代次数”就调这里。</text>
 			</view>
 
 			<view class="card">
@@ -120,7 +120,7 @@
 				const settings: GenerationSettings = {
 					temperature: this.parseFloatSetting(this.temperatureStr, oldSettings.temperature, 0, 2),
 					maxTokens: this.parseIntSetting(this.maxTokensStr, oldSettings.maxTokens, 256, 65536),
-					maxIterations: this.parseIntSetting(this.maxIterationsStr, oldSettings.maxIterations, 1, 100),
+					maxIterations: this.parseIntSetting(this.maxIterationsStr, oldSettings.maxIterations, 0, 100),
 					streamEnabled: this.streamEnabled,
 				}
 				saveGlobalGenerationSettings(settings)
