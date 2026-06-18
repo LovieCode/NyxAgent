@@ -62,12 +62,12 @@ function mapNativeOutcome(source : DepotOutcomeNative | null) : LqjSqlOutcome {
 	}
 	let fields : string[] | null = null
 	if (source.fields != null) {
-		fields = Array.fromNative(source.fields as ArrayList<string>)
+		fields = Array.fromNative(source.fields!)
 	}
 	let grid : any[][] | null = null
 	if (source.grid != null) {
 		grid = [] as any[][]
-		const nativeRows = source.grid as ArrayList<ArrayList<any>>
+		const nativeRows = source.grid!
 		for (nativeRow in nativeRows) {
 			grid.push(Array.fromNative(nativeRow))
 		}
@@ -75,7 +75,7 @@ function mapNativeOutcome(source : DepotOutcomeNative | null) : LqjSqlOutcome {
 	let records : Map<string, any>[] | null = null
 	if (source.records != null) {
 		records = [] as Map<string, any>[]
-		const nativeRecords = source.records as ArrayList<LinkedHashMap<string, any>>
+		const nativeRecords = source.records!
 		for (nativeRecord in nativeRecords) {
 			const rowMap = new Map<string, any>()
 			if (fields != null) {
