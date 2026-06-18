@@ -144,9 +144,12 @@
 					if (id != null && id != '') {
 						this.isNew = false
 						this.editId = id
-						this.editName = (data['name'] as string | null) ?? ''
-						this.editApiKey = (data['apiKey'] as string | null) ?? ''
-						this.editApiBase = (data['apiBase'] as string | null) ?? ''
+						const rawName = data['name'] as string | null
+						const rawApiKey = data['apiKey'] as string | null
+						const rawApiBase = data['apiBase'] as string | null
+						this.editName = rawName != null ? rawName : ''
+						this.editApiKey = rawApiKey != null ? rawApiKey : ''
+						this.editApiBase = rawApiBase != null ? rawApiBase : ''
 						const modelsStr = data['models'] as string | null
 						if (modelsStr != null) {
 							this.editModels = parseModels(modelsStr)
@@ -474,4 +477,3 @@
 		padding: 20rpx 0 60rpx 0;
 	}
 </style>
-

@@ -34,6 +34,46 @@ export type ModelInfo = {
 	expanded?: boolean
 }
 
+/** LLM 调用配置 */
+export type LLMConfig = {
+	providerId: string
+	apiKey: string
+	baseUrl: string
+	model: string
+}
+
+/**
+ * 规范化 baseUrl：去掉末尾的 /v1 或 /v1/
+ */
+export function normalizeBaseUrl(url: string): string {
+	let result = url
+	if (result.endsWith('/v1')) {
+		result = result.substring(0, result.length - 3)
+	} else if (result.endsWith('/v1/')) {
+		result = result.substring(0, result.length - 4)
+	}
+	if (result.endsWith('/')) {
+		result = result.substring(0, result.length - 1)
+	}
+	return result
+}
+
+/**
+ * 获取默认 URL（兜底）
+ */
+function getDefaultUrl(providerId: string): string {
+	if (providerId == 'anthropic') return 'https://api.anthropic.com'
+	if (providerId == 'openai') return 'https://api.openai.com'
+	if (providerId == 'deepseek') return 'https://api.deepseek.com'
+	if (providerId == 'zai') return 'https://api.z.ai/api/coding/paas/v4'
+	if (providerId == 'kimi-coding') return 'https://api.kimi.com/coding'
+	if (providerId == 'minimax-cn') return 'https://api.minimaxi.com/anthropic'
+	if (providerId == 'xiaomi') return 'https://api.xiaomimimo.com/v1'
+	if (providerId == 'ant-ling') return 'https://api.ant-ling.com/v1'
+	if (providerId == 'siliconflow') return 'https://api.siliconflow.cn/v1'
+	return ''
+}
+
 // ==================== 提供商 CRUD ====================
 
 /**
@@ -204,11 +244,15 @@ export function getProviderApiConfig(id: string): UTSJSONObject | null {
 	if (p == null) {
 		return null
 	}
+	const apiBase = p['api_base'] as string | null
+	const apiKey = p['api_key'] as string | null
+	const models = p['models'] as string | null
+	const enabled = p['enabled'] as number | null
 	return {
-		api_base: p['api_base'] ?? '',
-		api_key: p['api_key'] ?? '',
-		models: p['models'] ?? '[]',
-		enabled: p['enabled'] ?? 0,
+		api_base: apiBase != null ? apiBase : '',
+		api_key: apiKey != null ? apiKey : '',
+		models: models != null ? models : '[]',
+		enabled: enabled != null ? enabled : 0,
 	} as UTSJSONObject
 }
 
@@ -292,7 +336,7 @@ const TASK_KEY_PREFIX = 'default_task_'
  */
 export function getTaskTypeName(type: string): string {
 	const name = taskTypeNames[type] as string | null
-	return name ?? type
+	return name != null ? name : type
 }
 
 /**
@@ -340,6 +384,104 @@ export function setDefaultTaskModel(type: string, providerId: string, model: str
 		uni.setStorageSync('settings_provider_id', providerId)
 	}
 }
+
+
+/**
+ * 解析 LLM 配置（按优先级）
+ * 1. 显式 providerId + model
+ * 2. chat 默认模型配置
+ * 3. 旧版 storage 配置
+ */
+export function resolveLLMConfig(providerId: string, model: string): LLMConfig | null {
+	let pid = providerId
+	let mdl = model
+
+	// 支持 "providerId||modelId" 复合格式
+	if (mdl != '') {
+		const sep = '||'
+		const idx = mdl.indexOf(sep)
+		if (idx >= 0) {
+			const extractedPid = mdl.substring(0, idx)
+			const extractedMid = mdl.substring(idx + sep.length)
+			if (pid == '') {
+				pid = extractedPid
+			}
+			mdl = extractedMid
+		}
+	}
+
+	if (pid == '') {
+		const defaultConfig = getDefaultTaskModel('chat')
+		if (defaultConfig != null) {
+			const defaultProvider = defaultConfig['providerId'] as string | null
+			const defaultModel = defaultConfig['model'] as string | null
+			if (defaultProvider != null) {
+				pid = defaultProvider
+			}
+			if (mdl == '' && defaultModel != null) {
+				mdl = defaultModel
+			}
+		}
+	}
+
+	if (pid == '') {
+		const storageProvider = uni.getStorageSync('settings_provider_id') as string | null
+		if (storageProvider != null) {
+			pid = storageProvider
+		}
+	}
+	if (mdl == '') {
+		const storageModel = uni.getStorageSync('settings_model') as string | null
+		if (storageModel != null) {
+			mdl = storageModel
+		}
+	}
+
+	if (pid == '' || mdl == '') {
+		return null
+	}
+
+	const provider = getProviderById(pid)
+	if (provider != null) {
+		const apiKeyRaw = provider['api_key'] as string | null
+		const baseUrlRaw = provider['api_base'] as string | null
+		const apiKey = apiKeyRaw != null ? apiKeyRaw : ''
+		let baseUrl = baseUrlRaw != null ? baseUrlRaw : ''
+		if (baseUrl == '') {
+			baseUrl = getDefaultUrl(pid)
+		}
+		if (apiKey == '') {
+			return null
+		}
+		return {
+			providerId: pid,
+			apiKey: apiKey,
+			baseUrl: baseUrl,
+			model: mdl,
+		} as LLMConfig
+	}
+
+	const storageApiKey = uni.getStorageSync('settings_api_key') as string | null
+	const apiKey = storageApiKey != null ? storageApiKey : ''
+	if (apiKey == '') {
+		return null
+	}
+	const storageBaseUrl = uni.getStorageSync('settings_base_url') as string | null
+	let baseUrl = storageBaseUrl != null ? storageBaseUrl : ''
+	if (baseUrl == '') {
+		baseUrl = getDefaultUrl(pid)
+		if (baseUrl == '') {
+			return null
+		}
+	}
+	return {
+		providerId: pid,
+		apiKey: apiKey,
+		baseUrl: baseUrl,
+		model: mdl,
+	} as LLMConfig
+}
+
 
 /**
  * 获取所有任务的默认配置

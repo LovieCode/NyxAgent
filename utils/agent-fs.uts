@@ -86,11 +86,15 @@ export function listAgentFiles(agentId: string, dirPath: string = ''): AgentFile
 		if (arr == null) return []
 		const result: AgentFileInfo[] = []
 		for (let i = 0; i < arr.length; i++) {
+			const rawName = arr[i]['name'] as string | null
+			const rawIsDirectory = arr[i]['isDirectory'] as boolean | null
+			const rawSize = arr[i]['size'] as number | null
+			const rawLastModified = arr[i]['lastModified'] as number | null
 			result.push({
-				name: arr[i]['name'] as string ?? '',
-				isDirectory: arr[i]['isDirectory'] as boolean ?? false,
-				size: arr[i]['size'] as number ?? 0,
-				lastModified: arr[i]['lastModified'] as number ?? 0,
+				name: rawName != null ? rawName : '',
+				isDirectory: rawIsDirectory != null ? rawIsDirectory : false,
+				size: rawSize != null ? rawSize : 0,
+				lastModified: rawLastModified != null ? rawLastModified : 0,
 			} as AgentFileInfo)
 		}
 		return result
@@ -115,13 +119,18 @@ export function getAgentFileInfo(agentId: string, path: string): AgentFileInfo |
 	const json = nativeInfo(agentId, path)
 	if (json == null) return null
 	try {
-		const obj = JSON.parse(json!) as UTSJSONObject
+		const jsonText = json as string
+		const obj = JSON.parse(jsonText) as UTSJSONObject
 		if (obj == null) return null
+		const rawName = obj['name'] as string | null
+		const rawIsDirectory = obj['isDirectory'] as boolean | null
+		const rawSize = obj['size'] as number | null
+		const rawLastModified = obj['lastModified'] as number | null
 		return {
-			name: obj!['name'] as string ?? '',
-			isDirectory: obj!['isDirectory'] as boolean ?? false,
-			size: obj!['size'] as number ?? 0,
-			lastModified: obj!['lastModified'] as number ?? 0,
+			name: rawName != null ? rawName : '',
+			isDirectory: rawIsDirectory != null ? rawIsDirectory : false,
+			size: rawSize != null ? rawSize : 0,
+			lastModified: rawLastModified != null ? rawLastModified : 0,
 		} as AgentFileInfo
 	} catch (_) {
 		return null

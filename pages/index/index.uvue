@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿<template>
+<template>
 	<view class="page-shell rice-theme-light" ref="shellRef">
 		<NavBar :title="headerTitle" showBack @back="goBack">
 			<template #right>
@@ -19,15 +19,15 @@
 		<!-- 消息列表 -->
 		<scroll-view class="message-list" :scroll-y="true" :scroll-top="scrollTop" @scroll="onMsgScroll">
 			<view v-for="(msg, index) in messages" :key="index">
-				<!-- 工具执行记录（tool 角色） -->
+				<!-- 工具执行记录（toolResult 角色） -->
 				<ToolExecution
-					v-if="msg.role == 'tool'"
+					v-if="msg.role == 'toolResult'"
 					:toolName="msg.toolName != null ? msg.toolName : ''"
 					:status="msg.toolStatus != null ? msg.toolStatus : 'completed'"
 					:result="msg.content"
 					:args="msg.args != null ? msg.args : ''"
 				/>
-				<!-- 跳过空内容且带 tool_calls 的 assistant 中间消息 -->
+				<!-- 跳过空内容且带 tool_calls 的 assistant 上下文消息 -->
 				<view v-else-if="msg.role == 'assistant' && msg.tool_calls != null && (msg.content == null || msg.content == '')">
 				</view>
 				<!-- 行内编辑模式 -->
@@ -80,7 +80,8 @@
 					/>
 				</view>
 				<VoiceInput :isListening="isListening ? true : false" @startListening="startVoice" @stopListening="stopVoice" />
-				<rice-button type="primary" text="发送" size="small" shape="round" @click="sendMessage" style="margin-left:6px" />
+				<rice-button v-if="isGenerating == false" type="primary" text="发送" size="small" shape="round" @click="sendMessage" style="margin-left:6px" />
+				<rice-button v-else type="primary" text="停止" size="small" shape="round" @click="stopGenerating" style="margin-left:6px" />
 			</view>
 			<!-- 工具栏面板（输入栏下方展开） -->
 			<view v-if="showToolPanel" class="toolbar-panel">
@@ -114,6 +115,7 @@
 	 */
 	import { saveConversation, getMessages, getConversationsByAgent } from '@/utils/database.uts'
 	import { agentChat } from '@/utils/llm.uts'
+	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
 	import { getAgentById } from '@/utils/agent.uts'
 
 	export default {
@@ -127,6 +129,8 @@
 				isListening: false as boolean,
 				/** AI 是否正在生成回复 */
 				isGenerating: false as boolean,
+				/** 当前 Agent 事件流，用于停止生成 */
+				currentStream: null as AgentEventStream | null,
 				/** 当前智能体 ID */
 				currentAgentId: '' as string,
 				/** 当前智能体名称 */
@@ -431,8 +435,10 @@
 
 			/** 添加文件消息 */
 			addFileMessage(fileInfo: UTSJSONObject) {
-				const name = fileInfo['name'] as string ?? '文件'
-				const path = fileInfo['path'] as string ?? ''
+				const rawName = fileInfo['name'] as string | null
+				const rawPath = fileInfo['path'] as string | null
+				const name = rawName != null ? rawName : '文件'
+				const path = rawPath != null ? rawPath : ''
 				this.messages.push({
 					role: 'user',
 					content: '[文件] ' + name,
@@ -445,10 +451,14 @@
 
 			/** 添加位置消息 */
 			addLocationMessage(location: UTSJSONObject) {
-				const name = location['name'] as string ?? '未知位置'
-				const addr = location['address'] as string ?? ''
-				const lat = location['latitude'] as number ?? 0
-				const lng = location['longitude'] as number ?? 0
+				const rawName = location['name'] as string | null
+				const rawAddr = location['address'] as string | null
+				const rawLat = location['latitude'] as number | null
+				const rawLng = location['longitude'] as number | null
+				const name = rawName != null ? rawName : '未知位置'
+				const addr = rawAddr != null ? rawAddr : ''
+				const lat = rawLat != null ? rawLat : 0
+				const lng = rawLng != null ? rawLng : 0
 				const content = '📍 ' + name + (addr != '' ? ' - ' + addr : '') + ' (' + lat + ', ' + lng + ')'
 				this.messages.push({
 					role: 'user',
@@ -552,7 +562,8 @@
 					const raw = JSON.stringify(res)
 					if (raw == null || raw == '') { return }
 					const parsed = JSON.parse(raw) as UTSJSONObject
-					const tempPath = parsed['tempFilePath'] as string ?? ''
+					const rawTempPath = parsed['tempFilePath'] as string | null
+					const tempPath = rawTempPath != null ? rawTempPath : ''
 					if (tempPath != '') {
 						this.addVoiceMessage(tempPath)
 					}
@@ -566,6 +577,18 @@
 			stopVoice() {
 				const recorder = uni.getRecorderManager()
 				recorder.stop()
+			},
+
+			/** 停止当前 AI 生成 */
+			stopGenerating() {
+				const stream = this.currentStream
+				if (stream != null) {
+					stream.abort()
+					this.currentStream = null
+				}
+				this.finishAssistantMessage('')
+				this.isGenerating = false
+				this.saveCurrentConversation()
 			},
 
 			goAgentSettings() {
@@ -666,6 +689,171 @@
 				return ''
 			},
 
+			/** 追加流式文本到最后一条 assistant 消息 */
+			appendAssistantDelta(text: string) {
+				if (text == '') return
+				const lastIdx = this.messages.length - 1
+				if (lastIdx >= 0 && (this.messages[lastIdx]['role'] as string) == 'assistant' &&
+					(this.messages[lastIdx]['isStreaming'] as boolean | null) == true) {
+					const existing = this.messages[lastIdx]
+					const oldContent = existing['content'] as string | null
+					this.messages.splice(lastIdx, 1, {
+						role: 'assistant',
+						content: (oldContent != null ? oldContent : '') + text,
+						msgType: 'text',
+						isStreaming: true,
+						timestamp: Date.now()
+					} as UTSJSONObject)
+				} else {
+					this.messages.push({
+						role: 'assistant',
+						content: text,
+						msgType: 'text',
+						isStreaming: true,
+						timestamp: Date.now()
+					} as UTSJSONObject)
+				}
+				this.scrollToBottom()
+			},
+
+			/** 结束最后一条流式 assistant 消息 */
+			finishAssistantMessage(response: string) {
+				const lastIdx = this.messages.length - 1
+				if (lastIdx >= 0 && (this.messages[lastIdx]['role'] as string) == 'assistant' &&
+					(this.messages[lastIdx]['isStreaming'] as boolean | null) == true) {
+					const existing = this.messages[lastIdx]
+					const oldContent = existing['content'] as string | null
+					let finalContent = oldContent != null ? oldContent : ''
+					if (finalContent == '' && response != '') {
+						finalContent = response
+					}
+					this.messages.splice(lastIdx, 1, {
+						role: 'assistant',
+						content: finalContent,
+						msgType: 'text',
+						isStreaming: false,
+						timestamp: Date.now()
+					} as UTSJSONObject)
+				} else if (response != '') {
+					this.messages.push({
+						role: 'assistant',
+						content: response,
+						msgType: 'text',
+						isStreaming: false,
+						timestamp: Date.now()
+					} as UTSJSONObject)
+				}
+				this.scrollToBottom()
+			},
+
+			/** 插入 assistant 工具调用上下文消息 */
+			addToolCallMessage(fullText: string, toolCalls: UTSJSONObject[] | null) {
+				if (toolCalls == null || toolCalls.length == 0) return
+				const lastIdx = this.messages.length - 1
+				if (lastIdx >= 0 && (this.messages[lastIdx]['role'] as string) == 'assistant' && this.messages[lastIdx]['tool_calls'] == null) {
+					const existing = this.messages[lastIdx]
+					const existingContent = existing['content'] as string | null
+					const content = existingContent != null && existingContent != '' ? existingContent : fullText
+					const existingTimestamp = existing['timestamp'] as number | null
+					this.messages.splice(lastIdx, 1, {
+						role: 'assistant',
+						content: content,
+						msgType: 'text',
+						isStreaming: false,
+						tool_calls: toolCalls,
+						timestamp: existingTimestamp != null ? existingTimestamp : Date.now()
+					} as UTSJSONObject)
+					return
+				}
+				this.messages.push({
+					role: 'assistant',
+					content: fullText,
+					tool_calls: toolCalls,
+					timestamp: Date.now()
+				} as UTSJSONObject)
+			},
+
+			/** 工具开始执行：插入一条 toolResult 展示消息 */
+			addToolExecutionStart(toolCallId: string, toolName: string, argsStr: string) {
+				this.messages.push({
+					role: 'toolResult',
+					tool_call_id: toolCallId,
+					toolCallId: toolCallId,
+					toolName: toolName,
+					toolStatus: 'running',
+					content: '',
+					args: argsStr,
+					timestamp: Date.now()
+				} as UTSJSONObject)
+				this.scrollToBottom()
+			},
+
+			/** 工具结束执行：更新对应 toolResult 消息 */
+			updateToolExecutionEnd(toolCallId: string, toolName: string, result: string, isError: boolean) {
+				for (let i = this.messages.length - 1; i >= 0; i--) {
+					const m = this.messages[i]
+					const msgToolCallId = m['tool_call_id'] as string | null
+					if ((m['role'] as string) == 'toolResult' && (msgToolCallId != null ? msgToolCallId : '') == toolCallId) {
+						const oldArgs = m['args'] as string | null
+						this.messages.splice(i, 1, {
+							role: 'toolResult',
+							tool_call_id: toolCallId,
+							toolCallId: toolCallId,
+							toolName: toolName,
+							toolStatus: isError ? 'error' : 'completed',
+							content: result,
+							args: oldArgs != null ? oldArgs : '',
+							isError: isError,
+							timestamp: Date.now()
+						} as UTSJSONObject)
+						this.scrollToBottom()
+						return
+					}
+				}
+				this.messages.push({
+					role: 'toolResult',
+					tool_call_id: toolCallId,
+					toolCallId: toolCallId,
+					toolName: toolName,
+					toolStatus: isError ? 'error' : 'completed',
+					content: result,
+					args: '',
+					isError: isError,
+					timestamp: Date.now()
+				} as UTSJSONObject)
+				this.scrollToBottom()
+			},
+
+			/** Agent 事件流统一入口 */
+			handleAgentEvent(event: AgentEvent) {
+				if (event.type == 'text_delta') {
+					this.appendAssistantDelta(event.text != null ? (event.text as string) : '')
+				} else if (event.type == 'text_end') {
+					this.finishAssistantMessage(event.fullText != null ? (event.fullText as string) : '')
+				} else if (event.type == 'tool_call') {
+					this.addToolCallMessage(event.fullText != null ? (event.fullText as string) : '', event.toolCalls != null ? (event.toolCalls as UTSJSONObject[]) : null)
+				} else if (event.type == 'tool_execution_start') {
+					this.addToolExecutionStart(
+						event.toolCallId != null ? (event.toolCallId as string) : '',
+						event.toolName != null ? (event.toolName as string) : '',
+						event.toolArgs != null ? (event.toolArgs as string) : ''
+					)
+				} else if (event.type == 'tool_execution_end') {
+					this.updateToolExecutionEnd(
+						event.toolCallId != null ? (event.toolCallId as string) : '',
+						event.toolName != null ? (event.toolName as string) : '',
+						event.toolResult != null ? (event.toolResult as string) : '',
+						event.isError == true
+					)
+				} else if (event.type == 'error') {
+					this.finishAssistantMessage(event.error != null ? (event.error as string) : '请求失败')
+				} else if (event.type == 'agent_end') {
+					this.isGenerating = false
+					this.currentStream = null
+					this.saveCurrentConversation()
+				}
+			},
+
 			simulateAIResponse(_userText: string) {
 				this.isGenerating = true
 
@@ -687,117 +875,20 @@
 				}
 
 				// 使用 ReAct Agent Loop（带沙箱文件工具）
-				agentChat(
+				const stream: AgentEventStream = agentChat(
 					this.messages,
 					systemPrompt,
 					'',           // providerId → 自动从 DB 读取
 					agentModel,
 					this.currentAgentId,
-					// onToolStart: 工具开始执行 → 插入一条 tool 消息（运行中状态）
-					(toolCallId: string, toolName: string, argsStr: string) => {
-						this.messages.push({
-							role: 'tool',
-							tool_call_id: toolCallId,
-							toolName: toolName,
-							toolStatus: 'running',
-							content: '',
-							args: argsStr,
-							timestamp: Date.now()
-						} as UTSJSONObject)
-						this.scrollToBottom()
-					},
-					// onToolEnd: 工具执行结束 → 更新对应 tool 消息
-					(toolCallId: string, toolName: string, _argsStr: string, result: string, isError: boolean) => {
-						for (let i = this.messages.length - 1; i >= 0; i--) {
-							const m = this.messages[i]
-							if ((m['role'] as string) == 'tool' && (m['tool_call_id'] as string ?? '') == toolCallId) {
-								this.messages.splice(i, 1, {
-									role: 'tool',
-									tool_call_id: toolCallId,
-									toolName: toolName,
-									toolStatus: isError ? 'error' : 'completed',
-									content: result,
-									args: m['args'] ?? '',
-									timestamp: Date.now()
-								} as UTSJSONObject)
-								this.scrollToBottom()
-								break
-							}
-						}
-					},
-					// onToolCallMessage: assistant 决定调用工具 → 推入消息列表（按真实顺序显示）
-					(msg: UTSJSONObject) => {
-						this.messages.push({
-							role: 'assistant',
-							content: (msg['content'] as string ?? ''),
-							tool_calls: msg['tool_calls'],
-							timestamp: Date.now()
-						} as UTSJSONObject)
-					},
-					// onToolResult: 不再需要单独推入（tool 消息已在 onToolStart/onToolEnd 中处理）
-					(_msg: UTSJSONObject) => {},
-					// maxIterations
-					10,
-					// onChunk: 真实流式回调，每收到一段文本就更新 UI
-					(text: string) => {
-						if (text == '') return
-						const lastIdx = this.messages.length - 1
-						if (lastIdx >= 0 && (this.messages[lastIdx]['role'] as string) == 'assistant' &&
-							(this.messages[lastIdx]['isStreaming'] as boolean | null) == true) {
-							// 追加到已有的流式消息
-							const existing = this.messages[lastIdx]
-							this.messages.splice(lastIdx, 1, {
-								role: 'assistant',
-								content: (existing['content'] as string ?? '') + text,
-								msgType: 'text',
-								isStreaming: true,
-								timestamp: Date.now()
-							} as UTSJSONObject)
-						} else {
-							// 创建新的流式消息
-							this.messages.push({
-								role: 'assistant',
-								content: text,
-								msgType: 'text',
-								isStreaming: true,
-								timestamp: Date.now()
-							} as UTSJSONObject)
-						}
-						this.scrollToBottom()
-					}
-				).then((response: string | null) => {
-					// 流式结束：标记最后一条流式消息为完成
-					const lastIdx = this.messages.length - 1
-					if (lastIdx >= 0 && (this.messages[lastIdx]['role'] as string) == 'assistant' &&
-						(this.messages[lastIdx]['isStreaming'] as boolean | null) == true) {
-						const existing = this.messages[lastIdx]
-						// 如果流式过程中没有收到任何文本（onChunk 未创建消息），用 response 兜底
-						let finalContent = existing['content'] as string ?? ''
-						if (finalContent == '' && response != null) {
-							finalContent = response
-						}
-						this.messages.splice(lastIdx, 1, {
-							role: 'assistant',
-							content: finalContent,
-							msgType: 'text',
-							isStreaming: false,
-							timestamp: Date.now()
-						} as UTSJSONObject)
-					} else if (response != null && response != '') {
-						// 没有流式消息但有响应（兜底）
-						this.messages.push({
-							role: 'assistant',
-							content: response,
-							msgType: 'text',
-							isStreaming: false,
-							timestamp: Date.now()
-						} as UTSJSONObject)
-					}
-					this.isGenerating = false
-					this.scrollToBottom()
-					this.saveCurrentConversation()
+					10
+				)
+				this.currentStream = stream
+				stream.on((event: AgentEvent) => {
+					this.handleAgentEvent(event)
 				})
 			}
+
 		}
 	};
 </script>

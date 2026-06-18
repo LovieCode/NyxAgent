@@ -211,8 +211,10 @@ import { initAgentStorage } from '@/utils/agent-fs.uts'
 
 			/** 执行创建智能体 */
 			doCreateAgent() {
-				const name = (this.createData['name'] as string ?? '').trim()
-				const desc = (this.createData['desc'] as string ?? '').trim()
+				const rawName = this.createData['name'] as string | null
+				const rawDesc = this.createData['desc'] as string | null
+				const name = (rawName != null ? rawName : '').trim()
+				const desc = (rawDesc != null ? rawDesc : '').trim()
 				if (name == '') {
 					uni.showToast({
 						title: '请输入名称',
@@ -223,8 +225,10 @@ import { initAgentStorage } from '@/utils/agent-fs.uts'
 
 				// 生成唯一 ID
 				const id = 'custom-' + Date.now()
-				const icon = this.createData['icon'] as string ?? 'robot'
-				const avatar = this.createData['avatar'] as string ?? ''
+				const rawIcon = this.createData['icon'] as string | null
+				const rawAvatar = this.createData['avatar'] as string | null
+				const icon = rawIcon != null ? rawIcon : 'robot'
+				const avatar = rawAvatar != null ? rawAvatar : ''
 
 				const defaultModel = uni.getStorageSync('settings_model') as string
 

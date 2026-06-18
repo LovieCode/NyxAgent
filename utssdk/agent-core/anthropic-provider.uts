@@ -265,9 +265,10 @@ export class AnthropicProvider extends LLMProvider {
 			} as AssistantMessage
 		}
 		const contentBlocks = new Array<ContentBlock>()
+		const blocks = contentArray as Array<UTSJSONObject>
 
-		for (let i = 0; i < contentArray!.length; i++) {
-			const block = contentArray[i]
+		for (let i = 0; i < blocks.length; i++) {
+			const block = blocks[i]
 			const blockType = block['type'] as string
 
 			if (blockType == 'text') {
@@ -295,17 +296,17 @@ export class AnthropicProvider extends LLMProvider {
 
 		// 解析停止原因
 		const stopReasonStr = data['stop_reason'] as string | null
-		const stopReason : StopReason = stopReasonStr != null ? mapStopReason(stopReasonStr!) : 'error'
+		const stopReason : StopReason = stopReasonStr != null ? mapStopReason(stopReasonStr) : 'error'
 
 		// 解析用量
 		const usageObj = data['usage'] as UTSJSONObject | null
 		let inputTokens : number = 0
 		let outputTokens : number = 0
 		if (usageObj != null) {
-			const it = usageObj!['input_tokens'] as number | null
-			const ot = usageObj!['output_tokens'] as number | null
-			inputTokens = it != null ? it! : 0
-			outputTokens = ot != null ? ot! : 0
+			const it = usageObj['input_tokens'] as number | null
+			const ot = usageObj['output_tokens'] as number | null
+			inputTokens = it != null ? it : 0
+			outputTokens = ot != null ? ot : 0
 		}
 		const usage : Usage = { inputTokens: inputTokens, outputTokens: outputTokens } as Usage
 
@@ -361,9 +362,9 @@ export class AnthropicProvider extends LLMProvider {
 		}
 		const errorObj = data['error'] as UTSJSONObject | null
 		if (errorObj != null) {
-			const message = errorObj!['message'] as string | null
+			const message = errorObj['message'] as string | null
 			if (message != null) {
-				return message!
+				return message
 			}
 		}
 		return '未知错误 (HTTP ' + statusCode + ')'

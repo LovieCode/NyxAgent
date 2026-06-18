@@ -8,6 +8,20 @@
 import File from 'java.io.File'
 // #endif
 
+const MAX_READ_BYTES: number = 1024 * 1024
+const MAX_WRITE_BYTES: number = 256 * 1024
+
+/**
+ * 校验 agentId，避免拼进路径时越权。
+ */
+function validateAgentId(agentId: string): boolean {
+	if (agentId == '') return false
+	if (agentId.indexOf('/') >= 0) return false
+	if (agentId.indexOf('\\') >= 0) return false
+	if (agentId.indexOf('..') >= 0) return false
+	return true
+}
+
 /**
  * 获取 agent 文件根目录
  */
@@ -26,6 +40,7 @@ function getAgentsRoot(): string {
 function validatePath(relativePath: string): string | null {
 	if (relativePath == '' || relativePath == '.') return null
 	if (relativePath.startsWith('/')) return '不允许使用绝对路径'
+	if (relativePath.indexOf('\\') >= 0) return '路径不允许包含反斜杠'
 	const segments = relativePath.split('/')
 	for (let i = 0; i < segments.length; i++) {
 		if (segments[i] == '..') return '路径不允许包含 ".."'
@@ -37,6 +52,7 @@ function validatePath(relativePath: string): string | null {
  * 获取 agent 存储目录路径
  */
 export function getAgentStoragePath(agentId: string): string {
+	if (!validateAgentId(agentId)) return ''
 	return getAgentsRoot() + '/' + agentId
 }
 
@@ -44,6 +60,7 @@ export function getAgentStoragePath(agentId: string): string {
  * 解析安全的完整路径
  */
 function resolvePath(agentId: string, relativePath: string): string {
+	if (!validateAgentId(agentId)) return ''
 	const err = validatePath(relativePath)
 	if (err != null) return ''
 	const base = getAgentStoragePath(agentId)
@@ -106,6 +123,7 @@ export function readAgentFile(agentId: string, filePath: string): string | null 
 	try {
 		const file = new File(fullPath)
 		if (!file.exists() || file.isDirectory()) return null
+		if (file.length() > MAX_READ_BYTES) return null
 		return file.readText()
 	} catch (_) {
 		return null
@@ -118,6 +136,7 @@ export function readAgentFile(agentId: string, filePath: string): string | null 
 export function writeAgentFile(agentId: string, filePath: string, content: string): boolean {
 	const fullPath = resolvePath(agentId, filePath)
 	if (fullPath == '') return false
+	if (content.length > MAX_WRITE_BYTES) return false
 	try {
 		const file = new File(fullPath)
 		const parent = file.parentFile
