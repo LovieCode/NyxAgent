@@ -62,7 +62,7 @@
 					<text class="section-title">完整 JSON</text>
 					<text class="mini-btn" @click="copyAll">复制</text>
 				</view>
-				<text class="code-text">{{previewText}}</text>
+				<text class="code-text">{{previewDisplayText}}</text>
 			</view>
 		</scroll-view>
 	</view>
@@ -73,6 +73,7 @@
 		data() {
 			return {
 				previewText: '' as string,
+				previewDisplayText: '' as string,
 				providerId: '' as string,
 				baseUrl: '' as string,
 				model: '' as string,
@@ -91,9 +92,11 @@
 			const raw = uni.getStorageSync('context_preview_payload') as string | null
 			if (raw == null || raw == '') {
 				this.previewText = '（没有可展示的上下文）'
+				this.previewDisplayText = '（没有可展示的上下文）'
 				return
 			}
 			this.previewText = raw
+			this.previewDisplayText = this.decodeDisplayEscapes(raw)
 			try {
 				const parsed = JSON.parse(raw) as UTSJSONObject
 				const providerId = parsed['providerId'] as string | null
@@ -130,6 +133,14 @@
 			}
 		},
 		methods: {
+			decodeDisplayEscapes(text: string): string {
+				let result = text
+				result = result.replace(/\\r\\n/g, '\n')
+				result = result.replace(/\\n/g, '\n')
+				result = result.replace(/\\t/g, '  ')
+				return result
+			},
+
 			formatJsonObjectSegment(value: UTSJSONObject, fallback: string): string {
 				try {
 					return JSON.stringify(value, null, 2)
@@ -238,7 +249,7 @@
 		font-size: 12px;
 		line-height: 18px;
 		color: #E5E7EB;
-		white-space: normal;
+		white-space: pre-wrap;
 		background-color: #111827;
 		border-radius: 12px;
 		padding: 12px;
