@@ -25,17 +25,14 @@
 					/>
 					<text class="search-btn" @click="applySearch">搜索</text>
 				</view>
-				<view class="search-actions">
-					<text class="ghost-btn" @click="focusPrevResult">上一个</text>
-					<text class="ghost-btn" @click="focusNextResult">下一个</text>
-					<text class="ghost-btn" @click="scrollToTop">顶部</text>
-					<text class="ghost-btn" @click="scrollToBottom">底部</text>
-					<text class="ghost-btn" @click="clearSearch">清空</text>
-				</view>
 				<text class="search-meta">{{searchMetaText}}</text>
 				<view v-if="currentSearchTitle != ''" class="search-hit-card">
 					<text class="search-hit-title">{{currentSearchTitle}}</text>
-					<text class="search-hit-excerpt">{{currentSearchExcerpt}}</text>
+					<text class="search-hit-excerpt">
+						<text>{{currentSearchExcerptBefore}}</text>
+						<text v-if="currentSearchExcerptMatch != ''" class="search-mark">{{currentSearchExcerptMatch}}</text>
+						<text>{{currentSearchExcerptAfter}}</text>
+					</text>
 				</view>
 			</view>
 
@@ -72,17 +69,65 @@
 
 			<view id="section-messages" class="card" :class="activeSectionId == 'section-messages' ? 'card-active' : ''">
 				<text class="section-title">发送 messages（OpenAI 格式）</text>
-				<text class="code-text">{{messagesText}}</text>
+				<view v-for="(chunk, index) in messagesChunks" :key="'msg-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
+					<text class="chunk-label">片段 {{index + 1}} / {{messagesChunks.length}}</text>
+					<view v-if="isChunkActive(chunk)" class="chunk-hit-banner">
+						<text class="chunk-hit-title">当前命中</text>
+						<text class="chunk-hit-excerpt">
+							<text>{{currentSearchExcerptBefore}}</text>
+							<text v-if="currentSearchExcerptMatch != ''" class="search-mark">{{currentSearchExcerptMatch}}</text>
+							<text>{{currentSearchExcerptAfter}}</text>
+						</text>
+					</view>
+					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text">
+						<text>{{activeChunkPrefix(chunk)}}</text>
+						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+						<text>{{activeChunkSuffix(chunk)}}</text>
+					</text>
+					<text v-else class="code-text">{{chunkText(chunk)}}</text>
+				</view>
 			</view>
 
 			<view id="section-tools" class="card" :class="activeSectionId == 'section-tools' ? 'card-active' : ''">
 				<text class="section-title">工具定义</text>
-				<text class="code-text">{{toolsText}}</text>
+				<view v-for="(chunk, index) in toolsChunks" :key="'tool-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
+					<text class="chunk-label">片段 {{index + 1}} / {{toolsChunks.length}}</text>
+					<view v-if="isChunkActive(chunk)" class="chunk-hit-banner">
+						<text class="chunk-hit-title">当前命中</text>
+						<text class="chunk-hit-excerpt">
+							<text>{{currentSearchExcerptBefore}}</text>
+							<text v-if="currentSearchExcerptMatch != ''" class="search-mark">{{currentSearchExcerptMatch}}</text>
+							<text>{{currentSearchExcerptAfter}}</text>
+						</text>
+					</view>
+					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text">
+						<text>{{activeChunkPrefix(chunk)}}</text>
+						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+						<text>{{activeChunkSuffix(chunk)}}</text>
+					</text>
+					<text v-else class="code-text">{{chunkText(chunk)}}</text>
+				</view>
 			</view>
 
 			<view id="section-request" class="card" :class="activeSectionId == 'section-request' ? 'card-active' : ''">
 				<text class="section-title">最终 request body</text>
-				<text class="code-text">{{requestBodyText}}</text>
+				<view v-for="(chunk, index) in requestBodyChunks" :key="'req-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
+					<text class="chunk-label">片段 {{index + 1}} / {{requestBodyChunks.length}}</text>
+					<view v-if="isChunkActive(chunk)" class="chunk-hit-banner">
+						<text class="chunk-hit-title">当前命中</text>
+						<text class="chunk-hit-excerpt">
+							<text>{{currentSearchExcerptBefore}}</text>
+							<text v-if="currentSearchExcerptMatch != ''" class="search-mark">{{currentSearchExcerptMatch}}</text>
+							<text>{{currentSearchExcerptAfter}}</text>
+						</text>
+					</view>
+					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text">
+						<text>{{activeChunkPrefix(chunk)}}</text>
+						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+						<text>{{activeChunkSuffix(chunk)}}</text>
+					</text>
+					<text v-else class="code-text">{{chunkText(chunk)}}</text>
+				</view>
 			</view>
 
 			<view id="section-full-json" class="card" :class="activeSectionId == 'section-full-json' ? 'card-active' : ''">
@@ -90,10 +135,36 @@
 					<text class="section-title">完整 JSON</text>
 					<text class="mini-btn" @click="copyAll">复制</text>
 				</view>
-				<text class="code-text">{{previewDisplayText}}</text>
+				<view v-for="(chunk, index) in fullJsonChunks" :key="'json-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
+					<text class="chunk-label">片段 {{index + 1}} / {{fullJsonChunks.length}}</text>
+					<view v-if="isChunkActive(chunk)" class="chunk-hit-banner">
+						<text class="chunk-hit-title">当前命中</text>
+						<text class="chunk-hit-excerpt">
+							<text>{{currentSearchExcerptBefore}}</text>
+							<text v-if="currentSearchExcerptMatch != ''" class="search-mark">{{currentSearchExcerptMatch}}</text>
+							<text>{{currentSearchExcerptAfter}}</text>
+						</text>
+					</view>
+					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text">
+						<text>{{activeChunkPrefix(chunk)}}</text>
+						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+						<text>{{activeChunkSuffix(chunk)}}</text>
+					</text>
+					<text v-else class="code-text">{{chunkText(chunk)}}</text>
+				</view>
 			</view>
 			<view id="anchor-bottom" class="anchor-spacer"></view>
 		</scroll-view>
+		<view v-if="showFloatingSearchBar" class="floating-search-bar">
+			<text class="floating-search-meta">{{floatingMetaText}}</text>
+			<view class="floating-search-actions">
+				<text class="floating-btn" @click="focusPrevResult">上一个</text>
+				<text class="floating-btn" @click="focusNextResult">下一个</text>
+				<text class="floating-btn" @click="scrollToTop">顶部</text>
+				<text class="floating-btn" @click="scrollToBottom">底部</text>
+				<text class="floating-btn floating-btn-danger" @click="clearSearch">清空</text>
+			</view>
+		</view>
 	</view>
 </template>
 
@@ -110,7 +181,15 @@
 				searchMetaText: '输入关键词后可在各段内容之间跳转定位。' as string,
 				currentSearchTitle: '' as string,
 				currentSearchExcerpt: '' as string,
+				currentSearchExcerptBefore: '' as string,
+				currentSearchExcerptMatch: '' as string,
+				currentSearchExcerptAfter: '' as string,
 				activeSectionId: '' as string,
+				activeChunkId: '' as string,
+				activeMatchStart: -1 as number,
+				activeMatchLength: 0 as number,
+				showFloatingSearchBar: false as boolean,
+				floatingMetaText: '' as string,
 				providerId: '' as string,
 				baseUrl: '' as string,
 				model: '' as string,
@@ -123,6 +202,14 @@
 				messagesText: '[]' as string,
 				toolsText: '[]' as string,
 				requestBodyText: '{}' as string,
+				messagesPreviewText: '[]' as string,
+				toolsPreviewText: '[]' as string,
+				requestBodyPreviewText: '{}' as string,
+				previewJsonShortText: '（没有可展示的上下文）' as string,
+				messagesChunks: [] as UTSJSONObject[],
+				toolsChunks: [] as UTSJSONObject[],
+				requestBodyChunks: [] as UTSJSONObject[],
+				fullJsonChunks: [] as UTSJSONObject[],
 			}
 		},
 		onLoad() {
@@ -134,6 +221,8 @@
 			}
 			this.previewText = raw
 			this.previewDisplayText = this.decodeDisplayEscapes(raw)
+			this.previewJsonShortText = this.buildPreviewBlock(this.previewDisplayText, 12000)
+			this.fullJsonChunks = this.buildChunks('section-full-json', '完整 JSON', this.previewDisplayText, 3200)
 			try {
 				const parsed = JSON.parse(raw) as UTSJSONObject
 				const providerId = parsed['providerId'] as string | null
@@ -159,12 +248,18 @@
 				}
 				if (openaiMessages != null) {
 					this.messagesText = this.decodeDisplayEscapes(this.formatJsonArraySegment(openaiMessages, '[]'))
+					this.messagesPreviewText = this.buildPreviewBlock(this.messagesText, 12000)
+					this.messagesChunks = this.buildChunks('section-messages', '发送 messages', this.messagesText, 2400)
 				}
 				if (openaiTools != null) {
 					this.toolsText = this.decodeDisplayEscapes(this.formatJsonArraySegment(openaiTools, '[]'))
+					this.toolsPreviewText = this.buildPreviewBlock(this.toolsText, 8000)
+					this.toolsChunks = this.buildChunks('section-tools', '工具定义', this.toolsText, 2200)
 				}
 				if (requestBody != null) {
 					this.requestBodyText = this.decodeDisplayEscapes(this.formatJsonObjectSegment(requestBody, '{}'))
+					this.requestBodyPreviewText = this.buildPreviewBlock(this.requestBodyText, 12000)
+					this.requestBodyChunks = this.buildChunks('section-request', '最终 request body', this.requestBodyText, 2400)
 				}
 			} catch (_e: any) {
 			}
@@ -176,6 +271,102 @@
 				result = result.replace(/\\n/g, '\n')
 				result = result.replace(/\\t/g, '  ')
 				return result
+			},
+
+			buildPreviewBlock(text: string, limit: number): string {
+				if (text.length <= limit) {
+					return text
+				}
+				return text.substring(0, limit) + '\n\n…… 已截断显示，使用搜索定位或复制查看完整内容 ……'
+			},
+
+			buildChunks(sectionId: string, title: string, text: string, chunkSize: number): UTSJSONObject[] {
+				const list: UTSJSONObject[] = []
+				if (text == '') {
+					return list
+				}
+				let start = 0
+				let index = 0
+				while (start < text.length) {
+					let end = start + chunkSize
+					if (end > text.length) {
+						end = text.length
+					}
+					list.push({
+						id: sectionId + '-chunk-' + index,
+						sectionId: sectionId,
+						title: title,
+						text: text.substring(start, end),
+						start: start,
+						end: end,
+					} as UTSJSONObject)
+					start = end
+					index++
+				}
+				return list
+			},
+
+			chunkAnchorId(chunk: UTSJSONObject): string {
+				const value = chunk['id'] as string | null
+				return value != null ? value : ''
+			},
+
+			pushChunkMatches(list: UTSJSONObject[], chunks: UTSJSONObject[], query: string): void {
+				if (query == '') {
+					return
+				}
+				const needle = query.toLowerCase()
+				for (let i = 0; i < chunks.length; i++) {
+					const chunk = chunks[i]
+					const content = chunk['text'] as string | null
+					if (content == null || content == '') {
+						continue
+					}
+					const source = content.toLowerCase()
+					const firstIndex = source.indexOf(needle)
+					if (firstIndex < 0) {
+						continue
+					}
+					let hits: number[] = []
+					let fromIndex = 0
+					while (fromIndex < source.length) {
+						const hit = source.indexOf(needle, fromIndex)
+						if (hit < 0) {
+							break
+						}
+						hits.push(hit)
+						fromIndex = hit + needle.length
+					}
+					const total = hits.length
+					for (let j = 0; j < hits.length; j++) {
+						const hit = hits[j]
+						let start = hit - 48
+						if (start < 0) {
+							start = 0
+						}
+						let end = hit + needle.length + 96
+						if (end > content.length) {
+							end = content.length
+						}
+						let excerpt = content.substring(start, end)
+						if (start > 0) {
+							excerpt = '…' + excerpt
+						}
+						if (end < content.length) {
+							excerpt = excerpt + '…'
+						}
+						list.push({
+							sectionId: chunk['sectionId'] as string,
+							anchorId: chunk['id'] as string,
+							title: chunk['title'] as string,
+							excerpt: excerpt,
+							count: total,
+							occurrence: j + 1,
+							matchStart: hit,
+							matchLength: needle.length,
+						} as UTSJSONObject)
+					}
+				}
 			},
 
 			buildSearchResult(sectionId: string, title: string, content: string, query: string): UTSJSONObject | null {
@@ -228,6 +419,29 @@
 				}
 			},
 
+			setCurrentSearchExcerpt(text: string): void {
+				this.currentSearchExcerpt = text
+				const query = this.searchText.trim()
+				if (query == '' || text == '') {
+					this.currentSearchExcerptBefore = text
+					this.currentSearchExcerptMatch = ''
+					this.currentSearchExcerptAfter = ''
+					return
+				}
+				const source = text.toLowerCase()
+				const needle = query.toLowerCase()
+				const firstIndex = source.indexOf(needle)
+				if (firstIndex < 0) {
+					this.currentSearchExcerptBefore = text
+					this.currentSearchExcerptMatch = ''
+					this.currentSearchExcerptAfter = ''
+					return
+				}
+				this.currentSearchExcerptBefore = text.substring(0, firstIndex)
+				this.currentSearchExcerptMatch = text.substring(firstIndex, firstIndex + query.length)
+				this.currentSearchExcerptAfter = text.substring(firstIndex + query.length)
+			},
+
 			applySearch() {
 				const query = this.searchText.trim()
 				if (query == '') {
@@ -240,17 +454,22 @@
 				this.pushSearchResult(results, 'section-settings', '生成参数', this.settingsText, query)
 				this.pushSearchResult(results, 'section-important-memory', '重要记忆注入', this.importantMemory, query)
 				this.pushSearchResult(results, 'section-buffer-memory', '短缓存注入', this.bufferInjection, query)
-				this.pushSearchResult(results, 'section-messages', '发送 messages', this.messagesText, query)
-				this.pushSearchResult(results, 'section-tools', '工具定义', this.toolsText, query)
-				this.pushSearchResult(results, 'section-request', '最终 request body', this.requestBodyText, query)
-				this.pushSearchResult(results, 'section-full-json', '完整 JSON', this.previewDisplayText, query)
+				this.pushChunkMatches(results, this.messagesChunks, query)
+				this.pushChunkMatches(results, this.toolsChunks, query)
+				this.pushChunkMatches(results, this.requestBodyChunks, query)
+				this.pushChunkMatches(results, this.fullJsonChunks, query)
 				this.searchResults = results
 				if (results.length == 0) {
 					this.searchIndex = -1
 					this.searchMetaText = '没有找到匹配项。'
 					this.currentSearchTitle = ''
-					this.currentSearchExcerpt = ''
+					this.setCurrentSearchExcerpt('')
 					this.activeSectionId = ''
+					this.activeChunkId = ''
+					this.activeMatchStart = -1
+					this.activeMatchLength = 0
+					this.showFloatingSearchBar = false
+					this.floatingMetaText = ''
 					uni.showToast({
 						title: '没有匹配内容',
 						icon: 'none'
@@ -258,7 +477,20 @@
 					return
 				}
 				this.searchIndex = 0
-				this.focusSearchIndex(0)
+				const first = results[0]
+				const title = first['title'] as string | null
+				const excerpt = first['excerpt'] as string | null
+				const count = first['count'] as number | null
+				const occurrence = first['occurrence'] as number | null
+				this.searchMetaText = '找到 ' + results.length + ' 处命中。点击下一个 / 上一个开始跳转。'
+				this.currentSearchTitle = title != null ? title : ''
+				this.setCurrentSearchExcerpt(excerpt != null ? excerpt : '')
+				this.activeSectionId = ''
+				this.activeChunkId = ''
+				this.activeMatchStart = -1
+				this.activeMatchLength = 0
+				this.showFloatingSearchBar = true
+				this.floatingMetaText = '1 / ' + results.length + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
 			},
 
 			focusSearchIndex(index: number): void {
@@ -268,14 +500,25 @@
 				this.searchIndex = index
 				const item = this.searchResults[index]
 				const sectionId = item['sectionId'] as string | null
+				const anchorId = item['anchorId'] as string | null
 				const title = item['title'] as string | null
 				const excerpt = item['excerpt'] as string | null
 				const count = item['count'] as number | null
-				this.searchMetaText = '命中 ' + this.searchResults.length + ' 个分段，当前第 ' + (index + 1) + ' 个' + (count != null ? '（本段 ' + count + ' 处）' : '')
+				const occurrence = item['occurrence'] as number | null
+				const matchStart = item['matchStart'] as number | null
+				const matchLength = item['matchLength'] as number | null
+				this.searchMetaText = '命中 ' + this.searchResults.length + ' 处，当前第 ' + (index + 1) + ' 处' + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
 				this.currentSearchTitle = title != null ? title : ''
-				this.currentSearchExcerpt = excerpt != null ? excerpt : ''
+				this.setCurrentSearchExcerpt(excerpt != null ? excerpt : '')
 				this.activeSectionId = sectionId != null ? sectionId : ''
-				if (sectionId != null && sectionId != '') {
+				this.activeChunkId = anchorId != null ? anchorId : ''
+				this.activeMatchStart = matchStart != null ? matchStart : -1
+				this.activeMatchLength = matchLength != null ? matchLength : 0
+				this.showFloatingSearchBar = true
+				this.floatingMetaText = (index + 1) + ' / ' + this.searchResults.length + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
+				if (anchorId != null && anchorId != '') {
+					this.scrollToSection(anchorId)
+				} else if (sectionId != null && sectionId != '') {
 					this.scrollToSection(sectionId)
 				}
 			},
@@ -309,8 +552,13 @@
 				this.searchIndex = -1
 				this.searchMetaText = '输入关键词后可在各段内容之间跳转定位。'
 				this.currentSearchTitle = ''
-				this.currentSearchExcerpt = ''
+				this.setCurrentSearchExcerpt('')
 				this.activeSectionId = ''
+				this.activeChunkId = ''
+				this.activeMatchStart = -1
+				this.activeMatchLength = 0
+				this.showFloatingSearchBar = false
+				this.floatingMetaText = ''
 			},
 
 			scrollToSection(id: string): void {
@@ -322,12 +570,66 @@
 
 			scrollToTop() {
 				this.activeSectionId = ''
+				this.activeChunkId = ''
+				this.activeMatchStart = -1
+				this.activeMatchLength = 0
 				this.scrollToSection('anchor-top')
 			},
 
 			scrollToBottom() {
 				this.activeSectionId = ''
+				this.activeChunkId = ''
+				this.activeMatchStart = -1
+				this.activeMatchLength = 0
 				this.scrollToSection('anchor-bottom')
+			},
+
+			isChunkActive(chunk: UTSJSONObject): boolean {
+				const id = chunk['id'] as string | null
+				if (id == null || id == '') {
+					return false
+				}
+				return this.activeChunkId == id
+			},
+
+			chunkText(chunk: UTSJSONObject): string {
+				const content = chunk['text'] as string | null
+				return content != null ? content : ''
+			},
+
+			hasActiveChunkMatch(chunk: UTSJSONObject): boolean {
+				if (this.isChunkActive(chunk) == false) {
+					return false
+				}
+				if (this.activeMatchStart < 0 || this.activeMatchLength <= 0) {
+					return false
+				}
+				const content = this.chunkText(chunk)
+				if (content == '') {
+					return false
+				}
+				return this.activeMatchStart + this.activeMatchLength <= content.length
+			},
+
+			activeChunkPrefix(chunk: UTSJSONObject): string {
+				if (this.hasActiveChunkMatch(chunk) == false) {
+					return this.chunkText(chunk)
+				}
+				return this.chunkText(chunk).substring(0, this.activeMatchStart)
+			},
+
+			activeChunkMatch(chunk: UTSJSONObject): string {
+				if (this.hasActiveChunkMatch(chunk) == false) {
+					return ''
+				}
+				return this.chunkText(chunk).substring(this.activeMatchStart, this.activeMatchStart + this.activeMatchLength)
+			},
+
+			activeChunkSuffix(chunk: UTSJSONObject): string {
+				if (this.hasActiveChunkMatch(chunk) == false) {
+					return ''
+				}
+				return this.chunkText(chunk).substring(this.activeMatchStart + this.activeMatchLength)
 			},
 
 			formatJsonObjectSegment(value: UTSJSONObject, fallback: string): string {
@@ -384,6 +686,7 @@
 	.container {
 		flex: 1;
 		padding: 12px;
+		padding-bottom: 96px;
 	}
 
 	.hero-card,
@@ -482,6 +785,43 @@
 		color: #6B7280;
 	}
 
+	.floating-search-bar {
+		position: absolute;
+		left: 12px;
+		right: 12px;
+		bottom: 12px;
+		background-color: rgba(17, 24, 39, 0.94);
+		border-radius: 16px;
+		padding: 12px;
+		box-shadow: 0 10px 24px rgba(17, 24, 39, 0.18);
+	}
+
+	.floating-search-meta {
+		font-size: 12px;
+		line-height: 18px;
+		color: #F3F4F6;
+		margin-bottom: 10px;
+	}
+
+	.floating-search-actions {
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+
+	.floating-btn {
+		padding: 7px 11px;
+		margin-right: 8px;
+		margin-bottom: 8px;
+		border-radius: 999px;
+		background-color: rgba(255, 255, 255, 0.12);
+		color: #FFFFFF;
+		font-size: 12px;
+	}
+
+	.floating-btn-danger {
+		background-color: rgba(239, 68, 68, 0.22);
+	}
+
 	.search-hit-card {
 		margin-top: 10px;
 		padding: 12px;
@@ -503,6 +843,56 @@
 		white-space: pre-wrap;
 	}
 
+	.search-mark {
+		background-color: #FDE68A;
+		color: #7C2D12;
+		border-radius: 6px;
+		padding-left: 2px;
+		padding-right: 2px;
+		font-weight: bold;
+	}
+
+	.chunk-wrap {
+		margin-top: 10px;
+	}
+
+	.chunk-wrap-active {
+		border-width: 2px;
+		border-style: solid;
+		border-color: #FB8FAB;
+		border-radius: 14px;
+		padding: 8px;
+		background-color: #FFF7FA;
+	}
+
+	.chunk-label {
+		font-size: 11px;
+		line-height: 16px;
+		color: #9CA3AF;
+		margin-bottom: 6px;
+	}
+
+	.chunk-hit-banner {
+		background-color: #FDF2F8;
+		border-radius: 10px;
+		padding: 8px 10px;
+		margin-bottom: 8px;
+	}
+
+	.chunk-hit-title {
+		font-size: 12px;
+		font-weight: bold;
+		color: #DB2777;
+		margin-bottom: 4px;
+	}
+
+	.chunk-hit-excerpt {
+		font-size: 12px;
+		line-height: 18px;
+		color: #4B5563;
+		white-space: pre-wrap;
+	}
+
 	.block-text {
 		font-size: 13px;
 		line-height: 21px;
@@ -519,6 +909,15 @@
 		border-radius: 12px;
 		padding: 12px;
 		font-family: monospace;
+	}
+
+	.code-inline-hit {
+		background-color: #FDE68A;
+		color: #111827;
+		border-radius: 4px;
+		padding-left: 2px;
+		padding-right: 2px;
+		font-weight: bold;
 	}
 
 	.nav-btn,
