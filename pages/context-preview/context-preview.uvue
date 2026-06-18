@@ -280,18 +280,18 @@
 						return
 					}
 					const map: UTSJSONObject = {}
-					const scrollRect = rows[0] as UTSJSONObject | null
-					const baseTop = scrollRect != null ? ((scrollRect['top'] as number | null) != null ? (scrollRect['top'] as number) : 0) : 0
+					const scrollRect = rows[0] as NodeInfo | null
+					const baseTop = scrollRect?.top ?? 0
 					for (let i = 1; i < ids.length; i++) {
 						const id = ids[i]
 						if (id == '') {
 							continue
 						}
-						const row = rows[i] as UTSJSONObject | null
+						const row = rows[i] as NodeInfo | null
 						if (row == null) {
 							continue
 						}
-						const top = row['top'] as number | null
+						const top = row.top
 						if (top == null) {
 							continue
 						}
