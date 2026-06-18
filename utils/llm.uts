@@ -425,7 +425,7 @@ function callChatAPIStream(
 		},
 	})
 
-	task.onChunkReceived((res: any) => {
+	task.onChunkReceived((res: RequestTaskOnChunkReceivedListenerResult) => {
 		if (streamEnded == true) return
 		const data = res.data
 		if (data == null) return
