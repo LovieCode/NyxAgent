@@ -102,6 +102,10 @@
 						<view class="toolbar-grid-icon"><oui-icon-unix name="location" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">位置</text>
 					</view>
+					<view class="toolbar-grid-item" @click="goMemoryManager">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="robot" size="26px" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">记忆管理</text>
+					</view>
 					<view class="toolbar-grid-item" @click="showCompressPlaceholder">
 						<view class="toolbar-grid-icon"><oui-icon-unix name="compress" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">压缩上下文</text>
@@ -638,6 +642,15 @@
 				})
 			},
 
+			goMemoryManager() {
+				this.showToolPanel = false
+				uni.setStorageSync('memory_agent_id', this.currentAgentId)
+				uni.setStorageSync('memory_conversation_id', this.conversationId)
+				uni.navigateTo({
+					url: '/pages/memory/memory'
+				})
+			},
+
 			goBack() {
 				uni.navigateBack()
 			},
@@ -915,7 +928,9 @@
 					systemPrompt,
 					'',           // providerId → 自动从 DB 读取
 					agentModel,
-					this.currentAgentId
+					this.currentAgentId,
+					0,
+					this.conversationId
 				)
 				this.currentStream = stream
 				stream.on((event: AgentEvent) => {

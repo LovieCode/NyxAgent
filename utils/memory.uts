@@ -1,0 +1,483 @@
+﻿/**
+ * Agent 记忆系统
+ * - 短缓存：最多 128 字，运行时临时拼接到最新用户消息，不落入消息历史。
+ * - 重要信息库：按固定 scope/category 存储，受限查询/写入，不开放 raw SQL。
+ */
+import { xSqlite, SQLiteResult } from '@/uni_modules/laoqianjunzi-sqlite'
+
+const DB_NAME = 'agent_chat.db'
+const MEMORY_ENABLED_KEY = 'settings_memory_enabled'
+const DEFAULT_PERSON_ID = 'default'
+const DEFAULT_CONVERSATION_ID = 'global'
+const BUFFER_LIMIT = 128
+const CORE_CONTENT_LIMIT = 240
+const CORE_INJECT_BUDGET = 800
+
+export type MemoryCoreInput = {
+	scope: string
+	category: string
+	content: string
+	priority: number
+	pinned: boolean
+}
+
+function getDb(): xSqlite {
+	const db = new xSqlite()
+	db.createDb(DB_NAME)
+	return db
+}
+
+function rowsToObjects(result: SQLiteResult): UTSJSONObject[] {
+	const rows = result.rows
+	const columns = result.columns
+	if (rows == null || columns == null || rows.length == 0) {
+		return []
+	}
+	const list: UTSJSONObject[] = []
+	for (let r = 0; r < rows.length; r++) {
+		const row = rows[r]
+		const obj: UTSJSONObject = {}
+		for (let c = 0; c < columns.length; c++) {
+			const colName = columns[c]
+			const value = row[c]
+			if (value != null) {
+				obj[colName] = value
+			}
+		}
+		list.push(obj)
+	}
+	return list
+}
+
+export function initMemoryTables(): void {
+	const db = getDb()
+	db.run(
+		'CREATE TABLE IF NOT EXISTS memory_buffer (' +
+		'id TEXT PRIMARY KEY,' +
+		'agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'person_id TEXT NOT NULL DEFAULT \'\',' +
+		'conversation_id TEXT NOT NULL DEFAULT \'\',' +
+		'content TEXT NOT NULL DEFAULT \'\',' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+	db.run(
+		'CREATE TABLE IF NOT EXISTS agent_memory_core (' +
+		'id TEXT PRIMARY KEY,' +
+		'agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'person_id TEXT NOT NULL DEFAULT \'\',' +
+		'conversation_id TEXT NOT NULL DEFAULT \'\',' +
+		'category TEXT NOT NULL DEFAULT \'important\',' +
+		'scope TEXT NOT NULL DEFAULT \'manual_only\',' +
+		'content TEXT NOT NULL DEFAULT \'\',' +
+		'priority INTEGER NOT NULL DEFAULT 3,' +
+		'confidence INTEGER NOT NULL DEFAULT 80,' +
+		'pinned INTEGER NOT NULL DEFAULT 0,' +
+		'archived INTEGER NOT NULL DEFAULT 0,' +
+		'created_at INTEGER NOT NULL DEFAULT 0,' +
+		'updated_at INTEGER NOT NULL DEFAULT 0,' +
+		'last_used_at INTEGER NOT NULL DEFAULT 0,' +
+		'use_count INTEGER NOT NULL DEFAULT 0)'
+	)
+	db.close()
+}
+
+export function getMemoryEnabled(): boolean {
+	const raw = uni.getStorageSync(MEMORY_ENABLED_KEY) as string | null
+	if (raw == null || raw == '') {
+		return true
+	}
+	return raw == 'true'
+}
+
+export function setMemoryEnabled(enabled: boolean): void {
+	uni.setStorageSync(MEMORY_ENABLED_KEY, enabled ? 'true' : 'false')
+}
+
+export function normalizeMemoryPersonId(personId: string): string {
+	const trimmed = personId.trim()
+	if (trimmed == '') {
+		return DEFAULT_PERSON_ID
+	}
+	return trimmed
+}
+
+function normalizeConversationId(conversationId: string): string {
+	const trimmed = conversationId.trim()
+	if (trimmed == '') {
+		return DEFAULT_CONVERSATION_ID
+	}
+	return trimmed
+}
+
+function normalizeAgentId(agentId: string): string {
+	const trimmed = agentId.trim()
+	if (trimmed == '') {
+		return 'default_agent'
+	}
+	return trimmed
+}
+
+function trimToLimit(text: string, limit: number): string {
+	const trimmed = text.trim()
+	if (trimmed.length <= limit) {
+		return trimmed
+	}
+	return trimmed.substring(0, limit)
+}
+
+function makeBufferId(agentId: string, personId: string, conversationId: string): string {
+	return normalizeAgentId(agentId) + '::' + normalizeMemoryPersonId(personId) + '::' + normalizeConversationId(conversationId)
+}
+
+function isValidScope(scope: string): boolean {
+	return scope == 'always' || scope == 'person_only' || scope == 'conversation_only' || scope == 'manual_only' || scope == 'rule'
+}
+
+function normalizeScope(scope: string): string {
+	const value = scope.trim()
+	if (isValidScope(value)) {
+		return value
+	}
+	return 'manual_only'
+}
+
+function normalizeCategory(category: string): string {
+	const value = category.trim()
+	if (value == 'impression' || value == 'important' || value == 'rule' || value == 'preference' || value == 'fact') {
+		return value
+	}
+	return 'important'
+}
+
+function clampPriority(priority: number): number {
+	if (priority < 1) return 1
+	if (priority > 5) return 5
+	return priority
+}
+
+function getScopeLimit(scope: string): number {
+	if (scope == 'rule') return 5
+	if (scope == 'always') return 3
+	if (scope == 'person_only') return 8
+	if (scope == 'conversation_only') return 5
+	if (scope == 'manual_only') return 30
+	return 10
+}
+
+function appendMemoryLine(lines: string[], line: string, budgetRef: number[]): void {
+	if (line == '') return
+	if (budgetRef[0] <= 0) return
+	let finalLine = line
+	if (finalLine.length > budgetRef[0]) {
+		finalLine = finalLine.substring(0, budgetRef[0])
+	}
+	lines.push(finalLine)
+	budgetRef[0] = budgetRef[0] - finalLine.length
+}
+
+function readStringField(obj: UTSJSONObject, key: string): string {
+	const value = obj[key] as string | null
+	if (value == null) return ''
+	return value
+}
+
+function readNumberField(obj: UTSJSONObject, key: string): number {
+	const value = obj[key] as number | null
+	if (value == null) return 0
+	return value
+}
+
+function buildLikeQuery(query: string): string {
+	const trimmed = query.trim()
+	if (trimmed == '') {
+		return '%'
+	}
+	return '%' + trimmed + '%'
+}
+
+export function getMemoryBuffer(agentId: string, personId: string, conversationId: string): string {
+	initMemoryTables()
+	const db = getDb()
+	const id = makeBufferId(agentId, personId, conversationId)
+	const result = db.query('SELECT content FROM memory_buffer WHERE id = ? LIMIT 1', [id])
+	db.close()
+	const rows = rowsToObjects(result)
+	if (rows.length == 0) {
+		return ''
+	}
+	return readStringField(rows[0], 'content')
+}
+
+export function updateMemoryBuffer(agentId: string, personId: string, conversationId: string, content: string): string {
+	initMemoryTables()
+	const finalContent = trimToLimit(content, BUFFER_LIMIT)
+	const id = makeBufferId(agentId, personId, conversationId)
+	const now = Date.now()
+	const db = getDb()
+	db.run(
+		'INSERT OR REPLACE INTO memory_buffer (id, agent_id, person_id, conversation_id, content, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+		[id, normalizeAgentId(agentId), normalizeMemoryPersonId(personId), normalizeConversationId(conversationId), finalContent, now]
+	)
+	db.close()
+	return finalContent
+}
+
+export function clearMemoryBuffer(agentId: string, personId: string, conversationId: string): void {
+	initMemoryTables()
+	const db = getDb()
+	db.run('DELETE FROM memory_buffer WHERE id = ?', [makeBufferId(agentId, personId, conversationId)])
+	db.close()
+}
+
+function buildLimitRows(db: xSqlite, agentId: string, personId: string, conversationId: string, scope: string): UTSJSONObject[] {
+	const aid = normalizeAgentId(agentId)
+	const pid = normalizeMemoryPersonId(personId)
+	const cid = normalizeConversationId(conversationId)
+	if (scope == 'always' || scope == 'rule') {
+		const result = db.query(
+			'SELECT id FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND scope = ? ORDER BY pinned DESC, priority DESC, updated_at DESC',
+			[aid, scope]
+		)
+		return rowsToObjects(result)
+	} else if (scope == 'conversation_only') {
+		const result = db.query(
+			'SELECT id FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND conversation_id = ? AND scope = ? ORDER BY pinned DESC, priority DESC, updated_at DESC',
+			[aid, cid, scope]
+		)
+		return rowsToObjects(result)
+	}
+	const result = db.query(
+		'SELECT id FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND person_id = ? AND scope = ? ORDER BY pinned DESC, priority DESC, updated_at DESC',
+		[aid, pid, scope]
+	)
+	return rowsToObjects(result)
+}
+
+function enforceCoreLimit(db: xSqlite, agentId: string, personId: string, conversationId: string, scope: string): void {
+	const limit = getScopeLimit(scope)
+	const rows = buildLimitRows(db, agentId, personId, conversationId, scope)
+	if (rows.length <= limit) {
+		return
+	}
+	const now = Date.now()
+	for (let i = limit; i < rows.length; i++) {
+		const id = readStringField(rows[i], 'id')
+		if (id != '') {
+			db.run('UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE id = ?', [now, id])
+		}
+	}
+}
+
+export function saveCoreMemory(agentId: string, personId: string, conversationId: string, input: MemoryCoreInput): string {
+	initMemoryTables()
+	const content = trimToLimit(input.content, CORE_CONTENT_LIMIT)
+	if (content == '') {
+		return ''
+	}
+	const scope = normalizeScope(input.scope)
+	const category = normalizeCategory(input.category)
+	const priority = clampPriority(input.priority)
+	const pinned = input.pinned ? 1 : 0
+	const aid = normalizeAgentId(agentId)
+	const pid = normalizeMemoryPersonId(personId)
+	const cid = normalizeConversationId(conversationId)
+	const now = Date.now()
+	const randomPart = Math.floor(Math.random() * 1000000)
+	const id = 'mem_' + now + '_' + randomPart + '_' + content.length + '_' + priority
+	const db = getDb()
+	db.run(
+		'INSERT OR REPLACE INTO agent_memory_core (id, agent_id, person_id, conversation_id, category, scope, content, priority, confidence, pinned, archived, created_at, updated_at, last_used_at, use_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, 0)',
+		[id, aid, pid, cid, category, scope, content, priority, 80, pinned, now, now]
+	)
+	enforceCoreLimit(db, aid, pid, cid, scope)
+	db.close()
+	return id
+}
+
+export function archiveCoreMemory(id: string): boolean {
+	if (id == '') return false
+	initMemoryTables()
+	const db = getDb()
+	db.run('UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE id = ?', [Date.now(), id])
+	db.close()
+	return true
+}
+
+export function clearCoreMemoryForAgent(agentId: string, personId: string): void {
+	initMemoryTables()
+	const aid = normalizeAgentId(agentId)
+	const pid = normalizeMemoryPersonId(personId)
+	const db = getDb()
+	db.run(
+		'UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE agent_id = ? AND (person_id = ? OR scope = \'always\' OR scope = \'rule\')',
+		[Date.now(), aid, pid]
+	)
+	db.close()
+}
+
+export function listCoreMemory(agentId: string, personId: string, conversationId: string, includeManual: boolean): UTSJSONObject[] {
+	initMemoryTables()
+	const aid = normalizeAgentId(agentId)
+	const pid = normalizeMemoryPersonId(personId)
+	const cid = normalizeConversationId(conversationId)
+	const db = getDb()
+	if (includeManual == true) {
+		const result = db.query(
+			'SELECT * FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND (scope = \'always\' OR scope = \'rule\' OR person_id = ? OR conversation_id = ?) ORDER BY pinned DESC, priority DESC, updated_at DESC',
+			[aid, pid, cid]
+		)
+		db.close()
+		return rowsToObjects(result)
+	}
+	const result = db.query(
+		'SELECT * FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND scope != \'manual_only\' AND (scope = \'always\' OR scope = \'rule\' OR person_id = ? OR conversation_id = ?) ORDER BY pinned DESC, priority DESC, updated_at DESC',
+		[aid, pid, cid]
+	)
+	db.close()
+	return rowsToObjects(result)
+}
+
+function appendScopeMemories(db: xSqlite, lines: string[], budgetRef: number[], agentId: string, personId: string, conversationId: string, scope: string): void {
+	const aid = normalizeAgentId(agentId)
+	const pid = normalizeMemoryPersonId(personId)
+	const cid = normalizeConversationId(conversationId)
+	let rows: UTSJSONObject[] = []
+	if (scope == 'rule') {
+		const result = db.query(
+			'SELECT id, category, scope, content FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND scope = \'rule\' ORDER BY pinned DESC, priority DESC, updated_at DESC LIMIT 5',
+			[aid]
+		)
+		rows = rowsToObjects(result)
+	} else if (scope == 'always') {
+		const result = db.query(
+			'SELECT id, category, scope, content FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND scope = \'always\' ORDER BY pinned DESC, priority DESC, updated_at DESC LIMIT 3',
+			[aid]
+		)
+		rows = rowsToObjects(result)
+	} else if (scope == 'person_only') {
+		const result = db.query(
+			'SELECT id, category, scope, content FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND person_id = ? AND scope = \'person_only\' ORDER BY pinned DESC, priority DESC, updated_at DESC LIMIT 8',
+			[aid, pid]
+		)
+		rows = rowsToObjects(result)
+	} else {
+		const result = db.query(
+			'SELECT id, category, scope, content FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND conversation_id = ? AND scope = \'conversation_only\' ORDER BY pinned DESC, priority DESC, updated_at DESC LIMIT 5',
+			[aid, cid]
+		)
+		rows = rowsToObjects(result)
+	}
+	const now = Date.now()
+	for (let i = 0; i < rows.length; i++) {
+		const content = readStringField(rows[i], 'content')
+		const category = readStringField(rows[i], 'category')
+		const itemScope = readStringField(rows[i], 'scope')
+		const id = readStringField(rows[i], 'id')
+		appendMemoryLine(lines, '- [' + itemScope + '/' + category + '] ' + content, budgetRef)
+		if (id != '') {
+			db.run('UPDATE agent_memory_core SET last_used_at = ?, use_count = use_count + 1 WHERE id = ?', [now, id])
+		}
+	}
+}
+
+export function buildImportantMemoryInjection(agentId: string, personId: string, conversationId: string): string {
+	if (getMemoryEnabled() == false) {
+		return ''
+	}
+	initMemoryTables()
+	const db = getDb()
+	const lines: string[] = []
+	const budgetRef: number[] = [CORE_INJECT_BUDGET]
+	appendScopeMemories(db, lines, budgetRef, agentId, personId, conversationId, 'rule')
+	appendScopeMemories(db, lines, budgetRef, agentId, personId, conversationId, 'always')
+	appendScopeMemories(db, lines, budgetRef, agentId, personId, conversationId, 'person_only')
+	appendScopeMemories(db, lines, budgetRef, agentId, personId, conversationId, 'conversation_only')
+	db.close()
+	if (lines.length == 0) {
+		return ''
+	}
+	return '[Agent重要信息｜非用户原文]\n' + lines.join('\n')
+}
+
+export function buildBufferInjection(agentId: string, personId: string, conversationId: string): string {
+	if (getMemoryEnabled() == false) {
+		return ''
+	}
+	const buffer = getMemoryBuffer(agentId, personId, conversationId)
+	if (buffer == '') {
+		return ''
+	}
+	return '[短记忆缓存｜非用户原文]\n' + trimToLimit(buffer, BUFFER_LIMIT)
+}
+
+export function searchCoreMemory(agentId: string, personId: string, conversationId: string, query: string, limit: number): string {
+	initMemoryTables()
+	const aid = normalizeAgentId(agentId)
+	const pid = normalizeMemoryPersonId(personId)
+	const cid = normalizeConversationId(conversationId)
+	let safeLimit = limit
+	if (safeLimit <= 0) safeLimit = 8
+	if (safeLimit > 10) safeLimit = 10
+	const limitText = safeLimit + ''
+	const db = getDb()
+	const result = db.query(
+		'SELECT id, scope, category, content, priority, updated_at FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND content LIKE ? AND (scope = \'always\' OR scope = \'rule\' OR person_id = ? OR conversation_id = ?) ORDER BY pinned DESC, priority DESC, updated_at DESC LIMIT ' + limitText,
+		[aid, buildLikeQuery(query), pid, cid]
+	)
+	db.close()
+	const rows = rowsToObjects(result)
+	if (rows.length == 0) {
+		return '重要信息库：无匹配。'
+	}
+	const lines: string[] = ['重要信息库：']
+	for (let i = 0; i < rows.length; i++) {
+		lines.push((i + 1) + '. id=' + readStringField(rows[i], 'id') + ' [' + readStringField(rows[i], 'scope') + '/' + readStringField(rows[i], 'category') + '] ' + readStringField(rows[i], 'content'))
+	}
+	return lines.join('\n')
+}
+
+export function searchConversationHistory(agentId: string, query: string, limit: number): string {
+	initMemoryTables()
+	const aid = normalizeAgentId(agentId)
+	let safeLimit = limit
+	if (safeLimit <= 0) safeLimit = 8
+	if (safeLimit > 12) safeLimit = 12
+	const limitText = safeLimit + ''
+	const likeQuery = buildLikeQuery(query)
+	const db = getDb()
+	const result = db.query(
+		'SELECT m.role, m.content, m.timestamp, c.title FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.agent_id = ? AND (m.role = \'user\' OR m.role = \'assistant\') AND m.extra NOT LIKE \'%tool_calls%\' AND m.content LIKE ? ORDER BY m.timestamp DESC LIMIT ' + limitText,
+		[aid, likeQuery]
+	)
+	db.close()
+	const rows = rowsToObjects(result)
+	if (rows.length == 0) {
+		return '历史记录：无匹配。'
+	}
+	const lines: string[] = ['历史记录（已过滤工具调用信息）：']
+	let budget = 3000
+	for (let i = 0; i < rows.length; i++) {
+		let content = readStringField(rows[i], 'content')
+		if (content.length > 180) {
+			content = content.substring(0, 180) + '...'
+		}
+		const line = (i + 1) + '. [' + readStringField(rows[i], 'role') + '] ' + content
+		if (budget - line.length <= 0) {
+			break
+		}
+		lines.push(line)
+		budget = budget - line.length
+	}
+	return lines.join('\n')
+}
+
+export function formatCoreMemoryList(rows: UTSJSONObject[]): string {
+	if (rows.length == 0) {
+		return '暂无记忆。'
+	}
+	const lines: string[] = []
+	for (let i = 0; i < rows.length; i++) {
+		lines.push((i + 1) + '. id=' + readStringField(rows[i], 'id') + ' [' + readStringField(rows[i], 'scope') + '/' + readStringField(rows[i], 'category') + '] P' + readNumberField(rows[i], 'priority') + ' ' + readStringField(rows[i], 'content'))
+	}
+	return lines.join('\n')
+}

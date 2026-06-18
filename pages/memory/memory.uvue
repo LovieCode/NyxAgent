@@ -1,0 +1,519 @@
+﻿<template>
+	<view class="page-shell rice-theme-light">
+		<NavBar title="记忆管理" showBack />
+		<scroll-view class="container" :scroll-y="true">
+			<view class="hero-card">
+				<text class="hero-title">Agent 记忆系统</text>
+				<text class="hero-desc">这里管理当前智能体的短缓存和重要信息库。短缓存最多 128 字，只会临时注入下一次请求；重要信息按范围注入，不保存工具调用细节。</text>
+			</view>
+
+			<view class="card">
+				<view class="setting-row">
+					<view class="setting-text">
+						<text class="setting-title">启用记忆</text>
+						<text class="setting-desc">关闭后不会自动注入短缓存和重要信息，工具仍可由你手动管理。</text>
+					</view>
+					<rice-switch v-model="memoryEnabled" @change="saveMemoryEnabled" />
+				</view>
+			</view>
+
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="edit" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+					<text class="card-title">128 字短缓存</text>
+				</view>
+				<textarea class="textarea" v-model="bufferContent" placeholder="例如：用户偏好简洁回复；当前任务是重构记忆系统。" placeholder-style="color:#9CA3AF" />
+				<view class="meta-row">
+					<text class="field-tip">{{bufferContent.length}}/128，超过会自动截断</text>
+					<view class="inline-actions">
+						<text class="text-btn" @click="clearBuffer">清空</text>
+						<text class="primary-mini" @click="saveBuffer">保存</text>
+					</view>
+				</view>
+			</view>
+
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="robot" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+					<text class="card-title">新增重要信息</text>
+				</view>
+				<text class="field-label">使用范围</text>
+				<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
+					<view class="chip-row">
+						<view v-for="(s, si) in scopes" :key="si" class="chip" :class="newScope == s ? 'chip-active' : ''" @click="newScope = s">
+							<text class="chip-text" :class="newScope == s ? 'chip-text-active' : ''">{{scopeLabel(s)}}</text>
+						</view>
+					</view>
+				</scroll-view>
+
+				<text class="field-label" style="margin-top:22rpx;">分类</text>
+				<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
+					<view class="chip-row">
+						<view v-for="(c, ci) in categories" :key="ci" class="chip" :class="newCategory == c ? 'chip-active' : ''" @click="newCategory = c">
+							<text class="chip-text" :class="newCategory == c ? 'chip-text-active' : ''">{{categoryLabel(c)}}</text>
+						</view>
+					</view>
+				</scroll-view>
+
+				<text class="field-label" style="margin-top:22rpx;">内容</text>
+				<textarea class="textarea" v-model="newContent" placeholder="写一句值得长期保存的信息。别写密钥、工具参数或流水账。" placeholder-style="color:#9CA3AF" />
+				<view class="param-row">
+					<view class="param-item">
+						<text class="field-label">优先级</text>
+						<input class="flat-input" type="text" v-model="newPriority" placeholder="1-5" placeholder-style="color:#D1D5DB" />
+					</view>
+					<view class="pin-box">
+						<text class="field-label">置顶</text>
+						<rice-switch v-model="newPinned" />
+					</view>
+				</view>
+				<view class="save-btn" @click="saveNewMemory">
+					<text class="save-btn-text">保存重要信息</text>
+				</view>
+			</view>
+
+			<view class="card">
+				<view class="card-title-row">
+					<text class="card-title">当前可见记忆</text>
+					<text class="refresh-btn" @click="loadMemory">刷新</text>
+				</view>
+				<view v-if="memoryList.length == 0" class="empty-card">
+					<text class="empty-text">还没有记忆，存档槽空着。</text>
+				</view>
+				<view v-for="(item, index) in memoryList" :key="index" class="memory-item">
+					<view class="memory-head">
+						<text class="memory-tag">{{itemScopeLabel(item)}} / {{itemCategoryLabel(item)}}</text>
+						<text class="memory-forget" @click="forgetMemoryByItem(item)">遗忘</text>
+					</view>
+					<text class="memory-content">{{item['content']}}</text>
+					<text class="memory-meta">P{{itemPriorityText(item)}} · {{itemPinnedText(item)}}</text>
+				</view>
+			</view>
+
+			<view class="danger-card">
+				<text class="danger-title">危险区</text>
+				<text class="danger-desc">清空会归档当前智能体面向该用户的所有可见重要记忆，短缓存不受影响。</text>
+				<view class="danger-btn" @click="confirmClearCore">
+					<text class="danger-btn-text">清空当前 Agent 记忆</text>
+				</view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script lang="uts">
+	import {
+		getMemoryEnabled,
+		setMemoryEnabled,
+		getMemoryBuffer,
+		updateMemoryBuffer,
+		clearMemoryBuffer,
+		listCoreMemory,
+		saveCoreMemory,
+		archiveCoreMemory,
+		clearCoreMemoryForAgent,
+		type MemoryCoreInput,
+	} from '@/utils/memory.uts'
+
+	export default {
+		data() {
+			return {
+				agentId: '' as string,
+				conversationId: '' as string,
+				personId: 'default' as string,
+				memoryEnabled: true as boolean,
+				bufferContent: '' as string,
+				memoryList: [] as UTSJSONObject[],
+				scopes: ['person_only', 'always', 'conversation_only', 'manual_only', 'rule'] as string[],
+				categories: ['important', 'preference', 'fact', 'impression', 'rule'] as string[],
+				newScope: 'person_only' as string,
+				newCategory: 'important' as string,
+				newContent: '' as string,
+				newPriority: '3' as string,
+				newPinned: false as boolean,
+			}
+		},
+		onLoad() {
+			const memoryAgentId = uni.getStorageSync('memory_agent_id') as string | null
+			const memoryConversationId = uni.getStorageSync('memory_conversation_id') as string | null
+			this.agentId = memoryAgentId != null ? memoryAgentId : ''
+			this.conversationId = memoryConversationId != null ? memoryConversationId : ''
+			if (this.agentId == '') {
+				const activeAgentId = uni.getStorageSync('active_agent_id') as string | null
+				this.agentId = activeAgentId != null ? activeAgentId : ''
+			}
+			if (this.conversationId == '') {
+				const activeConversationId = uni.getStorageSync('active_conversation_id') as string | null
+				this.conversationId = activeConversationId != null ? activeConversationId : ''
+			}
+			if (this.agentId == '') {
+				this.agentId = 'default_agent'
+			}
+			if (this.conversationId == '') {
+				this.conversationId = 'global'
+			}
+			this.loadMemory()
+		},
+		methods: {
+			scopeLabel(scope: string): string {
+				if (scope == 'always') return '总是注入'
+				if (scope == 'person_only') return '面对某人'
+				if (scope == 'conversation_only') return '当前对话'
+				if (scope == 'manual_only') return '仅查询'
+				if (scope == 'rule') return '规则'
+				return scope
+			},
+
+			categoryLabel(category: string): string {
+				if (category == 'impression') return '印象'
+				if (category == 'important') return '重要'
+				if (category == 'rule') return '规则'
+				if (category == 'preference') return '偏好'
+				if (category == 'fact') return '事实'
+				return category
+			},
+
+			itemScopeLabel(item: UTSJSONObject): string {
+				const value = item['scope'] as string | null
+				return this.scopeLabel(value != null ? value : '')
+			},
+
+			itemCategoryLabel(item: UTSJSONObject): string {
+				const value = item['category'] as string | null
+				return this.categoryLabel(value != null ? value : '')
+			},
+
+			itemPriorityText(item: UTSJSONObject): string {
+				const value = item['priority'] as number | null
+				if (value == null) return '3'
+				return value + ''
+			},
+
+			itemPinnedText(item: UTSJSONObject): string {
+				const value = item['pinned'] as number | null
+				return value == 1 ? '已置顶' : '未置顶'
+			},
+
+			loadMemory() {
+				this.memoryEnabled = getMemoryEnabled()
+				this.bufferContent = getMemoryBuffer(this.agentId, this.personId, this.conversationId)
+				this.memoryList = listCoreMemory(this.agentId, this.personId, this.conversationId, true)
+			},
+
+			saveMemoryEnabled() {
+				setMemoryEnabled(this.memoryEnabled)
+				uni.showToast({ title: '已保存', icon: 'success' })
+			},
+
+			saveBuffer() {
+				const finalContent = updateMemoryBuffer(this.agentId, this.personId, this.conversationId, this.bufferContent)
+				this.bufferContent = finalContent
+				uni.showToast({ title: '短缓存已保存', icon: 'success' })
+			},
+
+			clearBuffer() {
+				clearMemoryBuffer(this.agentId, this.personId, this.conversationId)
+				this.bufferContent = ''
+				uni.showToast({ title: '已清空', icon: 'none' })
+			},
+
+			parsePriority(): number {
+				const parsed = parseInt(this.newPriority)
+				if (isNaN(parsed)) return 3
+				if (parsed < 1) return 1
+				if (parsed > 5) return 5
+				return parsed
+			},
+
+			saveNewMemory() {
+				if (this.newContent.trim() == '') {
+					uni.showToast({ title: '先写内容', icon: 'none' })
+					return
+				}
+				const input: MemoryCoreInput = {
+					scope: this.newScope,
+					category: this.newCategory,
+					content: this.newContent,
+					priority: this.parsePriority(),
+					pinned: this.newPinned,
+				} as MemoryCoreInput
+				const id = saveCoreMemory(this.agentId, this.personId, this.conversationId, input)
+				if (id == '') {
+					uni.showToast({ title: '保存失败', icon: 'none' })
+					return
+				}
+				this.newContent = ''
+				this.newPriority = '3'
+				this.newPinned = false
+				this.loadMemory()
+				uni.showToast({ title: '已保存', icon: 'success' })
+			},
+
+			forgetMemory(id: string) {
+				archiveCoreMemory(id)
+				this.loadMemory()
+				uni.showToast({ title: '已遗忘', icon: 'none' })
+			},
+
+			forgetMemoryByItem(item: UTSJSONObject) {
+				const id = item['id'] as string | null
+				if (id == null || id == '') {
+					uni.showToast({ title: '记忆 id 异常', icon: 'none' })
+					return
+				}
+				this.forgetMemory(id)
+			},
+
+			confirmClearCore() {
+				uni.showModal({
+					title: '清空记忆',
+					content: '确认清空当前 Agent 面向该用户的可见重要记忆？',
+					success: (res: any) => {
+						const raw = JSON.stringify(res)
+						if (raw == null || raw == '') { return }
+						const parsed = JSON.parse(raw) as UTSJSONObject
+						if (parsed['confirm'] == true) {
+							clearCoreMemoryForAgent(this.agentId, this.personId)
+							this.loadMemory()
+							uni.showToast({ title: '已清空', icon: 'none' })
+						}
+					}
+				})
+			},
+		}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+		padding: 32rpx;
+	}
+
+	.hero-card,
+	.card,
+	.danger-card {
+		background-color: #FFFFFF;
+		border-radius: 20rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+	}
+
+	.hero-title {
+		font-size: 32rpx;
+		font-weight: bold;
+		color: #111827;
+		margin-bottom: 12rpx;
+	}
+
+	.hero-desc,
+	.setting-desc,
+	.field-tip,
+	.danger-desc {
+		font-size: 24rpx;
+		color: #6B7280;
+		line-height: 36rpx;
+	}
+
+	.setting-row,
+	.card-header,
+	.card-title-row,
+	.meta-row,
+	.memory-head,
+	.param-row,
+	.inline-actions,
+	.pin-box {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.setting-row,
+	.card-title-row,
+	.meta-row,
+	.memory-head {
+		justify-content: space-between;
+	}
+
+	.setting-text {
+		flex: 1;
+		padding-right: 24rpx;
+	}
+
+	.setting-title,
+	.card-title,
+	.danger-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	.card-header {
+		margin-bottom: 22rpx;
+	}
+
+	.field-label {
+		font-size: 26rpx;
+		color: #374151;
+		font-weight: bold;
+		margin-bottom: 12rpx;
+	}
+
+	.textarea {
+		background-color: #F9FAFB;
+		border-radius: 14rpx;
+		padding: 24rpx;
+		font-size: 28rpx;
+		color: #111827;
+		min-height: 150rpx;
+	}
+
+	.flat-input {
+		background-color: #F9FAFB;
+		border-radius: 14rpx;
+		padding: 22rpx;
+		font-size: 28rpx;
+		color: #111827;
+	}
+
+	.text-btn,
+	.refresh-btn {
+		font-size: 25rpx;
+		color: #6B7280;
+		padding: 12rpx 18rpx;
+	}
+
+	.primary-mini {
+		font-size: 25rpx;
+		color: #FFFFFF;
+		background-color: var(--rice-primary-color);
+		border-radius: 999rpx;
+		padding: 12rpx 22rpx;
+		margin-left: 12rpx;
+	}
+
+	.chip-scroll {
+		flex-direction: row;
+	}
+
+	.chip-row {
+		flex-direction: row;
+		padding-bottom: 4rpx;
+	}
+
+	.chip {
+		padding: 14rpx 22rpx;
+		border-radius: 999rpx;
+		background-color: #F3F4F6;
+		margin-right: 14rpx;
+	}
+
+	.chip-active {
+		background-color: var(--rice-primary-color);
+	}
+
+	.chip-text {
+		font-size: 24rpx;
+		color: #4B5563;
+	}
+
+	.chip-text-active {
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+
+	.param-row {
+		margin-top: 20rpx;
+	}
+
+	.param-item {
+		flex: 1;
+		margin-right: 20rpx;
+	}
+
+	.pin-box {
+		width: 180rpx;
+		justify-content: space-between;
+	}
+
+	.save-btn {
+		background-color: var(--rice-primary-color);
+		border-radius: 16rpx;
+		padding: 26rpx 0;
+		align-items: center;
+		justify-content: center;
+		margin-top: 28rpx;
+	}
+
+	.save-btn-text {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #FFFFFF;
+	}
+
+	.empty-card {
+		background-color: #F9FAFB;
+		border-radius: 16rpx;
+		padding: 28rpx;
+	}
+
+	.empty-text {
+		font-size: 26rpx;
+		color: #9CA3AF;
+	}
+
+	.memory-item {
+		background-color: #F9FAFB;
+		border-radius: 16rpx;
+		padding: 24rpx;
+		margin-top: 16rpx;
+	}
+
+	.memory-tag {
+		font-size: 23rpx;
+		color: #8B5CF6;
+		font-weight: bold;
+	}
+
+	.memory-forget {
+		font-size: 24rpx;
+		color: #EF4444;
+		padding: 8rpx 12rpx;
+	}
+
+	.memory-content {
+		font-size: 27rpx;
+		color: #111827;
+		line-height: 40rpx;
+		margin-top: 12rpx;
+	}
+
+	.memory-meta {
+		font-size: 22rpx;
+		color: #9CA3AF;
+		margin-top: 10rpx;
+	}
+
+	.danger-card {
+		margin-bottom: 60rpx;
+	}
+
+	.danger-title {
+		color: #991B1B;
+		margin-bottom: 10rpx;
+	}
+
+	.danger-btn {
+		border-radius: 16rpx;
+		padding: 24rpx 0;
+		align-items: center;
+		justify-content: center;
+		background-color: #FEE2E2;
+		margin-top: 24rpx;
+	}
+
+	.danger-btn-text {
+		font-size: 28rpx;
+		font-weight: bold;
+		color: #DC2626;
+	}
+</style>

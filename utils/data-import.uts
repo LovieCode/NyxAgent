@@ -30,6 +30,9 @@ function buildFallbackStorageKeys(): string[] {
 		'settings_generation_max_tokens',
 		'settings_generation_max_iterations',
 		'settings_generation_stream_enabled',
+		'settings_memory_enabled',
+		'memory_agent_id',
+		'memory_conversation_id',
 		'app_setting_default_task_chat',
 		'app_setting_default_task_vision',
 		'app_setting_default_task_stt',
@@ -144,6 +147,8 @@ export function importAllDataFromZip(zipPath: string): string {
 		const conversations = readObjectArray(data, 'conversations')
 		const messages = readObjectArray(data, 'messages')
 		const appSettings = readObjectArray(data, 'appSettings')
+		const memoryBuffers = readObjectArray(data, 'memoryBuffers')
+		const memoryCore = readObjectArray(data, 'memoryCore')
 		const agents = readObjectArray(data, 'agents')
 		const notes = readObjectArray(data, 'notes')
 		const todos = readObjectArray(data, 'todos')
@@ -163,7 +168,7 @@ export function importAllDataFromZip(zipPath: string): string {
 			storage['todo_list'] = JSON.stringify(todos)
 		}
 
-		importDatabaseTables(providers, conversations, messages, appSettings)
+		importDatabaseTables(providers, conversations, messages, appSettings, memoryBuffers, memoryCore)
 		if (agents.length > 0) {
 			saveAgents(agents)
 		}
@@ -173,7 +178,7 @@ export function importAllDataFromZip(zipPath: string): string {
 			writeStorageObject(storage, storageKeys)
 		}
 		const workspaceCount = importAgentWorkspaceFiles(zipPath)
-		return '已导入：提供商 ' + providers.length + ' 个，对话 ' + conversations.length + ' 条，消息 ' + messages.length + ' 条，资源 ' + assets.length + ' 个，Agent 文件 ' + workspaceCount + ' 个。'
+		return '已导入：提供商 ' + providers.length + ' 个，对话 ' + conversations.length + ' 条，消息 ' + messages.length + ' 条，记忆 ' + memoryCore.length + ' 条，资源 ' + assets.length + ' 个，Agent 文件 ' + workspaceCount + ' 个。'
 	} catch (_e: any) {
 		return ''
 	}

@@ -3,7 +3,7 @@
  * 聚合 SQLite、uni.storage、智能体配置和本地资源，生成可备份 ZIP 清单。
  */
 
-import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings, getDatabaseFilePathForExport } from '@/utils/database.uts'
+import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings, getDatabaseFilePathForExport, getAllMemoryBuffersForExport, getAllMemoryCoreForExport } from '@/utils/database.uts'
 import { getAllDefaultTaskModels } from '@/utils/provider.uts'
 import { getAgents } from '@/utils/agent.uts'
 import { getAgentStoragePath, listAgentFiles } from '@/utils/agent-fs.uts'
@@ -64,6 +64,9 @@ function buildKnownStorageKeys(): string[] {
 		'settings_generation_max_tokens',
 		'settings_generation_max_iterations',
 		'settings_generation_stream_enabled',
+		'settings_memory_enabled',
+		'memory_agent_id',
+		'memory_conversation_id',
 		'app_setting_default_task_chat',
 		'app_setting_default_task_vision',
 		'app_setting_default_task_stt',
@@ -358,6 +361,8 @@ export function buildAllDataExport(): UTSJSONObject {
 	const exportedAt = new Date().toISOString()
 	const conversations = getAllConversationsForExport()
 	const messages = getAllMessagesForExport()
+	const memoryBuffers = getAllMemoryBuffersForExport()
+	const memoryCore = getAllMemoryCoreForExport()
 	const storageKeys = collectStorageKeys()
 	const storage = collectKnownStorageByKeys(storageKeys)
 	const notes = parseStorageArray('notes_list')
@@ -387,6 +392,8 @@ export function buildAllDataExport(): UTSJSONObject {
 			assets: assets,
 			conversations: conversations,
 			messages: messages,
+			memoryBuffers: memoryBuffers,
+			memoryCore: memoryCore,
 			notes: notes,
 			todos: todos,
 			storage: storage,
