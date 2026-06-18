@@ -92,7 +92,7 @@
 	 * 参考 PI Agent models.generated.ts 模型列表
 	 */
 
-	import { exportAllDataToFile, exportAllDataToJson, shareExportedDataFile } from '@/utils/data-export.uts'
+	import { exportAllDataToFile, exportAllDataToJson, shareExportedDataFile, getLastShareExportErrorMessage } from '@/utils/data-export.uts'
 	import { importAllDataFromZip } from '@/utils/data-import.uts'
 
 	export default {
@@ -329,19 +329,21 @@
 						if (shared == true) {
 							return
 						}
+						const shareError = getLastShareExportErrorMessage()
+						const shareFailTip = shareError != '' ? ('系统分享失败：' + shareError + '\nZIP 路径已复制：\n' + path) : ('系统分享面板没有打开，ZIP 路径已复制：\n' + path)
 						uni.setClipboardData({
 							data: path,
 							success: () => {
 								uni.showModal({
 									title: '分享失败',
-									content: '系统分享面板没有打开，ZIP 路径已复制：\n' + path,
+									content: shareFailTip,
 									showCancel: false
 								})
 							},
 							fail: () => {
 								uni.showModal({
 									title: '分享失败',
-									content: '系统分享面板没有打开，ZIP 已导出：\n' + path,
+									content: shareError != '' ? ('系统分享失败：' + shareError + '\nZIP 已导出：\n' + path) : ('系统分享面板没有打开，ZIP 已导出：\n' + path),
 									showCancel: false
 								})
 							}

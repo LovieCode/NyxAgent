@@ -7,7 +7,7 @@ import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport,
 import { getAllDefaultTaskModels } from '@/utils/provider.uts'
 import { getAgents } from '@/utils/agent.uts'
 import { getAgentStoragePath, listAgentFiles } from '@/utils/agent-fs.uts'
-import { writeExportZipFile, shareExportFile } from '@/utssdk/app-data-export/index.uts'
+import { writeExportZipFile, shareExportFile, getLastShareExportError } from '@/utssdk/app-data-export/index.uts'
 
 const EXPORT_SCHEMA_VERSION = 1
 const MAX_EXPORT_FILE_BYTES: number = 50 * 1024 * 1024
@@ -414,4 +414,9 @@ export function exportAllDataToJson(): string {
 /** 分享已导出的 ZIP 文件。 */
 export function shareExportedDataFile(filePath: string): boolean {
 	return shareExportFile(filePath)
+}
+
+/** 获取最近一次分享失败原因。 */
+export function getLastShareExportErrorMessage(): string {
+	return getLastShareExportError()
 }
