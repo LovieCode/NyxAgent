@@ -1,4 +1,4 @@
-﻿﻿﻿﻿<template>
+<template>
 	<view class="page-shell rice-theme-light">
 		<NavBar title="设置" />
 		<scroll-view class="container" :scroll-y="true">
@@ -48,6 +48,17 @@
 					<text class="menu-arrow">›</text>
 				</view>
 				<view class="menu-divider"></view>
+				<view class="menu-item" @click="confirmExportAllData">
+					<view class="menu-item-left">
+						<oui-icon-unix name="download" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
+						<view class="menu-text">
+							<text class="menu-title">导出全部数据</text>
+							<text class="menu-desc">提供商、对话、智能体、笔记、待办与设置</text>
+						</view>
+					</view>
+					<text class="menu-arrow">›</text>
+				</view>
+				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('about')">
 					<view class="menu-item-left">
 						<oui-icon-unix name="infomation" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
@@ -69,6 +80,8 @@
 	 * 设置页面 - 扁平化粉白渐变设计
 	 * 参考 PI Agent models.generated.ts 模型列表
 	 */
+
+	import { exportAllDataToFile, exportAllDataToJson } from '@/utils/data-export.uts'
 
 	export default {
 		data() {
@@ -215,6 +228,65 @@
 				uni.navigateTo({
 					url: '/pages/settings/' + name + '/' + name
 				})
+			},
+
+			confirmExportAllData() {
+				uni.showModal({
+					title: '导出全部数据',
+					content: '导出包包含 API Key、对话历史、智能体提示词和个人资料，请只保存到可信位置。确定继续？',
+					success: (res) => {
+						if (res.confirm == true) {
+							this.exportAllData()
+						}
+					}
+				})
+			},
+
+			exportAllData() {
+				try {
+					const path = exportAllDataToFile()
+					if (path != '') {
+						uni.setClipboardData({
+							data: path,
+							success: () => {
+								uni.showModal({
+									title: '导出完成',
+									content: '数据已导出到本地文件，路径已复制：\n' + path,
+									showCancel: false
+								})
+							},
+							fail: () => {
+								uni.showModal({
+									title: '导出完成',
+									content: '数据已导出到本地文件：\n' + path,
+									showCancel: false
+								})
+							}
+						})
+						return
+					}
+					const json = exportAllDataToJson()
+					uni.setClipboardData({
+						data: json,
+						success: () => {
+							uni.showToast({
+								title: '已复制导出 JSON',
+								icon: 'success'
+							})
+						},
+						fail: () => {
+							uni.showToast({
+								title: '导出失败',
+								icon: 'none'
+							})
+						}
+					})
+				} catch (_e: any) {
+					uni.showToast({
+						title: '导出失败',
+						icon: 'none'
+					})
+				}
 			}
 		}
 	}
