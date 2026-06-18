@@ -1,0 +1,176 @@
+/**
+ * 全量数据导入工具
+ * 从导出的 ZIP 备份包中恢复结构化数据与 Agent 工作区。
+ */
+
+import { importDatabaseTables } from '@/utils/database.uts'
+import { saveAgents } from '@/utils/agent.uts'
+import { readImportManifest, importAgentWorkspaceFiles, importBackupAssets } from '@/utssdk/app-data-export/index.uts'
+
+function readObjectArray(obj: UTSJSONObject, key: string): UTSJSONObject[] {
+	const value = obj[key] as UTSJSONObject[] | null
+	if (value == null) {
+		return []
+	}
+	return value
+}
+
+function buildFallbackStorageKeys(): string[] {
+	return [
+		'agent_list',
+		'active_agent_id',
+		'active_conversation_id',
+		'settings_provider_id',
+		'settings_api_key',
+		'settings_base_url',
+		'settings_model',
+		'settings_gh_proxy_enabled',
+		'settings_gh_proxy_domain',
+		'app_setting_default_task_chat',
+		'app_setting_default_task_vision',
+		'app_setting_default_task_stt',
+		'app_setting_default_task_tts',
+		'profile_nickname',
+		'profile_bio',
+		'profile_email',
+		'profile_description',
+		'profile_avatar',
+		'notes_list',
+		'todo_list',
+		'provider_edit_data',
+		'pending_agent_model_id',
+		'editor_title',
+		'editor_content',
+		'editor_draft',
+		'editor_target',
+		'editor_result',
+		'crop_image_path',
+		'crop_result',
+	]
+}
+
+function readStringArray(obj: UTSJSONObject, key: string): string[] {
+	const value = obj[key] as string[] | null
+	if (value == null) {
+		return []
+	}
+	return value
+}
+
+function updateMappedStorageAssets(storage: UTSJSONObject, assetMap: UTSJSONObject): void {
+	const profileAvatar = assetMap['storage.profile_avatar'] as string | null
+	if (profileAvatar != null && profileAvatar != '') {
+		storage['profile_avatar'] = profileAvatar
+	}
+	const cropSource = assetMap['storage.crop_image_path'] as string | null
+	if (cropSource != null && cropSource != '') {
+		storage['crop_image_path'] = cropSource
+	}
+	const cropResult = assetMap['storage.crop_result'] as string | null
+	if (cropResult != null && cropResult != '') {
+		storage['crop_result'] = cropResult
+	}
+}
+
+function updateMappedAgentAssets(agents: UTSJSONObject[], assetMap: UTSJSONObject): void {
+	for (let i = 0; i < agents.length; i++) {
+		const id = agents[i]['id'] as string | null
+		if (id != null && id != '') {
+			const avatar = assetMap['agents.' + id + '.avatar'] as string | null
+			if (avatar != null && avatar != '') {
+				agents[i]['avatar'] = avatar
+			}
+		}
+	}
+}
+
+function updateMappedMessageAssets(messages: UTSJSONObject[], assetMap: UTSJSONObject): void {
+	for (let i = 0; i < messages.length; i++) {
+		const id = messages[i]['id'] as number | null
+		const idText = id != null ? (id + '') : (i + '')
+		const imagePath = assetMap['messages.' + idText + '.imageUrl'] as string | null
+		if (imagePath != null && imagePath != '') {
+			const extraText = messages[i]['extra'] as string | null
+			let extra: UTSJSONObject = {}
+			if (extraText != null && extraText != '') {
+				try {
+					extra = JSON.parse(extraText) as UTSJSONObject
+				} catch (_e: any) {
+					extra = {}
+				}
+			}
+			extra['imageUrl'] = imagePath
+			messages[i]['extra'] = JSON.stringify(extra)
+		}
+	}
+}
+
+function writeStorageObject(storage: UTSJSONObject, storageKeys: string[]): void {
+	let keys = storageKeys
+	if (keys.length == 0) {
+		keys = buildFallbackStorageKeys()
+	}
+	for (let i = 0; i < keys.length; i++) {
+		const key = keys[i]
+		const value = storage[key]
+		if (value != null) {
+			uni.setStorageSync(key, value)
+		}
+	}
+}
+
+function restoreListStorage(key: string, list: UTSJSONObject[]): void {
+	uni.setStorageSync(key, JSON.stringify(list))
+}
+
+/** 导入 ZIP 备份包，成功返回摘要，失败返回空字符串。 */
+export function importAllDataFromZip(zipPath: string): string {
+	const manifestJson = readImportManifest(zipPath)
+	if (manifestJson == '') {
+		return ''
+	}
+	try {
+		const root = JSON.parse(manifestJson) as UTSJSONObject
+		const data = root['data'] as UTSJSONObject | null
+		if (data == null) {
+			return ''
+		}
+
+		const providers = readObjectArray(data, 'providers')
+		const conversations = readObjectArray(data, 'conversations')
+		const messages = readObjectArray(data, 'messages')
+		const appSettings = readObjectArray(data, 'appSettings')
+		const agents = readObjectArray(data, 'agents')
+		const notes = readObjectArray(data, 'notes')
+		const todos = readObjectArray(data, 'todos')
+		const storage = data['storage'] as UTSJSONObject | null
+		const storageKeys = readStringArray(data, 'storageKeys')
+		const assets = readObjectArray(data, 'assets')
+		const assetMap = importBackupAssets(zipPath, assets)
+
+		if (storage != null) {
+			updateMappedStorageAssets(storage, assetMap)
+		}
+		updateMappedAgentAssets(agents, assetMap)
+		updateMappedMessageAssets(messages, assetMap)
+		if (storage != null) {
+			storage['agent_list'] = JSON.stringify(agents)
+			storage['notes_list'] = JSON.stringify(notes)
+			storage['todo_list'] = JSON.stringify(todos)
+		}
+
+		importDatabaseTables(providers, conversations, messages, appSettings)
+		if (agents.length > 0) {
+			saveAgents(agents)
+		}
+		restoreListStorage('notes_list', notes)
+		restoreListStorage('todo_list', todos)
+		if (storage != null) {
+			writeStorageObject(storage, storageKeys)
+		}
+		const workspaceCount = importAgentWorkspaceFiles(zipPath)
+		return '已导入：提供商 ' + providers.length + ' 个，对话 ' + conversations.length + ' 条，消息 ' + messages.length + ' 条，资源 ' + assets.length + ' 个，Agent 文件 ' + workspaceCount + ' 个。'
+	} catch (_e: any) {
+		return ''
+	}
+}
