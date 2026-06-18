@@ -96,12 +96,12 @@ class LqjSqlAndroidDepot(
         return try {
             val cursor = db.rawQuery(statement, args.map { stringifyArgument(it) }.toTypedArray())
             try {
-                val columns = cursor.columnNames.toList()
-                val rows = mutableListOf<List<Any>>()
-                val recordList = mutableListOf<Map<String, Any>>()
+                val columns = ArrayList(cursor.columnNames.toList())
+                val rows = ArrayList<ArrayList<Any>>()
+                val recordList = ArrayList<LinkedHashMap<String, Any>>()
 
                 while (cursor.moveToNext()) {
-                    val row = mutableListOf<Any>()
+                    val row = ArrayList<Any>()
                     val record = linkedMapOf<String, Any>()
                     for (index in 0 until cursor.columnCount) {
                         val field = cursor.getColumnName(index)
