@@ -100,9 +100,8 @@ function collectStorageKeys(): string[] {
 	return keys
 }
 
-function collectKnownStorage(): UTSJSONObject {
+function collectKnownStorageByKeys(keys: string[]): UTSJSONObject {
 	const storage: UTSJSONObject = {}
-	const keys = collectStorageKeys()
 	for (let i = 0; i < keys.length; i++) {
 		addStorageValue(storage, keys[i])
 	}
@@ -355,7 +354,8 @@ export function buildAllDataExport(): UTSJSONObject {
 	const exportedAt = new Date().toISOString()
 	const conversations = getAllConversationsForExport()
 	const messages = getAllMessagesForExport()
-	const storage = collectKnownStorage()
+	const storageKeys = collectStorageKeys()
+	const storage = collectKnownStorageByKeys(storageKeys)
 	const notes = parseStorageArray('notes_list')
 	const todos = parseStorageArray('todo_list')
 	const agents = getAgents()
@@ -374,6 +374,7 @@ export function buildAllDataExport(): UTSJSONObject {
 		files: fileSpecs,
 		data: {
 			databaseFile: databaseFile,
+			storageKeys: storageKeys,
 			providers: getAllProviders(),
 			appSettings: getAllAppSettings(),
 			defaultTaskModels: getAllDefaultTaskModels(),

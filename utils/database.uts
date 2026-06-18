@@ -129,6 +129,90 @@ export function initDatabase(): void {
 	db.close()
 }
 
+function readStringField(obj: UTSJSONObject, key: string): string {
+	const value = obj[key] as string | null
+	if (value == null) {
+		return ''
+	}
+	return value
+}
+
+function readNumberField(obj: UTSJSONObject, key: string): number {
+	const value = obj[key] as number | null
+	if (value == null) {
+		return 0
+	}
+	return value
+}
+
+/** 覆盖导入数据库核心表。 */
+export function importDatabaseTables(providers: UTSJSONObject[], conversations: UTSJSONObject[], messages: UTSJSONObject[], appSettings: UTSJSONObject[]): void {
+	initDatabase()
+	const db = getDb()
+	db.run('DELETE FROM messages')
+	db.run('DELETE FROM conversations')
+	db.run('DELETE FROM providers')
+	db.run('DELETE FROM app_settings')
+
+	for (let i = 0; i < providers.length; i++) {
+		const item = providers[i]
+		db.run(
+			'INSERT OR REPLACE INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+			[
+				readStringField(item, 'id'),
+				readStringField(item, 'name'),
+				readStringField(item, 'api_base'),
+				readStringField(item, 'api_key'),
+				readStringField(item, 'models'),
+				readNumberField(item, 'enabled'),
+				readNumberField(item, 'created_at'),
+				readNumberField(item, 'updated_at'),
+			]
+		)
+	}
+
+	for (let i = 0; i < conversations.length; i++) {
+		const item = conversations[i]
+		db.run(
+			'INSERT OR REPLACE INTO conversations (id, title, model, agent_id, system_prompt, created_at, updated_at, message_count, preview) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+			[
+				readStringField(item, 'id'),
+				readStringField(item, 'title'),
+				readStringField(item, 'model'),
+				readStringField(item, 'agent_id'),
+				readStringField(item, 'system_prompt'),
+				readNumberField(item, 'created_at'),
+				readNumberField(item, 'updated_at'),
+				readNumberField(item, 'message_count'),
+				readStringField(item, 'preview'),
+			]
+		)
+	}
+
+	for (let i = 0; i < messages.length; i++) {
+		const item = messages[i]
+		db.run(
+			'INSERT INTO messages (conversation_id, role, content, timestamp, extra) VALUES (?, ?, ?, ?, ?)',
+			[
+				readStringField(item, 'conversation_id'),
+				readStringField(item, 'role'),
+				readStringField(item, 'content'),
+				readNumberField(item, 'timestamp'),
+				readStringField(item, 'extra'),
+			]
+		)
+	}
+
+	for (let i = 0; i < appSettings.length; i++) {
+		const item = appSettings[i]
+		db.run(
+			'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
+			[readStringField(item, 'key'), readStringField(item, 'value')]
+		)
+	}
+	db.close()
+}
+
 /**
  * 保存整条对话（含消息）
  * 先删旧数据，再写新数据，实现覆盖更新

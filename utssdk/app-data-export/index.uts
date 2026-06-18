@@ -6,6 +6,7 @@
 // #ifdef APP-ANDROID
 import File from 'java.io.File'
 import ZipEntry from 'java.util.zip.ZipEntry'
+import ZipFile from 'java.util.zip.ZipFile'
 import ZipOutputStream from 'java.util.zip.ZipOutputStream'
 import FileOutputStream from 'java.io.FileOutputStream'
 import Intent from 'android.content.Intent'
@@ -276,4 +277,249 @@ export function shareExportFile(filePath: string): boolean {
 	}
 	// #endif
 	return false
+}
+
+// #ifdef APP-ANDROID
+function isSafeExtractPath(zipPath: string): boolean {
+	if (zipPath == '') return false
+	if (zipPath.startsWith('/')) return false
+	if (zipPath.indexOf('\\') >= 0) return false
+	const parts = zipPath.split('/')
+	for (let i = 0; i < parts.length; i++) {
+		if (parts[i] == '..') return false
+	}
+	return true
+}
+
+function getImportRoot(): File | null {
+	const context = UTSAndroid.getAppContext()
+	if (context == null) {
+		return null
+	}
+	return ensureDirectory(new File((context.filesDir as File).absolutePath + '/imports'))
+}
+
+function prepareImportZipFile(zipPath: string): File | null {
+	try {
+		if (zipPath.startsWith('content://')) {
+			const context = UTSAndroid.getAppContext()
+			const root = getImportRoot()
+			if (context == null || root == null) {
+				return null
+			}
+			const input = context.contentResolver.openInputStream(Uri.parse(zipPath))
+			if (input == null) {
+				return null
+			}
+			const target = new File(root.absolutePath + '/selected-import.zip')
+			const output = new FileOutputStream(target)
+			output.write(input.readBytes())
+			output.flush()
+			output.close()
+			input.close()
+			return target
+		}
+		const file = new File(normalizeSourcePath(zipPath))
+		if (!file.exists() || file.isDirectory()) {
+			return null
+		}
+		return file
+	} catch (_e: any) {
+		return null
+	}
+}
+
+function deleteRecursive(file: File): void {
+	if (file.isDirectory()) {
+		const names = file.list()
+		if (names != null) {
+			const dirPath = file.absolutePath
+			let idx = 0 as Int
+			while (idx < names.size) {
+				deleteRecursive(new File(dirPath + '/' + names[idx]))
+				idx++
+			}
+		}
+	}
+	file.delete()
+}
+
+function cleanDirectory(dir: File): void {
+	if (!dir.exists()) {
+		dir.mkdirs()
+		return
+	}
+	const names = dir.list()
+	if (names != null) {
+		let idx = 0 as Int
+		while (idx < names.size) {
+			deleteRecursive(new File(dir.absolutePath + '/' + names[idx]))
+			idx++
+		}
+	}
+}
+
+function getImportedAssetsRoot(): File | null {
+	const context = UTSAndroid.getAppContext()
+	if (context == null) {
+		return null
+	}
+	return ensureDirectory(new File((context.filesDir as File).absolutePath + '/imported-assets'))
+}
+
+function extractAssetEntry(zip: ZipFile, entry: ZipEntry, target: File): string {
+	try {
+		if (entry.isDirectory()) {
+			return ''
+		}
+		const parent = target.parentFile
+		if (parent != null) {
+			ensureDirectory(parent)
+		}
+		const input = zip.getInputStream(entry)
+		const output = new FileOutputStream(target)
+		output.write(input.readBytes())
+		output.flush()
+		output.close()
+		input.close()
+		return target.absolutePath as string
+	} catch (_e: any) {
+		return ''
+	}
+}
+
+function extractAgentWorkspaceEntry(zip: ZipFile, entry: ZipEntry, agentsRoot: File): number {
+	const name = entry.name as string
+	const prefix = 'agent-workspaces/'
+	if (!name.startsWith(prefix)) {
+		return 0
+	}
+	if (!isSafeExtractPath(name)) {
+		return 0
+	}
+	const rel = name.substring(prefix.length)
+	if (rel == '') {
+		return 0
+	}
+	const target = new File(agentsRoot.absolutePath + '/' + rel)
+	if (entry.isDirectory()) {
+		ensureDirectory(target)
+		return 0
+	}
+	const parent = target.parentFile
+	if (parent != null) {
+		ensureDirectory(parent)
+	}
+	const input = zip.getInputStream(entry)
+	const output = new FileOutputStream(target)
+	output.write(input.readBytes())
+	output.flush()
+	output.close()
+	input.close()
+	return 1
+}
+// #endif
+
+/** 读取导入 ZIP 的 export.json 清单。 */
+export function readImportManifest(zipPath: string): string {
+	// #ifdef APP-ANDROID
+	try {
+		const file = prepareImportZipFile(zipPath)
+		if (file == null) {
+			return ''
+		}
+		const zip = new ZipFile(file)
+		const entry = zip.getEntry('export.json')
+		if (entry == null) {
+			zip.close()
+			return ''
+		}
+		const root = getImportRoot()
+		if (root == null) {
+			zip.close()
+			return ''
+		}
+		const input = zip.getInputStream(entry)
+		const tempManifest = new File(root.absolutePath + '/.import-manifest.tmp')
+		tempManifest.writeBytes(input.readBytes())
+		const text = tempManifest.readText()
+		tempManifest.delete()
+		input.close()
+		zip.close()
+		return text
+	} catch (_e: any) {
+		return ''
+	}
+	// #endif
+	return ''
+}
+
+/** 解压导入 ZIP 中的 Agent 工作区文件。 */
+export function importAgentWorkspaceFiles(zipPath: string): number {
+	// #ifdef APP-ANDROID
+	try {
+		const importRoot = getImportRoot()
+		const context = UTSAndroid.getAppContext()
+		if (importRoot == null || context == null) {
+			return 0
+		}
+		const agentsRoot = new File((context.filesDir as File).absolutePath + '/agents')
+		ensureDirectory(agentsRoot)
+		cleanDirectory(agentsRoot)
+		const zipFile = prepareImportZipFile(zipPath)
+		if (zipFile == null) {
+			return 0
+		}
+		const zip = new ZipFile(zipFile)
+		let count = 0
+		const entries = zip.entries()
+		while (entries.hasMoreElements()) {
+			const entry = entries.nextElement() as ZipEntry
+			count = count + extractAgentWorkspaceEntry(zip, entry, agentsRoot)
+		}
+		zip.close()
+		return count
+	} catch (_e: any) {
+		return 0
+	}
+	// #endif
+	return 0
+}
+
+/** 解压备份 ZIP 中的头像、图片等资源，返回 ref -> 本机路径。 */
+export function importBackupAssets(zipPath: string, assets: UTSJSONObject[]): UTSJSONObject {
+	const mapping: UTSJSONObject = {}
+	// #ifdef APP-ANDROID
+	try {
+		const root = getImportedAssetsRoot()
+		if (root == null) {
+			return mapping
+		}
+		const zipFile = prepareImportZipFile(zipPath)
+		if (zipFile == null) {
+			return mapping
+		}
+		const zip = new ZipFile(zipFile)
+		for (let i = 0; i < assets.length; i++) {
+			const asset = assets[i]
+			const ref = asset['ref'] as string | null
+			const zipPathValue = asset['zipPath'] as string | null
+			if (ref != null && ref != '' && zipPathValue != null && zipPathValue != '' && isSafeExtractPath(zipPathValue)) {
+				const entry = zip.getEntry(zipPathValue)
+				if (entry != null) {
+					const target = new File(root.absolutePath + '/' + zipPathValue)
+					const saved = extractAssetEntry(zip, entry, target)
+					if (saved != '') {
+						mapping[ref] = saved
+					}
+				}
+			}
+		}
+		zip.close()
+		return mapping
+	} catch (_e: any) {
+		return mapping
+	}
+	// #endif
+	return mapping
 }
