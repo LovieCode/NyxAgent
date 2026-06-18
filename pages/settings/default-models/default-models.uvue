@@ -55,7 +55,6 @@
 			</view>
 
 		</scroll-view>
-		<TabBar current="pages/settings/settings" />
 	</view>
 </template>
 
