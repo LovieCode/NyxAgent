@@ -102,10 +102,10 @@
 				const systemPrompt = parsed['systemPrompt'] as string | null
 				const importantMemory = parsed['importantMemory'] as string | null
 				const bufferInjection = parsed['bufferInjection'] as string | null
-				const settings = parsed['settings']
+				const settings = parsed['settings'] as UTSJSONObject | null
 				const openaiMessages = parsed['openaiMessages'] as UTSJSONObject[] | null
 				const openaiTools = parsed['openaiTools'] as UTSJSONObject[] | null
-				const requestBody = parsed['requestBody']
+				const requestBody = parsed['requestBody'] as UTSJSONObject | null
 				this.providerId = providerId != null ? providerId : ''
 				this.baseUrl = baseUrl != null ? baseUrl : ''
 				this.model = model != null ? model : ''
@@ -114,18 +114,35 @@
 				this.bufferInjection = bufferInjection != null ? bufferInjection : ''
 				this.messageCount = openaiMessages != null ? openaiMessages.length : 0
 				this.toolCount = openaiTools != null ? openaiTools.length : 0
-				this.settingsText = this.formatJsonSegment(settings, '（空）')
-				this.messagesText = this.formatJsonSegment(openaiMessages, '[]')
-				this.toolsText = this.formatJsonSegment(openaiTools, '[]')
-				this.requestBodyText = this.formatJsonSegment(requestBody, '{}')
+				if (settings != null) {
+					this.settingsText = this.formatJsonObjectSegment(settings, '（空）')
+				}
+				if (openaiMessages != null) {
+					this.messagesText = this.formatJsonArraySegment(openaiMessages, '[]')
+				}
+				if (openaiTools != null) {
+					this.toolsText = this.formatJsonArraySegment(openaiTools, '[]')
+				}
+				if (requestBody != null) {
+					this.requestBodyText = this.formatJsonObjectSegment(requestBody, '{}')
+				}
 			} catch (_e: any) {
 			}
 		},
 		methods: {
-			formatJsonSegment(value: any, fallback: string): string {
-				if (value == null) {
-					return fallback
+			formatJsonObjectSegment(value: UTSJSONObject, fallback: string): string {
+				try {
+					return JSON.stringify(value, null, 2)
+				} catch (_e: any) {
+					try {
+						return JSON.stringify(value)
+					} catch (_e2: any) {
+						return fallback
+					}
 				}
+			},
+
+			formatJsonArraySegment(value: UTSJSONObject[], fallback: string): string {
 				try {
 					return JSON.stringify(value, null, 2)
 				} catch (_e: any) {
