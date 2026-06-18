@@ -9,9 +9,9 @@ import {
 	writeAgentFile,
 	deleteAgentFile,
 	listAgentFiles,
-	agentFileExists,
 	createAgentDirectory,
 	getAgentFileInfo,
+	type AgentFileInfo,
 } from '@/utils/agent-fs.uts'
 import {
 	searchCoreMemory,
@@ -57,7 +57,6 @@ export function createAgentTools(agentId: string, conversationId: string = '', p
 		new SandboxFileWriteTool(agentId) as AgentTool,
 		new SandboxFileDeleteTool(agentId) as AgentTool,
 		new SandboxFileListTool(agentId) as AgentTool,
-		new SandboxFileInfoTool(agentId) as AgentTool,
 		new MemorySearchTool(agentId, conversationId, personId) as AgentTool,
 		new MemoryBufferWriteTool(agentId, conversationId, personId) as AgentTool,
 		new MemoryCoreSaveTool(agentId, conversationId, personId) as AgentTool,
@@ -212,15 +211,42 @@ class SandboxFileDeleteTool implements AgentTool {
 /**
  * 目录列表工具
  */
+function formatAgentFileTime(lastModified: number): string {
+	const date = new Date(lastModified)
+	return date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate() + ' ' + date.getHours() + ':' + date.getMinutes()
+}
+
+function formatAgentFileInfo(path: string, info: AgentFileInfo): string {
+	const typeStr = info.isDirectory ? '目录' : '文件'
+	const finalPath = path != '' ? path : info.name
+	return '路径: ' + finalPath + '\n名称: ' + info.name + '\n类型: ' + typeStr + '\n大小: ' + info.size + ' bytes\n修改时间: ' + formatAgentFileTime(info.lastModified)
+}
+
+function formatAgentFileListLine(info: AgentFileInfo, detail: boolean): string {
+	const prefix = info.isDirectory ? '[DIR]  ' : '[FILE] '
+	if (detail == true) {
+		const typeStr = info.isDirectory ? '目录' : '文件'
+		return prefix + info.name + ' | 类型: ' + typeStr + ' | 大小: ' + info.size + ' bytes | 修改时间: ' + formatAgentFileTime(info.lastModified)
+	}
+	if (info.isDirectory) {
+		return prefix + info.name
+	}
+	return prefix + info.name + ' (' + info.size + ' bytes)'
+}
+
 class SandboxFileListTool implements AgentTool {
 	name: string = 'file_list'
-	description: string = '列出指定目录下的文件和子目录。path 为空则列出根目录。'
+	description: string = '列出指定目录下的文件和子目录；当 path 指向文件时返回该文件信息。path 为空则列出根目录，detail 为 true 时显示详细信息。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
 			'path': {
 				'type': 'string',
-				'description': '要列出的目录路径（相对于智能体私有目录，为空则列出根目录）'
+				'description': '要列出的目录或文件路径（相对于智能体私有目录，为空则列出根目录）'
+			},
+			'detail': {
+				'type': 'boolean',
+				'description': '是否显示详细信息（类型、大小、修改时间），默认 false'
 			}
 		},
 		'required': [] as string[]
@@ -235,7 +261,20 @@ class SandboxFileListTool implements AgentTool {
 	execute(args: UTSJSONObject): Promise<ToolResult> {
 		return new Promise<ToolResult>((resolve) => {
 			const path = args['path'] as string | null
+			const rawDetail = args['detail'] as boolean | null
 			const dirPath = (path != null && path!.length > 0) ? path! : ''
+			if (dirPath != '') {
+				const info = getAgentFileInfo(this.agentId, dirPath)
+				if (info == null) {
+					resolve({ content: '路径不存在: ' + dirPath, isError: true } as ToolResult)
+					return
+				}
+				if (info!.isDirectory == false) {
+					resolve({ content: formatAgentFileInfo(dirPath, info!), isError: false } as ToolResult)
+					return
+				}
+			}
+			const detail = rawDetail == true
 			const files = listAgentFiles(this.agentId, dirPath)
 			if (files.length == 0) {
 				resolve({ content: '(目录为空)', isError: false } as ToolResult)
@@ -243,12 +282,7 @@ class SandboxFileListTool implements AgentTool {
 			}
 			const lines: string[] = []
 			for (let i = 0; i < files.length; i++) {
-				const f = files[i]
-				if (f.isDirectory) {
-					lines.push('[DIR]  ' + f.name)
-				} else {
-					lines.push('[FILE] ' + f.name + ' (' + f.size + ' bytes)')
-				}
+				lines.push(formatAgentFileListLine(files[i], detail))
 			}
 			resolve({ content: lines.join('\n'), isError: false } as ToolResult)
 		})
@@ -290,11 +324,8 @@ class SandboxFileInfoTool implements AgentTool {
 				resolve({ content: '文件不存在: ' + path!, isError: true } as ToolResult)
 				return
 			}
-			const typeStr = info!.isDirectory ? '目录' : '文件'
-			const date = new Date(info!.lastModified)
-			const timeStr = date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate() + ' ' + date.getHours() + ':' + date.getMinutes()
 			resolve({
-				content: '名称: ' + info!.name + '\n类型: ' + typeStr + '\n大小: ' + info!.size + ' bytes\n修改时间: ' + timeStr,
+				content: formatAgentFileInfo(path!, info!),
 				isError: false
 			} as ToolResult)
 		})
