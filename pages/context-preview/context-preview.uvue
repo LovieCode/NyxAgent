@@ -70,9 +70,8 @@
 			<view id="section-messages" class="card" :class="activeSectionId == 'section-messages' ? 'card-active' : ''">
 				<text class="section-title">发送 messages（OpenAI 格式）</text>
 				<view v-for="(chunk, index) in messagesChunks" :key="'msg-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-text-active">
-						<view class="code-hit-overlay" :style="activeChunkOverlayStyle(chunk)"></view>
-						<text class="code-text code-text-panel">
+					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-panel-active">
+						<text class="code-text code-text-panel code-text-active">
 							<text>{{activeChunkPrefix(chunk)}}</text>
 							<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
 							<text>{{activeChunkSuffix(chunk)}}</text>
@@ -85,9 +84,8 @@
 			<view id="section-tools" class="card" :class="activeSectionId == 'section-tools' ? 'card-active' : ''">
 				<text class="section-title">工具定义</text>
 				<view v-for="(chunk, index) in toolsChunks" :key="'tool-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-text-active">
-						<view class="code-hit-overlay" :style="activeChunkOverlayStyle(chunk)"></view>
-						<text class="code-text code-text-panel">
+					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-panel-active">
+						<text class="code-text code-text-panel code-text-active">
 							<text>{{activeChunkPrefix(chunk)}}</text>
 							<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
 							<text>{{activeChunkSuffix(chunk)}}</text>
@@ -100,9 +98,8 @@
 			<view id="section-request" class="card" :class="activeSectionId == 'section-request' ? 'card-active' : ''">
 				<text class="section-title">最终 request body</text>
 				<view v-for="(chunk, index) in requestBodyChunks" :key="'req-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-text-active">
-						<view class="code-hit-overlay" :style="activeChunkOverlayStyle(chunk)"></view>
-						<text class="code-text code-text-panel">
+					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-panel-active">
+						<text class="code-text code-text-panel code-text-active">
 							<text>{{activeChunkPrefix(chunk)}}</text>
 							<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
 							<text>{{activeChunkSuffix(chunk)}}</text>
@@ -118,9 +115,8 @@
 					<text class="mini-btn" @click="copyAll">复制</text>
 				</view>
 				<view v-for="(chunk, index) in fullJsonChunks" :key="'json-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-text-active">
-						<view class="code-hit-overlay" :style="activeChunkOverlayStyle(chunk)"></view>
-						<text class="code-text code-text-panel">
+					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-panel-active">
+						<text class="code-text code-text-panel code-text-active">
 							<text>{{activeChunkPrefix(chunk)}}</text>
 							<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
 							<text>{{activeChunkSuffix(chunk)}}</text>
@@ -166,6 +162,8 @@
 				activeChunkId: '' as string,
 				activeMatchStart: -1 as number,
 				activeMatchLength: 0 as number,
+				searchJumpBusy: false as boolean,
+				queuedSearchIndex: -1 as number,
 				showFloatingSearchBar: false as boolean,
 				floatingMetaText: '' as string,
 				providerId: '' as string,
@@ -358,6 +356,63 @@
 				return value != null ? value : ''
 			},
 
+			findChunkById(id: string): UTSJSONObject | null {
+				if (id == '') {
+					return null
+				}
+				for (let i = 0; i < this.messagesChunks.length; i++) {
+					const chunk = this.messagesChunks[i]
+					if (this.chunkAnchorId(chunk) == id) {
+						return chunk
+					}
+				}
+				for (let i = 0; i < this.toolsChunks.length; i++) {
+					const chunk = this.toolsChunks[i]
+					if (this.chunkAnchorId(chunk) == id) {
+						return chunk
+					}
+				}
+				for (let i = 0; i < this.requestBodyChunks.length; i++) {
+					const chunk = this.requestBodyChunks[i]
+					if (this.chunkAnchorId(chunk) == id) {
+						return chunk
+					}
+				}
+				for (let i = 0; i < this.fullJsonChunks.length; i++) {
+					const chunk = this.fullJsonChunks[i]
+					if (this.chunkAnchorId(chunk) == id) {
+						return chunk
+					}
+				}
+				return null
+			},
+
+			measureTextGrid(content: string, endExclusive: number, charsPerLine: number): number[] {
+				let line = 0
+				let column = 0
+				if (content == '' || endExclusive <= 0) {
+					return [line, column]
+				}
+				let limit = endExclusive
+				if (limit > content.length) {
+					limit = content.length
+				}
+				for (let i = 0; i < limit; i++) {
+					const ch = content.charAt(i)
+					if (ch == '\n') {
+						line++
+						column = 0
+						continue
+					}
+					column++
+					if (column >= charsPerLine) {
+						line++
+						column = 0
+					}
+				}
+				return [line, column]
+			},
+
 			pushChunkMatches(list: UTSJSONObject[], chunks: UTSJSONObject[], query: string): void {
 				if (query == '') {
 					return
@@ -515,6 +570,9 @@
 					this.activeChunkId = ''
 					this.activeMatchStart = -1
 					this.activeMatchLength = 0
+					this.searchJumpBusy = false
+					this.queuedSearchIndex = -1
+					this.scrollRequestSeq = this.scrollRequestSeq + 1
 					this.showFloatingSearchBar = false
 					this.floatingMetaText = ''
 					uni.showToast({
@@ -524,20 +582,16 @@
 					return
 				}
 				this.searchIndex = 0
-				const first = results[0]
-				const title = first['title'] as string | null
-				const excerpt = first['excerpt'] as string | null
-				const count = first['count'] as number | null
-				const occurrence = first['occurrence'] as number | null
 				this.searchMetaText = '找到 ' + results.length + ' 处命中。点击下一个 / 上一个开始跳转。'
-				this.currentSearchTitle = title != null ? title : ''
-				this.setCurrentSearchExcerpt(excerpt != null ? excerpt : '')
 				this.activeSectionId = ''
 				this.activeChunkId = ''
 				this.activeMatchStart = -1
 				this.activeMatchLength = 0
+				this.searchJumpBusy = false
+				this.queuedSearchIndex = -1
 				this.showFloatingSearchBar = true
-				this.floatingMetaText = '1 / ' + results.length + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
+				this.floatingMetaText = '1 / ' + results.length
+				this.queueFocusSearchIndex(0)
 			},
 
 			focusSearchIndex(index: number): void {
@@ -563,11 +617,28 @@
 				this.activeMatchLength = matchLength != null ? matchLength : 0
 				this.showFloatingSearchBar = true
 				this.floatingMetaText = (index + 1) + ' / ' + this.searchResults.length + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
-				if (anchorId != null && anchorId != '') {
-					this.scrollToSection(anchorId)
-				} else if (sectionId != null && sectionId != '') {
-					this.scrollToSection(sectionId)
+				this.scrollToSearchTarget(sectionId, anchorId, matchStart)
+			},
+
+			queueFocusSearchIndex(index: number): void {
+				if (index < 0 || index >= this.searchResults.length) {
+					return
 				}
+				if (this.searchJumpBusy == true) {
+					this.queuedSearchIndex = index
+					return
+				}
+				this.searchJumpBusy = true
+				this.queuedSearchIndex = -1
+				this.focusSearchIndex(index)
+				setTimeout(() => {
+					this.searchJumpBusy = false
+					const pending = this.queuedSearchIndex
+					this.queuedSearchIndex = -1
+					if (pending >= 0 && pending != this.searchIndex) {
+						this.queueFocusSearchIndex(pending)
+					}
+				}, 96)
 			},
 
 			focusPrevResult() {
@@ -579,7 +650,7 @@
 				if (nextIndex < 0) {
 					nextIndex = this.searchResults.length - 1
 				}
-				this.focusSearchIndex(nextIndex)
+				this.queueFocusSearchIndex(nextIndex)
 			},
 
 			focusNextResult() {
@@ -591,7 +662,7 @@
 				if (nextIndex >= this.searchResults.length) {
 					nextIndex = 0
 				}
-				this.focusSearchIndex(nextIndex)
+				this.queueFocusSearchIndex(nextIndex)
 			},
 
 			clearSearch() {
@@ -604,24 +675,77 @@
 				this.activeChunkId = ''
 				this.activeMatchStart = -1
 				this.activeMatchLength = 0
+				this.searchJumpBusy = false
+				this.queuedSearchIndex = -1
+				this.scrollRequestSeq = this.scrollRequestSeq + 1
 				this.showFloatingSearchBar = false
 				this.floatingMetaText = ''
 			},
 
-			scrollToSection(id: string): void {
+			commitScrollTop(targetTop: number): void {
+				let safeTop = targetTop
+				if (safeTop < 0) {
+					safeTop = 0
+				}
 				this.scrollRequestSeq = this.scrollRequestSeq + 1
+				const requestId = this.scrollRequestSeq
+				setTimeout(() => {
+					if (requestId != this.scrollRequestSeq) {
+						return
+					}
+					this.scrollTop = safeTop
+				}, 16)
+			},
+
+			scrollToSectionWithOffset(id: string, offsetTop: number): void {
 				const cachedTop = this.layoutTopMap[id] as number | null
 				if (cachedTop != null) {
-					const nextTop = cachedTop - 24
-					this.scrollTop = nextTop > 0 ? nextTop : 0
+					this.commitScrollTop(cachedTop + offsetTop - 24)
 					return
 				}
 				if (id == 'anchor-top') {
-					this.scrollTop = 0
+					this.commitScrollTop(0)
 					return
 				}
 				if (id == 'anchor-bottom') {
-					this.scrollTop = this.scrollTop + 99999
+					this.commitScrollTop(this.scrollTop + 99999)
+					return
+				}
+				this.scheduleLayoutCache()
+			},
+
+			scrollToSection(id: string): void {
+				this.scrollToSectionWithOffset(id, 0)
+			},
+
+			estimateTextMatchOffset(content: string, matchStart: number): number {
+				if (content == '' || matchStart < 0) {
+					return 0
+				}
+				const charsPerLine = this.estimateCodeCharsPerLine()
+				const grid = this.measureTextGrid(content, matchStart, charsPerLine)
+				const line = grid.length > 0 ? grid[0] : 0
+				let offsetTop = 6 + line * 18
+				if (offsetTop < 0) {
+					offsetTop = 0
+				}
+				return offsetTop
+			},
+
+			scrollToSearchTarget(sectionId: string | null, anchorId: string | null, matchStart: number | null): void {
+				if (anchorId != null && anchorId != '') {
+					const chunk = this.findChunkById(anchorId)
+					if (chunk != null) {
+						const content = this.chunkText(chunk)
+						const offsetTop = this.estimateTextMatchOffset(content, matchStart != null ? matchStart : -1)
+						this.scrollToSectionWithOffset(anchorId, offsetTop)
+						return
+					}
+					this.scrollToSectionWithOffset(anchorId, 0)
+					return
+				}
+				if (sectionId != null && sectionId != '') {
+					this.scrollToSectionWithOffset(sectionId, 0)
 				}
 			},
 
@@ -701,43 +825,6 @@
 				return this.chunkText(chunk).substring(this.activeMatchStart + this.activeMatchLength)
 			},
 
-			activeChunkOverlayStyle(chunk: UTSJSONObject): Map<string, string> {
-				const styles = new Map<string, string>()
-				let top = 12
-				let left = 12
-				let width = 18
-				const height = 18
-				if (this.hasActiveChunkMatch(chunk) == true) {
-					const content = this.chunkText(chunk)
-					const charsPerLine = this.estimateCodeCharsPerLine()
-					const charWidth = 7.2
-					let line = 0
-					let column = 0
-					for (let i = 0; i < this.activeMatchStart; i++) {
-						const ch = content.charAt(i)
-						if (ch == '\n') {
-							line++
-							column = 0
-							continue
-						}
-						column++
-						if (column >= charsPerLine) {
-							line++
-							column = 0
-						}
-					}
-					const remain = charsPerLine - column
-					const matchChars = this.activeMatchLength < remain ? this.activeMatchLength : remain
-					top = 12 + line * 18
-					left = 12 + Math.floor(column * charWidth)
-					width = Math.floor(matchChars * charWidth) + 8
-				}
-				styles.set('top', top + 'px')
-				styles.set('left', left + 'px')
-				styles.set('width', width + 'px')
-				styles.set('height', height + 'px')
-				return styles
-			},
 
 			formatJsonObjectSegment(value: UTSJSONObject, fallback: string): string {
 				try {
@@ -990,18 +1077,14 @@
 		z-index: 2;
 	}
 
-	.code-hit-overlay {
-		position: absolute;
-		z-index: 1;
-		background-color: rgba(253, 230, 138, 0.35);
-		border-radius: 4px;
+	.code-panel-active {
+		border-radius: 12px;
+		box-shadow: 0 0 0 1px rgba(251, 143, 171, 0.45);
 	}
 
 	.code-text-active {
-		background-color: #18212F;
-		border-width: 1px;
-		border-style: solid;
-		border-color: #FB8FAB;
+		background-color: #111827;
+		box-shadow: inset 0 0 0 1px rgba(251, 143, 171, 0.55);
 	}
 
 	.code-inline-hit {
