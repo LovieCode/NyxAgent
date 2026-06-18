@@ -4,7 +4,7 @@
 		<scroll-view class="container" :scroll-y="true">
 			<view class="hero-card">
 				<text class="hero-title">Agent 记忆系统</text>
-				<text class="hero-desc">这里管理当前智能体的短缓存和重要信息库。短缓存最多 128 字，只会临时注入下一次请求；重要信息按范围注入，不保存工具调用细节。</text>
+				<text class="hero-desc">这里管理当前智能体的短缓存和重要信息库。短缓存最多 128 字，只会临时注入当前用户的下一次请求；重要信息按范围注入，不保存工具调用细节。</text>
 			</view>
 
 			<view class="card">
@@ -24,7 +24,7 @@
 				</view>
 				<textarea class="textarea" v-model="bufferContent" placeholder="例如：用户偏好简洁回复；当前任务是重构记忆系统。" placeholder-style="color:#9CA3AF" />
 				<view class="meta-row">
-					<text class="field-tip">{{bufferContent.length}}/128，超过会自动截断</text>
+					<text class="field-tip">{{bufferContent.length}}/128，当前用户短缓存，超过会自动截断</text>
 					<view class="inline-actions">
 						<text class="text-btn" @click="clearBuffer">清空</text>
 						<text class="primary-mini" @click="saveBuffer">保存</text>
@@ -55,6 +55,39 @@
 					</view>
 				</scroll-view>
 
+				<view v-if="newScope == 'person_only' || newScope == 'manual_only'" class="target-panel">
+					<text class="field-label">面对对象</text>
+					<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
+						<view class="chip-row">
+							<view class="chip" :class="newTargetType == 'user' ? 'chip-active' : ''" @click="selectNewTargetType('user')">
+								<text class="chip-text" :class="newTargetType == 'user' ? 'chip-text-active' : ''">当前用户</text>
+							</view>
+							<view class="chip" :class="newTargetType == 'agent' ? 'chip-active' : ''" @click="selectNewTargetType('agent')">
+								<text class="chip-text" :class="newTargetType == 'agent' ? 'chip-text-active' : ''">其他 Agent</text>
+							</view>
+							<view class="chip" :class="newTargetType == 'custom' ? 'chip-active' : ''" @click="selectNewTargetType('custom')">
+								<text class="chip-text" :class="newTargetType == 'custom' ? 'chip-text-active' : ''">自定义对象</text>
+							</view>
+						</view>
+					</scroll-view>
+					<scroll-view v-if="newTargetType == 'agent'" class="chip-scroll target-select" :scroll-x="true" :show-scrollbar="false">
+						<view class="chip-row">
+							<view v-for="(agent, ai) in agents" :key="ai" class="chip" :class="newTargetId == readAgentId(agent) ? 'chip-active' : ''" @click="selectNewAgentTarget(agent)">
+								<text class="chip-text" :class="newTargetId == readAgentId(agent) ? 'chip-text-active' : ''">{{readAgentName(agent)}}</text>
+							</view>
+						</view>
+					</scroll-view>
+					<input
+						v-if="newTargetType == 'custom'"
+						class="flat-input target-input"
+						type="text"
+						v-model="newTargetId"
+						placeholder="输入对象名称，比如：产品经理 / 家人 / 某个项目"
+						placeholder-style="color:#D1D5DB"
+					/>
+					<text class="field-tip">当前新增目标：{{newTargetLabel}}</text>
+				</view>
+
 				<text class="field-label" style="margin-top:22rpx;">内容</text>
 				<textarea class="textarea" v-model="newContent" placeholder="写一句值得长期保存的信息。别写密钥、工具参数或流水账。" placeholder-style="color:#9CA3AF" />
 				<view class="param-row">
@@ -77,6 +110,36 @@
 					<text class="card-title">当前可见记忆</text>
 					<text class="refresh-btn" @click="loadMemory">刷新</text>
 				</view>
+				<text class="field-label" style="margin-top:18rpx;">查看对象</text>
+				<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
+					<view class="chip-row">
+						<view class="chip" :class="viewTargetType == 'user' ? 'chip-active' : ''" @click="selectViewTargetType('user')">
+							<text class="chip-text" :class="viewTargetType == 'user' ? 'chip-text-active' : ''">当前用户</text>
+						</view>
+						<view class="chip" :class="viewTargetType == 'agent' ? 'chip-active' : ''" @click="selectViewTargetType('agent')">
+							<text class="chip-text" :class="viewTargetType == 'agent' ? 'chip-text-active' : ''">其他 Agent</text>
+						</view>
+						<view class="chip" :class="viewTargetType == 'custom' ? 'chip-active' : ''" @click="selectViewTargetType('custom')">
+							<text class="chip-text" :class="viewTargetType == 'custom' ? 'chip-text-active' : ''">自定义对象</text>
+						</view>
+					</view>
+				</scroll-view>
+				<scroll-view v-if="viewTargetType == 'agent'" class="chip-scroll target-select" :scroll-x="true" :show-scrollbar="false">
+					<view class="chip-row">
+						<view v-for="(agent, vai) in agents" :key="vai" class="chip" :class="viewTargetId == readAgentId(agent) ? 'chip-active' : ''" @click="selectViewAgentTarget(agent)">
+							<text class="chip-text" :class="viewTargetId == readAgentId(agent) ? 'chip-text-active' : ''">{{readAgentName(agent)}}</text>
+						</view>
+					</view>
+				</scroll-view>
+				<input
+					v-if="viewTargetType == 'custom'"
+					class="flat-input target-input"
+					type="text"
+					v-model="viewTargetId"
+					placeholder="输入对象名称后点刷新"
+					placeholder-style="color:#D1D5DB"
+				/>
+				<text class="field-tip">当前列表目标：{{viewTargetLabel}}</text>
 				<view v-if="memoryList.length == 0" class="empty-card">
 					<text class="empty-text">还没有记忆，存档槽空着。</text>
 				</view>
@@ -86,13 +149,13 @@
 						<text class="memory-forget" @click="forgetMemoryByItem(item)">遗忘</text>
 					</view>
 					<text class="memory-content">{{item['content']}}</text>
-					<text class="memory-meta">P{{itemPriorityText(item)}} · {{itemPinnedText(item)}}</text>
+					<text class="memory-meta">P{{itemPriorityText(item)}} · {{itemPinnedText(item)}} · 面对 {{itemTargetLabel(item)}}</text>
 				</view>
 			</view>
 
 			<view class="danger-card">
 				<text class="danger-title">危险区</text>
-				<text class="danger-desc">清空会归档当前智能体面向该用户的所有可见重要记忆，短缓存不受影响。</text>
+				<text class="danger-desc">清空会归档当前智能体面向当前查看对象的所有可见重要记忆，短缓存不受影响。</text>
 				<view class="danger-btn" @click="confirmClearCore">
 					<text class="danger-btn-text">清空当前 Agent 记忆</text>
 				</view>
@@ -111,9 +174,12 @@
 		listCoreMemory,
 		saveCoreMemory,
 		archiveCoreMemory,
-		clearCoreMemoryForAgent,
+		clearCoreMemoryForTarget,
+		buildMemoryTargetPersonId,
+		memoryPersonIdToLabel,
 		type MemoryCoreInput,
 	} from '@/utils/memory.uts'
+	import { getAgents } from '@/utils/agent.uts'
 
 	export default {
 		data() {
@@ -124,14 +190,28 @@
 				memoryEnabled: true as boolean,
 				bufferContent: '' as string,
 				memoryList: [] as UTSJSONObject[],
+				agents: [] as UTSJSONObject[],
 				scopes: ['person_only', 'always', 'conversation_only', 'manual_only', 'rule'] as string[],
 				categories: ['important', 'preference', 'fact', 'impression', 'rule'] as string[],
 				newScope: 'person_only' as string,
 				newCategory: 'important' as string,
+				newTargetType: 'user' as string,
+				newTargetId: '' as string,
 				newContent: '' as string,
 				newPriority: '3' as string,
 				newPinned: false as boolean,
+				viewTargetType: 'user' as string,
+				viewTargetId: '' as string,
 			}
+		},
+		computed: {
+			newTargetLabel(): string {
+				return memoryPersonIdToLabel(this.buildNewTargetPersonId())
+			},
+
+			viewTargetLabel(): string {
+				return memoryPersonIdToLabel(this.buildViewTargetPersonId())
+			},
 		},
 		onLoad() {
 			const memoryAgentId = uni.getStorageSync('memory_agent_id') as string | null
@@ -152,9 +232,20 @@
 			if (this.conversationId == '') {
 				this.conversationId = 'global'
 			}
+			this.agents = getAgents()
 			this.loadMemory()
 		},
 		methods: {
+			readAgentId(agent: UTSJSONObject): string {
+				const value = agent['id'] as string | null
+				return value != null ? value : ''
+			},
+
+			readAgentName(agent: UTSJSONObject): string {
+				const value = agent['name'] as string | null
+				return value != null ? value : this.readAgentId(agent)
+			},
+
 			scopeLabel(scope: string): string {
 				if (scope == 'always') return '总是注入'
 				if (scope == 'person_only') return '面对某人'
@@ -194,10 +285,60 @@
 				return value == 1 ? '已置顶' : '未置顶'
 			},
 
+			itemTargetLabel(item: UTSJSONObject): string {
+				const value = item['person_id'] as string | null
+				return memoryPersonIdToLabel(value != null ? value : '')
+			},
+
+			buildNewTargetPersonId(): string {
+				return buildMemoryTargetPersonId(this.newTargetType, this.newTargetId)
+			},
+
+			buildViewTargetPersonId(): string {
+				return buildMemoryTargetPersonId(this.viewTargetType, this.viewTargetId)
+			},
+
+			selectNewTargetType(targetType: string) {
+				this.newTargetType = targetType
+				if (targetType == 'user') {
+					this.newTargetId = ''
+				} else if (targetType == 'agent') {
+					if (this.newTargetId == '' && this.agents.length > 0) {
+						this.newTargetId = this.readAgentId(this.agents[0])
+					}
+				} else if (targetType == 'custom') {
+					this.newTargetId = ''
+				}
+			},
+
+			selectViewTargetType(targetType: string) {
+				this.viewTargetType = targetType
+				if (targetType == 'user') {
+					this.viewTargetId = ''
+				} else if (targetType == 'agent') {
+					if (this.viewTargetId == '' && this.agents.length > 0) {
+						this.viewTargetId = this.readAgentId(this.agents[0])
+					}
+				} else if (targetType == 'custom') {
+					this.viewTargetId = ''
+				}
+				this.loadMemory()
+			},
+
+			selectNewAgentTarget(agent: UTSJSONObject) {
+				this.newTargetId = this.readAgentId(agent)
+			},
+
+			selectViewAgentTarget(agent: UTSJSONObject) {
+				this.viewTargetId = this.readAgentId(agent)
+				this.loadMemory()
+			},
+
 			loadMemory() {
 				this.memoryEnabled = getMemoryEnabled()
+				const viewPersonId = this.buildViewTargetPersonId()
 				this.bufferContent = getMemoryBuffer(this.agentId, this.personId, this.conversationId)
-				this.memoryList = listCoreMemory(this.agentId, this.personId, this.conversationId, true)
+				this.memoryList = listCoreMemory(this.agentId, viewPersonId, this.conversationId, true)
 			},
 
 			saveMemoryEnabled() {
@@ -230,6 +371,10 @@
 					uni.showToast({ title: '先写内容', icon: 'none' })
 					return
 				}
+				let targetPersonId = this.buildViewTargetPersonId()
+				if (this.newScope == 'person_only' || this.newScope == 'manual_only') {
+					targetPersonId = this.buildNewTargetPersonId()
+				}
 				const input: MemoryCoreInput = {
 					scope: this.newScope,
 					category: this.newCategory,
@@ -237,7 +382,7 @@
 					priority: this.parsePriority(),
 					pinned: this.newPinned,
 				} as MemoryCoreInput
-				const id = saveCoreMemory(this.agentId, this.personId, this.conversationId, input)
+				const id = saveCoreMemory(this.agentId, targetPersonId, this.conversationId, input)
 				if (id == '') {
 					uni.showToast({ title: '保存失败', icon: 'none' })
 					return
@@ -267,13 +412,13 @@
 			confirmClearCore() {
 				uni.showModal({
 					title: '清空记忆',
-					content: '确认清空当前 Agent 面向该用户的可见重要记忆？',
+					content: '确认清空当前 Agent 面向当前查看对象的可见重要记忆？',
 					success: (res: any) => {
 						const raw = JSON.stringify(res)
 						if (raw == null || raw == '') { return }
 						const parsed = JSON.parse(raw) as UTSJSONObject
 						if (parsed['confirm'] == true) {
-							clearCoreMemoryForAgent(this.agentId, this.personId)
+							clearCoreMemoryForTarget(this.agentId, this.buildViewTargetPersonId(), this.conversationId)
 							this.loadMemory()
 							uni.showToast({ title: '已清空', icon: 'none' })
 						}
