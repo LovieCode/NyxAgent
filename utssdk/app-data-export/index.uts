@@ -8,6 +8,11 @@ import File from 'java.io.File'
 import ZipEntry from 'java.util.zip.ZipEntry'
 import ZipOutputStream from 'java.util.zip.ZipOutputStream'
 import FileOutputStream from 'java.io.FileOutputStream'
+import Intent from 'android.content.Intent'
+import ContentValues from 'android.content.ContentValues'
+import MediaStore from 'android.provider.MediaStore'
+import Uri from 'android.net.Uri'
+import Build from 'android.os.Build'
 import Environment from 'android.os.Environment'
 // #endif
 
@@ -93,31 +98,7 @@ function getAppExportRoot(): File | null {
 	return ensureDirectory(new File(baseDir.absolutePath + '/exports'))
 }
 
-function getAppExternalTypedRoot(directoryName: string): File | null {
-	const context = UTSAndroid.getAppContext()
-	if (context == null) {
-		return null
-	}
-	const baseDir = context.getExternalFilesDir(directoryName)
-	if (baseDir == null) {
-		return null
-	}
-	return ensureDirectory(new File(baseDir.absolutePath + '/眠汐Agent'))
-}
-
-function getExportRoot(location: string): File | null {
-	if (location == 'downloads') {
-		const root = getAppExternalTypedRoot(Environment.DIRECTORY_DOWNLOADS)
-		if (root != null) {
-			return root
-		}
-	}
-	if (location == 'documents') {
-		const root = getAppExternalTypedRoot(Environment.DIRECTORY_DOCUMENTS)
-		if (root != null) {
-			return root
-		}
-	}
+function getExportRoot(): File | null {
 	return getAppExportRoot()
 }
 
@@ -164,10 +145,10 @@ function addFileEntry(zip: ZipOutputStream, zipPath: string, source: File): bool
  * 写入导出 ZIP 文件。
  * ZIP 内固定包含 export.json，并按 fileSpecsJson 追加本地文件条目。
  */
-export function writeExportZipFile(fileName: string, manifestJson: string, fileSpecsJson: string, location: string = 'app'): string {
+export function writeExportZipFile(fileName: string, manifestJson: string, fileSpecsJson: string): string {
 	// #ifdef APP-ANDROID
 	try {
-		const root = getExportRoot(location)
+		const root = getExportRoot()
 		if (root == null) {
 			return ''
 		}
@@ -207,4 +188,92 @@ export function writeExportZipFile(fileName: string, manifestJson: string, fileS
 	}
 	// #endif
 	return ''
+}
+
+// #ifdef APP-ANDROID
+function copyFileToUri(source: File, targetUri: Uri): boolean {
+	try {
+		const context = UTSAndroid.getAppContext()
+		if (context == null) {
+			return false
+		}
+		const resolver = context.contentResolver
+		const stream = resolver.openOutputStream(targetUri)
+		if (stream == null) {
+			return false
+		}
+		stream.write(source.readBytes())
+		stream.flush()
+		stream.close()
+		return true
+	} catch (_e: any) {
+		return false
+	}
+}
+
+function createShareUri(source: File): Uri | null {
+	try {
+		const context = UTSAndroid.getAppContext()
+		if (context == null) {
+			return null
+		}
+		if (Build.VERSION.SDK_INT < 29) {
+			return null
+		}
+		const resolver = context.contentResolver
+		const values = new ContentValues()
+		values.put(MediaStore.MediaColumns.DISPLAY_NAME, source.name)
+		values.put(MediaStore.MediaColumns.MIME_TYPE, 'application/zip')
+		if (Build.VERSION.SDK_INT >= 29) {
+			values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + '/眠汐Agent')
+			values.put(MediaStore.MediaColumns.IS_PENDING, 1 as Int)
+		}
+		const uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+		if (uri == null) {
+			return null
+		}
+		if (!copyFileToUri(source, uri)) {
+			resolver.delete(uri, null, null)
+			return null
+		}
+		if (Build.VERSION.SDK_INT >= 29) {
+			const doneValues = new ContentValues()
+			doneValues.put(MediaStore.MediaColumns.IS_PENDING, 0 as Int)
+			resolver.update(uri, doneValues, null, null)
+		}
+		return uri
+	} catch (_e: any) {
+		return null
+	}
+}
+// #endif
+
+/** 调起系统分享面板分享导出的 ZIP 文件。 */
+export function shareExportFile(filePath: string): boolean {
+	// #ifdef APP-ANDROID
+	try {
+		const activity = UTSAndroid.getUniActivity()
+		if (activity == null) {
+			return false
+		}
+		const source = new File(normalizeSourcePath(filePath))
+		if (!source.exists() || source.isDirectory()) {
+			return false
+		}
+		const uri = createShareUri(source)
+		if (uri == null) {
+			return false
+		}
+		const intent = new Intent(Intent.ACTION_SEND)
+		intent.setType('application/zip')
+		intent.putExtra(Intent.EXTRA_STREAM, uri)
+		intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+		const chooser = Intent.createChooser(intent, '分享导出 ZIP')
+		activity.startActivity(chooser)
+		return true
+	} catch (_e: any) {
+		return false
+	}
+	// #endif
+	return false
 }

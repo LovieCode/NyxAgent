@@ -7,7 +7,7 @@ import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport,
 import { getAllDefaultTaskModels } from '@/utils/provider.uts'
 import { getAgents } from '@/utils/agent.uts'
 import { getAgentStoragePath, listAgentFiles } from '@/utils/agent-fs.uts'
-import { writeExportZipFile } from '@/utssdk/app-data-export/index.uts'
+import { writeExportZipFile, shareExportFile } from '@/utssdk/app-data-export/index.uts'
 
 const EXPORT_SCHEMA_VERSION = 1
 const MAX_EXPORT_FILE_BYTES: number = 50 * 1024 * 1024
@@ -392,7 +392,7 @@ export function buildAllDataExport(): UTSJSONObject {
 /**
  * 导出到本地文件。APP-ANDROID 返回文件路径；其他平台返回空字符串。
  */
-export function exportAllDataToFile(location: string = 'app'): string {
+export function exportAllDataToFile(): string {
 	const exportedAt = new Date().toISOString()
 	const payload = buildAllDataExport()
 	payload['exportedAt'] = exportedAt
@@ -400,7 +400,7 @@ export function exportAllDataToFile(location: string = 'app'): string {
 	const files = payload['files'] as UTSJSONObject[] | null
 	const filesJson = files != null ? JSON.stringify(files) : '[]'
 	const fileName = buildFileName(exportedAt)
-	return writeExportZipFile(fileName, json, filesJson, location)
+	return writeExportZipFile(fileName, json, filesJson)
 }
 
 /**
@@ -408,4 +408,9 @@ export function exportAllDataToFile(location: string = 'app'): string {
  */
 export function exportAllDataToJson(): string {
 	return JSON.stringify(buildAllDataExport())
+}
+
+/** 分享已导出的 ZIP 文件。 */
+export function shareExportedDataFile(filePath: string): boolean {
+	return shareExportFile(filePath)
 }
