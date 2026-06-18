@@ -12,7 +12,17 @@ import {
 	agentFileExists,
 	createAgentDirectory,
 	getAgentFileInfo,
-} from './agent-fs'
+} from '@/utils/agent-fs.uts'
+import {
+	searchCoreMemory,
+	searchConversationHistory,
+	updateMemoryBuffer,
+	saveCoreMemory,
+	listCoreMemory,
+	archiveCoreMemory,
+	formatCoreMemoryList,
+	type MemoryCoreInput,
+} from '@/utils/memory.uts'
 
 /** ToolResult 匹配 agent-core types */
 export type ToolResult = {
@@ -40,13 +50,18 @@ export interface AgentTool {
  * @param agentId 智能体 ID
  * @returns AgentTool 数组
  */
-export function createAgentTools(agentId: string): AgentTool[] {
+export function createAgentTools(agentId: string, conversationId: string = '', personId: string = ''): AgentTool[] {
 	return [
 		new SandboxFileReadTool(agentId) as AgentTool,
 		new SandboxFileWriteTool(agentId) as AgentTool,
 		new SandboxFileDeleteTool(agentId) as AgentTool,
 		new SandboxFileListTool(agentId) as AgentTool,
 		new SandboxFileInfoTool(agentId) as AgentTool,
+		new MemorySearchTool(agentId, conversationId, personId) as AgentTool,
+		new MemoryBufferWriteTool(agentId, conversationId, personId) as AgentTool,
+		new MemoryCoreSaveTool(agentId, conversationId, personId) as AgentTool,
+		new MemoryCoreListTool(agentId, conversationId, personId) as AgentTool,
+		new MemoryCoreForgetTool() as AgentTool,
 	]
 }
 
@@ -301,4 +316,226 @@ export function getToolDefinitions(agentId: string): ToolDefinition[] {
 		} as ToolDefinition)
 	}
 	return defs
+}
+
+/**
+ * 查询记忆与历史工具
+ */
+class MemorySearchTool implements AgentTool {
+	name: string = 'memory_search'
+	description: string = '查询 Agent 可见的记忆和历史对话。只返回 user/assistant 普通文本，不包含工具调用参数、工具结果或系统隐私信息。适合在不确定用户背景、偏好、历史要求时使用。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'query': {
+				'type': 'string',
+				'description': '要查询的关键词或问题，留空则返回最近相关记忆'
+			},
+			'limit': {
+				'type': 'number',
+				'description': '最多返回条数，1-10，默认 8'
+			}
+		},
+		'required': ['query']
+	} as UTSJSONObject
+
+	private agentId: string
+	private conversationId: string
+	private personId: string
+
+	constructor(agentId: string, conversationId: string, personId: string) {
+		this.agentId = agentId
+		this.conversationId = conversationId
+		this.personId = personId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawQuery = args['query'] as string | null
+			const rawLimit = args['limit'] as number | null
+			const query = rawQuery != null ? rawQuery : ''
+			const limit = rawLimit != null ? rawLimit : 8
+			const core = searchCoreMemory(this.agentId, this.personId, this.conversationId, query, limit)
+			const history = searchConversationHistory(this.agentId, query, limit)
+			resolve({ content: core + '\n\n' + history, isError: false } as ToolResult)
+		})
+	}
+}
+
+/**
+ * 写入 128 字短记忆缓存工具
+ */
+class MemoryBufferWriteTool implements AgentTool {
+	name: string = 'memory_buffer_write'
+	description: string = '写入短记忆缓存。缓存最多 128 字，会临时拼到后续用户消息后，适合保存当前阶段目标/称呼/临时约束。不要写工具调用信息、密钥、完整日志。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'content': {
+				'type': 'string',
+				'description': '缓存内容，必须简短，最多 128 字'
+			}
+		},
+		'required': ['content']
+	} as UTSJSONObject
+
+	private agentId: string
+	private conversationId: string
+	private personId: string
+
+	constructor(agentId: string, conversationId: string, personId: string) {
+		this.agentId = agentId
+		this.conversationId = conversationId
+		this.personId = personId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawContent = args['content'] as string | null
+			if (rawContent == null || rawContent == '') {
+				resolve({ content: '缺少必要参数: content', isError: true } as ToolResult)
+				return
+			}
+			const finalContent = updateMemoryBuffer(this.agentId, this.personId, this.conversationId, rawContent)
+			resolve({ content: '短记忆缓存已更新（' + finalContent.length + '/128）：' + finalContent, isError: false } as ToolResult)
+		})
+	}
+}
+
+/**
+ * 保存重要信息工具
+ */
+class MemoryCoreSaveTool implements AgentTool {
+	name: string = 'memory_core_save'
+	description: string = '保存 Agent 重要信息。scope 只能是 always、person_only、conversation_only、manual_only、rule；category 只能是 impression、important、rule、preference、fact。用于长期偏好、重要事实、面对某人的规则，不要保存工具调用信息、密钥或流水账。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'content': {
+				'type': 'string',
+				'description': '记忆内容，建议一句话，最多约 240 字'
+			},
+			'scope': {
+				'type': 'string',
+				'description': '使用范围：always/person_only/conversation_only/manual_only/rule'
+			},
+			'category': {
+				'type': 'string',
+				'description': '分类：impression/important/rule/preference/fact'
+			},
+			'priority': {
+				'type': 'number',
+				'description': '优先级 1-5，越高越重要，默认 3'
+			},
+			'pinned': {
+				'type': 'boolean',
+				'description': '是否置顶，默认 false'
+			}
+		},
+		'required': ['content', 'scope', 'category']
+	} as UTSJSONObject
+
+	private agentId: string
+	private conversationId: string
+	private personId: string
+
+	constructor(agentId: string, conversationId: string, personId: string) {
+		this.agentId = agentId
+		this.conversationId = conversationId
+		this.personId = personId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawContent = args['content'] as string | null
+			if (rawContent == null || rawContent == '') {
+				resolve({ content: '缺少必要参数: content', isError: true } as ToolResult)
+				return
+			}
+			const rawScope = args['scope'] as string | null
+			const rawCategory = args['category'] as string | null
+			const rawPriority = args['priority'] as number | null
+			const rawPinned = args['pinned'] as boolean | null
+			const input: MemoryCoreInput = {
+				scope: rawScope != null ? rawScope : 'manual_only',
+				category: rawCategory != null ? rawCategory : 'important',
+				content: rawContent,
+				priority: rawPriority != null ? rawPriority : 3,
+				pinned: rawPinned == true,
+			} as MemoryCoreInput
+			const id = saveCoreMemory(this.agentId, this.personId, this.conversationId, input)
+			if (id == '') {
+				resolve({ content: '记忆为空，未保存。', isError: true } as ToolResult)
+				return
+			}
+			resolve({ content: '重要记忆已保存：' + id, isError: false } as ToolResult)
+		})
+	}
+}
+
+/**
+ * 列出重要信息工具
+ */
+class MemoryCoreListTool implements AgentTool {
+	name: string = 'memory_core_list'
+	description: string = '列出当前 Agent 可见的重要信息库条目，供确认、整理或遗忘使用。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'include_manual': {
+				'type': 'boolean',
+				'description': '是否包含 manual_only，默认 true'
+			}
+		},
+		'required': [] as string[]
+	} as UTSJSONObject
+
+	private agentId: string
+	private conversationId: string
+	private personId: string
+
+	constructor(agentId: string, conversationId: string, personId: string) {
+		this.agentId = agentId
+		this.conversationId = conversationId
+		this.personId = personId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawInclude = args['include_manual'] as boolean | null
+			const includeManual = rawInclude != null ? rawInclude : true
+			const rows = listCoreMemory(this.agentId, this.personId, this.conversationId, includeManual)
+			resolve({ content: formatCoreMemoryList(rows), isError: false } as ToolResult)
+		})
+	}
+}
+
+/**
+ * 遗忘重要信息工具
+ */
+class MemoryCoreForgetTool implements AgentTool {
+	name: string = 'memory_core_forget'
+	description: string = '按 id 归档/遗忘一条重要记忆。只能遗忘 memory_core_list 或 memory_search 返回的记忆 id。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'id': {
+				'type': 'string',
+				'description': '要遗忘的记忆 id'
+			}
+		},
+		'required': ['id']
+	} as UTSJSONObject
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const id = args['id'] as string | null
+			if (id == null || id == '') {
+				resolve({ content: '缺少必要参数: id', isError: true } as ToolResult)
+				return
+			}
+			const ok = archiveCoreMemory(id)
+			resolve({ content: ok ? '已遗忘记忆：' + id : '遗忘失败：' + id, isError: !ok } as ToolResult)
+		})
+	}
 }

@@ -93,6 +93,12 @@
 			}
 		}
 	,{
+			"path": "pages/memory/memory",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		}
+	,{
 			"path": "pages/common/crop/crop",
 			"style": {
 				"navigationStyle": "custom"

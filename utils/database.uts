@@ -126,6 +126,35 @@ export function initDatabase(): void {
 		'extra TEXT NOT NULL DEFAULT \'{}\')'
 	)
 
+	db.run(
+		'CREATE TABLE IF NOT EXISTS memory_buffer (' +
+		'id TEXT PRIMARY KEY,' +
+		'agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'person_id TEXT NOT NULL DEFAULT \'\',' +
+		'conversation_id TEXT NOT NULL DEFAULT \'\',' +
+		'content TEXT NOT NULL DEFAULT \'\',' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+
+	db.run(
+		'CREATE TABLE IF NOT EXISTS agent_memory_core (' +
+		'id TEXT PRIMARY KEY,' +
+		'agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'person_id TEXT NOT NULL DEFAULT \'\',' +
+		'conversation_id TEXT NOT NULL DEFAULT \'\',' +
+		'category TEXT NOT NULL DEFAULT \'important\',' +
+		'scope TEXT NOT NULL DEFAULT \'manual_only\',' +
+		'content TEXT NOT NULL DEFAULT \'\',' +
+		'priority INTEGER NOT NULL DEFAULT 3,' +
+		'confidence INTEGER NOT NULL DEFAULT 80,' +
+		'pinned INTEGER NOT NULL DEFAULT 0,' +
+		'archived INTEGER NOT NULL DEFAULT 0,' +
+		'created_at INTEGER NOT NULL DEFAULT 0,' +
+		'updated_at INTEGER NOT NULL DEFAULT 0,' +
+		'last_used_at INTEGER NOT NULL DEFAULT 0,' +
+		'use_count INTEGER NOT NULL DEFAULT 0)'
+	)
+
 	db.close()
 }
 
@@ -146,13 +175,22 @@ function readNumberField(obj: UTSJSONObject, key: string): number {
 }
 
 /** 覆盖导入数据库核心表。 */
-export function importDatabaseTables(providers: UTSJSONObject[], conversations: UTSJSONObject[], messages: UTSJSONObject[], appSettings: UTSJSONObject[]): void {
+export function importDatabaseTables(
+	providers: UTSJSONObject[],
+	conversations: UTSJSONObject[],
+	messages: UTSJSONObject[],
+	appSettings: UTSJSONObject[],
+	memoryBuffers: UTSJSONObject[],
+	memoryCore: UTSJSONObject[]
+): void {
 	initDatabase()
 	const db = getDb()
 	db.run('DELETE FROM messages')
 	db.run('DELETE FROM conversations')
 	db.run('DELETE FROM providers')
 	db.run('DELETE FROM app_settings')
+	db.run('DELETE FROM memory_buffer')
+	db.run('DELETE FROM agent_memory_core')
 
 	for (let i = 0; i < providers.length; i++) {
 		const item = providers[i]
@@ -208,6 +246,45 @@ export function importDatabaseTables(providers: UTSJSONObject[], conversations: 
 		db.run(
 			'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
 			[readStringField(item, 'key'), readStringField(item, 'value')]
+		)
+	}
+
+	for (let i = 0; i < memoryBuffers.length; i++) {
+		const item = memoryBuffers[i]
+		db.run(
+			'INSERT OR REPLACE INTO memory_buffer (id, agent_id, person_id, conversation_id, content, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+			[
+				readStringField(item, 'id'),
+				readStringField(item, 'agent_id'),
+				readStringField(item, 'person_id'),
+				readStringField(item, 'conversation_id'),
+				readStringField(item, 'content'),
+				readNumberField(item, 'updated_at'),
+			]
+		)
+	}
+
+	for (let i = 0; i < memoryCore.length; i++) {
+		const item = memoryCore[i]
+		db.run(
+			'INSERT OR REPLACE INTO agent_memory_core (id, agent_id, person_id, conversation_id, category, scope, content, priority, confidence, pinned, archived, created_at, updated_at, last_used_at, use_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+			[
+				readStringField(item, 'id'),
+				readStringField(item, 'agent_id'),
+				readStringField(item, 'person_id'),
+				readStringField(item, 'conversation_id'),
+				readStringField(item, 'category'),
+				readStringField(item, 'scope'),
+				readStringField(item, 'content'),
+				readNumberField(item, 'priority'),
+				readNumberField(item, 'confidence'),
+				readNumberField(item, 'pinned'),
+				readNumberField(item, 'archived'),
+				readNumberField(item, 'created_at'),
+				readNumberField(item, 'updated_at'),
+				readNumberField(item, 'last_used_at'),
+				readNumberField(item, 'use_count'),
+			]
 		)
 	}
 	db.close()
@@ -415,6 +492,22 @@ export function getAllMessagesForExport(): UTSJSONObject[] {
 	return rowsToObjects(result)
 }
 
+/** 导出短记忆缓存。 */
+export function getAllMemoryBuffersForExport(): UTSJSONObject[] {
+	const db = getDb()
+	const result = db.query('SELECT * FROM memory_buffer ORDER BY updated_at DESC')
+	db.close()
+	return rowsToObjects(result)
+}
+
+/** 导出 Agent 重要信息库。 */
+export function getAllMemoryCoreForExport(): UTSJSONObject[] {
+	const db = getDb()
+	const result = db.query('SELECT * FROM agent_memory_core ORDER BY updated_at DESC')
+	db.close()
+	return rowsToObjects(result)
+}
+
 /**
  * 删除某条对话及其消息
  */
@@ -422,6 +515,8 @@ export function deleteConversation(id: string): void {
 	const db = getDb()
 	db.run('DELETE FROM messages WHERE conversation_id = ?', [id])
 	db.run('DELETE FROM conversations WHERE id = ?', [id])
+	db.run('DELETE FROM memory_buffer WHERE conversation_id = ?', [id])
+	db.run('UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE conversation_id = ?', [Date.now(), id])
 	db.close()
 }
 
@@ -433,6 +528,8 @@ export function clearAll(): void {
 	db.run('DELETE FROM messages')
 	db.run('DELETE FROM conversations')
 	db.run('DELETE FROM providers')
+	db.run('DELETE FROM memory_buffer')
+	db.run('DELETE FROM agent_memory_core')
 	db.close()
 }
 

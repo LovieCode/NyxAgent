@@ -13,6 +13,7 @@ import { getAgentById } from '@/utils/agent.uts'
 import { getGlobalGenerationSettings, getEffectiveGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
 import { createAgentTools, AgentTool, ToolResult } from '@/utils/agent-tools.uts'
 import { AgentEventStream } from '@/utils/event.uts'
+import { buildImportantMemoryInjection, buildBufferInjection } from '@/utils/memory.uts'
 
 type ToolCallInfo = {
 	id: string
@@ -457,7 +458,8 @@ function runAgentLoop(
 	model: string,
 	agentId: string,
 	settings: GenerationSettings,
-	stream: AgentEventStream
+	stream: AgentEventStream,
+	conversationId: string
 ): void {
 	const config = resolveLLMConfig(providerId, model)
 	if (config == null) {
@@ -477,16 +479,43 @@ function runAgentLoop(
 			content: systemPrompt,
 		} as UTSJSONObject)
 	}
+	const personId = 'default'
+	const importantMemory = buildImportantMemoryInjection(agentId, personId, conversationId)
+	if (importantMemory != '') {
+		workingMessages.push({
+			role: 'system',
+			content: importantMemory,
+		} as UTSJSONObject)
+	}
+	const bufferInjection = buildBufferInjection(agentId, personId, conversationId)
+	let lastUserIndex = -1
+	if (bufferInjection != '') {
+		for (let i = 0; i < messages.length; i++) {
+			const msg = messages[i]
+			const role = msg['role'] as string | null
+			if (role == 'user') {
+				lastUserIndex = i
+			}
+		}
+	}
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i]
 		const role = msg['role'] as string | null
 		if (role == null) continue
 		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
+		if (i == lastUserIndex && bufferInjection != '') {
+			const msgContent = msg['content'] as string | null
+			workingMessages.push({
+				role: 'user',
+				content: (msgContent != null ? msgContent : '') + '\n\n' + bufferInjection,
+			} as UTSJSONObject)
+			continue
+		}
 		workingMessages.push(msg)
 	}
 
 	// 创建沙箱工具 + 构建 LLM 工具定义
-	const tools = createAgentTools(agentId)
+	const tools = createAgentTools(agentId, conversationId, personId)
 	const toolDefs: UTSJSONObject[] = []
 	for (let i = 0; i < tools.length; i++) {
 		toolDefs.push({
@@ -739,7 +768,8 @@ export function agentChat(
 	providerId: string,
 	model: string,
 	agentId: string,
-	maxIterations: number = 0
+	maxIterations: number = 0,
+	conversationId: string = ''
 ): AgentEventStream {
 	const stream = new AgentEventStream()
 	const agent = getAgentById(agentId)
@@ -750,7 +780,7 @@ export function agentChat(
 
 	// 异步执行 Agent 循环
 	setTimeout(() => {
-		runAgentLoop(messages, systemPrompt, providerId, model, agentId, settings, stream)
+		runAgentLoop(messages, systemPrompt, providerId, model, agentId, settings, stream, conversationId)
 	}, 0)
 
 	return stream
