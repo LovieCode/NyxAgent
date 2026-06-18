@@ -27,6 +27,11 @@
 				<text class="block-text">{{systemPrompt != '' ? systemPrompt : '（空）'}}</text>
 			</view>
 
+			<view class="card">
+				<text class="section-title">生成参数</text>
+				<text class="code-text">{{settingsText}}</text>
+			</view>
+
 			<view class="card" v-if="importantMemory != ''">
 				<text class="section-title">重要记忆注入</text>
 				<text class="block-text">{{importantMemory}}</text>
@@ -38,11 +43,26 @@
 			</view>
 
 			<view class="card">
+				<text class="section-title">发送 messages（OpenAI 格式）</text>
+				<text class="code-text">{{messagesText}}</text>
+			</view>
+
+			<view class="card">
+				<text class="section-title">工具定义</text>
+				<text class="code-text">{{toolsText}}</text>
+			</view>
+
+			<view class="card">
+				<text class="section-title">最终 request body</text>
+				<text class="code-text">{{requestBodyText}}</text>
+			</view>
+
+			<view class="card">
 				<view class="section-row">
 					<text class="section-title">完整 JSON</text>
 					<text class="mini-btn" @click="copyAll">复制</text>
 				</view>
-				<text class="json-text">{{previewText}}</text>
+				<text class="code-text">{{previewText}}</text>
 			</view>
 		</scroll-view>
 	</view>
@@ -61,6 +81,10 @@
 				bufferInjection: '' as string,
 				messageCount: 0 as number,
 				toolCount: 0 as number,
+				settingsText: '（空）' as string,
+				messagesText: '[]' as string,
+				toolsText: '[]' as string,
+				requestBodyText: '{}' as string,
 			}
 		},
 		onLoad() {
@@ -78,8 +102,10 @@
 				const systemPrompt = parsed['systemPrompt'] as string | null
 				const importantMemory = parsed['importantMemory'] as string | null
 				const bufferInjection = parsed['bufferInjection'] as string | null
+				const settings = parsed['settings']
 				const openaiMessages = parsed['openaiMessages'] as UTSJSONObject[] | null
 				const openaiTools = parsed['openaiTools'] as UTSJSONObject[] | null
+				const requestBody = parsed['requestBody']
 				this.providerId = providerId != null ? providerId : ''
 				this.baseUrl = baseUrl != null ? baseUrl : ''
 				this.model = model != null ? model : ''
@@ -88,10 +114,29 @@
 				this.bufferInjection = bufferInjection != null ? bufferInjection : ''
 				this.messageCount = openaiMessages != null ? openaiMessages.length : 0
 				this.toolCount = openaiTools != null ? openaiTools.length : 0
+				this.settingsText = this.formatJsonSegment(settings, '（空）')
+				this.messagesText = this.formatJsonSegment(openaiMessages, '[]')
+				this.toolsText = this.formatJsonSegment(openaiTools, '[]')
+				this.requestBodyText = this.formatJsonSegment(requestBody, '{}')
 			} catch (_e: any) {
 			}
 		},
 		methods: {
+			formatJsonSegment(value: any, fallback: string): string {
+				if (value == null) {
+					return fallback
+				}
+				try {
+					return JSON.stringify(value, null, 2)
+				} catch (_e: any) {
+					try {
+						return JSON.stringify(value)
+					} catch (_e2: any) {
+						return fallback
+					}
+				}
+			},
+
 			copyAll() {
 				if (this.previewText == '') {
 					uni.showToast({
@@ -172,11 +217,15 @@
 		white-space: normal;
 	}
 
-	.json-text {
+	.code-text {
 		font-size: 12px;
-		line-height: 19px;
-		color: #374151;
+		line-height: 18px;
+		color: #E5E7EB;
 		white-space: normal;
+		background-color: #111827;
+		border-radius: 12px;
+		padding: 12px;
+		font-family: monospace;
 	}
 
 	.nav-btn,
