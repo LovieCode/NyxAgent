@@ -1,0 +1,192 @@
+<template>
+	<view class="page-shell rice-theme-light">
+		<NavBar title="原始上下文" showBack @back="goBack">
+			<template #right>
+				<text class="nav-btn" @click="copyAll">复制</text>
+			</template>
+		</NavBar>
+		<scroll-view class="container" :scroll-y="true">
+			<view class="hero-card">
+				<text class="hero-title">发送前完整上下文</text>
+				<text class="hero-desc">这里展示本轮真正会发给 agent 的首轮原始上下文，包含系统提示词、记忆动态注入、消息重写结果、工具定义与请求体。不会显示 API Key。</text>
+			</view>
+
+			<view class="card">
+				<text class="section-title">摘要</text>
+				<text class="meta-line">Provider：{{providerId != '' ? providerId : '未解析'}}</text>
+				<text class="meta-line">Base URL：{{baseUrl != '' ? baseUrl : '未解析'}}</text>
+				<text class="meta-line">Model：{{model != '' ? model : '未解析'}}</text>
+				<text class="meta-line">消息数：{{messageCount}}</text>
+				<text class="meta-line">工具数：{{toolCount}}</text>
+				<text class="meta-line">重要记忆：{{importantMemory != '' ? '已注入' : '无'}}</text>
+				<text class="meta-line">短缓存：{{bufferInjection != '' ? '已注入' : '无'}}</text>
+			</view>
+
+			<view class="card">
+				<text class="section-title">系统提示词</text>
+				<text class="block-text">{{systemPrompt != '' ? systemPrompt : '（空）'}}</text>
+			</view>
+
+			<view class="card" v-if="importantMemory != ''">
+				<text class="section-title">重要记忆注入</text>
+				<text class="block-text">{{importantMemory}}</text>
+			</view>
+
+			<view class="card" v-if="bufferInjection != ''">
+				<text class="section-title">短缓存注入</text>
+				<text class="block-text">{{bufferInjection}}</text>
+			</view>
+
+			<view class="card">
+				<view class="section-row">
+					<text class="section-title">完整 JSON</text>
+					<text class="mini-btn" @click="copyAll">复制</text>
+				</view>
+				<text class="json-text">{{previewText}}</text>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script lang="uts">
+	export default {
+		data() {
+			return {
+				previewText: '' as string,
+				providerId: '' as string,
+				baseUrl: '' as string,
+				model: '' as string,
+				systemPrompt: '' as string,
+				importantMemory: '' as string,
+				bufferInjection: '' as string,
+				messageCount: 0 as number,
+				toolCount: 0 as number,
+			}
+		},
+		onLoad() {
+			const raw = uni.getStorageSync('context_preview_payload') as string | null
+			if (raw == null || raw == '') {
+				this.previewText = '（没有可展示的上下文）'
+				return
+			}
+			this.previewText = raw
+			try {
+				const parsed = JSON.parse(raw) as UTSJSONObject
+				const providerId = parsed['providerId'] as string | null
+				const baseUrl = parsed['baseUrl'] as string | null
+				const model = parsed['model'] as string | null
+				const systemPrompt = parsed['systemPrompt'] as string | null
+				const importantMemory = parsed['importantMemory'] as string | null
+				const bufferInjection = parsed['bufferInjection'] as string | null
+				const openaiMessages = parsed['openaiMessages'] as UTSJSONObject[] | null
+				const openaiTools = parsed['openaiTools'] as UTSJSONObject[] | null
+				this.providerId = providerId != null ? providerId : ''
+				this.baseUrl = baseUrl != null ? baseUrl : ''
+				this.model = model != null ? model : ''
+				this.systemPrompt = systemPrompt != null ? systemPrompt : ''
+				this.importantMemory = importantMemory != null ? importantMemory : ''
+				this.bufferInjection = bufferInjection != null ? bufferInjection : ''
+				this.messageCount = openaiMessages != null ? openaiMessages.length : 0
+				this.toolCount = openaiTools != null ? openaiTools.length : 0
+			} catch (_e: any) {
+			}
+		},
+		methods: {
+			copyAll() {
+				if (this.previewText == '') {
+					uni.showToast({
+						title: '没有可复制内容',
+						icon: 'none'
+					})
+					return
+				}
+				uni.setClipboardData({
+					data: this.previewText,
+					success: () => {
+						uni.showToast({
+							title: '已复制',
+							icon: 'none'
+						})
+					}
+				})
+			},
+
+			goBack() {
+				uni.navigateBack()
+			},
+		}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+		padding: 12px;
+	}
+
+	.hero-card,
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 18px;
+		padding: 16px;
+		margin-bottom: 12px;
+	}
+
+	.hero-title {
+		font-size: 18px;
+		color: var(--rice-text-color);
+		font-weight: bold;
+		margin-bottom: 8px;
+	}
+
+	.hero-desc {
+		font-size: 13px;
+		line-height: 20px;
+		color: var(--rice-text-color-2);
+	}
+
+	.section-title {
+		font-size: 15px;
+		font-weight: bold;
+		color: var(--rice-text-color);
+		margin-bottom: 10px;
+	}
+
+	.section-row {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 10px;
+	}
+
+	.meta-line {
+		font-size: 13px;
+		line-height: 22px;
+		color: var(--rice-text-color-2);
+	}
+
+	.block-text {
+		font-size: 13px;
+		line-height: 21px;
+		color: var(--rice-text-color);
+		white-space: normal;
+	}
+
+	.json-text {
+		font-size: 12px;
+		line-height: 19px;
+		color: #374151;
+		white-space: normal;
+	}
+
+	.nav-btn,
+	.mini-btn {
+		font-size: 14px;
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+
+	.mini-btn {
+		color: var(--rice-primary-color);
+	}
+</style>

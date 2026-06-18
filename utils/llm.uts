@@ -21,7 +21,128 @@ type ToolCallInfo = {
 	arguments: string
 }
 
+type PreparedAgentContext = {
+	workingMessages: UTSJSONObject[]
+	toolDefs: UTSJSONObject[]
+	importantMemory: string
+	bufferInjection: string
+	lastUserIndex: number
+}
+
 // ====== 内部函数 ======
+
+function buildOpenAIToolDefs(tools: AgentTool[]): UTSJSONObject[] {
+	const toolDefs: UTSJSONObject[] = []
+	for (let i = 0; i < tools.length; i++) {
+		toolDefs.push({
+			name: tools[i].name,
+			description: tools[i].description,
+			parameters: tools[i].parameters,
+		} as UTSJSONObject)
+	}
+	return toolDefs
+}
+
+function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[]): UTSJSONObject[] {
+	const apiMessages: UTSJSONObject[] = []
+	if (systemPrompt != '') {
+		apiMessages.push({
+			role: 'system',
+			content: systemPrompt,
+		} as UTSJSONObject)
+	}
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const role = msg['role'] as string | null
+		if (role == null) continue
+		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
+
+		if (role == 'tool' || role == 'toolResult') {
+			const rawToolCallId = msg['tool_call_id']
+			const tcId = rawToolCallId != null ? rawToolCallId : msg['toolCallId']
+			if (tcId == null || (tcId as string) == '') continue
+			const tcContent = msg['content']
+			apiMessages.push({
+				role: 'tool',
+				tool_call_id: tcId as string,
+				content: tcContent != null ? (tcContent as string) : '',
+			} as UTSJSONObject)
+		} else if (role == 'assistant' && msg['tool_calls'] != null) {
+			const msgContent = msg['content'] as string | null
+			const amsg: UTSJSONObject = {
+				role: 'assistant',
+				content: msgContent != null ? msgContent : '',
+				tool_calls: msg['tool_calls'],
+			} as UTSJSONObject
+			apiMessages.push(amsg)
+		} else {
+			const msgContent = msg['content'] as string | null
+			apiMessages.push({
+				role: role,
+				content: msgContent != null ? msgContent : '',
+			} as UTSJSONObject)
+		}
+	}
+	return apiMessages
+}
+
+function prepareAgentContext(
+	messages: UTSJSONObject[],
+	systemPrompt: string,
+	agentId: string,
+	conversationId: string
+): PreparedAgentContext {
+	const workingMessages: UTSJSONObject[] = []
+	if (systemPrompt != '') {
+		workingMessages.push({
+			role: 'system',
+			content: systemPrompt,
+		} as UTSJSONObject)
+	}
+	const personId = 'default'
+	const importantMemory = buildImportantMemoryInjection(agentId, personId, conversationId)
+	if (importantMemory != '') {
+		workingMessages.push({
+			role: 'system',
+			content: importantMemory,
+		} as UTSJSONObject)
+	}
+	const bufferInjection = buildBufferInjection(agentId, personId, conversationId)
+	let lastUserIndex = -1
+	if (bufferInjection != '') {
+		for (let i = 0; i < messages.length; i++) {
+			const msg = messages[i]
+			const role = msg['role'] as string | null
+			if (role == 'user') {
+				lastUserIndex = i
+			}
+		}
+	}
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const role = msg['role'] as string | null
+		if (role == null) continue
+		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
+		if (i == lastUserIndex && bufferInjection != '') {
+			const msgContent = msg['content'] as string | null
+			workingMessages.push({
+				role: 'user',
+				content: (msgContent != null ? msgContent : '') + '\n\n' + bufferInjection,
+			} as UTSJSONObject)
+			continue
+		}
+		workingMessages.push(msg)
+	}
+
+	const tools = createAgentTools(agentId, conversationId, personId)
+	return {
+		workingMessages,
+		toolDefs: buildOpenAIToolDefs(tools),
+		importantMemory,
+		bufferInjection,
+		lastUserIndex,
+	} as PreparedAgentContext
+}
 
 
 
@@ -47,49 +168,7 @@ function callChatAPI(
 	settings: GenerationSettings,
 	done: (text: string | null, toolCalls: ToolCallInfo[] | null) => void
 ): void {
-	// 构建请求消息
-	const apiMessages: UTSJSONObject[] = []
-	if (systemPrompt != '') {
-		apiMessages.push({
-			role: 'system',
-			content: systemPrompt,
-		} as UTSJSONObject)
-	}
-	for (let i = 0; i < messages.length; i++) {
-		const msg = messages[i]
-		const role = msg['role'] as string | null
-		if (role == null) continue
-		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
-
-		if (role == 'tool' || role == 'toolResult') {
-			// tool result 消息格式（toolResult 是内部 UI 角色，发送 API 时转为 tool）
-			const rawToolCallId = msg['tool_call_id']
-			const tcId = rawToolCallId != null ? rawToolCallId : msg['toolCallId']
-			// 跳过无 tool_call_id 的 UI 占位消息（来自 onToolStart/onToolEnd 回调）
-			if (tcId == null || (tcId as string) == '') continue
-			const tcContent = msg['content']
-			apiMessages.push({
-				role: 'tool',
-				tool_call_id: tcId as string,
-				content: tcContent != null ? (tcContent as string) : '',
-			} as UTSJSONObject)
-		} else if (role == 'assistant' && msg['tool_calls'] != null) {
-			// assistant 带工具调用的消息
-			const msgContent = msg['content'] as string | null
-			const amsg: UTSJSONObject = {
-				role: 'assistant',
-				content: msgContent != null ? msgContent : '',
-				tool_calls: msg['tool_calls'],
-			} as UTSJSONObject
-			apiMessages.push(amsg)
-		} else {
-			const msgContent = msg['content'] as string | null
-			apiMessages.push({
-				role: role,
-				content: msgContent != null ? msgContent : '',
-			} as UTSJSONObject)
-		}
-	}
+	const apiMessages = buildOpenAIMessages(systemPrompt, messages)
 
 	// 构建请求体
 	const url = baseUrl + '/v1/chat/completions'
@@ -306,41 +385,7 @@ function callChatAPIStream(
 	onChunk: ((text: string) => void) | null,
 	done: (text: string | null, toolCalls: ToolCallInfo[] | null) => void
 ): RequestTask {
-	// 构建 API 请求消息（与 callChatAPI 相同）
-	const apiMessages: UTSJSONObject[] = []
-	if (systemPrompt != '') {
-		apiMessages.push({ role: 'system', content: systemPrompt } as UTSJSONObject)
-	}
-	for (let i = 0; i < messages.length; i++) {
-		const msg = messages[i]
-		const role = msg['role'] as string | null
-		if (role == null) continue
-		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
-		if (role == 'tool' || role == 'toolResult') {
-			const rawToolCallId = msg['tool_call_id']
-			const tcId = rawToolCallId != null ? rawToolCallId : msg['toolCallId']
-			if (tcId == null || (tcId as string) == '') continue
-			const msgContent = msg['content'] as string | null
-			apiMessages.push({
-				role: 'tool',
-				tool_call_id: tcId as string,
-				content: msgContent != null ? msgContent : '',
-			} as UTSJSONObject)
-		} else if (role == 'assistant' && msg['tool_calls'] != null) {
-			const msgContent = msg['content'] as string | null
-			apiMessages.push({
-				role: 'assistant',
-				content: msgContent != null ? msgContent : '',
-				tool_calls: msg['tool_calls'],
-			} as UTSJSONObject)
-		} else {
-			const msgContent = msg['content'] as string | null
-			apiMessages.push({
-				role: role,
-				content: msgContent != null ? msgContent : '',
-			} as UTSJSONObject)
-		}
-	}
+	const apiMessages = buildOpenAIMessages(systemPrompt, messages)
 
 	const url = baseUrl + '/v1/chat/completions'
 	const headers: UTSJSONObject = {
@@ -471,59 +516,11 @@ function runAgentLoop(
 	const mdl = config.model
 	baseUrl = normalizeBaseUrl(baseUrl)
 
-	// 构建运行消息列表（深拷贝，不修改原始数据）
-	const workingMessages: UTSJSONObject[] = []
-	if (systemPrompt != '') {
-		workingMessages.push({
-			role: 'system',
-			content: systemPrompt,
-		} as UTSJSONObject)
-	}
+	const prepared = prepareAgentContext(messages, systemPrompt, agentId, conversationId)
+	const workingMessages = prepared.workingMessages
 	const personId = 'default'
-	const importantMemory = buildImportantMemoryInjection(agentId, personId, conversationId)
-	if (importantMemory != '') {
-		workingMessages.push({
-			role: 'system',
-			content: importantMemory,
-		} as UTSJSONObject)
-	}
-	const bufferInjection = buildBufferInjection(agentId, personId, conversationId)
-	let lastUserIndex = -1
-	if (bufferInjection != '') {
-		for (let i = 0; i < messages.length; i++) {
-			const msg = messages[i]
-			const role = msg['role'] as string | null
-			if (role == 'user') {
-				lastUserIndex = i
-			}
-		}
-	}
-	for (let i = 0; i < messages.length; i++) {
-		const msg = messages[i]
-		const role = msg['role'] as string | null
-		if (role == null) continue
-		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
-		if (i == lastUserIndex && bufferInjection != '') {
-			const msgContent = msg['content'] as string | null
-			workingMessages.push({
-				role: 'user',
-				content: (msgContent != null ? msgContent : '') + '\n\n' + bufferInjection,
-			} as UTSJSONObject)
-			continue
-		}
-		workingMessages.push(msg)
-	}
-
-	// 创建沙箱工具 + 构建 LLM 工具定义
 	const tools = createAgentTools(agentId, conversationId, personId)
-	const toolDefs: UTSJSONObject[] = []
-	for (let i = 0; i < tools.length; i++) {
-		toolDefs.push({
-			name: tools[i].name,
-			description: tools[i].description,
-			parameters: tools[i].parameters,
-		} as UTSJSONObject)
-	}
+	const toolDefs = prepared.toolDefs
 
 	stream.push({ type: 'agent_start' })
 
@@ -713,6 +710,75 @@ function runAgentLoop(
 		)
 	}
 	continueLoop()
+}
+
+export function buildAgentContextPreview(
+	messages: UTSJSONObject[],
+	systemPrompt: string,
+	providerId: string,
+	model: string,
+	agentId: string,
+	maxIterations: number = 0,
+	conversationId: string = ''
+): UTSJSONObject {
+	const agent = getAgentById(agentId)
+	const settings = getEffectiveGenerationSettings(agent)
+	if (maxIterations > 0) {
+		settings.maxIterations = maxIterations
+	}
+	const prepared = prepareAgentContext(messages, systemPrompt, agentId, conversationId)
+	const config = resolveLLMConfig(providerId, model)
+	let requestModel = ''
+	let normalizedBaseUrl = ''
+	let resolvedProviderId = ''
+	if (config != null) {
+		requestModel = config.model
+		normalizedBaseUrl = normalizeBaseUrl(config.baseUrl)
+		resolvedProviderId = config.providerId
+	}
+	const apiMessages = buildOpenAIMessages('', prepared.workingMessages)
+	const openaiTools: UTSJSONObject[] = []
+	for (let i = 0; i < prepared.toolDefs.length; i++) {
+		const t = prepared.toolDefs[i]
+		openaiTools.push({
+			type: 'function',
+			function: {
+				name: t['name'] as string,
+				description: t['description'] as string,
+				parameters: t['parameters'],
+			},
+		} as UTSJSONObject)
+	}
+	const requestBody: UTSJSONObject = {
+		model: requestModel,
+		messages: apiMessages,
+		max_tokens: settings.maxTokens,
+		temperature: settings.temperature,
+		stream: true,
+	} as UTSJSONObject
+	if (openaiTools.length > 0) {
+		requestBody['tools'] = openaiTools
+	}
+	return {
+		providerId: resolvedProviderId,
+		baseUrl: normalizedBaseUrl,
+		model: requestModel,
+		systemPrompt: systemPrompt,
+		importantMemory: prepared.importantMemory,
+		bufferInjection: prepared.bufferInjection,
+		lastUserIndex: prepared.lastUserIndex,
+		workingMessages: prepared.workingMessages,
+		openaiMessages: apiMessages,
+		toolDefs: prepared.toolDefs,
+		openaiTools: openaiTools,
+		settings: {
+			temperature: settings.temperature,
+			maxTokens: settings.maxTokens,
+			maxIterations: settings.maxIterations,
+			streamEnabled: settings.streamEnabled,
+		} as UTSJSONObject,
+		requestBody: requestBody,
+	} as UTSJSONObject
 }
 
 /**

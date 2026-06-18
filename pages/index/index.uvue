@@ -106,6 +106,10 @@
 						<view class="toolbar-grid-icon"><oui-icon-unix name="robot" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">记忆管理</text>
 					</view>
+					<view class="toolbar-grid-item" @click="openContextPreview">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="eye" size="26px" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">原始上下文</text>
+					</view>
 					<view class="toolbar-grid-item" @click="showCompressPlaceholder">
 						<view class="toolbar-grid-icon"><oui-icon-unix name="compress" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">压缩上下文</text>
@@ -126,7 +130,7 @@
 	 * 扁平化粉白主题
 	 */
 	import { saveConversation, getMessages, getConversationsByAgent } from '@/utils/database.uts'
-	import { agentChat } from '@/utils/llm.uts'
+	import { agentChat, buildAgentContextPreview } from '@/utils/llm.uts'
 	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
 	import { getAgentById } from '@/utils/agent.uts'
 
@@ -657,6 +661,40 @@
 				uni.setStorageSync('memory_conversation_id', this.conversationId)
 				uni.navigateTo({
 					url: '/pages/memory/memory'
+				})
+			},
+
+			openContextPreview() {
+				this.showToolPanel = false
+				let systemPrompt = ''
+				let agentModel = ''
+				if (this.currentAgentId != '') {
+					const agent = getAgentById(this.currentAgentId)
+					if (agent != null) {
+						const rawPrompt = agent['systemPrompt'] as string | null
+						const rawModel = agent['model'] as string | null
+						systemPrompt = rawPrompt != null ? rawPrompt : ''
+						agentModel = rawModel != null ? rawModel : ''
+					}
+				}
+				const preview = buildAgentContextPreview(
+					this.messages,
+					systemPrompt,
+					'',
+					agentModel,
+					this.currentAgentId,
+					0,
+					this.conversationId
+				)
+				let previewText = ''
+				try {
+					previewText = JSON.stringify(preview, null, 2)
+				} catch (_e: any) {
+					previewText = JSON.stringify(preview)
+				}
+				uni.setStorageSync('context_preview_payload', previewText)
+				uni.navigateTo({
+					url: '/pages/context-preview/context-preview'
 				})
 			},
 

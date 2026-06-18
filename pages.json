@@ -91,32 +91,38 @@
 			"style": {
 				"navigationStyle": "custom"
 			}
-		}
-	,{
+		},
+		{
 			"path": "pages/memory/memory",
 			"style": {
 				"navigationStyle": "custom"
 			}
-		}
-	,{
+		},
+		{
 			"path": "pages/common/crop/crop",
 			"style": {
 				"navigationStyle": "custom"
 			}
-		}
-	,{
+		},
+		{
 			"path": "pages/common/editor/editor",
 			"style": {
 				"navigationStyle": "custom"
 			}
+		},
+		{
+			"path": "uni_modules/rice-ui/pages/action-sheet/action-sheet"
+		},
+		{
+			"path": "uni_modules/rice-ui/pages/dialog/dialog"
+		},
+		{
+			"path": "pages/context-preview/context-preview",
+			"style": {
+				"navigationStyle": "custom"
+			}
 		}
-	,{
-    "path": "uni_modules/rice-ui/pages/action-sheet/action-sheet"
-}
-,{
-    "path": "uni_modules/rice-ui/pages/dialog/dialog"
-}
-],
+	],
 	"globalStyle": {
 		"navigationBarTextStyle": "white",
 		"navigationBarTitleText": "Agent",
