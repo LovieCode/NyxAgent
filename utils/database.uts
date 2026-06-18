@@ -17,6 +17,20 @@ function getDb(): xSqlite {
 	return db
 }
 
+/** 获取当前 SQLite 数据库文件路径，用于 Android 全量 ZIP 备份。 */
+export function getDatabaseFilePathForExport(): string {
+	// #ifdef APP-ANDROID
+	const db = getDb()
+	const path = db.getDatabasePath()
+	db.close()
+	if (path == null) {
+		return ''
+	}
+	return path
+	// #endif
+	return ''
+}
+
 /**
  * 将 SQLite 查询结果的 columns+rows 转换为 UTSJSONObject[]
  * 仅用于多行结果查询（getAllProviders、getConversations、getMessages），

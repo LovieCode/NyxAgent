@@ -1,15 +1,16 @@
 /**
  * 全量数据导出工具
- * 聚合 SQLite、uni.storage、智能体配置等本地数据，生成可备份 JSON。
+ * 聚合 SQLite、uni.storage、智能体配置和本地资源，生成可备份 ZIP 清单。
  */
 
-import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings } from '@/utils/database.uts'
+import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings, getDatabaseFilePathForExport } from '@/utils/database.uts'
 import { getAllDefaultTaskModels } from '@/utils/provider.uts'
 import { getAgents } from '@/utils/agent.uts'
-import { listAgentFiles, readAgentFile } from '@/utils/agent-fs.uts'
-import { writeExportFile } from '@/utssdk/app-data-export/index.uts'
+import { getAgentStoragePath, listAgentFiles } from '@/utils/agent-fs.uts'
+import { writeExportZipFile } from '@/utssdk/app-data-export/index.uts'
 
 const EXPORT_SCHEMA_VERSION = 1
+const MAX_EXPORT_FILE_BYTES: number = 50 * 1024 * 1024
 
 function sanitizeFilePart(text: string): string {
 	let result = text
@@ -120,7 +121,170 @@ function parseStorageArray(key: string): UTSJSONObject[] {
 	}
 }
 
-function appendAgentFileEntries(agentId: string, dirPath: string, result: UTSJSONObject[], depth: number): void {
+function isLocalExportPath(path: string): boolean {
+	if (path == '') return false
+	if (path.startsWith('http://')) return false
+	if (path.startsWith('https://')) return false
+	if (path.startsWith('data:')) return false
+	return true
+}
+
+function sanitizeZipSegment(text: string): string {
+	let result = text
+	result = result.replace(/\\/g, '-')
+	result = result.replace(/\//g, '-')
+	result = result.replace(/:/g, '-')
+	result = result.replace(/\?/g, '-')
+	result = result.replace(/\*/g, '-')
+	result = result.replace(/"/g, '-')
+	result = result.replace(/</g, '-')
+	result = result.replace(/>/g, '-')
+	result = result.replace(/\|/g, '-')
+	if (result == '' || result == '..') {
+		return 'file'
+	}
+	return result
+}
+
+function sanitizeRelativeZipPath(path: string): string {
+	const parts = path.split('/')
+	const safeParts: string[] = []
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		if (part != '' && part != '.') {
+			safeParts.push(sanitizeZipSegment(part))
+		}
+	}
+	return safeParts.join('/')
+}
+
+function inferExtension(path: string, fallback: string): string {
+	let clean = path
+	const queryIndex = clean.indexOf('?')
+	if (queryIndex >= 0) {
+		clean = clean.substring(0, queryIndex)
+	}
+	const slashIndex = clean.lastIndexOf('/')
+	const dotIndex = clean.lastIndexOf('.')
+	if (dotIndex > slashIndex && dotIndex >= 0 && dotIndex < clean.length - 1) {
+		const ext = clean.substring(dotIndex + 1)
+		if (ext.length > 0 && ext.length <= 8) {
+			return ext
+		}
+	}
+	return fallback
+}
+
+function appendZipSpec(specs: UTSJSONObject[], sourcePath: string, zipPath: string, kind: string): void {
+	if (zipPath == '') {
+		return
+	}
+	if (kind == 'file' && !isLocalExportPath(sourcePath)) {
+		return
+	}
+	for (let i = 0; i < specs.length; i++) {
+		const oldSource = specs[i]['sourcePath'] as string | null
+		const oldZipPath = specs[i]['zipPath'] as string | null
+		const oldKind = specs[i]['kind'] as string | null
+		if (oldSource == sourcePath && oldZipPath == zipPath && oldKind == kind) {
+			return
+		}
+	}
+	specs.push({
+		kind: kind,
+		sourcePath: sourcePath,
+		zipPath: zipPath,
+	} as UTSJSONObject)
+}
+
+function appendFileSpec(specs: UTSJSONObject[], sourcePath: string, zipPath: string): void {
+	appendZipSpec(specs, sourcePath, zipPath, 'file')
+}
+
+function appendDirectorySpec(specs: UTSJSONObject[], zipPath: string): void {
+	appendZipSpec(specs, '', zipPath, 'directory')
+}
+
+function appendAsset(assets: UTSJSONObject[], specs: UTSJSONObject[], kind: string, sourcePath: string, zipPath: string, ref: string): void {
+	if (!isLocalExportPath(sourcePath)) {
+		return
+	}
+	appendFileSpec(specs, sourcePath, zipPath)
+	assets.push({
+		kind: kind,
+		sourcePath: sourcePath,
+		zipPath: zipPath,
+		ref: ref,
+	} as UTSJSONObject)
+}
+
+function appendStorageAsset(storage: UTSJSONObject, assets: UTSJSONObject[], specs: UTSJSONObject[], storageKey: string, kind: string, fileName: string): void {
+	const value = storage[storageKey] as string | null
+	if (value == null || value == '') {
+		return
+	}
+	const ext = inferExtension(value, 'bin')
+	appendAsset(assets, specs, kind, value, 'assets/storage/' + fileName + '.' + ext, 'storage.' + storageKey)
+}
+
+function appendAgentAvatarAssets(agents: UTSJSONObject[], assets: UTSJSONObject[], specs: UTSJSONObject[]): void {
+	for (let i = 0; i < agents.length; i++) {
+		const rawId = agents[i]['id'] as string | null
+		const rawAvatar = agents[i]['avatar'] as string | null
+		if (rawId != null && rawId != '' && rawAvatar != null && rawAvatar != '') {
+			const ext = inferExtension(rawAvatar, 'bin')
+			const zipPath = 'assets/agents/' + sanitizeZipSegment(rawId) + '/avatar.' + ext
+			appendAsset(assets, specs, 'agentAvatar', rawAvatar, zipPath, 'agents.' + rawId + '.avatar')
+		}
+	}
+}
+
+function appendMessageImageAssets(messages: UTSJSONObject[], assets: UTSJSONObject[], specs: UTSJSONObject[]): void {
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const rawId = msg['id'] as number | null
+		const idText = rawId != null ? (rawId + '') : (i + '')
+		const extraText = msg['extra'] as string | null
+		if (extraText != null && extraText != '' && extraText != '{}') {
+			try {
+				const extra = JSON.parse(extraText) as UTSJSONObject
+				const imageUrl = extra['imageUrl'] as string | null
+				if (imageUrl != null && imageUrl != '') {
+					const ext = inferExtension(imageUrl, 'bin')
+					const zipPath = 'assets/messages/' + sanitizeZipSegment(idText) + '/image.' + ext
+					appendAsset(assets, specs, 'messageImage', imageUrl, zipPath, 'messages.' + idText + '.imageUrl')
+				}
+			} catch (_e: any) {
+			}
+		}
+	}
+}
+
+function collectAssets(storage: UTSJSONObject, agents: UTSJSONObject[], messages: UTSJSONObject[], specs: UTSJSONObject[]): UTSJSONObject[] {
+	const assets: UTSJSONObject[] = []
+	appendStorageAsset(storage, assets, specs, 'profile_avatar', 'profileAvatar', 'profile-avatar')
+	appendStorageAsset(storage, assets, specs, 'crop_image_path', 'cropSource', 'crop-source')
+	appendStorageAsset(storage, assets, specs, 'crop_result', 'cropResult', 'crop-result')
+	appendAgentAvatarAssets(agents, assets, specs)
+	appendMessageImageAssets(messages, assets, specs)
+	return assets
+}
+
+function appendDatabaseFile(specs: UTSJSONObject[]): UTSJSONObject | null {
+	const dbPath = getDatabaseFilePathForExport()
+	if (dbPath == '') {
+		return null
+	}
+	const zipPath = 'database/agent_chat.db'
+	appendFileSpec(specs, dbPath, zipPath)
+	return {
+		kind: 'file',
+		sourcePath: dbPath,
+		zipPath: zipPath,
+	} as UTSJSONObject
+}
+
+function appendAgentFileEntries(agentId: string, dirPath: string, result: UTSJSONObject[], specs: UTSJSONObject[], depth: number): void {
 	if (depth > 8) {
 		return
 	}
@@ -132,49 +296,55 @@ function appendAgentFileEntries(agentId: string, dirPath: string, result: UTSJSO
 			continue
 		}
 		const relPath = dirPath == '' ? name : dirPath + '/' + name
+		const safeRelPath = sanitizeRelativeZipPath(relPath)
 		if (item.isDirectory == true) {
+			const directoryZipPath = 'agent-workspaces/' + sanitizeZipSegment(agentId) + '/' + safeRelPath + '/'
+			appendDirectorySpec(specs, directoryZipPath)
 			result.push({
 				agentId: agentId,
 				path: relPath,
+				zipPath: directoryZipPath,
 				isDirectory: true,
 				size: item.size,
 				lastModified: item.lastModified,
 			} as UTSJSONObject)
-			appendAgentFileEntries(agentId, relPath, result, depth + 1)
+			appendAgentFileEntries(agentId, relPath, result, specs, depth + 1)
 		} else {
-			const content = readAgentFile(agentId, relPath)
+			const sourceRoot = getAgentStoragePath(agentId)
+			const zipPath = 'agent-workspaces/' + sanitizeZipSegment(agentId) + '/' + safeRelPath
 			const entry: UTSJSONObject = {
 				agentId: agentId,
 				path: relPath,
+				zipPath: zipPath,
 				isDirectory: false,
 				size: item.size,
 				lastModified: item.lastModified,
 			} as UTSJSONObject
-			if (content != null) {
-				entry['content'] = content
+			if (sourceRoot != '') {
+				appendFileSpec(specs, sourceRoot + '/' + relPath, zipPath)
+				entry['includedInZip'] = true
 			} else {
-				entry['content'] = ''
 				entry['skipped'] = true
-				entry['reason'] = 'file too large or unreadable'
+				entry['reason'] = 'agent storage path unavailable on this platform'
 			}
 			result.push(entry)
 		}
 	}
 }
 
-function collectAgentFiles(agents: UTSJSONObject[]): UTSJSONObject[] {
+function collectAgentFiles(agents: UTSJSONObject[], specs: UTSJSONObject[]): UTSJSONObject[] {
 	const result: UTSJSONObject[] = []
 	for (let i = 0; i < agents.length; i++) {
 		const rawId = agents[i]['id'] as string | null
 		if (rawId != null && rawId != '') {
-			appendAgentFileEntries(rawId, '', result, 0)
+			appendAgentFileEntries(rawId, '', result, specs, 0)
 		}
 	}
 	return result
 }
 
 function buildFileName(exportedAt: string): string {
-	return 'agent-full-export-' + sanitizeFilePart(exportedAt) + '.json'
+	return 'agent-full-export-' + sanitizeFilePart(exportedAt) + '.zip'
 }
 
 /**
@@ -189,17 +359,27 @@ export function buildAllDataExport(): UTSJSONObject {
 	const notes = parseStorageArray('notes_list')
 	const todos = parseStorageArray('todo_list')
 	const agents = getAgents()
+	const fileSpecs: UTSJSONObject[] = []
+	const databaseFile = appendDatabaseFile(fileSpecs)
+	const agentFiles = collectAgentFiles(agents, fileSpecs)
+	const assets = collectAssets(storage, agents, messages, fileSpecs)
 	return {
 		schemaVersion: EXPORT_SCHEMA_VERSION,
 		exportedAt: exportedAt,
 		app: 'agent',
+		format: 'zip',
+		manifestFile: 'export.json',
+		maxFileBytes: MAX_EXPORT_FILE_BYTES,
 		warning: 'This export may contain API keys, conversation history, prompts and personal data.',
+		files: fileSpecs,
 		data: {
+			databaseFile: databaseFile,
 			providers: getAllProviders(),
 			appSettings: getAllAppSettings(),
 			defaultTaskModels: getAllDefaultTaskModels(),
 			agents: agents,
-			agentFiles: collectAgentFiles(agents),
+			agentFiles: agentFiles,
+			assets: assets,
 			conversations: conversations,
 			messages: messages,
 			notes: notes,
@@ -217,8 +397,10 @@ export function exportAllDataToFile(): string {
 	const payload = buildAllDataExport()
 	payload['exportedAt'] = exportedAt
 	const json = JSON.stringify(payload)
+	const files = payload['files'] as UTSJSONObject[] | null
+	const filesJson = files != null ? JSON.stringify(files) : '[]'
 	const fileName = buildFileName(exportedAt)
-	return writeExportFile(fileName, json)
+	return writeExportZipFile(fileName, json, filesJson)
 }
 
 /**

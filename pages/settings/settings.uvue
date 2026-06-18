@@ -53,7 +53,7 @@
 						<oui-icon-unix name="download" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
 						<view class="menu-text">
 							<text class="menu-title">导出全部数据</text>
-							<text class="menu-desc">提供商、对话、智能体、笔记、待办与设置</text>
+							<text class="menu-desc">ZIP 备份包：配置、对话、头像、Agent 工作区</text>
 						</view>
 					</view>
 					<text class="menu-arrow">›</text>
@@ -233,7 +233,7 @@
 			confirmExportAllData() {
 				uni.showModal({
 					title: '导出全部数据',
-					content: '导出包包含 API Key、对话历史、智能体提示词和个人资料，请只保存到可信位置。确定继续？',
+					content: '导出 ZIP 包包含 API Key、对话历史、头像、Agent 工作区和个人资料，请只保存到可信位置。确定继续？',
 					success: (res) => {
 						if (res.confirm == true) {
 							this.exportAllData()
@@ -251,14 +251,14 @@
 							success: () => {
 								uni.showModal({
 									title: '导出完成',
-									content: '数据已导出到本地文件，路径已复制：\n' + path,
+									content: 'ZIP 备份包已导出，路径已复制：\n' + path,
 									showCancel: false
 								})
 							},
 							fail: () => {
 								uni.showModal({
 									title: '导出完成',
-									content: '数据已导出到本地文件：\n' + path,
+									content: 'ZIP 备份包已导出：\n' + path,
 									showCancel: false
 								})
 							}
@@ -270,7 +270,7 @@
 						data: json,
 						success: () => {
 							uni.showToast({
-								title: '已复制导出 JSON',
+								title: '已复制导出清单',
 								icon: 'success'
 							})
 						},
