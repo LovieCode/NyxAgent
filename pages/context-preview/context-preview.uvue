@@ -5,7 +5,7 @@
 				<text class="nav-btn" @click="copyAll">复制</text>
 			</template>
 		</NavBar>
-		<scroll-view class="container" :scroll-y="true" :scroll-with-animation="true" :scroll-into-view="scrollTargetId">
+		<scroll-view class="container" :scroll-y="true" :scroll-with-animation="false" :scroll-into-view="scrollTargetId">
 			<view id="anchor-top" class="anchor-spacer"></view>
 			<view class="hero-card">
 				<text class="hero-title">发送前完整上下文</text>
@@ -139,6 +139,7 @@
 				previewText: '' as string,
 				previewDisplayText: '' as string,
 				scrollTargetId: '' as string,
+				scrollRequestSeq: 0 as number,
 				searchText: '' as string,
 				searchResults: [] as UTSJSONObject[],
 				searchIndex: -1 as number,
@@ -526,10 +527,15 @@
 			},
 
 			scrollToSection(id: string): void {
+				this.scrollRequestSeq = this.scrollRequestSeq + 1
+				const requestSeq = this.scrollRequestSeq
 				this.scrollTargetId = ''
 				setTimeout(() => {
+					if (requestSeq != this.scrollRequestSeq) {
+						return
+					}
 					this.scrollTargetId = id
-				}, 0)
+				}, 16)
 			},
 
 			scrollToTop() {
