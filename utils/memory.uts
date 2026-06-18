@@ -242,7 +242,7 @@ export function getMemoryBuffer(agentId: string, personId: string, conversationI
 	initMemoryTables()
 	const db = getDb()
 	const id = makeBufferId(agentId, personId, conversationId)
-	const result = db.query('SELECT content FROM memory_buffer WHERE id = ? LIMIT 1', [id])
+	const result = db.query('SELECT content FROM memory_buffer WHERE id = ? AND ? = ? LIMIT 1', [id, 1, 1])
 	db.close()
 	const rows = rowsToObjects(result)
 	if (rows.length == 0) {
@@ -268,7 +268,7 @@ export function updateMemoryBuffer(agentId: string, personId: string, conversati
 export function clearMemoryBuffer(agentId: string, personId: string, conversationId: string): void {
 	initMemoryTables()
 	const db = getDb()
-	db.run('DELETE FROM memory_buffer WHERE id = ?', [makeBufferId(agentId, personId, conversationId)])
+	db.run('DELETE FROM memory_buffer WHERE id = ? AND ? = ?', [makeBufferId(agentId, personId, conversationId), 1, 1])
 	db.close()
 }
 
@@ -400,14 +400,14 @@ function appendScopeMemories(db: xSqlite, lines: string[], budgetRef: number[], 
 	let rows: UTSJSONObject[] = []
 	if (scope == 'rule') {
 		const result = db.query(
-			'SELECT id, category, scope, content FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND scope = \'rule\' ORDER BY pinned DESC, priority DESC, updated_at DESC LIMIT 5',
-			[aid]
+			'SELECT id, category, scope, content FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND scope = \'rule\' AND ? = ? ORDER BY pinned DESC, priority DESC, updated_at DESC LIMIT 5',
+			[aid, 1, 1]
 		)
 		rows = rowsToObjects(result)
 	} else if (scope == 'always') {
 		const result = db.query(
-			'SELECT id, category, scope, content FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND scope = \'always\' ORDER BY pinned DESC, priority DESC, updated_at DESC LIMIT 3',
-			[aid]
+			'SELECT id, category, scope, content FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND scope = \'always\' AND ? = ? ORDER BY pinned DESC, priority DESC, updated_at DESC LIMIT 3',
+			[aid, 1, 1]
 		)
 		rows = rowsToObjects(result)
 	} else if (scope == 'person_only') {

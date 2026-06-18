@@ -322,7 +322,7 @@ export function saveConversation(
 	)
 
 	// 先删该对话的旧消息
-	db.run('DELETE FROM messages WHERE conversation_id = ?', [id])
+	db.run('DELETE FROM messages WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
 
 	// 逐条插入消息
 	for (let i = 0; i < messages.length; i++) {
@@ -416,8 +416,8 @@ export function getAllConversationsForExport(): UTSJSONObject[] {
 export function getConversationsByAgent(agentId: string): UTSJSONObject[] {
 	const db = getDb()
 	const result = db.query(
-		'SELECT id, title, model, agent_id, created_at, updated_at, message_count, preview FROM conversations WHERE agent_id = ? ORDER BY updated_at DESC',
-		[agentId]
+		'SELECT id, title, model, agent_id, created_at, updated_at, message_count, preview FROM conversations WHERE agent_id = ? AND ? = ? ORDER BY updated_at DESC',
+		[agentId, 1, 1]
 	)
 	db.close()
 	return rowsToObjects(result)
@@ -429,8 +429,8 @@ export function getConversationsByAgent(agentId: string): UTSJSONObject[] {
 export function getMessages(conversationId: string): UTSJSONObject[] {
 	const db = getDb()
 	const result = db.query(
-		'SELECT id, conversation_id, role, content, timestamp, extra FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC',
-		[conversationId]
+		'SELECT id, conversation_id, role, content, timestamp, extra FROM messages WHERE conversation_id = ? AND ? = ? ORDER BY timestamp ASC',
+		[conversationId, 1, 1]
 	)
 	db.close()
 
@@ -513,9 +513,9 @@ export function getAllMemoryCoreForExport(): UTSJSONObject[] {
  */
 export function deleteConversation(id: string): void {
 	const db = getDb()
-	db.run('DELETE FROM messages WHERE conversation_id = ?', [id])
-	db.run('DELETE FROM conversations WHERE id = ?', [id])
-	db.run('DELETE FROM memory_buffer WHERE conversation_id = ?', [id])
+	db.run('DELETE FROM messages WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
+	db.run('DELETE FROM conversations WHERE id = ? AND ? = ?', [id, 1, 1])
+	db.run('DELETE FROM memory_buffer WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
 	db.run('UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE conversation_id = ?', [Date.now(), id])
 	db.close()
 }
@@ -643,7 +643,7 @@ export function saveProvider(
  */
 export function deleteProvider(id: string): void {
 	const db = getDb()
-	db.run('DELETE FROM providers WHERE id = ?', [id])
+	db.run('DELETE FROM providers WHERE id = ? AND ? = ?', [id, 1, 1])
 	db.close()
 }
 
