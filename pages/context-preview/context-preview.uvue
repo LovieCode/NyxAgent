@@ -70,7 +70,14 @@
 			<view id="section-messages" class="card" :class="activeSectionId == 'section-messages' ? 'card-active' : ''">
 				<text class="section-title">发送 messages（OpenAI 格式）</text>
 				<view v-for="(chunk, index) in messagesChunks" :key="'msg-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<rich-text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active rich-code-text" :nodes="activeChunkRichText(chunk)" mode="native"></rich-text>
+					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-text-active">
+						<view class="code-hit-overlay" :style="activeChunkOverlayStyle(chunk)"></view>
+						<text class="code-text code-text-panel">
+							<text>{{activeChunkPrefix(chunk)}}</text>
+							<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+							<text>{{activeChunkSuffix(chunk)}}</text>
+						</text>
+					</view>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
 				</view>
 			</view>
@@ -78,7 +85,14 @@
 			<view id="section-tools" class="card" :class="activeSectionId == 'section-tools' ? 'card-active' : ''">
 				<text class="section-title">工具定义</text>
 				<view v-for="(chunk, index) in toolsChunks" :key="'tool-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<rich-text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active rich-code-text" :nodes="activeChunkRichText(chunk)" mode="native"></rich-text>
+					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-text-active">
+						<view class="code-hit-overlay" :style="activeChunkOverlayStyle(chunk)"></view>
+						<text class="code-text code-text-panel">
+							<text>{{activeChunkPrefix(chunk)}}</text>
+							<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+							<text>{{activeChunkSuffix(chunk)}}</text>
+						</text>
+					</view>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
 				</view>
 			</view>
@@ -86,7 +100,14 @@
 			<view id="section-request" class="card" :class="activeSectionId == 'section-request' ? 'card-active' : ''">
 				<text class="section-title">最终 request body</text>
 				<view v-for="(chunk, index) in requestBodyChunks" :key="'req-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<rich-text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active rich-code-text" :nodes="activeChunkRichText(chunk)" mode="native"></rich-text>
+					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-text-active">
+						<view class="code-hit-overlay" :style="activeChunkOverlayStyle(chunk)"></view>
+						<text class="code-text code-text-panel">
+							<text>{{activeChunkPrefix(chunk)}}</text>
+							<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+							<text>{{activeChunkSuffix(chunk)}}</text>
+						</text>
+					</view>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
 				</view>
 			</view>
@@ -97,7 +118,14 @@
 					<text class="mini-btn" @click="copyAll">复制</text>
 				</view>
 				<view v-for="(chunk, index) in fullJsonChunks" :key="'json-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<rich-text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active rich-code-text" :nodes="activeChunkRichText(chunk)" mode="native"></rich-text>
+					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-text-active">
+						<view class="code-hit-overlay" :style="activeChunkOverlayStyle(chunk)"></view>
+						<text class="code-text code-text-panel">
+							<text>{{activeChunkPrefix(chunk)}}</text>
+							<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+							<text>{{activeChunkSuffix(chunk)}}</text>
+						</text>
+					</view>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
 				</view>
 			</view>
@@ -124,6 +152,7 @@
 				previewDisplayText: '' as string,
 				scrollTop: 0 as number,
 				scrollRequestSeq: 0 as number,
+				layoutTopMap: {} as UTSJSONObject,
 				searchText: '' as string,
 				searchResults: [] as UTSJSONObject[],
 				searchIndex: -1 as number,
@@ -212,8 +241,66 @@
 				}
 			} catch (_e: any) {
 			}
+			this.scheduleLayoutCache()
 		},
 		methods: {
+			scheduleLayoutCache(): void {
+				setTimeout(() => {
+					this.cacheLayoutMetrics()
+				}, 80)
+				setTimeout(() => {
+					this.cacheLayoutMetrics()
+				}, 240)
+			},
+
+			cacheLayoutMetrics(): void {
+				const ids: string[] = ['context-scroll', 'anchor-top', 'anchor-bottom', 'section-summary', 'section-system', 'section-settings', 'section-important-memory', 'section-buffer-memory', 'section-messages', 'section-tools', 'section-request', 'section-full-json']
+				for (let i = 0; i < this.messagesChunks.length; i++) {
+					ids.push(this.chunkAnchorId(this.messagesChunks[i]))
+				}
+				for (let i = 0; i < this.toolsChunks.length; i++) {
+					ids.push(this.chunkAnchorId(this.toolsChunks[i]))
+				}
+				for (let i = 0; i < this.requestBodyChunks.length; i++) {
+					ids.push(this.chunkAnchorId(this.requestBodyChunks[i]))
+				}
+				for (let i = 0; i < this.fullJsonChunks.length; i++) {
+					ids.push(this.chunkAnchorId(this.fullJsonChunks[i]))
+				}
+				const query = uni.createSelectorQuery().in(this)
+				for (let i = 0; i < ids.length; i++) {
+					const id = ids[i]
+					if (id != '') {
+						query.select('#' + id).boundingClientRect()
+					}
+				}
+				query.exec((res: any) => {
+					const rows = res as UTSArray<any> | null
+					if (rows == null || rows.length == 0) {
+						return
+					}
+					const map: UTSJSONObject = {}
+					const scrollRect = rows[0] as UTSJSONObject | null
+					const baseTop = scrollRect != null ? ((scrollRect['top'] as number | null) != null ? (scrollRect['top'] as number) : 0) : 0
+					for (let i = 1; i < ids.length; i++) {
+						const id = ids[i]
+						if (id == '') {
+							continue
+						}
+						const row = rows[i] as UTSJSONObject | null
+						if (row == null) {
+							continue
+						}
+						const top = row['top'] as number | null
+						if (top == null) {
+							continue
+						}
+						map[id] = top - baseTop
+					}
+					this.layoutTopMap = map
+				})
+			},
+
 			decodeDisplayEscapes(text: string): string {
 				let result = text
 				result = result.replace(/\\r\\n/g, '\n')
@@ -512,31 +599,19 @@
 
 			scrollToSection(id: string): void {
 				this.scrollRequestSeq = this.scrollRequestSeq + 1
-				const requestSeq = this.scrollRequestSeq
-				const query = uni.createSelectorQuery().in(this)
-				query.select('#context-scroll').boundingClientRect()
-				query.select('#' + id).boundingClientRect()
-				query.exec((res: any) => {
-					if (requestSeq != this.scrollRequestSeq) {
-						return
-					}
-					const rows = res as UTSArray<any> | null
-					if (rows == null || rows.length < 2) {
-						return
-					}
-					const scrollRect = rows[0] as UTSJSONObject | null
-					const targetRect = rows[1] as UTSJSONObject | null
-					if (scrollRect == null || targetRect == null) {
-						return
-					}
-					const scrollTop = scrollRect['top'] as number | null
-					const targetTop = targetRect['top'] as number | null
-					if (scrollTop == null || targetTop == null) {
-						return
-					}
-					const nextTop = this.scrollTop + (targetTop - scrollTop) - 24
+				const cachedTop = this.layoutTopMap[id] as number | null
+				if (cachedTop != null) {
+					const nextTop = cachedTop - 24
 					this.scrollTop = nextTop > 0 ? nextTop : 0
-				})
+					return
+				}
+				if (id == 'anchor-top') {
+					this.scrollTop = 0
+					return
+				}
+				if (id == 'anchor-bottom') {
+					this.scrollTop = this.scrollTop + 99999
+				}
 			},
 
 			scrollToTop() {
@@ -568,15 +643,16 @@
 				return content != null ? content : ''
 			},
 
-			escapeRichText(text: string): string {
-				let result = text
-				result = result.replace(/&/g, '&amp;')
-				result = result.replace(/</g, '&lt;')
-				result = result.replace(/>/g, '&gt;')
-				result = result.replace(/"/g, '&quot;')
-				result = result.replace(/\n/g, '<br/>')
-				result = result.replace(/ /g, '&nbsp;')
-				return result
+			estimateCodeCharsPerLine(): number {
+				const info = uni.getSystemInfoSync()
+				const windowWidth = info.windowWidth
+				const usableWidth = windowWidth - 116
+				const charWidth = 7.2
+				let value = Math.floor(usableWidth / charWidth)
+				if (value < 18) {
+					value = 18
+				}
+				return value
 			},
 
 			hasActiveChunkMatch(chunk: UTSJSONObject): boolean {
@@ -614,17 +690,42 @@
 				return this.chunkText(chunk).substring(this.activeMatchStart + this.activeMatchLength)
 			},
 
-			activeChunkRichText(chunk: UTSJSONObject): string {
-				const before = this.escapeRichText(this.activeChunkPrefix(chunk))
-				const hit = this.escapeRichText(this.activeChunkMatch(chunk))
-				const after = this.escapeRichText(this.activeChunkSuffix(chunk))
-				return '<div style="color:#E5E7EB;font-size:12px;line-height:18px;font-family:monospace;white-space:pre-wrap;word-break:break-all;">'
-					+ before
-					+ '<span style="background-color:#FDE68A;color:#111827;border-radius:4px;padding:0 2px;font-weight:bold;">'
-					+ hit
-					+ '</span>'
-					+ after
-					+ '</div>'
+			activeChunkOverlayStyle(chunk: UTSJSONObject): Map<string, string> {
+				const styles = new Map<string, string>()
+				let top = 12
+				let left = 12
+				let width = 18
+				const height = 18
+				if (this.hasActiveChunkMatch(chunk) == true) {
+					const content = this.chunkText(chunk)
+					const charsPerLine = this.estimateCodeCharsPerLine()
+					const charWidth = 7.2
+					let line = 0
+					let column = 0
+					for (let i = 0; i < this.activeMatchStart; i++) {
+						const ch = content.charAt(i)
+						if (ch == '\n') {
+							line++
+							column = 0
+							continue
+						}
+						column++
+						if (column >= charsPerLine) {
+							line++
+							column = 0
+						}
+					}
+					const remain = charsPerLine - column
+					const matchChars = this.activeMatchLength < remain ? this.activeMatchLength : remain
+					top = 12 + line * 18
+					left = 12 + Math.floor(column * charWidth)
+					width = Math.floor(matchChars * charWidth) + 8
+				}
+				styles.set('top', top + 'px')
+				styles.set('left', left + 'px')
+				styles.set('width', width + 'px')
+				styles.set('height', height + 'px')
+				return styles
 			},
 
 			formatJsonObjectSegment(value: UTSJSONObject, fallback: string): string {
@@ -869,15 +970,27 @@
 		font-family: monospace;
 	}
 
+	.code-panel {
+		position: relative;
+	}
+
+	.code-text-panel {
+		position: relative;
+		z-index: 2;
+	}
+
+	.code-hit-overlay {
+		position: absolute;
+		z-index: 1;
+		background-color: rgba(253, 230, 138, 0.35);
+		border-radius: 4px;
+	}
+
 	.code-text-active {
 		background-color: #18212F;
 		border-width: 1px;
 		border-style: solid;
 		border-color: #FB8FAB;
-	}
-
-	.rich-code-text {
-		width: 100%;
 	}
 
 	.code-inline-hit {
