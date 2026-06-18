@@ -304,7 +304,7 @@ function callChatAPIStream(
 	settings: GenerationSettings,
 	onChunk: ((text: string) => void) | null,
 	done: (text: string | null, toolCalls: ToolCallInfo[] | null) => void
-): void {
+): RequestTask {
 	// 构建 API 请求消息（与 callChatAPI 相同）
 	const apiMessages: UTSJSONObject[] = []
 	if (systemPrompt != '') {
@@ -443,6 +443,8 @@ function callChatAPIStream(
 			processSSELine(parts[i], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk)
 		}
 	})
+
+	return task
 }
 
 /**
@@ -499,10 +501,22 @@ function runAgentLoop(
 	// ReAct 循环
 	let iteration = 0
 	let runLoop: (() => void) | null = null
+	let activeTask: RequestTask | null = null
+	stream.setAbortHandler((): void => {
+		const task = activeTask
+		if (task != null) {
+			try {
+				task.abort()
+			} catch (_e: any) {}
+		}
+		activeTask = null
+	})
 	const continueLoop = (): void => {
+		if (stream.aborted == true) return
 		runLoop?.invoke()
 	}
 	runLoop = (): void => {
+		if (stream.aborted == true) return
 		if (settings.maxIterations > 0 && iteration >= settings.maxIterations) {
 			stream.push({ type: 'error', error: '（已达到最大迭代次数 ' + settings.maxIterations + '，无法完成请求）' })
 			stream.end()
@@ -519,11 +533,13 @@ function runAgentLoop(
 			}
 		}
 
-		callChatAPIStream(baseUrl, apiKey, mdl, '', workingMessages, toolDefs, settings,
+		activeTask = callChatAPIStream(baseUrl, apiKey, mdl, '', workingMessages, toolDefs, settings,
 			// onChunk: 文本增量
 			chunkHandler,
 			// done: 一轮完成
 			(text: string | null, toolCalls: ToolCallInfo[] | null) => {
+				activeTask = null
+				if (stream.aborted == true) return
 				if (toolCalls == null || toolCalls.length == 0) {
 					// 纯文本回复，结束
 					stream.push({ type: 'text_end', fullText: text != null ? text : '' })
@@ -563,6 +579,7 @@ function runAgentLoop(
 				let execIndex = 0
 				let executeNext: (() => void) | null = null
 				executeNext = (): void => {
+					if (stream.aborted == true) return
 					if (execIndex >= toolCalls.length) {
 						stream.push({ type: 'turn_end' })
 						continueLoop()
@@ -620,6 +637,7 @@ function runAgentLoop(
 					// 执行工具
 					const p = (tool as AgentTool).execute(argsObj)
 					p.then((res: ToolResult): void => {
+						if (stream.aborted == true) return
 						stream.push({
 							type: 'tool_execution_end',
 							toolCallId: tc.id,
@@ -639,6 +657,7 @@ function runAgentLoop(
 						executeNext?.invoke()
 					})
 					p.catch((err) => {
+						if (stream.aborted == true) return
 						const errMsg = '工具执行异常: ' + err
 						stream.push({
 							type: 'tool_execution_end',

@@ -98,8 +98,8 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		padding-left: 14px;
-		padding-right: 6px;
+		padding-left: 10px;
+		padding-right: 10px;
 		height: 40px;
 		background-color: var(--rice-primary-color);
 	}
@@ -111,7 +111,7 @@
 	}
 
 	.nb-left {
-		width: 70px;
+		width: 104px;
 		flex-direction: row;
 		align-items: center;
 	}
@@ -128,6 +128,7 @@
 	}
 
 	.nb-right {
+		width: 104px;
 		flex-direction: row;
 		align-items: center;
 		justify-content: flex-end;
