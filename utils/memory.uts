@@ -21,6 +21,11 @@ export type MemoryCoreInput = {
 	pinned: boolean
 }
 
+export type MemoryTarget = {
+	personId: string
+	label: string
+}
+
 function getDb(): xSqlite {
 	const db = new xSqlite()
 	db.createDb(DB_NAME)
@@ -99,6 +104,44 @@ export function normalizeMemoryPersonId(personId: string): string {
 		return DEFAULT_PERSON_ID
 	}
 	return trimmed
+}
+
+function sanitizeTargetPart(text: string): string {
+	let result = text.trim()
+	result = result.replace(/:/g, '-')
+	result = result.replace(/\n/g, ' ')
+	result = result.replace(/\r/g, ' ')
+	if (result.length > 64) {
+		result = result.substring(0, 64)
+	}
+	return result
+}
+
+export function buildMemoryTargetPersonId(targetType: string, targetId: string): string {
+	const typeText = targetType.trim()
+	const idText = sanitizeTargetPart(targetId)
+	if (typeText == 'user') {
+		if (idText == '' || idText == DEFAULT_PERSON_ID) return DEFAULT_PERSON_ID
+		return 'user:' + idText
+	}
+	if (typeText == 'agent') {
+		if (idText == '') return DEFAULT_PERSON_ID
+		return 'agent:' + idText
+	}
+	if (typeText == 'custom') {
+		if (idText == '') return DEFAULT_PERSON_ID
+		return 'custom:' + idText
+	}
+	return normalizeMemoryPersonId(targetId)
+}
+
+export function memoryPersonIdToLabel(personId: string): string {
+	const value = normalizeMemoryPersonId(personId)
+	if (value == DEFAULT_PERSON_ID) return '当前用户'
+	if (value.startsWith('agent:')) return 'Agent：' + value.substring(6)
+	if (value.startsWith('user:')) return '用户：' + value.substring(5)
+	if (value.startsWith('custom:')) return '对象：' + value.substring(7)
+	return value
 }
 
 function normalizeConversationId(conversationId: string): string {
@@ -311,6 +354,19 @@ export function clearCoreMemoryForAgent(agentId: string, personId: string): void
 	db.run(
 		'UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE agent_id = ? AND (person_id = ? OR scope = \'always\' OR scope = \'rule\')',
 		[Date.now(), aid, pid]
+	)
+	db.close()
+}
+
+export function clearCoreMemoryForTarget(agentId: string, personId: string, conversationId: string): void {
+	initMemoryTables()
+	const aid = normalizeAgentId(agentId)
+	const pid = normalizeMemoryPersonId(personId)
+	const cid = normalizeConversationId(conversationId)
+	const db = getDb()
+	db.run(
+		'UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE agent_id = ? AND ((person_id = ? AND (scope = \'person_only\' OR scope = \'manual_only\')) OR (conversation_id = ? AND scope = \'conversation_only\'))',
+		[Date.now(), aid, pid, cid]
 	)
 	db.close()
 }

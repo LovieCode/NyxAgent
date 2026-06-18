@@ -21,6 +21,7 @@ import {
 	listCoreMemory,
 	archiveCoreMemory,
 	formatCoreMemoryList,
+	buildMemoryTargetPersonId,
 	type MemoryCoreInput,
 } from '@/utils/memory.uts'
 
@@ -334,6 +335,14 @@ class MemorySearchTool implements AgentTool {
 			'limit': {
 				'type': 'number',
 				'description': '最多返回条数，1-10，默认 8'
+			},
+			'target_type': {
+				'type': 'string',
+				'description': '查询面对对象类型：user/agent/custom。默认 user'
+			},
+			'target_id': {
+				'type': 'string',
+				'description': '查询面对对象 ID 或名称。user 可留空表示当前用户；agent 填 Agent ID；custom 填对象名称'
 			}
 		},
 		'required': ['query']
@@ -353,9 +362,12 @@ class MemorySearchTool implements AgentTool {
 		return new Promise<ToolResult>((resolve) => {
 			const rawQuery = args['query'] as string | null
 			const rawLimit = args['limit'] as number | null
+			const rawTargetType = args['target_type'] as string | null
+			const rawTargetId = args['target_id'] as string | null
 			const query = rawQuery != null ? rawQuery : ''
 			const limit = rawLimit != null ? rawLimit : 8
-			const core = searchCoreMemory(this.agentId, this.personId, this.conversationId, query, limit)
+			const targetPersonId = buildMemoryTargetPersonId(rawTargetType != null ? rawTargetType : 'user', rawTargetId != null ? rawTargetId : this.personId)
+			const core = searchCoreMemory(this.agentId, targetPersonId, this.conversationId, query, limit)
 			const history = searchConversationHistory(this.agentId, query, limit)
 			resolve({ content: core + '\n\n' + history, isError: false } as ToolResult)
 		})
@@ -430,6 +442,14 @@ class MemoryCoreSaveTool implements AgentTool {
 			'pinned': {
 				'type': 'boolean',
 				'description': '是否置顶，默认 false'
+			},
+			'target_type': {
+				'type': 'string',
+				'description': 'person_only 面对对象类型：user/agent/custom。默认 user'
+			},
+			'target_id': {
+				'type': 'string',
+				'description': 'person_only 面对对象 ID 或名称。user 可留空表示当前用户；agent 填 Agent ID；custom 填对象名称'
 			}
 		},
 		'required': ['content', 'scope', 'category']
@@ -456,14 +476,21 @@ class MemoryCoreSaveTool implements AgentTool {
 			const rawCategory = args['category'] as string | null
 			const rawPriority = args['priority'] as number | null
 			const rawPinned = args['pinned'] as boolean | null
+			const rawTargetType = args['target_type'] as string | null
+			const rawTargetId = args['target_id'] as string | null
+			const scope = rawScope != null ? rawScope : 'manual_only'
+			let targetPersonId = this.personId
+			if (scope == 'person_only' || scope == 'manual_only') {
+				targetPersonId = buildMemoryTargetPersonId(rawTargetType != null ? rawTargetType : 'user', rawTargetId != null ? rawTargetId : this.personId)
+			}
 			const input: MemoryCoreInput = {
-				scope: rawScope != null ? rawScope : 'manual_only',
+				scope: scope,
 				category: rawCategory != null ? rawCategory : 'important',
 				content: rawContent,
 				priority: rawPriority != null ? rawPriority : 3,
 				pinned: rawPinned == true,
 			} as MemoryCoreInput
-			const id = saveCoreMemory(this.agentId, this.personId, this.conversationId, input)
+			const id = saveCoreMemory(this.agentId, targetPersonId, this.conversationId, input)
 			if (id == '') {
 				resolve({ content: '记忆为空，未保存。', isError: true } as ToolResult)
 				return
@@ -485,6 +512,14 @@ class MemoryCoreListTool implements AgentTool {
 			'include_manual': {
 				'type': 'boolean',
 				'description': '是否包含 manual_only，默认 true'
+			},
+			'target_type': {
+				'type': 'string',
+				'description': '面对对象类型：user/agent/custom。默认 user'
+			},
+			'target_id': {
+				'type': 'string',
+				'description': '面对对象 ID 或名称。user 可留空表示当前用户；agent 填 Agent ID；custom 填对象名称'
 			}
 		},
 		'required': [] as string[]
@@ -503,8 +538,11 @@ class MemoryCoreListTool implements AgentTool {
 	execute(args: UTSJSONObject): Promise<ToolResult> {
 		return new Promise<ToolResult>((resolve) => {
 			const rawInclude = args['include_manual'] as boolean | null
+			const rawTargetType = args['target_type'] as string | null
+			const rawTargetId = args['target_id'] as string | null
 			const includeManual = rawInclude != null ? rawInclude : true
-			const rows = listCoreMemory(this.agentId, this.personId, this.conversationId, includeManual)
+			const targetPersonId = buildMemoryTargetPersonId(rawTargetType != null ? rawTargetType : 'user', rawTargetId != null ? rawTargetId : this.personId)
+			const rows = listCoreMemory(this.agentId, targetPersonId, this.conversationId, includeManual)
 			resolve({ content: formatCoreMemoryList(rows), isError: false } as ToolResult)
 		})
 	}
