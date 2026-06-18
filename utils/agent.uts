@@ -132,6 +132,21 @@ export function updateAgentModel(id: string, model: string): void {
 	saveAgents(agents)
 }
 
+/** 更新智能体生成参数覆盖。 */
+export function updateAgentGenerationSettings(id: string, temperature: number | null, maxTokens: number | null, maxIterations: number | null, streamEnabled: boolean | null): void {
+	const agents = getAgents()
+	for (let i = 0; i < agents.length; i++) {
+		if ((agents[i]['id'] as string) == id) {
+			agents[i]['temperature'] = temperature
+			agents[i]['maxTokens'] = maxTokens
+			agents[i]['maxIterations'] = maxIterations
+			agents[i]['streamEnabled'] = streamEnabled
+			break
+		}
+	}
+	saveAgents(agents)
+}
+
 /** 仅更新智能体头像 */
 export function updateAgentAvatar(id: string, avatarPath: string): void {
 	const agents = getAgents()

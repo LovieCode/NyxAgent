@@ -1,0 +1,107 @@
+/**
+ * LLM 生成参数设置
+ * 全局默认值放在 storage；单个智能体可覆盖。
+ */
+
+export type GenerationSettings = {
+	temperature: number
+	maxTokens: number
+	maxIterations: number
+	streamEnabled: boolean
+}
+
+const GLOBAL_TEMPERATURE_KEY = 'settings_generation_temperature'
+const GLOBAL_MAX_TOKENS_KEY = 'settings_generation_max_tokens'
+const GLOBAL_MAX_ITERATIONS_KEY = 'settings_generation_max_iterations'
+const GLOBAL_STREAM_ENABLED_KEY = 'settings_generation_stream_enabled'
+
+export const DEFAULT_TEMPERATURE = 0.7
+export const DEFAULT_MAX_TOKENS = 4096
+export const DEFAULT_MAX_ITERATIONS = 20
+export const DEFAULT_STREAM_ENABLED = true
+
+function clampNumber(value: number, min: number, max: number): number {
+	if (value < min) return min
+	if (value > max) return max
+	return value
+}
+
+function readNumberStorage(key: string, fallback: number, min: number, max: number): number {
+	const raw = uni.getStorageSync(key) as string | null
+	if (raw == null || raw == '') {
+		return fallback
+	}
+	const parsed = parseFloat(raw)
+	if (isNaN(parsed)) {
+		return fallback
+	}
+	return clampNumber(parsed, min, max)
+}
+
+function readIntStorage(key: string, fallback: number, min: number, max: number): number {
+	const raw = uni.getStorageSync(key) as string | null
+	if (raw == null || raw == '') {
+		return fallback
+	}
+	const parsed = parseInt(raw)
+	if (isNaN(parsed)) {
+		return fallback
+	}
+	return clampNumber(parsed, min, max)
+}
+
+function readBoolStorage(key: string, fallback: boolean): boolean {
+	const raw = uni.getStorageSync(key) as string | null
+	if (raw == null || raw == '') {
+		return fallback
+	}
+	return raw == 'true'
+}
+
+function readAgentNumber(agent: UTSJSONObject | null, key: string, fallback: number, min: number, max: number): number {
+	if (agent == null) {
+		return fallback
+	}
+	const raw = agent[key] as number | null
+	if (raw == null) {
+		return fallback
+	}
+	return clampNumber(raw, min, max)
+}
+
+function readAgentBool(agent: UTSJSONObject | null, key: string, fallback: boolean): boolean {
+	if (agent == null) {
+		return fallback
+	}
+	const raw = agent[key] as boolean | null
+	if (raw == null) {
+		return fallback
+	}
+	return raw
+}
+
+export function getGlobalGenerationSettings(): GenerationSettings {
+	return {
+		temperature: readNumberStorage(GLOBAL_TEMPERATURE_KEY, DEFAULT_TEMPERATURE, 0, 2),
+		maxTokens: readIntStorage(GLOBAL_MAX_TOKENS_KEY, DEFAULT_MAX_TOKENS, 256, 65536),
+		maxIterations: readIntStorage(GLOBAL_MAX_ITERATIONS_KEY, DEFAULT_MAX_ITERATIONS, 1, 100),
+		streamEnabled: readBoolStorage(GLOBAL_STREAM_ENABLED_KEY, DEFAULT_STREAM_ENABLED),
+	} as GenerationSettings
+}
+
+export function saveGlobalGenerationSettings(settings: GenerationSettings): void {
+	uni.setStorageSync(GLOBAL_TEMPERATURE_KEY, clampNumber(settings.temperature, 0, 2) + '')
+	uni.setStorageSync(GLOBAL_MAX_TOKENS_KEY, clampNumber(settings.maxTokens, 256, 65536) + '')
+	uni.setStorageSync(GLOBAL_MAX_ITERATIONS_KEY, clampNumber(settings.maxIterations, 1, 100) + '')
+	uni.setStorageSync(GLOBAL_STREAM_ENABLED_KEY, settings.streamEnabled ? 'true' : 'false')
+}
+
+export function getEffectiveGenerationSettings(agent: UTSJSONObject | null): GenerationSettings {
+	const global = getGlobalGenerationSettings()
+	return {
+		temperature: readAgentNumber(agent, 'temperature', global.temperature, 0, 2),
+		maxTokens: readAgentNumber(agent, 'maxTokens', global.maxTokens, 256, 65536),
+		maxIterations: readAgentNumber(agent, 'maxIterations', global.maxIterations, 1, 100),
+		streamEnabled: readAgentBool(agent, 'streamEnabled', global.streamEnabled),
+	} as GenerationSettings
+}

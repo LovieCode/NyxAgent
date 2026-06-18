@@ -95,6 +95,44 @@
 						</view>
 					</view>
 				</view>
+
+				<view class="setting-divider"></view>
+				<view class="card-header">
+					<oui-icon-unix name="setting" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<text class="card-label">生成参数</text>
+				</view>
+				<view class="setting-row">
+					<view class="setting-text">
+						<text class="setting-title">继承全局设置</text>
+						<text class="setting-desc">{{globalGenerationHint}}</text>
+					</view>
+					<rice-switch v-model="useGlobalGeneration" @change="onGenerationSwitch" />
+				</view>
+				<view v-if="useGlobalGeneration == false" class="generation-panel">
+					<view class="param-row">
+						<view class="param-item">
+							<text class="param-label">温度</text>
+							<input class="param-input" type="text" v-model="temperatureStr" placeholder="0 - 2" @input="onGenerationInput" />
+						</view>
+						<view class="param-item">
+							<text class="param-label">输出上限</text>
+							<input class="param-input" type="text" v-model="maxTokensStr" placeholder="256 - 65536" @input="onGenerationInput" />
+						</view>
+					</view>
+					<view class="param-row">
+						<view class="param-item">
+							<text class="param-label">最大迭代</text>
+							<input class="param-input" type="text" v-model="maxIterationsStr" placeholder="1 - 100" @input="onGenerationInput" />
+						</view>
+						<view class="param-switch">
+							<view>
+								<text class="param-label">流式显示</text>
+								<text class="param-tip">关闭后等完整回复再显示</text>
+							</view>
+							<rice-switch v-model="streamEnabled" @change="onGenerationSwitch" />
+						</view>
+					</view>
+				</view>
 			</view>
 
 			<!-- 保存按钮 -->
@@ -118,9 +156,10 @@
 	/**
 	 * 智能体设置页面 - 编辑名称/描述/头像/删除智能体
 	 */
-	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel } from '@/utils/agent.uts'
+	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel, updateAgentGenerationSettings } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, type ModelInfo } from '@/utils/provider.uts'
 	import { updateSystemPromptForAgent } from '@/utils/database.uts'
+	import { getGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
 
 	export default {
 		data() {
@@ -135,6 +174,12 @@
 				showModelPanel: false as boolean,
 				selectedProviderId: '' as string,
 				selectedModelId: '' as string,
+				useGlobalGeneration: true as boolean,
+				temperatureStr: '' as string,
+				maxTokensStr: '' as string,
+				maxIterationsStr: '' as string,
+				streamEnabled: true as boolean,
+				globalGenerationHint: '' as string,
 				/** 编辑器返回后标记未保存 */
 				hasUnsaved: false as boolean,
 			}
@@ -226,8 +271,50 @@
 					if (rawModel != null) {
 						this.currentModel = rawModel as string
 					}
+					this.loadGenerationSettings(agent)
 				}
 				this.initModelSelection()
+			},
+
+			clampNumber(value: number, min: number, max: number): number {
+				if (value < min) return min
+				if (value > max) return max
+				return value
+			},
+
+			parseFloatSetting(value: string, fallback: number, min: number, max: number): number {
+				const parsed = parseFloat(value)
+				if (isNaN(parsed)) {
+					return fallback
+				}
+				return this.clampNumber(parsed, min, max)
+			},
+
+			parseIntSetting(value: string, fallback: number, min: number, max: number): number {
+				const parsed = parseInt(value)
+				if (isNaN(parsed)) {
+					return fallback
+				}
+				return this.clampNumber(parsed, min, max)
+			},
+
+			buildGenerationHint(settings: GenerationSettings): string {
+				return '温度 ' + settings.temperature + ' · 输出 ' + settings.maxTokens + ' · 迭代 ' + settings.maxIterations + ' · ' + (settings.streamEnabled ? '流式' : '非流式')
+			},
+
+			loadGenerationSettings(agent: UTSJSONObject) {
+				const global = getGlobalGenerationSettings()
+				this.globalGenerationHint = this.buildGenerationHint(global)
+				const rawTemperature = agent['temperature'] as number | null
+				const rawMaxTokens = agent['maxTokens'] as number | null
+				const rawMaxIterations = agent['maxIterations'] as number | null
+				const rawStreamEnabled = agent['streamEnabled'] as boolean | null
+				const hasOverride = rawTemperature != null || rawMaxTokens != null || rawMaxIterations != null || rawStreamEnabled != null
+				this.useGlobalGeneration = hasOverride == false
+				this.temperatureStr = (rawTemperature != null ? rawTemperature : global.temperature) + ''
+				this.maxTokensStr = (rawMaxTokens != null ? rawMaxTokens : global.maxTokens) + ''
+				this.maxIterationsStr = (rawMaxIterations != null ? rawMaxIterations : global.maxIterations) + ''
+				this.streamEnabled = rawStreamEnabled != null ? rawStreamEnabled : global.streamEnabled
 			},
 
 			/** 从 currentModel 解析出选中的提供商和模型 */
@@ -257,6 +344,7 @@
 			selectProvider(id: string) {
 				this.selectedProviderId = id
 				this.selectedModelId = ''
+				this.hasUnsaved = true
 			},
 
 			selectModel(id: string) {
@@ -317,6 +405,14 @@
 				}
 			},
 
+			onGenerationInput(_event: any) {
+				this.hasUnsaved = true
+			},
+
+			onGenerationSwitch(_value: any) {
+				this.hasUnsaved = true
+			},
+
 			saveSettings() {
 				const name = this.agentName.trim()
 				const desc = this.agentDesc.trim()
@@ -328,6 +424,25 @@
 					return
 				}
 				updateAgent(this.agentId, name, desc, '', this.agentSystemPrompt)
+				updateAgentModel(this.agentId, this.currentModel)
+				const globalGeneration = getGlobalGenerationSettings()
+				let temperature: number | null = null
+				let maxTokens: number | null = null
+				let maxIterations: number | null = null
+				let streamEnabled: boolean | null = null
+				if (this.useGlobalGeneration == false) {
+					const parsedTemperature = this.parseFloatSetting(this.temperatureStr, globalGeneration.temperature, 0, 2)
+					const parsedMaxTokens = this.parseIntSetting(this.maxTokensStr, globalGeneration.maxTokens, 256, 65536)
+					const parsedMaxIterations = this.parseIntSetting(this.maxIterationsStr, globalGeneration.maxIterations, 1, 100)
+					temperature = parsedTemperature
+					maxTokens = parsedMaxTokens
+					maxIterations = parsedMaxIterations
+					streamEnabled = this.streamEnabled
+					this.temperatureStr = parsedTemperature + ''
+					this.maxTokensStr = parsedMaxTokens + ''
+					this.maxIterationsStr = parsedMaxIterations + ''
+				}
+				updateAgentGenerationSettings(this.agentId, temperature, maxTokens, maxIterations, streamEnabled)
 				// 同步更新所有历史对话的 system_prompt
 				updateSystemPromptForAgent(this.agentId, this.agentSystemPrompt)
 				this.hasUnsaved = false
@@ -576,6 +691,86 @@
 	.model-grid {
 		flex-direction: row;
 		flex-wrap: wrap;
+	}
+
+	.setting-divider {
+		height: 1px;
+		background-color: #F3F4F6;
+		margin: 28rpx 0 20rpx;
+	}
+
+	.setting-row {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		background-color: var(--rice-background);
+		border-radius: 14rpx;
+		padding: 20rpx;
+	}
+
+	.setting-text {
+		flex: 1;
+		padding-right: 20rpx;
+	}
+
+	.setting-title {
+		font-size: 28rpx;
+		color: var(--rice-text-color);
+		font-weight: bold;
+		margin-bottom: 6rpx;
+	}
+
+	.setting-desc {
+		font-size: 22rpx;
+		color: var(--rice-text-color-3);
+		line-height: 32rpx;
+	}
+
+	.generation-panel {
+		margin-top: 18rpx;
+	}
+
+	.param-row {
+		flex-direction: row;
+		margin-bottom: 14rpx;
+	}
+
+	.param-item {
+		flex: 1;
+		background-color: var(--rice-background);
+		border-radius: 14rpx;
+		padding: 18rpx;
+		margin-right: 12rpx;
+	}
+
+	.param-switch {
+		flex: 1;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		background-color: var(--rice-background);
+		border-radius: 14rpx;
+		padding: 18rpx;
+		margin-right: 12rpx;
+	}
+
+	.param-label {
+		font-size: 24rpx;
+		color: #6B7280;
+		margin-bottom: 10rpx;
+	}
+
+	.param-tip {
+		font-size: 20rpx;
+		color: #9CA3AF;
+	}
+
+	.param-input {
+		background-color: #FFFFFF;
+		border-radius: 10rpx;
+		padding: 16rpx;
+		font-size: 26rpx;
+		color: #111827;
 	}
 
 	.model-pill {

@@ -37,6 +37,17 @@
 					<text class="menu-arrow">›</text>
 				</view>
 				<view class="menu-divider"></view>
+				<view class="menu-item" @click="goSubPage('generation')">
+					<view class="menu-item-left">
+						<oui-icon-unix name="experiment" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
+						<view class="menu-text">
+							<text class="menu-title">生成参数</text>
+							<text class="menu-desc">温度、输出上限、Agent 最大迭代、流式显示</text>
+						</view>
+					</view>
+					<text class="menu-arrow">›</text>
+				</view>
+				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('plugin')">
 					<view class="menu-item-left">
 						<oui-icon-unix name="appstore" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
