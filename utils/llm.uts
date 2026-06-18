@@ -503,7 +503,7 @@ function runAgentLoop(
 		runLoop?.invoke()
 	}
 	runLoop = (): void => {
-		if (iteration >= settings.maxIterations) {
+		if (settings.maxIterations > 0 && iteration >= settings.maxIterations) {
 			stream.push({ type: 'error', error: '（已达到最大迭代次数 ' + settings.maxIterations + '，无法完成请求）' })
 			stream.end()
 			return
@@ -711,7 +711,7 @@ export function chatWithLLM(
  * @param providerId 提供商 ID
  * @param model 模型名
  * @param agentId 智能体 ID（用于沙箱文件工具）
- * @param maxIterations 临时最大循环次数；传 0 时使用全局/智能体设置
+ * @param maxIterations 临时最大循环次数；传 0 时使用全局/智能体设置，设置值为 0 表示不限制
  * @returns AgentEventStream 事件流
  */
 export function agentChat(

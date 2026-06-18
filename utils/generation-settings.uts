@@ -84,7 +84,7 @@ export function getGlobalGenerationSettings(): GenerationSettings {
 	return {
 		temperature: readNumberStorage(GLOBAL_TEMPERATURE_KEY, DEFAULT_TEMPERATURE, 0, 2),
 		maxTokens: readIntStorage(GLOBAL_MAX_TOKENS_KEY, DEFAULT_MAX_TOKENS, 256, 65536),
-		maxIterations: readIntStorage(GLOBAL_MAX_ITERATIONS_KEY, DEFAULT_MAX_ITERATIONS, 1, 100),
+		maxIterations: readIntStorage(GLOBAL_MAX_ITERATIONS_KEY, DEFAULT_MAX_ITERATIONS, 0, 100),
 		streamEnabled: readBoolStorage(GLOBAL_STREAM_ENABLED_KEY, DEFAULT_STREAM_ENABLED),
 	} as GenerationSettings
 }
@@ -92,7 +92,7 @@ export function getGlobalGenerationSettings(): GenerationSettings {
 export function saveGlobalGenerationSettings(settings: GenerationSettings): void {
 	uni.setStorageSync(GLOBAL_TEMPERATURE_KEY, clampNumber(settings.temperature, 0, 2) + '')
 	uni.setStorageSync(GLOBAL_MAX_TOKENS_KEY, clampNumber(settings.maxTokens, 256, 65536) + '')
-	uni.setStorageSync(GLOBAL_MAX_ITERATIONS_KEY, clampNumber(settings.maxIterations, 1, 100) + '')
+	uni.setStorageSync(GLOBAL_MAX_ITERATIONS_KEY, clampNumber(settings.maxIterations, 0, 100) + '')
 	uni.setStorageSync(GLOBAL_STREAM_ENABLED_KEY, settings.streamEnabled ? 'true' : 'false')
 }
 
@@ -101,7 +101,7 @@ export function getEffectiveGenerationSettings(agent: UTSJSONObject | null): Gen
 	return {
 		temperature: readAgentNumber(agent, 'temperature', global.temperature, 0, 2),
 		maxTokens: readAgentNumber(agent, 'maxTokens', global.maxTokens, 256, 65536),
-		maxIterations: readAgentNumber(agent, 'maxIterations', global.maxIterations, 1, 100),
+		maxIterations: readAgentNumber(agent, 'maxIterations', global.maxIterations, 0, 100),
 		streamEnabled: readAgentBool(agent, 'streamEnabled', global.streamEnabled),
 	} as GenerationSettings
 }

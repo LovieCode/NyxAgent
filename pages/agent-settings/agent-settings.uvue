@@ -122,7 +122,7 @@
 					<view class="param-row">
 						<view class="param-item">
 							<text class="param-label">最大迭代</text>
-							<input class="param-input" type="text" v-model="maxIterationsStr" placeholder="1 - 100" @input="onGenerationInput" />
+							<input class="param-input" type="text" v-model="maxIterationsStr" placeholder="0 - 100，0 不限制" @input="onGenerationInput" />
 						</view>
 						<view class="param-switch">
 							<view>
@@ -299,7 +299,8 @@
 			},
 
 			buildGenerationHint(settings: GenerationSettings): string {
-				return '温度 ' + settings.temperature + ' · 输出 ' + settings.maxTokens + ' · 迭代 ' + settings.maxIterations + ' · ' + (settings.streamEnabled ? '流式' : '非流式')
+				const iterationText = settings.maxIterations == 0 ? '不限制' : (settings.maxIterations + '')
+				return '温度 ' + settings.temperature + ' · 输出 ' + settings.maxTokens + ' · 迭代 ' + iterationText + ' · ' + (settings.streamEnabled ? '流式' : '非流式')
 			},
 
 			loadGenerationSettings(agent: UTSJSONObject) {
@@ -433,7 +434,7 @@
 				if (this.useGlobalGeneration == false) {
 					const parsedTemperature = this.parseFloatSetting(this.temperatureStr, globalGeneration.temperature, 0, 2)
 					const parsedMaxTokens = this.parseIntSetting(this.maxTokensStr, globalGeneration.maxTokens, 256, 65536)
-					const parsedMaxIterations = this.parseIntSetting(this.maxIterationsStr, globalGeneration.maxIterations, 1, 100)
+					const parsedMaxIterations = this.parseIntSetting(this.maxIterationsStr, globalGeneration.maxIterations, 0, 100)
 					temperature = parsedTemperature
 					maxTokens = parsedMaxTokens
 					maxIterations = parsedMaxIterations
