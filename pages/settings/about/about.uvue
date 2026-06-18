@@ -48,7 +48,6 @@
 				<text class="copyright">© 2024 OhMyOpenCode. All rights reserved.</text>
 			</view>
 		</scroll-view>
-		<TabBar current="pages/settings/settings" />
 	</view>
 </template>
 

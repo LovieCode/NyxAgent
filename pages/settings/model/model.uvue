@@ -54,7 +54,6 @@
 				<rice-button type="primary" text="保存" size="large" shape="round" @click="saveSettings" />
 			</view>
 		</scroll-view>
-		<TabBar current="pages/settings/settings" />
 	</view>
 </template>
 
