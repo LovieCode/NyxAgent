@@ -81,7 +81,7 @@
 	 * 参考 PI Agent models.generated.ts 模型列表
 	 */
 
-	import { exportAllDataToFile, exportAllDataToJson } from '@/utils/data-export.uts'
+	import { exportAllDataToFile, exportAllDataToJson, shareExportedDataFile } from '@/utils/data-export.uts'
 
 	export default {
 		data() {
@@ -232,49 +232,37 @@
 
 			confirmExportAllData() {
 				uni.showModal({
-					title: '导出全部数据',
-					content: '导出 ZIP 包包含 API Key、对话历史、头像、Agent 工作区和个人资料，请只保存到可信位置。确定继续？',
+					title: '导出并分享全部数据',
+					content: '导出 ZIP 包包含 API Key、对话历史、头像、Agent 工作区和个人资料。导出完成后会打开系统分享面板，请只分享给可信目标。确定继续？',
 					success: (res) => {
 						if (res.confirm == true) {
-							this.chooseExportLocation()
+							this.exportAllData()
 						}
 					}
 				})
 			},
 
-			chooseExportLocation() {
-				uni.showActionSheet({
-					itemList: ['App 导出目录（推荐）', 'App Downloads/眠汐Agent', 'App Documents/眠汐Agent'],
-					success: (res) => {
-						let location = 'app'
-						if (res.tapIndex == 1) {
-							location = 'downloads'
-						}
-						if (res.tapIndex == 2) {
-							location = 'documents'
-						}
-						this.exportAllData(location)
-					}
-				})
-			},
-
-			exportAllData(location : string = 'app') {
+			exportAllData() {
 				try {
-					const path = exportAllDataToFile(location)
+					const path = exportAllDataToFile()
 					if (path != '') {
+						const shared = shareExportedDataFile(path)
+						if (shared == true) {
+							return
+						}
 						uni.setClipboardData({
 							data: path,
 							success: () => {
 								uni.showModal({
-									title: '导出完成',
-									content: 'ZIP 备份包已导出，路径已复制：\n' + path,
+									title: '分享失败',
+									content: '系统分享面板没有打开，ZIP 路径已复制：\n' + path,
 									showCancel: false
 								})
 							},
 							fail: () => {
 								uni.showModal({
-									title: '导出完成',
-									content: 'ZIP 备份包已导出：\n' + path,
+									title: '分享失败',
+									content: '系统分享面板没有打开，ZIP 已导出：\n' + path,
 									showCancel: false
 								})
 							}
