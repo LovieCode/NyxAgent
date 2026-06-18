@@ -392,7 +392,7 @@ export function buildAllDataExport(): UTSJSONObject {
 /**
  * 导出到本地文件。APP-ANDROID 返回文件路径；其他平台返回空字符串。
  */
-export function exportAllDataToFile(): string {
+export function exportAllDataToFile(location: string = 'app'): string {
 	const exportedAt = new Date().toISOString()
 	const payload = buildAllDataExport()
 	payload['exportedAt'] = exportedAt
@@ -400,7 +400,7 @@ export function exportAllDataToFile(): string {
 	const files = payload['files'] as UTSJSONObject[] | null
 	const filesJson = files != null ? JSON.stringify(files) : '[]'
 	const fileName = buildFileName(exportedAt)
-	return writeExportZipFile(fileName, json, filesJson)
+	return writeExportZipFile(fileName, json, filesJson, location)
 }
 
 /**

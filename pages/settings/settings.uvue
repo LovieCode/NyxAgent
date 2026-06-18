@@ -236,15 +236,31 @@
 					content: '导出 ZIP 包包含 API Key、对话历史、头像、Agent 工作区和个人资料，请只保存到可信位置。确定继续？',
 					success: (res) => {
 						if (res.confirm == true) {
-							this.exportAllData()
+							this.chooseExportLocation()
 						}
 					}
 				})
 			},
 
-			exportAllData() {
+			chooseExportLocation() {
+				uni.showActionSheet({
+					itemList: ['App 导出目录（推荐）', 'App Downloads/眠汐Agent', 'App Documents/眠汐Agent'],
+					success: (res) => {
+						let location = 'app'
+						if (res.tapIndex == 1) {
+							location = 'downloads'
+						}
+						if (res.tapIndex == 2) {
+							location = 'documents'
+						}
+						this.exportAllData(location)
+					}
+				})
+			},
+
+			exportAllData(location : string = 'app') {
 				try {
-					const path = exportAllDataToFile()
+					const path = exportAllDataToFile(location)
 					if (path != '') {
 						uni.setClipboardData({
 							data: path,
