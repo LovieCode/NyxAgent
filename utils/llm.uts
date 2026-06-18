@@ -427,7 +427,7 @@ function callChatAPIStream(
 
 	task.onChunkReceived((res: any) => {
 		if (streamEnded == true) return
-		const data = (res as UTSJSONObject)['data']
+		const data = res.data
 		if (data == null) return
 		const chunk = decodeArrayBuffer(data as ArrayBuffer)
 		sseBufferRef[0] += chunk
