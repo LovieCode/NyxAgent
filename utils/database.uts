@@ -152,9 +152,12 @@ export function saveConversation(
 	// 逐条插入消息
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i]
-		const role = (msg['role'] as string | null) ?? ''
-		const content = (msg['content'] as string | null) ?? ''
-		const timestamp = (msg['timestamp'] as number | null) ?? now
+		const rawRole = msg['role'] as string | null
+		const rawContent = msg['content'] as string | null
+		const rawTimestamp = msg['timestamp'] as number | null
+		const role = rawRole != null ? rawRole : ''
+		const content = rawContent != null ? rawContent : ''
+		const timestamp = rawTimestamp != null ? rawTimestamp : now
 
 		// 收集可选字段到 extra
 		const extra: UTSJSONObject = {}
@@ -185,6 +188,10 @@ export function saveConversation(
 		const toolCallId = msg['tool_call_id']
 		if (toolCallId != null) {
 			extra['tool_call_id'] = toolCallId
+		}
+		const camelToolCallId = msg['toolCallId']
+		if (camelToolCallId != null) {
+			extra['toolCallId'] = camelToolCallId
 		}
 		const toolCalls = msg['tool_calls']
 		if (toolCalls != null) {
@@ -272,6 +279,9 @@ export function getMessages(conversationId: string): UTSJSONObject[] {
 				}
 				if (extra['tool_call_id'] != null) {
 					row['tool_call_id'] = extra['tool_call_id']
+				}
+				if (extra['toolCallId'] != null) {
+					row['toolCallId'] = extra['toolCallId']
 				}
 				if (extra['tool_calls'] != null) {
 					row['tool_calls'] = extra['tool_calls']

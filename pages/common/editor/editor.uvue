@@ -40,7 +40,8 @@
 				this.navTitle = title
 			}
 			// 先加载原始内容（保证无弹窗时文本正常显示）
-			const content = (uni.getStorageSync('editor_content') as string) ?? ''
+			const rawContent = uni.getStorageSync('editor_content') as string | null
+			const content = rawContent != null ? rawContent : ''
 			this.editText = content
 			this.initialText = content
 			// 检查是否有草稿需要恢复

@@ -8,393 +8,10 @@
  * 3. 旧版 storage key（向后兼容）
  */
 
-import { getDefaultTaskModel, getProviderById } from '@/utils/provider.uts'
+import { resolveLLMConfig, normalizeBaseUrl } from '@/utils/provider.uts'
 import { createAgentTools, AgentTool, ToolResult } from '@/utils/agent-tools.uts'
-import { AgentEventStream, AgentEvent, ToolCallInfo } from '@/utils/event.uts'
+import { AgentEventStream } from '@/utils/event.uts'
 
-/**
- * 规范化 baseUrl：去掉末尾的 /v1 或 /v1/
- */
-function normalizeBaseUrl(url: string): string {
-	let result = url
-	if (result.endsWith('/v1')) {
-		result = result.substring(0, result.length - 3)
-	} else if (result.endsWith('/v1/')) {
-		result = result.substring(0, result.length - 4)
-	}
-	if (result.endsWith('/')) {
-		result = result.substring(0, result.length - 1)
-	}
-	return result
-}
-
-/**
- * 获取默认 URL（兜底）
- */
-function getDefaultUrl(providerId: string): string {
-	if (providerId == 'anthropic') return 'https://api.anthropic.com'
-	if (providerId == 'openai') return 'https://api.openai.com'
-	if (providerId == 'deepseek') return 'https://api.deepseek.com'
-	if (providerId == 'zai') return 'https://api.z.ai/api/coding/paas/v4'
-	if (providerId == 'kimi-coding') return 'https://api.kimi.com/coding'
-	if (providerId == 'minimax-cn') return 'https://api.minimaxi.com/anthropic'
-	if (providerId == 'xiaomi') return 'https://api.xiaomimimo.com/v1'
-	if (providerId == 'ant-ling') return 'https://api.ant-ling.com/v1'
-	if (providerId == 'siliconflow') return 'https://api.siliconflow.cn/v1'
-	return ''
-}
-
-/**
- * 读取 LLM 配置（按优先级）
- * @returns { providerId, apiKey, baseUrl, model } 或 null
- */
-function readLlmConfig(providerId: string, model: string): UTSJSONObject | null {
-	let pid = providerId
-	let mdl = model
-
-	// 0. 解析 "providerId||modelId" 复合格式
-	if (mdl != '') {
-		const sep = '||'
-		const idx = mdl.indexOf(sep)
-		if (idx >= 0) {
-			const extractedPid = mdl.substring(0, idx)
-			const extractedMid = mdl.substring(idx + sep.length)
-			if (pid == '') {
-				pid = extractedPid
-			}
-			mdl = extractedMid
-		}
-	}
-
-	// 1. 没有显式传 → 从 DB 读取 chat 默认配置
-	if (pid == '') {
-		const defaultConfig = getDefaultTaskModel('chat')
-		if (defaultConfig != null) {
-			pid = defaultConfig['providerId'] as string
-			if (mdl == '') {
-				mdl = defaultConfig['model'] as string
-			}
-		}
-	}
-
-	// 2. 回退到旧版 storage
-	if (pid == '') {
-		pid = uni.getStorageSync('settings_provider_id') as string
-	}
-	if (mdl == '') {
-		mdl = uni.getStorageSync('settings_model') as string
-	}
-
-	if (pid == '' || mdl == '') {
-		return null
-	}
-
-	// 3. 从 DB 读取提供商 API 配置
-	const provider = getProviderById(pid)
-	if (provider != null) {
-		const apiKey = provider['api_key'] as string
-		let baseUrl = provider['api_base'] as string
-		if (baseUrl == '') {
-			baseUrl = getDefaultUrl(pid)
-		}
-		if (apiKey == '') {
-			return null
-		}
-		return {
-			providerId: pid,
-			apiKey: apiKey,
-			baseUrl: baseUrl,
-			model: mdl,
-		} as UTSJSONObject
-	}
-
-	// 4. 兜底：旧版 storage
-	const apiKey = uni.getStorageSync('settings_api_key') as string
-	if (apiKey == null || apiKey == '') {
-		return null
-	}
-	let baseUrl = uni.getStorageSync('settings_base_url') as string
-	if (baseUrl == '') {
-		baseUrl = getDefaultUrl(pid)
-		if (baseUrl == '') {
-			return null
-		}
-	}
-	return {
-		providerId: pid,
-		apiKey: apiKey,
-		baseUrl: baseUrl,
-		model: mdl,
-	} as UTSJSONObject
-}
-
-/**
- * 发送消息给 LLM 并获取回复文本
- * @param messages 消息列表
- * @param systemPrompt 可选的系统提示词
- * @param providerId 提供商 ID（传空字符串则使用默认配置）
- * @param model 模型名（传空字符串则使用默认配置）
- */
-export function chatWithLLM(
-	messages: UTSJSONObject[],
-	systemPrompt: string = '',
-	providerId: string = '',
-	model: string = ''
-): Promise<string | null> {
-	return new Promise<string | null>((resolve) => {
-		const config = readLlmConfig(providerId, model)
-		if (config == null) {
-			resolve('（未配置 LLM，请先在设置中添加 API 提供商）')
-			return
-		}
-
-		const apiKey = config['apiKey'] as string
-		let baseUrl = config['baseUrl'] as string
-		const mdl = config['model'] as string
-
-		baseUrl = normalizeBaseUrl(baseUrl)
-
-		// 构建 API 请求并发送
-		callChatAPI(baseUrl, apiKey, mdl, systemPrompt, messages, [], (text, toolCalls) => {
-			resolve(text ?? null)
-		})
-	})
-}
-
-/**
- * ReAct Agent 循环（事件流模式）
- * 在 chatWithLLM 基础上增加工具调用能力：
- *   思考 → 调用工具 → 获取结果 → 继续思考 → 最终回复
- *
- * @param messages 历史消息（UTSJSONObject[] 格式）
- * @param systemPrompt 系统提示词
- * @param providerId 提供商 ID
- * @param model 模型名
- * @param agentId 智能体 ID（用于沙箱文件工具）
- * @param maxIterations 最大循环次数，默认 10
- * @returns AgentEventStream 事件流
- */
-export function agentChat(
-	messages: UTSJSONObject[],
-	systemPrompt: string,
-	providerId: string,
-	model: string,
-	agentId: string,
-	maxIterations: number = 10
-): AgentEventStream {
-	const stream = new AgentEventStream()
-
-	// 异步执行 Agent 循环
-	setTimeout(() => {
-		runAgentLoop(messages, systemPrompt, providerId, model, agentId, maxIterations, stream)
-	}, 0)
-
-	return stream
-}
-
-/**
- * 执行 Agent 循环（内部实现）
- */
-function runAgentLoop(
-	messages: UTSJSONObject[],
-	systemPrompt: string,
-	providerId: string,
-	model: string,
-	agentId: string,
-	maxIterations: number,
-	stream: AgentEventStream
-): void {
-	const config = readLlmConfig(providerId, model)
-	if (config == null) {
-		stream.error('（未配置 LLM，请先在设置中添加 API 提供商）')
-		return
-	}
-	const apiKey = config['apiKey'] as string
-	let baseUrl = config['baseUrl'] as string
-	const mdl = config['model'] as string
-	baseUrl = normalizeBaseUrl(baseUrl)
-
-	// 构建运行消息列表（深拷贝，不修改原始数据）
-	const workingMessages: UTSJSONObject[] = []
-	if (systemPrompt != '') {
-		workingMessages.push({
-			role: 'system',
-			content: systemPrompt,
-		} as UTSJSONObject)
-	}
-	for (let i = 0; i < messages.length; i++) {
-		const msg = messages[i]
-		const role = msg['role'] as string | null
-		if (role == null) continue
-		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
-		workingMessages.push(msg)
-	}
-
-	// 创建沙箱工具 + 构建 LLM 工具定义
-	const tools = createAgentTools(agentId)
-	const toolDefs: UTSJSONObject[] = []
-	for (let i = 0; i < tools.length; i++) {
-		toolDefs.push({
-			name: tools[i].name,
-			description: tools[i].description,
-			parameters: tools[i].parameters,
-		} as UTSJSONObject)
-	}
-
-	stream.push({ type: 'agent_start' })
-
-	// ReAct 循环
-	let iteration = 0
-	let runLoop: (() => void) | null = null
-	runLoop = (): void => {
-		if (iteration >= maxIterations) {
-			stream.push({ type: 'error', error: '（已达到最大迭代次数，无法完成请求）' })
-			stream.end()
-			return
-		}
-		iteration++
-
-		stream.push({ type: 'turn_start' })
-
-		callChatAPIStream(baseUrl, apiKey, mdl, '', workingMessages, toolDefs,
-			// onChunk: 文本增量
-			(text: string) => {
-				stream.push({ type: 'text_delta', text: text })
-			},
-			// done: 一轮完成
-			(text: string | null, toolCalls: ToolCallInfo[] | null) => {
-				if (toolCalls == null || toolCalls.length == 0) {
-					// 纯文本回复，结束
-					stream.push({ type: 'text_end', fullText: text ?? '' })
-					stream.push({ type: 'turn_end' })
-					stream.end()
-					return
-				}
-
-				// 有工具调用
-				stream.push({ type: 'text_end', fullText: text ?? '' })
-
-				// 构建包含 tool_calls 的 assistant 消息
-				const assistantMsg: UTSJSONObject = {
-					role: 'assistant',
-					content: text ?? '',
-				} as UTSJSONObject
-				const tcArray: UTSJSONObject[] = []
-				for (let i = 0; i < toolCalls.length; i++) {
-					tcArray.push({
-						id: toolCalls[i].id,
-						type: 'function',
-						function: {
-							name: toolCalls[i].name,
-							arguments: toolCalls[i].arguments,
-						},
-					} as UTSJSONObject)
-				}
-				assistantMsg['tool_calls'] = tcArray
-				workingMessages.push(assistantMsg)
-
-				// 串行执行工具
-				let execIndex = 0
-				let executeNext: (() => void) | null = null
-				executeNext = (): void => {
-					if (execIndex >= toolCalls.length) {
-						stream.push({ type: 'turn_end' })
-						runLoop!()
-						return
-					}
-
-					const tc = toolCalls[execIndex]
-					execIndex++
-
-					stream.push({
-						type: 'tool_start',
-						toolCallId: tc.id,
-						toolName: tc.name,
-						toolArgs: tc.arguments
-					})
-
-					// 查找工具
-					let tool: any | null = null
-					for (let i = 0; i < tools.length; i++) {
-						if (tools[i].name == tc.name) {
-							tool = tools[i]
-							break
-						}
-					}
-
-					if (tool == null) {
-						const errMsg = '错误：未知工具 "' + tc.name + '"'
-						stream.push({
-							type: 'tool_end',
-							toolCallId: tc.id,
-							toolName: tc.name,
-							toolResult: errMsg,
-							isError: true
-						})
-						const toolErrMsg: UTSJSONObject = {
-							role: 'tool',
-							tool_call_id: tc.id,
-							content: errMsg,
-						} as UTSJSONObject
-						workingMessages.push(toolErrMsg)
-						executeNext!()
-						return
-					}
-
-					let argsObj: UTSJSONObject
-					try {
-						argsObj = JSON.parse(tc.arguments) as UTSJSONObject
-					} catch (_) {
-						argsObj = {} as UTSJSONObject
-					}
-
-					// 执行工具
-					const p = (tool as AgentTool).execute(argsObj)
-					p.then((res: ToolResult): void => {
-						stream.push({
-							type: 'tool_end',
-							toolCallId: tc.id,
-							toolName: tc.name,
-							toolResult: res.content,
-							isError: res.isError
-						})
-						const toolResMsg: UTSJSONObject = {
-							role: 'tool',
-							tool_call_id: tc.id,
-							content: res.content,
-						} as UTSJSONObject
-						workingMessages.push(toolResMsg)
-						executeNext!()
-					})
-					p.catch((err) => {
-						const errMsg = '工具执行异常: ' + err
-						stream.push({
-							type: 'tool_end',
-							toolCallId: tc.id,
-							toolName: tc.name,
-							toolResult: errMsg,
-							isError: true
-						})
-						const toolErrMsg: UTSJSONObject = {
-							role: 'tool',
-							tool_call_id: tc.id,
-							content: errMsg,
-						} as UTSJSONObject
-						workingMessages.push(toolErrMsg)
-						executeNext!()
-					})
-				}
-
-				executeNext!()
-			}
-		)
-	}
-	runLoop!()
-}
-
-// ====== 内部工具类型 ======
-
-/** 单个工具调用信息 */
 type ToolCallInfo = {
 	id: string
 	name: string
@@ -402,6 +19,8 @@ type ToolCallInfo = {
 }
 
 // ====== 内部函数 ======
+
+
 
 /**
  * 调用 OpenAI 兼容的 Chat Completions API（核心函数）
@@ -440,7 +59,8 @@ function callChatAPI(
 
 		if (role == 'tool' || role == 'toolResult') {
 			// tool result 消息格式（toolResult 是内部 UI 角色，发送 API 时转为 tool）
-			const tcId = msg['tool_call_id'] ?? msg['toolCallId']
+			const rawToolCallId = msg['tool_call_id']
+			const tcId = rawToolCallId != null ? rawToolCallId : msg['toolCallId']
 			// 跳过无 tool_call_id 的 UI 占位消息（来自 onToolStart/onToolEnd 回调）
 			if (tcId == null || (tcId as string) == '') continue
 			const tcContent = msg['content']
@@ -451,16 +71,18 @@ function callChatAPI(
 			} as UTSJSONObject)
 		} else if (role == 'assistant' && msg['tool_calls'] != null) {
 			// assistant 带工具调用的消息
+			const msgContent = msg['content'] as string | null
 			const amsg: UTSJSONObject = {
 				role: 'assistant',
-				content: msg['content'] as string ?? '',
+				content: msgContent != null ? msgContent : '',
 				tool_calls: msg['tool_calls'],
 			} as UTSJSONObject
 			apiMessages.push(amsg)
 		} else {
+			const msgContent = msg['content'] as string | null
 			apiMessages.push({
 				role: role,
-				content: msg['content'] as string ?? '',
+				content: msgContent != null ? msgContent : '',
 			} as UTSJSONObject)
 		}
 	}
@@ -509,7 +131,8 @@ function callChatAPI(
 					if (errData != null) {
 						const errMsg = errData['error'] as UTSJSONObject | null
 						if (errMsg != null) {
-							errDetail = ': ' + (errMsg['message'] as string ?? '')
+							const errMessage = errMsg['message'] as string | null
+							errDetail = ': ' + (errMessage != null ? errMessage : '')
 						}
 					}
 				} catch (_) {}
@@ -534,19 +157,23 @@ function callChatAPI(
 					return
 				}
 
-				const text = message['content'] as string | null ?? ''
+				const rawText = message['content'] as string | null
+				const text = rawText != null ? rawText : ''
 				const rawToolCalls = message['tool_calls'] as UTSJSONObject[] | null
 
 				if (rawToolCalls != null && rawToolCalls.length > 0) {
 					const tcList: ToolCallInfo[] = []
-					for (let i = 0; i < rawToolCalls!.length; i++) {
-						const tc = rawToolCalls![i]
+					for (let i = 0; i < rawToolCalls.length; i++) {
+						const tc = rawToolCalls[i]
 						const funcObj = tc['function'] as UTSJSONObject | null
 						if (funcObj == null) continue
+						const rawId = tc['id'] as string | null
+						const rawName = funcObj['name'] as string | null
+						const rawArgs = funcObj['arguments'] as string | null
 						tcList.push({
-							id: tc['id'] as string ?? '',
-							name: funcObj!['name'] as string ?? '',
-							arguments: funcObj!['arguments'] as string ?? '{}',
+							id: rawId != null ? rawId : '',
+							name: rawName != null ? rawName : '',
+							arguments: rawArgs != null ? rawArgs : '{}',
 						} as ToolCallInfo)
 					}
 					done(text, tcList)
@@ -591,7 +218,7 @@ function processSSELine(
 		const content = delta['content'] as string | null
 		if (content != null && content != '') {
 			fullTextRef[0] += content
-			if (onChunk != null) onChunk!(content)
+			if (onChunk != null) onChunk(content)
 		}
 
 		// 工具调用
@@ -600,7 +227,8 @@ function processSSELine(
 			hasToolCallsRef[0] = true
 			for (let j = 0; j < rawToolCalls.length; j++) {
 				const tc = rawToolCalls[j]
-				const idx = (tc['index'] as number | null) ?? 0
+				const rawIndex = tc['index'] as number | null
+				const idx = rawIndex != null ? rawIndex : 0
 				while (toolCallList.length <= idx) {
 					toolCallList.push({ id: '', name: '', arguments: '' } as UTSJSONObject)
 				}
@@ -613,7 +241,8 @@ function processSSELine(
 					if (name != null && name != '') existing['name'] = name
 					const args = funcObj['arguments'] as string | null
 					if (args != null && args != '') {
-						existing['arguments'] = (existing['arguments'] as string | null ?? '') + args
+						const oldArgs = existing['arguments'] as string | null
+						existing['arguments'] = (oldArgs != null ? oldArgs : '') + args
 					}
 				}
 			}
@@ -683,23 +312,27 @@ function callChatAPIStream(
 		if (role == null) continue
 		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
 		if (role == 'tool' || role == 'toolResult') {
-			const tcId = msg['tool_call_id'] ?? msg['toolCallId']
+			const rawToolCallId = msg['tool_call_id']
+			const tcId = rawToolCallId != null ? rawToolCallId : msg['toolCallId']
 			if (tcId == null || (tcId as string) == '') continue
+			const msgContent = msg['content'] as string | null
 			apiMessages.push({
 				role: 'tool',
 				tool_call_id: tcId as string,
-				content: (msg['content'] as string | null) ?? '',
+				content: msgContent != null ? msgContent : '',
 			} as UTSJSONObject)
 		} else if (role == 'assistant' && msg['tool_calls'] != null) {
+			const msgContent = msg['content'] as string | null
 			apiMessages.push({
 				role: 'assistant',
-				content: (msg['content'] as string | null) ?? '',
+				content: msgContent != null ? msgContent : '',
 				tool_calls: msg['tool_calls'],
 			} as UTSJSONObject)
 		} else {
+			const msgContent = msg['content'] as string | null
 			apiMessages.push({
 				role: role,
-				content: (msg['content'] as string | null) ?? '',
+				content: msgContent != null ? msgContent : '',
 			} as UTSJSONObject)
 		}
 	}
@@ -752,37 +385,41 @@ function callChatAPIStream(
 				let errDetail = ''
 				try {
 					if (fullTextRef[0] != '') {
-					const errData = JSON.parse(fullTextRef[0]) as UTSJSONObject
+						const errData = JSON.parse(fullTextRef[0]) as UTSJSONObject
 						const errObj = errData['error'] as UTSJSONObject
 						if (errObj != null) {
-							errDetail = ': ' + (errObj['message'] as string ?? '')
+							const errMessage = errObj['message'] as string | null
+							errDetail = ': ' + (errMessage != null ? errMessage : '')
 						}
 					}
 				} catch (_) {}
 				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null)
-			return
-		}
-		// 处理剩余 buffer
-		if (sseBufferRef[0] != '') {
-			processSSELine(sseBufferRef[0], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk)
-			sseBufferRef[0] = ''
-		}
-		// 组装结果
-		if (hasToolCallsRef[0] == true) {
-			const tcList: ToolCallInfo[] = []
-			for (let i = 0; i < toolCallList.length; i++) {
-				const tc = toolCallList[i]
-				tcList.push({
-					id: (tc['id'] as string | null) ?? '',
-					name: (tc['name'] as string | null) ?? '',
-					arguments: (tc['arguments'] as string | null) ?? '{}',
-				} as ToolCallInfo)
+				return
 			}
-			done(fullTextRef[0], tcList)
-		} else {
-			done(fullTextRef[0], null)
-		}
-	},
+			// 处理剩余 buffer
+			if (sseBufferRef[0] != '') {
+				processSSELine(sseBufferRef[0], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk)
+				sseBufferRef[0] = ''
+			}
+			// 组装结果
+			if (hasToolCallsRef[0] == true) {
+				const tcList: ToolCallInfo[] = []
+				for (let i = 0; i < toolCallList.length; i++) {
+					const tc = toolCallList[i]
+					const rawId = tc['id'] as string | null
+					const rawName = tc['name'] as string | null
+					const rawArgs = tc['arguments'] as string | null
+					tcList.push({
+						id: rawId != null ? rawId : '',
+						name: rawName != null ? rawName : '',
+						arguments: rawArgs != null ? rawArgs : '{}',
+					} as ToolCallInfo)
+				}
+				done(fullTextRef[0], tcList)
+			} else {
+				done(fullTextRef[0], null)
+			}
+		},
 		fail: (_err: any) => {
 			done('网络请求失败: ' + _err, null)
 		},
@@ -802,4 +439,295 @@ function callChatAPIStream(
 			processSSELine(parts[i], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk)
 		}
 	})
+}
+
+/**
+ * 执行 Agent 循环（内部实现）
+ */
+function runAgentLoop(
+	messages: UTSJSONObject[],
+	systemPrompt: string,
+	providerId: string,
+	model: string,
+	agentId: string,
+	maxIterations: number,
+	stream: AgentEventStream
+): void {
+	const config = resolveLLMConfig(providerId, model)
+	if (config == null) {
+		stream.error('（未配置 LLM，请先在设置中添加 API 提供商）')
+		return
+	}
+	const apiKey = config.apiKey
+	let baseUrl = config.baseUrl
+	const mdl = config.model
+	baseUrl = normalizeBaseUrl(baseUrl)
+
+	// 构建运行消息列表（深拷贝，不修改原始数据）
+	const workingMessages: UTSJSONObject[] = []
+	if (systemPrompt != '') {
+		workingMessages.push({
+			role: 'system',
+			content: systemPrompt,
+		} as UTSJSONObject)
+	}
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const role = msg['role'] as string | null
+		if (role == null) continue
+		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
+		workingMessages.push(msg)
+	}
+
+	// 创建沙箱工具 + 构建 LLM 工具定义
+	const tools = createAgentTools(agentId)
+	const toolDefs: UTSJSONObject[] = []
+	for (let i = 0; i < tools.length; i++) {
+		toolDefs.push({
+			name: tools[i].name,
+			description: tools[i].description,
+			parameters: tools[i].parameters,
+		} as UTSJSONObject)
+	}
+
+	stream.push({ type: 'agent_start' })
+
+	// ReAct 循环
+	let iteration = 0
+	let runLoop: (() => void) | null = null
+	const continueLoop = (): void => {
+		if (runLoop != null) {
+			runLoop()
+		}
+	}
+	runLoop = (): void => {
+		if (iteration >= maxIterations) {
+			stream.push({ type: 'error', error: '（已达到最大迭代次数，无法完成请求）' })
+			stream.end()
+			return
+		}
+		iteration++
+
+		stream.push({ type: 'turn_start' })
+
+		callChatAPIStream(baseUrl, apiKey, mdl, '', workingMessages, toolDefs,
+			// onChunk: 文本增量
+			(text: string) => {
+				stream.push({ type: 'text_delta', text: text })
+			},
+			// done: 一轮完成
+			(text: string | null, toolCalls: ToolCallInfo[] | null) => {
+				if (toolCalls == null || toolCalls.length == 0) {
+					// 纯文本回复，结束
+					stream.push({ type: 'text_end', fullText: text != null ? text : '' })
+					stream.push({ type: 'turn_end' })
+					stream.end()
+					return
+				}
+
+				// 有工具调用
+				stream.push({ type: 'text_end', fullText: text != null ? text : '' })
+
+				// 构建包含 tool_calls 的 assistant 消息
+				const assistantMsg: UTSJSONObject = {
+					role: 'assistant',
+					content: text != null ? text : '',
+				} as UTSJSONObject
+				const tcArray: UTSJSONObject[] = []
+				for (let i = 0; i < toolCalls.length; i++) {
+					tcArray.push({
+						id: toolCalls[i].id,
+						type: 'function',
+						function: {
+							name: toolCalls[i].name,
+							arguments: toolCalls[i].arguments,
+						},
+					} as UTSJSONObject)
+				}
+				assistantMsg['tool_calls'] = tcArray
+				workingMessages.push(assistantMsg)
+				stream.push({
+					type: 'tool_call',
+					fullText: text != null ? text : '',
+					toolCalls: tcArray
+				})
+
+				// 串行执行工具
+				let execIndex = 0
+				let executeNext: (() => void) | null = null
+				executeNext = (): void => {
+					if (execIndex >= toolCalls.length) {
+						stream.push({ type: 'turn_end' })
+						continueLoop()
+						return
+					}
+
+					const tc = toolCalls[execIndex]
+					execIndex++
+
+					stream.push({
+						type: 'tool_execution_start',
+						toolCallId: tc.id,
+						toolName: tc.name,
+						toolArgs: tc.arguments
+					})
+
+					// 查找工具
+					let tool: any | null = null
+					for (let i = 0; i < tools.length; i++) {
+						if (tools[i].name == tc.name) {
+							tool = tools[i]
+							break
+						}
+					}
+
+					if (tool == null) {
+						const errMsg = '错误：未知工具 "' + tc.name + '"'
+						stream.push({
+							type: 'tool_execution_end',
+							toolCallId: tc.id,
+							toolName: tc.name,
+							toolResult: errMsg,
+							isError: true
+						})
+						const toolErrMsg: UTSJSONObject = {
+							role: 'toolResult',
+							tool_call_id: tc.id,
+							toolCallId: tc.id,
+							toolName: tc.name,
+							content: errMsg,
+							isError: true,
+						} as UTSJSONObject
+						workingMessages.push(toolErrMsg)
+						if (executeNext != null) {
+							executeNext()
+						}
+						return
+					}
+
+					let argsObj: UTSJSONObject
+					try {
+						argsObj = JSON.parse(tc.arguments) as UTSJSONObject
+					} catch (_) {
+						argsObj = {} as UTSJSONObject
+					}
+
+					// 执行工具
+					const p = (tool as AgentTool).execute(argsObj)
+					p.then((res: ToolResult): void => {
+						stream.push({
+							type: 'tool_execution_end',
+							toolCallId: tc.id,
+							toolName: tc.name,
+							toolResult: res.content,
+							isError: res.isError
+						})
+						const toolResMsg: UTSJSONObject = {
+							role: 'toolResult',
+							tool_call_id: tc.id,
+							toolCallId: tc.id,
+							toolName: tc.name,
+							content: res.content,
+							isError: res.isError,
+						} as UTSJSONObject
+						workingMessages.push(toolResMsg)
+						if (executeNext != null) {
+							executeNext()
+						}
+					})
+					p.catch((err) => {
+						const errMsg = '工具执行异常: ' + err
+						stream.push({
+							type: 'tool_execution_end',
+							toolCallId: tc.id,
+							toolName: tc.name,
+							toolResult: errMsg,
+							isError: true
+						})
+						const toolErrMsg: UTSJSONObject = {
+							role: 'toolResult',
+							tool_call_id: tc.id,
+							toolCallId: tc.id,
+							toolName: tc.name,
+							content: errMsg,
+							isError: true,
+						} as UTSJSONObject
+						workingMessages.push(toolErrMsg)
+						if (executeNext != null) {
+							executeNext()
+						}
+					})
+				}
+
+				if (executeNext != null) {
+					executeNext()
+				}
+			}
+		)
+	}
+	continueLoop()
+}
+
+/**
+ * 发送消息给 LLM 并获取回复文本
+ * @param messages 消息列表
+ * @param systemPrompt 可选的系统提示词
+ * @param providerId 提供商 ID（传空字符串则使用默认配置）
+ * @param model 模型名（传空字符串则使用默认配置）
+ */
+export function chatWithLLM(
+	messages: UTSJSONObject[],
+	systemPrompt: string = '',
+	providerId: string = '',
+	model: string = ''
+): Promise<string | null> {
+	return new Promise<string | null>((resolve) => {
+		const config = resolveLLMConfig(providerId, model)
+		if (config == null) {
+			resolve('（未配置 LLM，请先在设置中添加 API 提供商）')
+			return
+		}
+
+		const apiKey = config.apiKey
+		let baseUrl = config.baseUrl
+		const mdl = config.model
+
+		baseUrl = normalizeBaseUrl(baseUrl)
+
+		// 构建 API 请求并发送
+		callChatAPI(baseUrl, apiKey, mdl, systemPrompt, messages, [], (text, toolCalls) => {
+			resolve(text != null ? text : null)
+		})
+	})
+}
+
+/**
+ * ReAct Agent 循环（事件流模式）
+ * 在 chatWithLLM 基础上增加工具调用能力：
+ *   思考 → 调用工具 → 获取结果 → 继续思考 → 最终回复
+ *
+ * @param messages 历史消息（UTSJSONObject[] 格式）
+ * @param systemPrompt 系统提示词
+ * @param providerId 提供商 ID
+ * @param model 模型名
+ * @param agentId 智能体 ID（用于沙箱文件工具）
+ * @param maxIterations 最大循环次数，默认 10
+ * @returns AgentEventStream 事件流
+ */
+export function agentChat(
+	messages: UTSJSONObject[],
+	systemPrompt: string,
+	providerId: string,
+	model: string,
+	agentId: string,
+	maxIterations: number = 10
+): AgentEventStream {
+	const stream = new AgentEventStream()
+
+	// 异步执行 Agent 循环
+	setTimeout(() => {
+		runAgentLoop(messages, systemPrompt, providerId, model, agentId, maxIterations, stream)
+	}, 0)
+
+	return stream
 }

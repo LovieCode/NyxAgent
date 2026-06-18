@@ -36,7 +36,8 @@ export class SessionManager {
 		this.baseDir = context.filesDir.absolutePath + '/sessions'
 		// #endif
 		// #ifndef APP-ANDROID
-		this.baseDir = ''
+		const userDataPath = uni.env.USER_DATA_PATH
+		this.baseDir = userDataPath + '/sessions'
 		// #endif
 		// 确保会话目录存在
 		if (this.baseDir.length > 0) {
@@ -62,8 +63,8 @@ export class SessionManager {
 			const file = new File(filePath)
 			// 确保父目录存在
 			const parentDir = file.parentFile
-			if (parentDir != null && !parentDir!.exists()) {
-				parentDir!.mkdirs()
+			if (parentDir != null && !parentDir.exists()) {
+				parentDir.mkdirs()
 			}
 			// 追加写入
 			file.appendText(line + '\n')
@@ -100,7 +101,7 @@ export class SessionManager {
 
 				const msg = this.deserializeMessage(line)
 				if (msg != null) {
-					messages.push(msg!)
+					messages.push(msg)
 				}
 			}
 		} catch (_) {
@@ -126,8 +127,8 @@ export class SessionManager {
 			const files = dir.listFiles()
 			if (files == null) return result
 
-			for (let i = 0; i < files!.length; i++) {
-				const name = files![i].name
+			for (let i = 0; i < files.length; i++) {
+				const name = files[i].name
 				if (name.endsWith('.jsonl')) {
 					// 去掉 .jsonl 后缀得到会话 ID
 					result.push(name.substring(0, name.length - 6))
@@ -270,7 +271,7 @@ export class SessionManager {
 			const obj = JSON.parse(line) as UTSJSONObject
 			const role = obj['role'] as string
 			const timestamp = obj['timestamp'] as number | null
-			const ts = timestamp != null ? timestamp! : Date.now()
+			const ts = timestamp != null ? timestamp : Date.now()
 
 			if (role == 'user') {
 				return {
@@ -283,10 +284,10 @@ export class SessionManager {
 				const contentArray = obj['content'] as Array<UTSJSONObject> | null
 				const contentBlocks = new Array<ContentBlock>()
 				if (contentArray != null) {
-					for (let i = 0; i < contentArray!.length; i++) {
-						const block = this.deserializeContentBlock(contentArray![i])
+					for (let i = 0; i < contentArray.length; i++) {
+						const block = this.deserializeContentBlock(contentArray[i])
 						if (block != null) {
-							contentBlocks.push(block!)
+							contentBlocks.push(block)
 						}
 					}
 				}
@@ -296,18 +297,18 @@ export class SessionManager {
 				let inputTokens : number = 0
 				let outputTokens : number = 0
 				if (usageObj != null) {
-					const it = usageObj!['inputTokens'] as number | null
-					const ot = usageObj!['outputTokens'] as number | null
-					inputTokens = it != null ? it! : 0
-					outputTokens = ot != null ? ot! : 0
+					const it = usageObj['inputTokens'] as number | null
+					const ot = usageObj['outputTokens'] as number | null
+					inputTokens = it != null ? it : 0
+					outputTokens = ot != null ? ot : 0
 				}
 
 				// 解析模型名称
 				const modelValue = obj['model'] as string | null
-				const model : string = modelValue != null ? modelValue! : ''
+				const model : string = modelValue != null ? modelValue : ''
 				// 解析停止原因
 				const stopReasonValue = obj['stopReason'] as string | null
-				const stopReasonStr = stopReasonValue != null ? stopReasonValue! : 'stop'
+				const stopReasonStr = stopReasonValue != null ? stopReasonValue : 'stop'
 				const stopReason : StopReason = this.validateStopReason(stopReasonStr)
 
 				return {
@@ -321,7 +322,7 @@ export class SessionManager {
 				} as AssistantMessage
 			} else if (role == 'toolResult') {
 				const isErrorValue = obj['isError'] as boolean | null
-				const isError : boolean = isErrorValue != null ? isErrorValue! : false
+				const isError : boolean = isErrorValue != null ? isErrorValue : false
 				return {
 					role: 'toolResult',
 					toolCallId: obj['toolCallId'] as string,

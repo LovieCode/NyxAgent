@@ -270,10 +270,10 @@ export class OpenAIProvider extends LLMProvider {
 
 		// 解析文本内容
 		const textContent = messageObj['content'] as string | null
-		if (textContent != null && textContent!.length > 0) {
+		if (textContent != null && textContent.length > 0) {
 			const textBlock : TextContent = {
 				type: 'text',
-				text: textContent!
+				text: textContent
 			} as TextContent
 			contentBlocks.push(textBlock as ContentBlock)
 		}
@@ -281,12 +281,12 @@ export class OpenAIProvider extends LLMProvider {
 		// 解析工具调用
 		const toolCalls = messageObj['tool_calls'] as Array<UTSJSONObject> | null
 		if (toolCalls != null) {
-			for (let i = 0; i < toolCalls!.length; i++) {
-				const toolCall = toolCalls![i]
+			for (let i = 0; i < toolCalls.length; i++) {
+				const toolCall = toolCalls[i]
 				const functionObj = toolCall['function'] as UTSJSONObject | null
 				if (functionObj == null) continue
-				const argsStrValue = functionObj!['arguments'] as string | null
-				const argsStr = argsStrValue != null ? argsStrValue! : '{}'
+				const argsStrValue = functionObj['arguments'] as string | null
+				const argsStr = argsStrValue != null ? argsStrValue : '{}'
 
 				// 解析 arguments JSON 字符串
 				let argsObj : UTSJSONObject
@@ -323,10 +323,10 @@ export class OpenAIProvider extends LLMProvider {
 		let inputTokens : number = 0
 		let outputTokens : number = 0
 		if (usageObj != null) {
-			const promptTokens = usageObj!['prompt_tokens'] as number | null
-			const completionTokens = usageObj!['completion_tokens'] as number | null
-			inputTokens = promptTokens != null ? promptTokens! : 0
-			outputTokens = completionTokens != null ? completionTokens! : 0
+			const promptTokens = usageObj['prompt_tokens'] as number | null
+			const completionTokens = usageObj['completion_tokens'] as number | null
+			inputTokens = promptTokens != null ? promptTokens : 0
+			outputTokens = completionTokens != null ? completionTokens : 0
 		}
 		const usage : Usage = {
 			inputTokens: inputTokens,
@@ -335,7 +335,7 @@ export class OpenAIProvider extends LLMProvider {
 
 		// 解析模型名称
 		const modelValue = data['model'] as string | null
-		const modelName : string = modelValue != null ? modelValue! : modelId
+		const modelName : string = modelValue != null ? modelValue : modelId
 
 		// 构建助手消息
 		const message : AssistantMessage = {
@@ -412,9 +412,9 @@ export class OpenAIProvider extends LLMProvider {
 		}
 		const errorObj = data['error'] as UTSJSONObject | null
 		if (errorObj != null) {
-			const message = errorObj!['message'] as string | null
+			const message = errorObj['message'] as string | null
 			if (message != null) {
-				return message!
+				return message
 			}
 		}
 		return '未知错误 (HTTP ' + statusCode + ')'

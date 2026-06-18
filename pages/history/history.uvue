@@ -66,7 +66,7 @@
 	/**
 	 * 历史记录页面 - 展示过往对话列表，支持批量管理
 	 */
-	import { getConversations, deleteConversation } from '@/utils/database.uts'
+	import { getConversations, getMessages, deleteConversation } from '@/utils/database.uts'
 
 	export default {
 		data() {
@@ -212,16 +212,70 @@
 			},
 
 			onCardLongpress(item: UTSJSONObject) {
-				if (!this.editMode) {
-					this.enterEditMode()
-					this.toggleItem(item['id'] as string)
+				if (this.editMode) {
+					return
 				}
+				uni.showActionSheet({
+					itemList: ['导出 Markdown', '管理'],
+					success: (res) => {
+						const idx = res.tapIndex
+						if (idx == 0) {
+							this.exportConversation(item)
+						} else if (idx == 1) {
+							this.enterEditMode()
+							this.toggleItem(item['id'] as string)
+						}
+					}
+				})
 			},
 
 			openConversation(item: UTSJSONObject) {
 				uni.setStorageSync('active_conversation_id', item['id'] as string)
 				uni.redirectTo({
 					url: '/pages/index/index'
+				})
+			},
+
+			/** 导出对话为 Markdown，并复制到剪贴板 */
+			exportConversation(item: UTSJSONObject) {
+				const id = item['id'] as string | null
+				if (id == null || id == '') {
+					uni.showToast({ title: '对话不存在', icon: 'none' })
+					return
+				}
+				const titleRaw = item['title'] as string | null
+				const modelRaw = item['model'] as string | null
+				const title = titleRaw != null && titleRaw != '' ? titleRaw : '未命名对话'
+				const model = modelRaw != null ? modelRaw : ''
+				const msgs = getMessages(id)
+				let markdown = '# ' + title + '\n\n'
+				if (model != '') {
+					markdown += '> Model: ' + model + '\n\n'
+				}
+				for (let i = 0; i < msgs.length; i++) {
+					const msg = msgs[i]
+					const roleRaw = msg['role'] as string | null
+					const contentRaw = msg['content'] as string | null
+					const role = roleRaw != null ? roleRaw : ''
+					const content = contentRaw != null ? contentRaw : ''
+					if (role == 'user') {
+						markdown += '## User\n\n' + content + '\n\n'
+					} else if (role == 'assistant') {
+						markdown += '## Assistant\n\n' + content + '\n\n'
+					} else if (role == 'toolResult') {
+						const toolNameRaw = msg['toolName'] as string | null
+						const toolName = toolNameRaw != null ? toolNameRaw : 'tool'
+						markdown += '## Tool: ' + toolName + '\n\n```text\n' + content + '\n```\n\n'
+					}
+				}
+				uni.setClipboardData({
+					data: markdown,
+					success: () => {
+						uni.showToast({ title: '已复制 Markdown', icon: 'success' })
+					},
+					fail: () => {
+						uni.showToast({ title: '导出失败', icon: 'none' })
+					}
 				})
 			},
 

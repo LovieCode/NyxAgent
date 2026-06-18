@@ -41,8 +41,8 @@ class EventBus {
 	emit(eventName : string) : void {
 		const callbacks = this.events[eventName] as Array<EventCallback> | null
 		if (callbacks != null) {
-			for (let i = 0; i < callbacks!.length; i++) {
-				callbacks![i]()
+			for (let i = 0; i < callbacks.length; i++) {
+				callbacks[i]()
 			}
 		}
 	}

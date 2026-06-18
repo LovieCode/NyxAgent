@@ -28,8 +28,9 @@ export type AgentEventType =
 	| 'turn_end'
 	| 'text_delta'
 	| 'text_end'
-	| 'tool_start'
-	| 'tool_end'
+	| 'tool_call'
+	| 'tool_execution_start'
+	| 'tool_execution_end'
 	| 'error'
 
 /** Agent 事件 */
@@ -39,6 +40,8 @@ export type AgentEvent = {
 	text?: string
 	/** 完整文本（text_end 时） */
 	fullText?: string
+	/** assistant 工具调用消息（tool_call 时，用于持久化上下文） */
+	toolCalls?: UTSJSONObject[]
 	/** 工具调用 ID */
 	toolCallId?: string
 	/** 工具名称 */
@@ -75,15 +78,27 @@ export class AgentEventStream {
 
 	/** 结束流 */
 	end(): void {
-		this._ended = true
+		if (this._ended) return
 		this.push({ type: 'agent_end' })
+		this._ended = true
+	}
+
+	/** 中止流：通知消费者结束，然后丢弃后续事件 */
+	abort(): void {
+		if (this._ended) return
+		this.push({ type: 'agent_end' })
+		this._ended = true
+		this.queue = []
+		this.offAll()
 	}
 
 	/** 以错误结束 */
 	error(message: string): void {
+		if (this._ended) return
 		this._error = message
-		this._ended = true
 		this.push({ type: 'error', error: message })
+		this.push({ type: 'agent_end' })
+		this._ended = true
 	}
 
 	/** 是否已结束 */
@@ -105,8 +120,10 @@ export class AgentEventStream {
 
 	/** 通知所有消费者 */
 	private notifyConsumers(): void {
+		if (this.consumers.length == 0) return
 		while (this.queue.length > 0) {
-			const event = this.queue.shift()!
+			const event = this.queue.shift()
+			if (event == null) continue
 			for (let i = 0; i < this.consumers.length; i++) {
 				this.consumers[i](event)
 			}
