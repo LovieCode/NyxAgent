@@ -122,7 +122,40 @@ function buildMemoryManagerMessages(droppedMessages: UTSJSONObject[]): UTSJSONOb
 	return messages
 }
 
-let startMemoryManagerLoop: ((droppedMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string) => void) | null = null
+let startMemoryManagerLoop: ((droppedMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string) => boolean) | null = null
+
+function collectMemoryCandidateMessages(messages: UTSJSONObject[]): UTSJSONObject[] {
+	const list: UTSJSONObject[] = []
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const role = msg['role'] as string | null
+		if (role != 'user' && role != 'assistant') continue
+		if (role == 'assistant' && msg['tool_calls'] != null) continue
+		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true) continue
+		const rawContent = msg['content'] as string | null
+		if (rawContent == null || rawContent.trim() == '') continue
+		list.push({
+			role: role,
+			content: rawContent,
+		} as UTSJSONObject)
+	}
+	return list
+}
+
+export function organizeAgentMemory(
+	messages: UTSJSONObject[],
+	providerId: string,
+	model: string,
+	agentId: string,
+	conversationId: string
+): boolean {
+	if (getMemoryEnabled() == false) return false
+	const candidates = collectMemoryCandidateMessages(messages)
+	if (candidates.length == 0) return false
+	const starter = startMemoryManagerLoop
+	if (starter == null) return false
+	return starter.invoke(candidates, providerId, model, agentId, conversationId)
+}
 
 // ====== 内部函数 ======
 
@@ -671,7 +704,10 @@ function runAgentLoop(
 	const toolDefs = prepared.toolDefs
 
 	if (enableMemoryManager == true && shouldRunMemoryManager(agentId, conversationId, prepared.droppedMessages) == true) {
-		startMemoryManagerLoop?.invoke(prepared.droppedMessages, providerId, model, agentId, conversationId)
+		const started = startMemoryManagerLoop?.invoke(prepared.droppedMessages, providerId, model, agentId, conversationId)
+		if (started == true) {
+			stream.push({ type: 'memory_organize_start', message: '记忆整理已开始' })
+		}
 	}
 
 	stream.push({ type: 'agent_start' })
@@ -875,9 +911,9 @@ function runAgentLoop(
 	continueLoop()
 }
 
-startMemoryManagerLoop = (droppedMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string): void => {
+startMemoryManagerLoop = (droppedMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string): boolean => {
 	const managerMessages = buildMemoryManagerMessages(droppedMessages)
-	if (managerMessages.length == 0) return
+	if (managerMessages.length == 0) return false
 	const managerSystemPrompt = buildMemoryManagerSystemPrompt(agentId, conversationId)
 	const agent = getAgentById(agentId)
 	const settings = getEffectiveGenerationSettings(agent)
@@ -895,6 +931,7 @@ startMemoryManagerLoop = (droppedMessages: UTSJSONObject[], providerId: string, 
 	setTimeout(() => {
 		runAgentLoop(managerMessages, managerSystemPrompt, providerId, model, agentId, settings, managerStream, conversationId, true, false)
 	}, 0)
+	return true
 }
 
 export function buildAgentContextPreview(
