@@ -5,7 +5,7 @@
 				<text class="nav-btn" @click="copyAll">复制</text>
 			</template>
 		</NavBar>
-		<scroll-view class="container" :scroll-y="true" :scroll-with-animation="false" :scroll-into-view="scrollTargetId">
+		<scroll-view id="context-scroll" class="container" :scroll-y="true" :scroll-with-animation="false" :scroll-top="scrollTop">
 			<view id="anchor-top" class="anchor-spacer"></view>
 			<view class="hero-card">
 				<text class="hero-title">发送前完整上下文</text>
@@ -70,11 +70,7 @@
 			<view id="section-messages" class="card" :class="activeSectionId == 'section-messages' ? 'card-active' : ''">
 				<text class="section-title">发送 messages（OpenAI 格式）</text>
 				<view v-for="(chunk, index) in messagesChunks" :key="'msg-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active">
-						<text>{{activeChunkPrefix(chunk)}}</text>
-						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
-						<text>{{activeChunkSuffix(chunk)}}</text>
-					</text>
+					<rich-text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active rich-code-text" :nodes="activeChunkRichText(chunk)" mode="native"></rich-text>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
 				</view>
 			</view>
@@ -82,11 +78,7 @@
 			<view id="section-tools" class="card" :class="activeSectionId == 'section-tools' ? 'card-active' : ''">
 				<text class="section-title">工具定义</text>
 				<view v-for="(chunk, index) in toolsChunks" :key="'tool-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active">
-						<text>{{activeChunkPrefix(chunk)}}</text>
-						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
-						<text>{{activeChunkSuffix(chunk)}}</text>
-					</text>
+					<rich-text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active rich-code-text" :nodes="activeChunkRichText(chunk)" mode="native"></rich-text>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
 				</view>
 			</view>
@@ -94,11 +86,7 @@
 			<view id="section-request" class="card" :class="activeSectionId == 'section-request' ? 'card-active' : ''">
 				<text class="section-title">最终 request body</text>
 				<view v-for="(chunk, index) in requestBodyChunks" :key="'req-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active">
-						<text>{{activeChunkPrefix(chunk)}}</text>
-						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
-						<text>{{activeChunkSuffix(chunk)}}</text>
-					</text>
+					<rich-text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active rich-code-text" :nodes="activeChunkRichText(chunk)" mode="native"></rich-text>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
 				</view>
 			</view>
@@ -109,11 +97,7 @@
 					<text class="mini-btn" @click="copyAll">复制</text>
 				</view>
 				<view v-for="(chunk, index) in fullJsonChunks" :key="'json-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active">
-						<text>{{activeChunkPrefix(chunk)}}</text>
-						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
-						<text>{{activeChunkSuffix(chunk)}}</text>
-					</text>
+					<rich-text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active rich-code-text" :nodes="activeChunkRichText(chunk)" mode="native"></rich-text>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
 				</view>
 			</view>
@@ -138,7 +122,7 @@
 			return {
 				previewText: '' as string,
 				previewDisplayText: '' as string,
-				scrollTargetId: '' as string,
+				scrollTop: 0 as number,
 				scrollRequestSeq: 0 as number,
 				searchText: '' as string,
 				searchResults: [] as UTSJSONObject[],
@@ -529,13 +513,30 @@
 			scrollToSection(id: string): void {
 				this.scrollRequestSeq = this.scrollRequestSeq + 1
 				const requestSeq = this.scrollRequestSeq
-				this.scrollTargetId = ''
-				setTimeout(() => {
+				const query = uni.createSelectorQuery().in(this)
+				query.select('#context-scroll').boundingClientRect()
+				query.select('#' + id).boundingClientRect()
+				query.exec((res: any) => {
 					if (requestSeq != this.scrollRequestSeq) {
 						return
 					}
-					this.scrollTargetId = id
-				}, 16)
+					const rows = res as UTSArray<any> | null
+					if (rows == null || rows.length < 2) {
+						return
+					}
+					const scrollRect = rows[0] as UTSJSONObject | null
+					const targetRect = rows[1] as UTSJSONObject | null
+					if (scrollRect == null || targetRect == null) {
+						return
+					}
+					const scrollTop = scrollRect['top'] as number | null
+					const targetTop = targetRect['top'] as number | null
+					if (scrollTop == null || targetTop == null) {
+						return
+					}
+					const nextTop = this.scrollTop + (targetTop - scrollTop) - 24
+					this.scrollTop = nextTop > 0 ? nextTop : 0
+				})
 			},
 
 			scrollToTop() {
@@ -565,6 +566,17 @@
 			chunkText(chunk: UTSJSONObject): string {
 				const content = chunk['text'] as string | null
 				return content != null ? content : ''
+			},
+
+			escapeRichText(text: string): string {
+				let result = text
+				result = result.replace(/&/g, '&amp;')
+				result = result.replace(/</g, '&lt;')
+				result = result.replace(/>/g, '&gt;')
+				result = result.replace(/"/g, '&quot;')
+				result = result.replace(/\n/g, '<br/>')
+				result = result.replace(/ /g, '&nbsp;')
+				return result
 			},
 
 			hasActiveChunkMatch(chunk: UTSJSONObject): boolean {
@@ -600,6 +612,19 @@
 					return ''
 				}
 				return this.chunkText(chunk).substring(this.activeMatchStart + this.activeMatchLength)
+			},
+
+			activeChunkRichText(chunk: UTSJSONObject): string {
+				const before = this.escapeRichText(this.activeChunkPrefix(chunk))
+				const hit = this.escapeRichText(this.activeChunkMatch(chunk))
+				const after = this.escapeRichText(this.activeChunkSuffix(chunk))
+				return '<div style="color:#E5E7EB;font-size:12px;line-height:18px;font-family:monospace;white-space:pre-wrap;word-break:break-all;">'
+					+ before
+					+ '<span style="background-color:#FDE68A;color:#111827;border-radius:4px;padding:0 2px;font-weight:bold;">'
+					+ hit
+					+ '</span>'
+					+ after
+					+ '</div>'
 			},
 
 			formatJsonObjectSegment(value: UTSJSONObject, fallback: string): string {
@@ -849,6 +874,10 @@
 		border-width: 1px;
 		border-style: solid;
 		border-color: #FB8FAB;
+	}
+
+	.rich-code-text {
+		width: 100%;
 	}
 
 	.code-inline-hit {
