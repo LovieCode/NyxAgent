@@ -217,6 +217,7 @@
 		flex-direction: row;
 		align-items: flex-start;
 		justify-content: flex-end;
+		width: 100%;
 	}
 
 	/* 用户气泡 - 粉色渐变背景 */
@@ -225,6 +226,7 @@
 		border-radius: 16px;
 		padding: 6px 12px;
 		max-width: 500px;
+		flex-shrink: 1;
 	}
 
 	/* 用户气泡按压效果 */
@@ -361,6 +363,7 @@
 		font-size: 15px;
 		color: var(--rice-background-2);
 		line-height: 22px;
+		white-space: normal;
 	}
 
 	/* AI 文字 - 深色字，白底由父容器提供 */
@@ -368,6 +371,7 @@
 		font-size: 15px;
 		color: var(--rice-text-color);
 		line-height: 22px;
+		white-space: normal;
 	}
 
 	/* 工具文字 */
