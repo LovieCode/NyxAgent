@@ -5,13 +5,41 @@
 				<text class="nav-btn" @click="copyAll">复制</text>
 			</template>
 		</NavBar>
-		<scroll-view class="container" :scroll-y="true">
+		<scroll-view class="container" :scroll-y="true" :scroll-with-animation="true" :scroll-into-view="scrollTargetId">
+			<view id="anchor-top" class="anchor-spacer"></view>
 			<view class="hero-card">
 				<text class="hero-title">发送前完整上下文</text>
 				<text class="hero-desc">这里展示本轮真正会发给 agent 的首轮原始上下文，包含系统提示词、记忆动态注入、消息重写结果、工具定义与请求体。不会显示 API Key。</text>
 			</view>
 
 			<view class="card">
+				<text class="section-title">搜索定位</text>
+				<view class="search-row">
+					<input
+						class="search-input"
+						type="text"
+						v-model="searchText"
+						placeholder="搜索内容、记忆、工具、JSON 字段..."
+						placeholder-style="color:#9CA3AF"
+						@confirm="applySearch"
+					/>
+					<text class="search-btn" @click="applySearch">搜索</text>
+				</view>
+				<view class="search-actions">
+					<text class="ghost-btn" @click="focusPrevResult">上一个</text>
+					<text class="ghost-btn" @click="focusNextResult">下一个</text>
+					<text class="ghost-btn" @click="scrollToTop">顶部</text>
+					<text class="ghost-btn" @click="scrollToBottom">底部</text>
+					<text class="ghost-btn" @click="clearSearch">清空</text>
+				</view>
+				<text class="search-meta">{{searchMetaText}}</text>
+				<view v-if="currentSearchTitle != ''" class="search-hit-card">
+					<text class="search-hit-title">{{currentSearchTitle}}</text>
+					<text class="search-hit-excerpt">{{currentSearchExcerpt}}</text>
+				</view>
+			</view>
+
+			<view id="section-summary" class="card" :class="activeSectionId == 'section-summary' ? 'card-active' : ''">
 				<text class="section-title">摘要</text>
 				<text class="meta-line">Provider：{{providerId != '' ? providerId : '未解析'}}</text>
 				<text class="meta-line">Base URL：{{baseUrl != '' ? baseUrl : '未解析'}}</text>
@@ -22,48 +50,49 @@
 				<text class="meta-line">短缓存：{{bufferInjection != '' ? '已注入' : '无'}}</text>
 			</view>
 
-			<view class="card">
+			<view id="section-system" class="card" :class="activeSectionId == 'section-system' ? 'card-active' : ''">
 				<text class="section-title">系统提示词</text>
 				<text class="block-text">{{systemPrompt != '' ? systemPrompt : '（空）'}}</text>
 			</view>
 
-			<view class="card">
+			<view id="section-settings" class="card" :class="activeSectionId == 'section-settings' ? 'card-active' : ''">
 				<text class="section-title">生成参数</text>
 				<text class="code-text">{{settingsText}}</text>
 			</view>
 
-			<view class="card" v-if="importantMemory != ''">
+			<view id="section-important-memory" class="card" :class="activeSectionId == 'section-important-memory' ? 'card-active' : ''" v-if="importantMemory != ''">
 				<text class="section-title">重要记忆注入</text>
 				<text class="block-text">{{importantMemory}}</text>
 			</view>
 
-			<view class="card" v-if="bufferInjection != ''">
+			<view id="section-buffer-memory" class="card" :class="activeSectionId == 'section-buffer-memory' ? 'card-active' : ''" v-if="bufferInjection != ''">
 				<text class="section-title">短缓存注入</text>
 				<text class="block-text">{{bufferInjection}}</text>
 			</view>
 
-			<view class="card">
+			<view id="section-messages" class="card" :class="activeSectionId == 'section-messages' ? 'card-active' : ''">
 				<text class="section-title">发送 messages（OpenAI 格式）</text>
 				<text class="code-text">{{messagesText}}</text>
 			</view>
 
-			<view class="card">
+			<view id="section-tools" class="card" :class="activeSectionId == 'section-tools' ? 'card-active' : ''">
 				<text class="section-title">工具定义</text>
 				<text class="code-text">{{toolsText}}</text>
 			</view>
 
-			<view class="card">
+			<view id="section-request" class="card" :class="activeSectionId == 'section-request' ? 'card-active' : ''">
 				<text class="section-title">最终 request body</text>
 				<text class="code-text">{{requestBodyText}}</text>
 			</view>
 
-			<view class="card">
+			<view id="section-full-json" class="card" :class="activeSectionId == 'section-full-json' ? 'card-active' : ''">
 				<view class="section-row">
 					<text class="section-title">完整 JSON</text>
 					<text class="mini-btn" @click="copyAll">复制</text>
 				</view>
 				<text class="code-text">{{previewDisplayText}}</text>
 			</view>
+			<view id="anchor-bottom" class="anchor-spacer"></view>
 		</scroll-view>
 	</view>
 </template>
@@ -74,6 +103,14 @@
 			return {
 				previewText: '' as string,
 				previewDisplayText: '' as string,
+				scrollTargetId: '' as string,
+				searchText: '' as string,
+				searchResults: [] as UTSJSONObject[],
+				searchIndex: -1 as number,
+				searchMetaText: '输入关键词后可在各段内容之间跳转定位。' as string,
+				currentSearchTitle: '' as string,
+				currentSearchExcerpt: '' as string,
+				activeSectionId: '' as string,
 				providerId: '' as string,
 				baseUrl: '' as string,
 				model: '' as string,
@@ -118,16 +155,16 @@
 				this.messageCount = openaiMessages != null ? openaiMessages.length : 0
 				this.toolCount = openaiTools != null ? openaiTools.length : 0
 				if (settings != null) {
-					this.settingsText = this.formatJsonObjectSegment(settings, '（空）')
+					this.settingsText = this.decodeDisplayEscapes(this.formatJsonObjectSegment(settings, '（空）'))
 				}
 				if (openaiMessages != null) {
-					this.messagesText = this.formatJsonArraySegment(openaiMessages, '[]')
+					this.messagesText = this.decodeDisplayEscapes(this.formatJsonArraySegment(openaiMessages, '[]'))
 				}
 				if (openaiTools != null) {
-					this.toolsText = this.formatJsonArraySegment(openaiTools, '[]')
+					this.toolsText = this.decodeDisplayEscapes(this.formatJsonArraySegment(openaiTools, '[]'))
 				}
 				if (requestBody != null) {
-					this.requestBodyText = this.formatJsonObjectSegment(requestBody, '{}')
+					this.requestBodyText = this.decodeDisplayEscapes(this.formatJsonObjectSegment(requestBody, '{}'))
 				}
 			} catch (_e: any) {
 			}
@@ -139,6 +176,158 @@
 				result = result.replace(/\\n/g, '\n')
 				result = result.replace(/\\t/g, '  ')
 				return result
+			},
+
+			buildSearchResult(sectionId: string, title: string, content: string, query: string): UTSJSONObject | null {
+				if (content == '' || query == '') {
+					return null
+				}
+				const source = content.toLowerCase()
+				const needle = query.toLowerCase()
+				const firstIndex = source.indexOf(needle)
+				if (firstIndex < 0) {
+					return null
+				}
+				let count = 0
+				let fromIndex = 0
+				while (fromIndex < source.length) {
+					const hit = source.indexOf(needle, fromIndex)
+					if (hit < 0) {
+						break
+					}
+					count++
+					fromIndex = hit + needle.length
+				}
+				let start = firstIndex - 48
+				if (start < 0) {
+					start = 0
+				}
+				let end = firstIndex + needle.length + 96
+				if (end > content.length) {
+					end = content.length
+				}
+				let excerpt = content.substring(start, end)
+				if (start > 0) {
+					excerpt = '…' + excerpt
+				}
+				if (end < content.length) {
+					excerpt = excerpt + '…'
+				}
+				return {
+					sectionId: sectionId,
+					title: title,
+					excerpt: excerpt,
+					count: count,
+				} as UTSJSONObject
+			},
+
+			pushSearchResult(list: UTSJSONObject[], sectionId: string, title: string, content: string, query: string): void {
+				const result = this.buildSearchResult(sectionId, title, content, query)
+				if (result != null) {
+					list.push(result)
+				}
+			},
+
+			applySearch() {
+				const query = this.searchText.trim()
+				if (query == '') {
+					this.clearSearch()
+					return
+				}
+				const results: UTSJSONObject[] = []
+				this.pushSearchResult(results, 'section-summary', '摘要', 'Provider: ' + this.providerId + '\nBase URL: ' + this.baseUrl + '\nModel: ' + this.model, query)
+				this.pushSearchResult(results, 'section-system', '系统提示词', this.systemPrompt, query)
+				this.pushSearchResult(results, 'section-settings', '生成参数', this.settingsText, query)
+				this.pushSearchResult(results, 'section-important-memory', '重要记忆注入', this.importantMemory, query)
+				this.pushSearchResult(results, 'section-buffer-memory', '短缓存注入', this.bufferInjection, query)
+				this.pushSearchResult(results, 'section-messages', '发送 messages', this.messagesText, query)
+				this.pushSearchResult(results, 'section-tools', '工具定义', this.toolsText, query)
+				this.pushSearchResult(results, 'section-request', '最终 request body', this.requestBodyText, query)
+				this.pushSearchResult(results, 'section-full-json', '完整 JSON', this.previewDisplayText, query)
+				this.searchResults = results
+				if (results.length == 0) {
+					this.searchIndex = -1
+					this.searchMetaText = '没有找到匹配项。'
+					this.currentSearchTitle = ''
+					this.currentSearchExcerpt = ''
+					this.activeSectionId = ''
+					uni.showToast({
+						title: '没有匹配内容',
+						icon: 'none'
+					})
+					return
+				}
+				this.searchIndex = 0
+				this.focusSearchIndex(0)
+			},
+
+			focusSearchIndex(index: number): void {
+				if (index < 0 || index >= this.searchResults.length) {
+					return
+				}
+				this.searchIndex = index
+				const item = this.searchResults[index]
+				const sectionId = item['sectionId'] as string | null
+				const title = item['title'] as string | null
+				const excerpt = item['excerpt'] as string | null
+				const count = item['count'] as number | null
+				this.searchMetaText = '命中 ' + this.searchResults.length + ' 个分段，当前第 ' + (index + 1) + ' 个' + (count != null ? '（本段 ' + count + ' 处）' : '')
+				this.currentSearchTitle = title != null ? title : ''
+				this.currentSearchExcerpt = excerpt != null ? excerpt : ''
+				this.activeSectionId = sectionId != null ? sectionId : ''
+				if (sectionId != null && sectionId != '') {
+					this.scrollToSection(sectionId)
+				}
+			},
+
+			focusPrevResult() {
+				if (this.searchResults.length == 0) {
+					this.applySearch()
+					return
+				}
+				let nextIndex = this.searchIndex - 1
+				if (nextIndex < 0) {
+					nextIndex = this.searchResults.length - 1
+				}
+				this.focusSearchIndex(nextIndex)
+			},
+
+			focusNextResult() {
+				if (this.searchResults.length == 0) {
+					this.applySearch()
+					return
+				}
+				let nextIndex = this.searchIndex + 1
+				if (nextIndex >= this.searchResults.length) {
+					nextIndex = 0
+				}
+				this.focusSearchIndex(nextIndex)
+			},
+
+			clearSearch() {
+				this.searchResults = [] as UTSJSONObject[]
+				this.searchIndex = -1
+				this.searchMetaText = '输入关键词后可在各段内容之间跳转定位。'
+				this.currentSearchTitle = ''
+				this.currentSearchExcerpt = ''
+				this.activeSectionId = ''
+			},
+
+			scrollToSection(id: string): void {
+				this.scrollTargetId = ''
+				setTimeout(() => {
+					this.scrollTargetId = id
+				}, 0)
+			},
+
+			scrollToTop() {
+				this.activeSectionId = ''
+				this.scrollToSection('anchor-top')
+			},
+
+			scrollToBottom() {
+				this.activeSectionId = ''
+				this.scrollToSection('anchor-bottom')
 			},
 
 			formatJsonObjectSegment(value: UTSJSONObject, fallback: string): string {
@@ -205,6 +394,13 @@
 		margin-bottom: 12px;
 	}
 
+	.card-active {
+		border-width: 2px;
+		border-style: solid;
+		border-color: #FB8FAB;
+		box-shadow: 0 8px 24px rgba(251, 143, 171, 0.16);
+	}
+
 	.hero-title {
 		font-size: 18px;
 		color: var(--rice-text-color);
@@ -238,6 +434,75 @@
 		color: var(--rice-text-color-2);
 	}
 
+	.search-row {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.search-input {
+		flex: 1;
+		height: 38px;
+		background-color: #F9FAFB;
+		border-radius: 10px;
+		padding-left: 12px;
+		padding-right: 12px;
+		font-size: 13px;
+		color: var(--rice-text-color);
+	}
+
+	.search-btn {
+		margin-left: 10px;
+		padding: 9px 14px;
+		border-radius: 10px;
+		background-color: var(--rice-primary-color);
+		color: #FFFFFF;
+		font-size: 13px;
+		font-weight: bold;
+	}
+
+	.search-actions {
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin-top: 10px;
+	}
+
+	.ghost-btn {
+		padding: 6px 10px;
+		margin-right: 8px;
+		margin-bottom: 8px;
+		border-radius: 999px;
+		background-color: #F3F4F6;
+		color: #4B5563;
+		font-size: 12px;
+	}
+
+	.search-meta {
+		font-size: 12px;
+		line-height: 20px;
+		color: #6B7280;
+	}
+
+	.search-hit-card {
+		margin-top: 10px;
+		padding: 12px;
+		border-radius: 12px;
+		background-color: #FFF7FA;
+	}
+
+	.search-hit-title {
+		font-size: 13px;
+		font-weight: bold;
+		color: #DB2777;
+		margin-bottom: 6px;
+	}
+
+	.search-hit-excerpt {
+		font-size: 12px;
+		line-height: 19px;
+		color: #4B5563;
+		white-space: pre-wrap;
+	}
+
 	.block-text {
 		font-size: 13px;
 		line-height: 21px;
@@ -265,5 +530,9 @@
 
 	.mini-btn {
 		color: var(--rice-primary-color);
+	}
+
+	.anchor-spacer {
+		height: 2px;
 	}
 </style>
