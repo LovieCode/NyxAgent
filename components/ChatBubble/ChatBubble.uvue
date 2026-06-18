@@ -7,7 +7,7 @@
 
 		<!-- 用户消息：气泡 + 右侧头像 -->
 		<view v-if="role == 'user'" class="user-row">
-			<view class="user-bubble">
+			<view class="user-bubble" @touchstart="onBubbleTouchStart($event as UniTouchEvent)" @touchmove="onBubbleTouchMove($event as UniTouchEvent)" @touchend="onBubbleTouchEnd">
 				<!-- 图片消息 -->
 				<image v-if="msgType == 'image' && imageUrl != ''" :src="imageUrl" class="bubble-image" mode="widthFix" />
 				<!-- 文本消息 -->
@@ -25,7 +25,7 @@
 			<view v-else class="chat-avatar ai-avatar">
 				<text class="chat-avatar-text">AI</text>
 			</view>
-			<view class="ai-content">
+			<view class="ai-content" @touchstart="onBubbleTouchStart($event as UniTouchEvent)" @touchmove="onBubbleTouchMove($event as UniTouchEvent)" @touchend="onBubbleTouchEnd">
 				<image v-if="msgType == 'image' && imageUrl != ''" :src="imageUrl" class="bubble-image" mode="widthFix" />
 				<text v-if="msgType != 'image' || content != ''" :class="textClass">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
 			</view>
@@ -80,6 +80,26 @@
 			agentAvatar: {
 				type: String,
 				default: ''
+			},
+			cancelToken: {
+				type: Number,
+				default: 0
+			}
+		},
+		data() {
+			return {
+				/** 长按检测 */
+				touchStartX: 0 as number,
+				touchStartY: 0 as number,
+				longpressTick: 0 as number,
+				longpressTimer: -1 as number,
+			}
+		},
+		watch: {
+			cancelToken(newVal: number, oldVal: number) {
+				if (newVal != oldVal) {
+					this.cancelLongpress()
+				}
 			}
 		},
 		computed: {
@@ -128,6 +148,48 @@
 				return 'text-user'
 			}
 		},
+		methods: {
+			/** 取消长按状态 */
+			cancelLongpress() {
+				if (this.longpressTimer != -1) {
+					clearInterval(this.longpressTimer)
+					this.longpressTimer = -1
+				}
+			},
+
+			/** 触摸开始 — 启动长按计时 */
+			onBubbleTouchStart(e: UniTouchEvent) {
+				this.touchStartX = e.touches[0].screenX
+				this.touchStartY = e.touches[0].screenY
+				this.longpressTick = 0
+				if (this.longpressTimer != -1) {
+					clearInterval(this.longpressTimer)
+				}
+				this.longpressTimer = setInterval(() => {
+					this.longpressTick++
+					if (this.longpressTick >= 5) {
+						clearInterval(this.longpressTimer)
+						this.longpressTimer = -1
+						this.$emit('longpress')
+					}
+				}, 100)
+			},
+
+			/** 触摸移动 — 距离过大取消长按 */
+			onBubbleTouchMove(e: UniTouchEvent) {
+				if (this.longpressTimer == -1) { return }
+				const dx = e.touches[0].screenX - this.touchStartX
+				const dy = e.touches[0].screenY - this.touchStartY
+				if (Math.abs(dx) > 30 || Math.abs(dy) > 30) {
+					this.cancelLongpress()
+				}
+			},
+
+			/** 触摸结束 — 清理状态 */
+			onBubbleTouchEnd() {
+				this.cancelLongpress()
+			},
+		}
 	}
 </script>
 
@@ -157,6 +219,11 @@
 		max-width: 500px;
 	}
 
+	/* 用户气泡按压效果 */
+	.user-bubble:active {
+		opacity: 0.75;
+	}
+
 	/* AI 行：头像 + 内容，顶部对齐 */
 	.ai-row {
 		flex-direction: row;
@@ -165,11 +232,16 @@
 	}
 
 	.ai-content {
-		flex: 1;
 		flex-shrink: 1;
 		background-color: var(--rice-background-2);
 		border-radius: 16px;
 		padding: 10px;
+		max-width: 500px;
+	}
+
+	/* AI 气泡按压效果 */
+	.ai-content:active {
+		background-color: #E5E7EB;
 	}
 
 	/* 通用头像 - 小圆形 */
@@ -177,8 +249,6 @@
 		width: 28px;
 		height: 28px;
 		border-radius: 14px;
-		justify-content: center;
-		align-items: center;
 		flex-shrink: 0;
 		margin-top: 2px;
 	}
@@ -193,6 +263,8 @@
 	.user-avatar {
 		background-image: linear-gradient(to bottom right, #FB8FAB, #E8729A);
 		margin-left: 8px;
+		justify-content: center;
+		align-items: center;
 	}
 
 	/* 用户头像 - 自定义图片 */
@@ -204,6 +276,8 @@
 	.ai-avatar {
 		background-color: var(--rice-text-color-3);
 		margin-right: 8px;
+		justify-content: center;
+		align-items: center;
 	}
 
 	/* AI 头像 - 自定义图片 */

@@ -1,4 +1,4 @@
-﻿<template>
+﻿﻿﻿﻿<template>
 	<view class="page-shell rice-theme-light">
 		<NavBar title="设置" />
 		<scroll-view class="container" :scroll-y="true">
@@ -6,7 +6,7 @@
 			<view class="settings-menu">
 				<view class="menu-item" @click="goSubPage('profile')">
 					<view class="menu-item-left">
-						<oui-icon-unix name="account" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
+						<oui-icon-unix name="user" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
 						<view class="menu-text">
 							<text class="menu-title">用户资料</text>
 							<text class="menu-desc">昵称、头像、个人简介</text>

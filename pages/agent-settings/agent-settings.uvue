@@ -120,6 +120,7 @@
 	 */
 	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, type ModelInfo } from '@/utils/provider.uts'
+	import { updateSystemPromptForAgent } from '@/utils/database.uts'
 
 	export default {
 		data() {
@@ -327,6 +328,8 @@
 					return
 				}
 				updateAgent(this.agentId, name, desc, '', this.agentSystemPrompt)
+				// 同步更新所有历史对话的 system_prompt
+				updateSystemPromptForAgent(this.agentId, this.agentSystemPrompt)
 				this.hasUnsaved = false
 				uni.showToast({
 					title: '已保存',

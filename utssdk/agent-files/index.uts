@@ -1,0 +1,255 @@
+/**
+ * Agent 文件沙箱 - 原生插件
+ * 使用 Android File API 实现沙箱文件操作
+ * utssdk 插件中 UTSAndroid 为全局可用
+ */
+
+// #ifdef APP-ANDROID
+import File from 'java.io.File'
+// #endif
+
+/**
+ * 获取 agent 文件根目录
+ */
+function getAgentsRoot(): string {
+	// #ifdef APP-ANDROID
+	const context = UTSAndroid.getAppContext()!
+	const dir = context.filesDir as File
+	return (dir.absolutePath as string) + '/agents'
+	// #endif
+	return ''
+}
+
+/**
+ * 校验相对路径安全性
+ */
+function validatePath(relativePath: string): string | null {
+	if (relativePath == '' || relativePath == '.') return null
+	if (relativePath.startsWith('/')) return '不允许使用绝对路径'
+	const segments = relativePath.split('/')
+	for (let i = 0; i < segments.length; i++) {
+		if (segments[i] == '..') return '路径不允许包含 ".."'
+	}
+	return null
+}
+
+/**
+ * 获取 agent 存储目录路径
+ */
+export function getAgentStoragePath(agentId: string): string {
+	return getAgentsRoot() + '/' + agentId
+}
+
+/**
+ * 解析安全的完整路径
+ */
+function resolvePath(agentId: string, relativePath: string): string {
+	const err = validatePath(relativePath)
+	if (err != null) return ''
+	const base = getAgentStoragePath(agentId)
+	if (base == '') return ''
+	if (relativePath == '' || relativePath == '.') return base
+	return base + '/' + relativePath
+}
+
+/**
+ * 递归删除目录
+ * 使用 list() 获取文件名列表避免 File[] 类型问题
+ */
+function deleteRecursive(file: File): boolean {
+	if (file.isDirectory()) {
+		const names = file.list()
+		if (names != null) {
+			const dirPath = file.absolutePath
+			let idx = 0 as Int
+			while (idx < names.size) {
+				deleteRecursive(new File(dirPath + '/' + names[idx]))
+				idx++
+			}
+		}
+	}
+	return file.delete()
+}
+
+/**
+ * 初始化 agent 存储目录
+ */
+export function initAgentStorage(agentId: string): boolean {
+	try {
+		const dir = new File(getAgentStoragePath(agentId))
+		if (!dir.exists()) return dir.mkdirs()
+		return true
+	} catch (_) {
+		return false
+	}
+}
+
+/**
+ * 删除 agent 整个存储目录
+ */
+export function removeAgentStorage(agentId: string): boolean {
+	try {
+		const dir = new File(getAgentStoragePath(agentId))
+		if (!dir.exists()) return true
+		return deleteRecursive(dir)
+	} catch (_) {
+		return false
+	}
+}
+
+/**
+ * 读取 agent 文件内容
+ */
+export function readAgentFile(agentId: string, filePath: string): string | null {
+	const fullPath = resolvePath(agentId, filePath)
+	if (fullPath == '') return null
+	try {
+		const file = new File(fullPath)
+		if (!file.exists() || file.isDirectory()) return null
+		return file.readText()
+	} catch (_) {
+		return null
+	}
+}
+
+/**
+ * 写入 agent 文件
+ */
+export function writeAgentFile(agentId: string, filePath: string, content: string): boolean {
+	const fullPath = resolvePath(agentId, filePath)
+	if (fullPath == '') return false
+	try {
+		const file = new File(fullPath)
+		const parent = file.parentFile
+		if (parent != null && !parent!.exists()) {
+			parent!.mkdirs()
+		}
+		file.writeText(content)
+		return true
+	} catch (_) {
+		return false
+	}
+}
+
+/**
+ * 删除 agent 文件
+ */
+export function deleteAgentFile(agentId: string, filePath: string): boolean {
+	const fullPath = resolvePath(agentId, filePath)
+	if (fullPath == '') return false
+	try {
+		const file = new File(fullPath)
+		if (!file.exists()) return true
+		return file.delete()
+	} catch (_) {
+		return false
+	}
+}
+
+/**
+ * 列出 agent 目录内容
+ */
+export function listAgentFiles(agentId: string, dirPath: string = ''): string {
+	const fullPath = resolvePath(agentId, dirPath)
+	if (fullPath == '') return '[]'
+	try {
+		const dir = new File(fullPath)
+		if (!dir.exists() || !dir.isDirectory()) return '[]'
+		const names = dir.list()
+		if (names == null) return '[]'
+		const items: string[] = []
+		let idx = 0 as Int
+		while (idx < names.size) {
+			const child = new File(fullPath + '/' + names[idx])
+			items.push(JSON.stringify({
+				name: child.name,
+				isDirectory: child.isDirectory(),
+				size: child.isDirectory() ? 0 : child.length(),
+				lastModified: child.lastModified()
+			}))
+			idx++
+		}
+		return '[' + items.join(',') + ']'
+	} catch (_) {
+		return '[]'
+	}
+}
+
+/**
+ * 检查文件/目录是否存在
+ */
+export function agentFileExists(agentId: string, path: string): boolean {
+	const fullPath = resolvePath(agentId, path)
+	if (fullPath == '') return false
+	try {
+		const file = new File(fullPath)
+		return file.exists()
+	} catch (_) {
+		return false
+	}
+}
+
+/**
+ * 获取文件信息（JSON 字符串）
+ */
+export function getAgentFileInfo(agentId: string, path: string): string | null {
+	const fullPath = resolvePath(agentId, path)
+	if (fullPath == '') return null
+	try {
+		const file = new File(fullPath)
+		if (!file.exists()) return null
+		return JSON.stringify({
+			name: file.name,
+			isDirectory: file.isDirectory(),
+			size: file.isDirectory() ? 0 : file.length(),
+			lastModified: file.lastModified()
+		})
+	} catch (_) {
+		return null
+	}
+}
+
+/**
+ * 创建子目录
+ */
+export function createAgentDirectory(agentId: string, dirPath: string): boolean {
+	const fullPath = resolvePath(agentId, dirPath)
+	if (fullPath == '') return false
+	try {
+		const dir = new File(fullPath)
+		if (dir.exists()) return dir.isDirectory()
+		return dir.mkdirs()
+	} catch (_) {
+		return false
+	}
+}
+
+/**
+ * 获取 agent 目录的总大小
+ */
+export function getAgentStorageSize(agentId: string): number {
+	try {
+		const dir = new File(getAgentStoragePath(agentId))
+		if (!dir.exists()) return 0
+		return calculateSize(dir)
+	} catch (_) {
+		return 0
+	}
+}
+
+function calculateSize(file: File): number {
+	if (file.isDirectory()) {
+		let total: number = 0
+		const names = file.list()
+		if (names != null) {
+			const dirPath = file.absolutePath
+			let idx = 0 as Int
+			while (idx < names.size) {
+				total += calculateSize(new File(dirPath + '/' + names[idx]))
+				idx++
+			}
+		}
+		return total
+	}
+	return file.length()
+}

@@ -77,6 +77,13 @@ export function initDatabase(): void {
 		// 列已存在，忽略
 	}
 
+	// 兼容旧表：尝试添加 system_prompt 列
+	try {
+		db.run('ALTER TABLE conversations ADD COLUMN system_prompt TEXT NOT NULL DEFAULT \'\'')
+	} catch (_e: any) {
+		// 列已存在，忽略
+	}
+
 	db.run(
 		'CREATE TABLE IF NOT EXISTS providers (' +
 		'id TEXT PRIMARY KEY,' +
@@ -117,6 +124,7 @@ export function saveConversation(
 	title: string,
 	model: string,
 	agentId: string,
+	systemPrompt: string,
 	messages: UTSJSONObject[]
 ): void {
 	const db = getDb()
@@ -134,8 +142,8 @@ export function saveConversation(
 	// UPSERT 对话
 	const now = Date.now()
 	db.run(
-		'INSERT OR REPLACE INTO conversations (id, title, model, agent_id, created_at, updated_at, message_count, preview) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-		[id, title, model, agentId, now, now, messages.length, preview]
+		'INSERT OR REPLACE INTO conversations (id, title, model, agent_id, system_prompt, created_at, updated_at, message_count, preview) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+		[id, title, model, agentId, systemPrompt, now, now, messages.length, preview]
 	)
 
 	// 先删该对话的旧消息
@@ -173,6 +181,18 @@ export function saveConversation(
 		const imageUrl = msg['imageUrl']
 		if (imageUrl != null) {
 			extra['imageUrl'] = imageUrl
+		}
+		const toolCallId = msg['tool_call_id']
+		if (toolCallId != null) {
+			extra['tool_call_id'] = toolCallId
+		}
+		const toolCalls = msg['tool_calls']
+		if (toolCalls != null) {
+			extra['tool_calls'] = toolCalls
+		}
+		const args = msg['args']
+		if (args != null) {
+			extra['args'] = args
 		}
 		const extraStr = JSON.stringify(extra)
 
@@ -250,6 +270,15 @@ export function getMessages(conversationId: string): UTSJSONObject[] {
 				if (extra['imageUrl'] != null) {
 					row['imageUrl'] = extra['imageUrl']
 				}
+				if (extra['tool_call_id'] != null) {
+					row['tool_call_id'] = extra['tool_call_id']
+				}
+				if (extra['tool_calls'] != null) {
+					row['tool_calls'] = extra['tool_calls']
+				}
+				if (extra['args'] != null) {
+					row['args'] = extra['args']
+				}
 			} catch (_e: any) {
 				// ignore parse error
 			}
@@ -279,7 +308,15 @@ export function clearAll(): void {
 	db.close()
 }
 
-// ==================== 提供商 CRUD ====================
+/**
+ * 更新某个智能体所有历史对话的 system_prompt
+ * 当用户在智能体设置中修改了系统提示词后调用
+ */
+export function updateSystemPromptForAgent(agentId: string, systemPrompt: string): void {
+	const db = getDb()
+	db.run('UPDATE conversations SET system_prompt = ? WHERE agent_id = ?', [systemPrompt, agentId])
+	db.close()
+}
 
 /**
  * 获取所有提供商

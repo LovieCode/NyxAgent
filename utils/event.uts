@@ -1,0 +1,120 @@
+/**
+ * 事件系统 - Agent 循环事件流
+ * 参考 Pi 的 EventStream 设计，适配 UTS/UniApp-X
+ */
+
+// ====== Agent 事件类型定义 ======
+
+/** 工具调用信息 */
+export type ToolCallInfo = {
+	id: string
+	name: string
+	arguments: string
+}
+
+/** 工具执行结果 */
+export type ToolResultInfo = {
+	toolCallId: string
+	toolName: string
+	content: string
+	isError: boolean
+}
+
+/** Agent 事件类型 */
+export type AgentEventType =
+	| 'agent_start'
+	| 'agent_end'
+	| 'turn_start'
+	| 'turn_end'
+	| 'text_delta'
+	| 'text_end'
+	| 'tool_start'
+	| 'tool_end'
+	| 'error'
+
+/** Agent 事件 */
+export type AgentEvent = {
+	type: AgentEventType
+	/** 文本增量（text_delta 时） */
+	text?: string
+	/** 完整文本（text_end 时） */
+	fullText?: string
+	/** 工具调用 ID */
+	toolCallId?: string
+	/** 工具名称 */
+	toolName?: string
+	/** 工具参数 */
+	toolArgs?: string
+	/** 工具结果 */
+	toolResult?: string
+	/** 工具是否出错 */
+	isError?: boolean
+	/** 错误信息 */
+	error?: string
+}
+
+/** 事件消费者回调 */
+export type AgentEventConsumer = (event: AgentEvent) => void
+
+/**
+ * Agent 事件流
+ * 生产者（llm.uts）push 事件，消费者（UI）消费事件
+ */
+export class AgentEventStream {
+	private queue: AgentEvent[] = []
+	private consumers: AgentEventConsumer[] = []
+	private _ended: boolean = false
+	private _error: string | null = null
+
+	/** 推送事件 */
+	push(event: AgentEvent): void {
+		if (this._ended) return
+		this.queue.push(event)
+		this.notifyConsumers()
+	}
+
+	/** 结束流 */
+	end(): void {
+		this._ended = true
+		this.push({ type: 'agent_end' })
+	}
+
+	/** 以错误结束 */
+	error(message: string): void {
+		this._error = message
+		this._ended = true
+		this.push({ type: 'error', error: message })
+	}
+
+	/** 是否已结束 */
+	get ended(): boolean {
+		return this._ended
+	}
+
+	/** 错误信息 */
+	get errorMessage(): string | null {
+		return this._error
+	}
+
+	/** 订阅事件 */
+	on(consumer: AgentEventConsumer): void {
+		this.consumers.push(consumer)
+		// 立即投递已排队的事件
+		this.notifyConsumers()
+	}
+
+	/** 通知所有消费者 */
+	private notifyConsumers(): void {
+		while (this.queue.length > 0) {
+			const event = this.queue.shift()!
+			for (let i = 0; i < this.consumers.length; i++) {
+				this.consumers[i](event)
+			}
+		}
+	}
+
+	/** 清空消费者 */
+	offAll(): void {
+		this.consumers = []
+	}
+}

@@ -11,6 +11,9 @@ unpackage/
 .DS_Store
 Thumbs.db
 
+# OpenCode workspace
+.omo/
+
 # Build
 *.log
 dist/

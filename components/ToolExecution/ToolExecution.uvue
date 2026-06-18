@@ -1,17 +1,31 @@
 <template>
-	<view class="tool-exec" :class="statusClass">
-		<text class="status-icon">{{statusIcon}}</text>
-		<text class="tool-name">{{toolName}}</text>
-		<text v-if="status == 'completed' && result != ''" class="tool-result">{{result}}</text>
-		<text v-if="status == 'error' && result != ''" class="tool-error-msg">{{result}}</text>
+	<view class="tool-exec">
+		<view class="tool-line">
+			<view class="tool-dot" :class="dotClass"></view>
+			<text class="tool-name">{{displayName}}</text>
+			<text class="tool-status">{{statusText}}</text>
+		</view>
+		<text v-if="detailText != ''" class="tool-detail">{{detailText}}</text>
 	</view>
 </template>
 
 <script lang="uts">
 	/**
 	 * ToolExecution 组件 - 工具执行状态展示
-	 * 扁平化粉白主题
+	 * 极简日志行风格，低视觉权重
 	 */
+
+	/** 工具名称友好映射 */
+	function getDisplayName(name: string): string {
+		if (name == 'file_read') return '读取文件'
+		if (name == 'file_write') return '写入文件'
+		if (name == 'file_delete') return '删除文件'
+		if (name == 'file_list') return '列出文件'
+		if (name == 'file_info') return '获取文件信息'
+		if (name == 'directory_create') return '创建目录'
+		return name
+	}
+
 	export default {
 		props: {
 			toolName: {
@@ -25,97 +39,94 @@
 			result: {
 				type: String,
 				default: ''
+			},
+			args: {
+				type: String,
+				default: ''
 			}
 		},
 		computed: {
-			statusClass() : string {
-				if (this.status == 'running') {
-					return 'exec-running'
-				}
-				if (this.status == 'completed') {
-					return 'exec-completed'
-				}
-				if (this.status == 'error') {
-					return 'exec-error'
-				}
-				return 'exec-running'
+			dotClass() : string {
+				if (this.status == 'running') return 'dot-running'
+				if (this.status == 'completed') return 'dot-completed'
+				if (this.status == 'error') return 'dot-error'
+				return 'dot-running'
 			},
-			statusIcon() : string {
-				if (this.status == 'running') {
-					return '...'
-				}
-				if (this.status == 'completed') {
-					return '[ok]'
-				}
-				if (this.status == 'error') {
-					return '[x]'
-				}
-				return '...'
+			statusText() : string {
+				if (this.status == 'running') return '执行中'
+				if (this.status == 'completed') return '已完成'
+				if (this.status == 'error') return '失败'
+				return ''
+			},
+			displayName() : string {
+				return getDisplayName(this.toolName)
+			},
+			detailText() : string {
+				const source = this.status == 'running' ? this.args : this.result
+				if (source.length == 0) return ''
+				return source.length > 60 ? source.substring(0, 60) + '…' : source
 			}
 		},
 	}
 </script>
 
 <style>
-	/* 工具执行容器 */
 	.tool-exec {
+		align-self: flex-start;
+		margin-left: 48px;
+		margin-right: 50px;
+		margin-top: 2px;
+		margin-bottom: 2px;
+		padding-left: 8px;
+		padding-right: 10px;
+		padding-top: 4px;
+		padding-bottom: 4px;
+		border-radius: 10px;
+		background-color: rgba(0, 0, 0, 0.04);
+		flex-direction: column;
+	}
+
+	.tool-line {
 		flex-direction: row;
 		align-items: center;
-		margin-left: 32px;
-		margin-right: 32px;
-		margin-top: 4px;
-		margin-bottom: 4px;
-		padding: 8px;
-		border-radius: 8px;
-		background-color: #F3F4F6;
 	}
 
-	/* 运行中 */
-	.exec-running {
-		background-color: #F3F4F6;
+	.tool-dot {
+		width: 5px;
+		height: 5px;
+		border-radius: 2.5px;
+		margin-right: 5px;
 	}
 
-	/* 完成 - 浅绿背景 */
-	.exec-completed {
-		background-color: rgba(16,185,129,0.08);
+	.dot-running {
+		background-color: #9CA3AF;
 	}
 
-	/* 错误 - 浅红背景 */
-	.exec-error {
-		background-color: rgba(239,68,68,0.08);
-		border-width: 1px;
-		border-color: #EF4444;
+	.dot-completed {
+		background-color: #10B981;
 	}
 
-	/* 状态图标 */
-	.status-icon {
+	.dot-error {
+		background-color: #EF4444;
+	}
+
+	.tool-name {
 		font-size: 12px;
 		color: #6B7280;
-		margin-right: 8px;
+		font-weight: 500;
 	}
 
-	/* 工具名称 */
-	.tool-name {
-		font-size: 13px;
-		color: #111827;
-		font-weight: bold;
-		margin-right: 8px;
+	.tool-status {
+		font-size: 11px;
+		color: #9CA3AF;
+		margin-left: 5px;
 	}
 
-	/* 结果预览 */
-	.tool-result {
-		font-size: 12px;
-		color: #10B981;
-		flex: 1;
-		lines: 1;
-		text-overflow: ellipsis;
-	}
-
-	/* 错误信息 */
-	.tool-error-msg {
-		font-size: 12px;
-		color: #EF4444;
-		flex: 1;
+	.tool-detail {
+		font-size: 11px;
+		color: #9CA3AF;
+		margin-top: 1px;
+		margin-left: 10px;
 		lines: 1;
 		text-overflow: ellipsis;
 	}
