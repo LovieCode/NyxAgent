@@ -496,9 +496,7 @@ function runAgentLoop(
 	let iteration = 0
 	let runLoop: (() => void) | null = null
 	const continueLoop = (): void => {
-		if (runLoop != null) {
-			runLoop()
-		}
+		runLoop?.invoke()
 	}
 	runLoop = (): void => {
 		if (iteration >= maxIterations) {
@@ -599,9 +597,7 @@ function runAgentLoop(
 							isError: true,
 						} as UTSJSONObject
 						workingMessages.push(toolErrMsg)
-						if (executeNext != null) {
-							executeNext()
-						}
+						executeNext?.invoke()
 						return
 					}
 
@@ -631,9 +627,7 @@ function runAgentLoop(
 							isError: res.isError,
 						} as UTSJSONObject
 						workingMessages.push(toolResMsg)
-						if (executeNext != null) {
-							executeNext()
-						}
+						executeNext?.invoke()
 					})
 					p.catch((err) => {
 						const errMsg = '工具执行异常: ' + err
@@ -653,15 +647,11 @@ function runAgentLoop(
 							isError: true,
 						} as UTSJSONObject
 						workingMessages.push(toolErrMsg)
-						if (executeNext != null) {
-							executeNext()
-						}
+						executeNext?.invoke()
 					})
 				}
 
-				if (executeNext != null) {
-					executeNext()
-				}
+				executeNext?.invoke()
 			}
 		)
 	}
