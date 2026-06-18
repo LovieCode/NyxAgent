@@ -9,6 +9,8 @@
  */
 
 import { getDefaultTaskModel, getProviderById } from '@/utils/provider.uts'
+import { createAgentTools, AgentTool, ToolResult } from '@/utils/agent-tools.uts'
+import { AgentEventStream, AgentEvent, ToolCallInfo } from '@/utils/event.uts'
 
 /**
  * 规范化 baseUrl：去掉末尾的 /v1 或 /v1/
@@ -142,7 +144,7 @@ export function chatWithLLM(
 	return new Promise<string | null>((resolve) => {
 		const config = readLlmConfig(providerId, model)
 		if (config == null) {
-			resolve(null)
+			resolve('（未配置 LLM，请先在设置中添加 API 提供商）')
 			return
 		}
 
@@ -152,80 +154,652 @@ export function chatWithLLM(
 
 		baseUrl = normalizeBaseUrl(baseUrl)
 
-		// 构建消息列表
-		const apiMessages: UTSJSONObject[] = []
-		// 非空 systemPrompt 作为首条 system 消息
-		if (systemPrompt != '') {
-			apiMessages.push({
-				role: 'system',
-				content: systemPrompt,
-			} as UTSJSONObject)
+		// 构建 API 请求并发送
+		callChatAPI(baseUrl, apiKey, mdl, systemPrompt, messages, [], (text, toolCalls) => {
+			resolve(text ?? null)
+		})
+	})
+}
+
+/**
+ * ReAct Agent 循环（事件流模式）
+ * 在 chatWithLLM 基础上增加工具调用能力：
+ *   思考 → 调用工具 → 获取结果 → 继续思考 → 最终回复
+ *
+ * @param messages 历史消息（UTSJSONObject[] 格式）
+ * @param systemPrompt 系统提示词
+ * @param providerId 提供商 ID
+ * @param model 模型名
+ * @param agentId 智能体 ID（用于沙箱文件工具）
+ * @param maxIterations 最大循环次数，默认 10
+ * @returns AgentEventStream 事件流
+ */
+export function agentChat(
+	messages: UTSJSONObject[],
+	systemPrompt: string,
+	providerId: string,
+	model: string,
+	agentId: string,
+	maxIterations: number = 10
+): AgentEventStream {
+	const stream = new AgentEventStream()
+
+	// 异步执行 Agent 循环
+	setTimeout(() => {
+		runAgentLoop(messages, systemPrompt, providerId, model, agentId, maxIterations, stream)
+	}, 0)
+
+	return stream
+}
+
+/**
+ * 执行 Agent 循环（内部实现）
+ */
+function runAgentLoop(
+	messages: UTSJSONObject[],
+	systemPrompt: string,
+	providerId: string,
+	model: string,
+	agentId: string,
+	maxIterations: number,
+	stream: AgentEventStream
+): void {
+	const config = readLlmConfig(providerId, model)
+	if (config == null) {
+		stream.error('（未配置 LLM，请先在设置中添加 API 提供商）')
+		return
+	}
+	const apiKey = config['apiKey'] as string
+	let baseUrl = config['baseUrl'] as string
+	const mdl = config['model'] as string
+	baseUrl = normalizeBaseUrl(baseUrl)
+
+	// 构建运行消息列表（深拷贝，不修改原始数据）
+	const workingMessages: UTSJSONObject[] = []
+	if (systemPrompt != '') {
+		workingMessages.push({
+			role: 'system',
+			content: systemPrompt,
+		} as UTSJSONObject)
+	}
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const role = msg['role'] as string | null
+		if (role == null) continue
+		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
+		workingMessages.push(msg)
+	}
+
+	// 创建沙箱工具 + 构建 LLM 工具定义
+	const tools = createAgentTools(agentId)
+	const toolDefs: UTSJSONObject[] = []
+	for (let i = 0; i < tools.length; i++) {
+		toolDefs.push({
+			name: tools[i].name,
+			description: tools[i].description,
+			parameters: tools[i].parameters,
+		} as UTSJSONObject)
+	}
+
+	stream.push({ type: 'agent_start' })
+
+	// ReAct 循环
+	let iteration = 0
+	let runLoop: (() => void) | null = null
+	runLoop = (): void => {
+		if (iteration >= maxIterations) {
+			stream.push({ type: 'error', error: '（已达到最大迭代次数，无法完成请求）' })
+			stream.end()
+			return
 		}
-		for (let i = 0; i < messages.length; i++) {
-			const msg = messages[i]
-			const role = msg['role'] as string | null
-			const content = msg['content'] as string | null
-			if (role == null || content == null) {
-				continue
+		iteration++
+
+		stream.push({ type: 'turn_start' })
+
+		callChatAPIStream(baseUrl, apiKey, mdl, '', workingMessages, toolDefs,
+			// onChunk: 文本增量
+			(text: string) => {
+				stream.push({ type: 'text_delta', text: text })
+			},
+			// done: 一轮完成
+			(text: string | null, toolCalls: ToolCallInfo[] | null) => {
+				if (toolCalls == null || toolCalls.length == 0) {
+					// 纯文本回复，结束
+					stream.push({ type: 'text_end', fullText: text ?? '' })
+					stream.push({ type: 'turn_end' })
+					stream.end()
+					return
+				}
+
+				// 有工具调用
+				stream.push({ type: 'text_end', fullText: text ?? '' })
+
+				// 构建包含 tool_calls 的 assistant 消息
+				const assistantMsg: UTSJSONObject = {
+					role: 'assistant',
+					content: text ?? '',
+				} as UTSJSONObject
+				const tcArray: UTSJSONObject[] = []
+				for (let i = 0; i < toolCalls.length; i++) {
+					tcArray.push({
+						id: toolCalls[i].id,
+						type: 'function',
+						function: {
+							name: toolCalls[i].name,
+							arguments: toolCalls[i].arguments,
+						},
+					} as UTSJSONObject)
+				}
+				assistantMsg['tool_calls'] = tcArray
+				workingMessages.push(assistantMsg)
+
+				// 串行执行工具
+				let execIndex = 0
+				let executeNext: (() => void) | null = null
+				executeNext = (): void => {
+					if (execIndex >= toolCalls.length) {
+						stream.push({ type: 'turn_end' })
+						runLoop!()
+						return
+					}
+
+					const tc = toolCalls[execIndex]
+					execIndex++
+
+					stream.push({
+						type: 'tool_start',
+						toolCallId: tc.id,
+						toolName: tc.name,
+						toolArgs: tc.arguments
+					})
+
+					// 查找工具
+					let tool: any | null = null
+					for (let i = 0; i < tools.length; i++) {
+						if (tools[i].name == tc.name) {
+							tool = tools[i]
+							break
+						}
+					}
+
+					if (tool == null) {
+						const errMsg = '错误：未知工具 "' + tc.name + '"'
+						stream.push({
+							type: 'tool_end',
+							toolCallId: tc.id,
+							toolName: tc.name,
+							toolResult: errMsg,
+							isError: true
+						})
+						const toolErrMsg: UTSJSONObject = {
+							role: 'tool',
+							tool_call_id: tc.id,
+							content: errMsg,
+						} as UTSJSONObject
+						workingMessages.push(toolErrMsg)
+						executeNext!()
+						return
+					}
+
+					let argsObj: UTSJSONObject
+					try {
+						argsObj = JSON.parse(tc.arguments) as UTSJSONObject
+					} catch (_) {
+						argsObj = {} as UTSJSONObject
+					}
+
+					// 执行工具
+					const p = (tool as AgentTool).execute(argsObj)
+					p.then((res: ToolResult): void => {
+						stream.push({
+							type: 'tool_end',
+							toolCallId: tc.id,
+							toolName: tc.name,
+							toolResult: res.content,
+							isError: res.isError
+						})
+						const toolResMsg: UTSJSONObject = {
+							role: 'tool',
+							tool_call_id: tc.id,
+							content: res.content,
+						} as UTSJSONObject
+						workingMessages.push(toolResMsg)
+						executeNext!()
+					})
+					p.catch((err) => {
+						const errMsg = '工具执行异常: ' + err
+						stream.push({
+							type: 'tool_end',
+							toolCallId: tc.id,
+							toolName: tc.name,
+							toolResult: errMsg,
+							isError: true
+						})
+						const toolErrMsg: UTSJSONObject = {
+							role: 'tool',
+							tool_call_id: tc.id,
+							content: errMsg,
+						} as UTSJSONObject
+						workingMessages.push(toolErrMsg)
+						executeNext!()
+					})
+				}
+
+				executeNext!()
 			}
-			if (role == 'assistant' && content == '' && msg['isStreaming'] == true) {
-				continue
-			}
+		)
+	}
+	runLoop!()
+}
+
+// ====== 内部工具类型 ======
+
+/** 单个工具调用信息 */
+type ToolCallInfo = {
+	id: string
+	name: string
+	arguments: string
+}
+
+// ====== 内部函数 ======
+
+/**
+ * 调用 OpenAI 兼容的 Chat Completions API（核心函数）
+ * @param baseUrl API 基础 URL（已规范化）
+ * @param apiKey API 密钥
+ * @param model 模型名
+ * @param systemPrompt 系统提示词（仅首次传入，后续为空字符串以使用 workingMessages）
+ * @param messages 消息列表
+ * @param tools 工具定义列表
+ * @param done 回调：(text, toolCalls) => void
+ *     - text: assistant 的文本回复（可为空字符串）
+ *     - toolCalls: 工具调用列表（没有则为 null）
+ */
+function callChatAPI(
+	baseUrl: string,
+	apiKey: string,
+	model: string,
+	systemPrompt: string,
+	messages: UTSJSONObject[],
+	tools: UTSJSONObject[],
+	done: (text: string | null, toolCalls: ToolCallInfo[] | null) => void
+): void {
+	// 构建请求消息
+	const apiMessages: UTSJSONObject[] = []
+	if (systemPrompt != '') {
+		apiMessages.push({
+			role: 'system',
+			content: systemPrompt,
+		} as UTSJSONObject)
+	}
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const role = msg['role'] as string | null
+		if (role == null) continue
+		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
+
+		if (role == 'tool' || role == 'toolResult') {
+			// tool result 消息格式（toolResult 是内部 UI 角色，发送 API 时转为 tool）
+			const tcId = msg['tool_call_id'] ?? msg['toolCallId']
+			// 跳过无 tool_call_id 的 UI 占位消息（来自 onToolStart/onToolEnd 回调）
+			if (tcId == null || (tcId as string) == '') continue
+			const tcContent = msg['content']
+			apiMessages.push({
+				role: 'tool',
+				tool_call_id: tcId as string,
+				content: tcContent != null ? (tcContent as string) : '',
+			} as UTSJSONObject)
+		} else if (role == 'assistant' && msg['tool_calls'] != null) {
+			// assistant 带工具调用的消息
+			const amsg: UTSJSONObject = {
+				role: 'assistant',
+				content: msg['content'] as string ?? '',
+				tool_calls: msg['tool_calls'],
+			} as UTSJSONObject
+			apiMessages.push(amsg)
+		} else {
 			apiMessages.push({
 				role: role,
-				content: content,
+				content: msg['content'] as string ?? '',
 			} as UTSJSONObject)
 		}
+	}
 
-		// 构建请求
-		const url = baseUrl + '/v1/chat/completions'
-		const headers: UTSJSONObject = {
-			'Content-Type': 'application/json',
-			'Authorization': 'Bearer ' + apiKey,
+	// 构建请求体
+	const url = baseUrl + '/v1/chat/completions'
+	const headers: UTSJSONObject = {
+		'Content-Type': 'application/json',
+		'Authorization': 'Bearer ' + apiKey,
+	}
+	const body: UTSJSONObject = {
+		model: model,
+		messages: apiMessages,
+		max_tokens: 4096,
+		temperature: 0.7,
+		stream: false,
+	}
+	if (tools.length > 0) {
+		// 转换为 OpenAI tools 格式
+		const openaiTools: UTSJSONObject[] = []
+		for (let i = 0; i < tools.length; i++) {
+			const t = tools[i]
+			openaiTools.push({
+				type: 'function',
+				function: {
+					name: t['name'] as string,
+					description: t['description'] as string,
+					parameters: t['parameters'],
+				},
+			} as UTSJSONObject)
 		}
-		const body: UTSJSONObject = {
-			model: mdl,
-			messages: apiMessages,
-			max_tokens: 4096,
-			temperature: 0.7,
-			stream: false,
-		}
+		body['tools'] = openaiTools
+	}
 
-		uni.request({
-			url: url,
-			method: 'POST',
-			header: headers,
-			data: body,
-			success: (res) => {
-				const statusCode = res.statusCode as number
-				if (statusCode == 200) {
-					try {
-						const responseData = res.data as UTSJSONObject
-						if (responseData == null) {
-							resolve(null)
-							return
+	uni.request({
+		url: url,
+		method: 'POST',
+		header: headers,
+		data: body,
+		success: (res) => {
+			const statusCode = res.statusCode as number
+			if (statusCode != 200) {
+				let errDetail = ''
+				try {
+					const errData = res.data as UTSJSONObject | null
+					if (errData != null) {
+						const errMsg = errData['error'] as UTSJSONObject | null
+						if (errMsg != null) {
+							errDetail = ': ' + (errMsg['message'] as string ?? '')
 						}
-						const choices = responseData['choices'] as UTSJSONObject[] | null
-						if (choices != null && choices.length > 0) {
-							const choice = choices[0]
-							const message = choice['message'] as UTSJSONObject | null
-							if (message != null) {
-								const text = message['content'] as string | null
-								resolve(text ?? '')
-								return
-							}
-						}
-						resolve('')
-					} catch (_e: any) {
-						resolve(null)
 					}
-				} else {
-					resolve(null)
-				}
-			},
-			fail: (_err: any) => {
-				resolve(null)
+				} catch (_) {}
+				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null)
+				return
 			}
-		})
+			try {
+				const responseData = res.data as UTSJSONObject
+				if (responseData == null) {
+					done(null, null)
+					return
+				}
+				const choices = responseData['choices'] as UTSJSONObject[] | null
+				if (choices == null || choices.length == 0) {
+					done('', null)
+					return
+				}
+				const choice = choices[0]
+				const message = choice['message'] as UTSJSONObject | null
+				if (message == null) {
+					done('', null)
+					return
+				}
+
+				const text = message['content'] as string | null ?? ''
+				const rawToolCalls = message['tool_calls'] as UTSJSONObject[] | null
+
+				if (rawToolCalls != null && rawToolCalls.length > 0) {
+					const tcList: ToolCallInfo[] = []
+					for (let i = 0; i < rawToolCalls!.length; i++) {
+						const tc = rawToolCalls![i]
+						const funcObj = tc['function'] as UTSJSONObject | null
+						if (funcObj == null) continue
+						tcList.push({
+							id: tc['id'] as string ?? '',
+							name: funcObj!['name'] as string ?? '',
+							arguments: funcObj!['arguments'] as string ?? '{}',
+						} as ToolCallInfo)
+					}
+					done(text, tcList)
+				} else {
+					done(text, null)
+				}
+			} catch (_e: any) {
+				done('API 响应解析异常: ' + _e, null)
+			}
+		},
+		fail: (_err: any) => {
+			done('网络请求失败: ' + _err, null)
+		},
+	})
+}
+
+/**
+ * 处理单行 SSE data
+ */
+function processSSELine(
+	line: string,
+	fullTextRef: string[],
+	sseBufferRef: string[],
+	toolCallList: UTSJSONObject[],
+	hasToolCallsRef: boolean[],
+	onChunk: ((text: string) => void) | null
+): void {
+	const trimmed = line.trim()
+	if (trimmed == '' || trimmed.startsWith(':')) return
+	if (!trimmed.startsWith('data: ')) return
+	const data = trimmed.substring(6)
+	if (data == '[DONE]') return
+	try {
+		const json = JSON.parse(data) as UTSJSONObject
+		const choices = json['choices'] as UTSJSONObject[]
+		if (choices == null || choices.length == 0) return
+		const choice = choices[0]
+		const delta = choice['delta'] as UTSJSONObject
+		if (delta == null) return
+
+		// 文本内容
+		const content = delta['content'] as string | null
+		if (content != null && content != '') {
+			fullTextRef[0] += content
+			if (onChunk != null) onChunk!(content)
+		}
+
+		// 工具调用
+		const rawToolCalls = delta['tool_calls'] as UTSJSONObject[]
+		if (rawToolCalls != null && rawToolCalls.length > 0) {
+			hasToolCallsRef[0] = true
+			for (let j = 0; j < rawToolCalls.length; j++) {
+				const tc = rawToolCalls[j]
+				const idx = (tc['index'] as number | null) ?? 0
+				while (toolCallList.length <= idx) {
+					toolCallList.push({ id: '', name: '', arguments: '' } as UTSJSONObject)
+				}
+				const existing = toolCallList[idx]
+				const id = tc['id'] as string | null
+				if (id != null && id != '') existing['id'] = id
+				const funcObj = tc['function'] as UTSJSONObject
+				if (funcObj != null) {
+					const name = funcObj['name'] as string | null
+					if (name != null && name != '') existing['name'] = name
+					const args = funcObj['arguments'] as string | null
+					if (args != null && args != '') {
+						existing['arguments'] = (existing['arguments'] as string | null ?? '') + args
+					}
+				}
+			}
+		}
+	} catch (_) {}
+}
+
+/**
+ * ArrayBuffer → UTF-8 字符串（手动解码，支持中文）
+ */
+function decodeArrayBuffer(buffer: ArrayBuffer): string {
+	const bytes = new Uint8Array(buffer)
+	let result = ''
+	let i = 0
+	while (i < bytes.length) {
+		const b1 = bytes[i]
+		if (b1 < 0x80) {
+			result += String.fromCharCode(b1)
+			i += 1
+		} else if (b1 >= 0xC0 && b1 < 0xE0) {
+			const b2 = bytes[i + 1]
+			result += String.fromCharCode(((b1 & 0x1F) << 6) | (b2 & 0x3F))
+			i += 2
+		} else if (b1 >= 0xE0 && b1 < 0xF0) {
+			const b2 = bytes[i + 1]
+			const b3 = bytes[i + 2]
+			result += String.fromCharCode(((b1 & 0x0F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F))
+			i += 3
+		} else if (b1 >= 0xF0) {
+			const b2 = bytes[i + 1]
+			const b3 = bytes[i + 2]
+			const b4 = bytes[i + 3]
+			const code = ((b1 & 0x07) << 18) | ((b2 & 0x3F) << 12) | ((b3 & 0x3F) << 6) | (b4 & 0x3F)
+			const sc = code - 0x10000
+			result += String.fromCharCode(0xD800 + (sc >> 10))
+			result += String.fromCharCode(0xDC00 + (sc & 0x3FF))
+			i += 4
+		} else {
+			i += 1
+		}
+	}
+	return result
+}
+
+/**
+ * 流式调用 Chat Completions API（SSE）
+ * 通过 enableChunked + onChunkReceived 实现真实流式传输
+ */
+function callChatAPIStream(
+	baseUrl: string,
+	apiKey: string,
+	model: string,
+	systemPrompt: string,
+	messages: UTSJSONObject[],
+	tools: UTSJSONObject[],
+	onChunk: ((text: string) => void) | null,
+	done: (text: string | null, toolCalls: ToolCallInfo[] | null) => void
+): void {
+	// 构建 API 请求消息（与 callChatAPI 相同）
+	const apiMessages: UTSJSONObject[] = []
+	if (systemPrompt != '') {
+		apiMessages.push({ role: 'system', content: systemPrompt } as UTSJSONObject)
+	}
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const role = msg['role'] as string | null
+		if (role == null) continue
+		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
+		if (role == 'tool' || role == 'toolResult') {
+			const tcId = msg['tool_call_id'] ?? msg['toolCallId']
+			if (tcId == null || (tcId as string) == '') continue
+			apiMessages.push({
+				role: 'tool',
+				tool_call_id: tcId as string,
+				content: (msg['content'] as string | null) ?? '',
+			} as UTSJSONObject)
+		} else if (role == 'assistant' && msg['tool_calls'] != null) {
+			apiMessages.push({
+				role: 'assistant',
+				content: (msg['content'] as string | null) ?? '',
+				tool_calls: msg['tool_calls'],
+			} as UTSJSONObject)
+		} else {
+			apiMessages.push({
+				role: role,
+				content: (msg['content'] as string | null) ?? '',
+			} as UTSJSONObject)
+		}
+	}
+
+	const url = baseUrl + '/v1/chat/completions'
+	const headers: UTSJSONObject = {
+		'Content-Type': 'application/json',
+		'Authorization': 'Bearer ' + apiKey,
+	}
+	const body: UTSJSONObject = {
+		model: model,
+		messages: apiMessages,
+		max_tokens: 4096,
+		temperature: 0.7,
+		stream: true,
+	}
+	if (tools.length > 0) {
+		const openaiTools: UTSJSONObject[] = []
+		for (let i = 0; i < tools.length; i++) {
+			const t = tools[i]
+			openaiTools.push({
+				type: 'function',
+				function: {
+					name: t['name'] as string,
+					description: t['description'] as string,
+					parameters: t['parameters'],
+				},
+			} as UTSJSONObject)
+		}
+		body['tools'] = openaiTools
+	}
+
+	// 流式状态（用单元素数组模拟引用传递，兼容 UTS 闭包限制）
+	const fullTextRef: string[] = ['']
+	const sseBufferRef: string[] = ['']
+	const toolCallList: UTSJSONObject[] = []
+	const hasToolCallsRef: boolean[] = [false]
+	let streamEnded = false
+
+	const task = uni.request({
+		url: url,
+		method: 'POST',
+		header: headers,
+		data: body,
+		enableChunked: true,
+		success: (res) => {
+			streamEnded = true
+			const statusCode = res.statusCode as number
+			if (statusCode != 200) {
+				let errDetail = ''
+				try {
+					if (fullTextRef[0] != '') {
+					const errData = JSON.parse(fullTextRef[0]) as UTSJSONObject
+						const errObj = errData['error'] as UTSJSONObject
+						if (errObj != null) {
+							errDetail = ': ' + (errObj['message'] as string ?? '')
+						}
+					}
+				} catch (_) {}
+				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null)
+			return
+		}
+		// 处理剩余 buffer
+		if (sseBufferRef[0] != '') {
+			processSSELine(sseBufferRef[0], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk)
+			sseBufferRef[0] = ''
+		}
+		// 组装结果
+		if (hasToolCallsRef[0] == true) {
+			const tcList: ToolCallInfo[] = []
+			for (let i = 0; i < toolCallList.length; i++) {
+				const tc = toolCallList[i]
+				tcList.push({
+					id: (tc['id'] as string | null) ?? '',
+					name: (tc['name'] as string | null) ?? '',
+					arguments: (tc['arguments'] as string | null) ?? '{}',
+				} as ToolCallInfo)
+			}
+			done(fullTextRef[0], tcList)
+		} else {
+			done(fullTextRef[0], null)
+		}
+	},
+		fail: (_err: any) => {
+			done('网络请求失败: ' + _err, null)
+		},
+	})
+
+	task.onChunkReceived((res: any) => {
+		if (streamEnded == true) return
+		const data = (res as UTSJSONObject)['data']
+		if (data == null) return
+		const chunk = decodeArrayBuffer(data as ArrayBuffer)
+		sseBufferRef[0] += chunk
+
+		// 按行拆分处理
+		const parts = sseBufferRef[0].split('\n')
+		sseBufferRef[0] = parts[parts.length - 1]
+		for (let i = 0; i < parts.length - 1; i++) {
+			processSSELine(parts[i], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk)
+		}
 	})
 }

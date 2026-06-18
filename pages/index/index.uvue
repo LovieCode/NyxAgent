@@ -1,9 +1,12 @@
-﻿<template>
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿<template>
 	<view class="page-shell rice-theme-light" ref="shellRef">
 		<NavBar :title="headerTitle" showBack @back="goBack">
 			<template #right>
 				<view style="flex-direction:row;align-items:center;">
-					<view class="nav-icon-btn" @click="goAgentSettings">
+					<view class="nav-icon-btn" @click="startNewConversation">
+						<oui-icon-unix name="plus-circle" size="18px" color="#FFFFFF" />
+					</view>
+					<view class="nav-icon-btn" @click="goAgentSettings" style="margin-left:4px;">
 						<oui-icon-unix name="setting" size="18px" color="#FFFFFF" />
 					</view>
 					<view class="nav-icon-btn" @click="goHistory" style="margin-left:4px;">
@@ -14,14 +17,19 @@
 		</NavBar>
 
 		<!-- 消息列表 -->
-		<scroll-view class="message-list" :scroll-y="true" :scroll-top="scrollTop">
-			<view v-for="(msg, index) in messages" :key="index" @touchstart="onMsgTouchStart(index, $event as UniTouchEvent)" @touchmove="onMsgTouchMove($event as UniTouchEvent)" @touchend="onMsgTouchEnd">
+		<scroll-view class="message-list" :scroll-y="true" :scroll-top="scrollTop" @scroll="onMsgScroll">
+			<view v-for="(msg, index) in messages" :key="index">
+				<!-- 工具执行记录（tool 角色） -->
 				<ToolExecution
-					v-if="msg.role == 'toolResult'"
+					v-if="msg.role == 'tool'"
 					:toolName="msg.toolName != null ? msg.toolName : ''"
 					:status="msg.toolStatus != null ? msg.toolStatus : 'completed'"
 					:result="msg.content"
+					:args="msg.args != null ? msg.args : ''"
 				/>
+				<!-- 跳过空内容且带 tool_calls 的 assistant 中间消息 -->
+				<view v-else-if="msg.role == 'assistant' && msg.tool_calls != null && (msg.content == null || msg.content == '')">
+				</view>
 				<!-- 行内编辑模式 -->
 				<view v-else-if="editingIndex == index" class="inline-edit-wrap" :class="msg.role == 'user' ? 'inline-edit-user' : 'inline-edit-ai'">
 					<textarea class="inline-edit-input" v-model="editBuffer" auto-height />
@@ -43,6 +51,8 @@
 					:toolName="msg.toolName != null ? msg.toolName : ''"
 					:isError="msg.isError == true"
 					:isStreaming="msg.isStreaming == true"
+					:cancelToken="longpressCancelToken"
+					@longpress="onMessageLongpress(index)"
 				/>
 			</view>
 			<view v-if="messages.length == 0" class="empty-state">
@@ -103,7 +113,7 @@
 	 * 扁平化粉白主题
 	 */
 	import { saveConversation, getMessages, getConversationsByAgent } from '@/utils/database.uts'
-	import { chatWithLLM } from '@/utils/llm.uts'
+	import { agentChat } from '@/utils/llm.uts'
 	import { getAgentById } from '@/utils/agent.uts'
 
 	export default {
@@ -140,13 +150,8 @@
 				/** 行内编辑 */
 				editingIndex: -1 as number,
 				editBuffer: '' as string,
-				/** 长按检测 */
-				touchStartX: 0 as number,
-				touchStartY: 0 as number,
-				touchStartIndex: -1 as number,
-				/** 非时间戳，用累加计数 */
-				longpressTick: 0 as number,
-				longpressTimer: -1 as number,
+				/** 滚动时通知 ChatBubble 取消长按的 token */
+				longpressCancelToken: 0 as number,
 			}
 		},
 		computed: {
@@ -256,48 +261,9 @@
 				}
 			},
 
-			/** 触摸开始 — 启动长按计时（每 100ms 计数一次，5 次 = 500ms） */
-			onMsgTouchStart(index: number, e: UniTouchEvent) {
-				this.touchStartX = e.touches[0].screenX
-				this.touchStartY = e.touches[0].screenY
-				this.touchStartIndex = index
-				this.longpressTick = 0
-				if (this.longpressTimer != -1) {
-					clearInterval(this.longpressTimer)
-				}
-				this.longpressTimer = setInterval(() => {
-					this.longpressTick++
-					if (this.touchStartIndex >= 0 && this.longpressTick >= 5) {
-						clearInterval(this.longpressTimer)
-						this.longpressTimer = -1
-						const idx = this.touchStartIndex
-						this.touchStartIndex = -1
-						this.onMessageLongpress(idx)
-					}
-				}, 100)
-			},
-
-			/** 触摸移动 — 距离过大取消长按 */
-			onMsgTouchMove(e: UniTouchEvent) {
-				if (this.touchStartIndex < 0) { return }
-				const dx = e.touches[0].screenX - this.touchStartX
-				const dy = e.touches[0].screenY - this.touchStartY
-				if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
-					if (this.longpressTimer != -1) {
-						clearInterval(this.longpressTimer)
-						this.longpressTimer = -1
-					}
-					this.touchStartIndex = -1
-				}
-			},
-
-			/** 触摸结束 — 清理状态 */
-			onMsgTouchEnd() {
-				if (this.longpressTimer != -1) {
-					clearInterval(this.longpressTimer)
-					this.longpressTimer = -1
-				}
-				this.touchStartIndex = -1
+			/** 滚动时通知所有 ChatBubble 取消长按 */
+			onMsgScroll() {
+				this.longpressCancelToken++
 			},
 
 			sendMessage() {
@@ -618,6 +584,24 @@
 				uni.navigateBack()
 			},
 
+			/** 开启新对话 */
+			startNewConversation() {
+				if (this.isGenerating) {
+					uni.showToast({ title: '请等待当前回复完成', icon: 'none' })
+					return
+				}
+				// 先保存当前对话
+				this.saveCurrentConversation()
+				// 清空消息
+				this.messages = [] as UTSJSONObject[]
+				// 新对话 ID
+				this.conversationId = '' + Date.now()
+				this.savedFlag = false
+				// 重置输入
+				this.inputText = ''
+				this.showToolPanel = false
+			},
+
 			saveCurrentConversation() {
 				if (this.messages.length == 0 || this.savedFlag) {
 					return
@@ -659,6 +643,7 @@
 					title,
 					modelName,
 					this.currentAgentId,
+					this.getCurrentSystemPrompt(),
 					this.messages
 				)
 			},
@@ -667,18 +652,22 @@
 				this.scrollTop = this.scrollTop + 9999
 			},
 
+			/** 获取当前智能体的系统提示词 */
+			getCurrentSystemPrompt(): string {
+				if (this.currentAgentId != '') {
+					const agent = getAgentById(this.currentAgentId)
+					if (agent != null) {
+						const raw = agent['systemPrompt']
+						if (raw != null) {
+							return raw as string
+						}
+					}
+				}
+				return ''
+			},
+
 			simulateAIResponse(_userText: string) {
 				this.isGenerating = true
-
-				const aiMsgIndex = this.messages.length
-				this.messages.push({
-					role: 'assistant',
-					content: '',
-					msgType: 'text',
-					isStreaming: true,
-					timestamp: Date.now()
-				} as UTSJSONObject)
-				this.scrollToBottom()
 
 				// 读取当前智能体的系统提示词和模型
 				let systemPrompt = ''
@@ -697,35 +686,116 @@
 					}
 				}
 
-				chatWithLLM(this.messages, systemPrompt, '', agentModel).then((response: string | null) => {
-					const text = response ?? '抱歉，调用 LLM 失败，请检查 API 配置。'
-
-					let charIndex = 0
-					let timer: number = 0
-					timer = setInterval(() => {
-						if (charIndex < text.length) {
-							this.messages.splice(aiMsgIndex, 1, {
+				// 使用 ReAct Agent Loop（带沙箱文件工具）
+				agentChat(
+					this.messages,
+					systemPrompt,
+					'',           // providerId → 自动从 DB 读取
+					agentModel,
+					this.currentAgentId,
+					// onToolStart: 工具开始执行 → 插入一条 tool 消息（运行中状态）
+					(toolCallId: string, toolName: string, argsStr: string) => {
+						this.messages.push({
+							role: 'tool',
+							tool_call_id: toolCallId,
+							toolName: toolName,
+							toolStatus: 'running',
+							content: '',
+							args: argsStr,
+							timestamp: Date.now()
+						} as UTSJSONObject)
+						this.scrollToBottom()
+					},
+					// onToolEnd: 工具执行结束 → 更新对应 tool 消息
+					(toolCallId: string, toolName: string, _argsStr: string, result: string, isError: boolean) => {
+						for (let i = this.messages.length - 1; i >= 0; i--) {
+							const m = this.messages[i]
+							if ((m['role'] as string) == 'tool' && (m['tool_call_id'] as string ?? '') == toolCallId) {
+								this.messages.splice(i, 1, {
+									role: 'tool',
+									tool_call_id: toolCallId,
+									toolName: toolName,
+									toolStatus: isError ? 'error' : 'completed',
+									content: result,
+									args: m['args'] ?? '',
+									timestamp: Date.now()
+								} as UTSJSONObject)
+								this.scrollToBottom()
+								break
+							}
+						}
+					},
+					// onToolCallMessage: assistant 决定调用工具 → 推入消息列表（按真实顺序显示）
+					(msg: UTSJSONObject) => {
+						this.messages.push({
+							role: 'assistant',
+							content: (msg['content'] as string ?? ''),
+							tool_calls: msg['tool_calls'],
+							timestamp: Date.now()
+						} as UTSJSONObject)
+					},
+					// onToolResult: 不再需要单独推入（tool 消息已在 onToolStart/onToolEnd 中处理）
+					(_msg: UTSJSONObject) => {},
+					// maxIterations
+					10,
+					// onChunk: 真实流式回调，每收到一段文本就更新 UI
+					(text: string) => {
+						if (text == '') return
+						const lastIdx = this.messages.length - 1
+						if (lastIdx >= 0 && (this.messages[lastIdx]['role'] as string) == 'assistant' &&
+							(this.messages[lastIdx]['isStreaming'] as boolean | null) == true) {
+							// 追加到已有的流式消息
+							const existing = this.messages[lastIdx]
+							this.messages.splice(lastIdx, 1, {
 								role: 'assistant',
-								content: text.substring(0, charIndex + 1),
+								content: (existing['content'] as string ?? '') + text,
 								msgType: 'text',
 								isStreaming: true,
 								timestamp: Date.now()
 							} as UTSJSONObject)
-							charIndex++
-							this.scrollToBottom()
 						} else {
-							this.messages.splice(aiMsgIndex, 1, {
+							// 创建新的流式消息
+							this.messages.push({
 								role: 'assistant',
 								content: text,
 								msgType: 'text',
-								isStreaming: false,
+								isStreaming: true,
 								timestamp: Date.now()
 							} as UTSJSONObject)
-							this.isGenerating = false
-							clearInterval(timer)
-							this.saveCurrentConversation()
 						}
-					}, 50)
+						this.scrollToBottom()
+					}
+				).then((response: string | null) => {
+					// 流式结束：标记最后一条流式消息为完成
+					const lastIdx = this.messages.length - 1
+					if (lastIdx >= 0 && (this.messages[lastIdx]['role'] as string) == 'assistant' &&
+						(this.messages[lastIdx]['isStreaming'] as boolean | null) == true) {
+						const existing = this.messages[lastIdx]
+						// 如果流式过程中没有收到任何文本（onChunk 未创建消息），用 response 兜底
+						let finalContent = existing['content'] as string ?? ''
+						if (finalContent == '' && response != null) {
+							finalContent = response
+						}
+						this.messages.splice(lastIdx, 1, {
+							role: 'assistant',
+							content: finalContent,
+							msgType: 'text',
+							isStreaming: false,
+							timestamp: Date.now()
+						} as UTSJSONObject)
+					} else if (response != null && response != '') {
+						// 没有流式消息但有响应（兜底）
+						this.messages.push({
+							role: 'assistant',
+							content: response,
+							msgType: 'text',
+							isStreaming: false,
+							timestamp: Date.now()
+						} as UTSJSONObject)
+					}
+					this.isGenerating = false
+					this.scrollToBottom()
+					this.saveCurrentConversation()
 				})
 			}
 		}
@@ -891,7 +961,6 @@
 		flex-direction: row;
 		justify-content: flex-end;
 		margin-top: 8px;
-		gap: 12px;
 	}
 
 	.inline-edit-save {
@@ -899,6 +968,7 @@
 		color: var(--rice-primary-color);
 		font-weight: bold;
 		padding: 4px 12px;
+		margin-left: 12px;
 	}
 
 	.inline-edit-send {
@@ -908,6 +978,7 @@
 		padding: 4px 12px;
 		background-color: var(--rice-primary-color);
 		border-radius: 12px;
+		margin-left: 12px;
 	}
 
 	.inline-edit-cancel {

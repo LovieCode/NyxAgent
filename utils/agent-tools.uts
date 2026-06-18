@@ -1,0 +1,304 @@
+/**
+ * Agent 沙箱文件工具
+ * 将 agent-fs 的沙箱操作包装为 AgentTool 实现
+ * 每个工具绑定到特定 agentId，防止越权
+ */
+
+import {
+	readAgentFile,
+	writeAgentFile,
+	deleteAgentFile,
+	listAgentFiles,
+	agentFileExists,
+	createAgentDirectory,
+	getAgentFileInfo,
+} from './agent-fs'
+
+/** ToolResult 匹配 agent-core types */
+export type ToolResult = {
+	content: string
+	isError: boolean
+}
+
+/** 给 LLM 的工具定义描述 */
+type ToolDefinition = {
+	name: string
+	description: string
+	parameters: UTSJSONObject
+}
+
+/** AgentTool 接口（匹配 agent-core types） */
+export interface AgentTool {
+	name: string
+	description: string
+	parameters: UTSJSONObject
+	execute(args: UTSJSONObject): Promise<ToolResult>
+}
+
+/**
+ * 创建绑定到指定 agent 的沙箱文件工具列表
+ * @param agentId 智能体 ID
+ * @returns AgentTool 数组
+ */
+export function createAgentTools(agentId: string): AgentTool[] {
+	return [
+		new SandboxFileReadTool(agentId) as AgentTool,
+		new SandboxFileWriteTool(agentId) as AgentTool,
+		new SandboxFileDeleteTool(agentId) as AgentTool,
+		new SandboxFileListTool(agentId) as AgentTool,
+		new SandboxFileInfoTool(agentId) as AgentTool,
+	]
+}
+
+// ========== 工具定义 ==========
+
+/**
+ * 文件读取工具
+ */
+class SandboxFileReadTool implements AgentTool {
+	name: string = 'file_read'
+	description: string = '读取指定文件的内容。path 相对于智能体的私有存储目录，不允许使用绝对路径或 ".." 穿越。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'path': {
+				'type': 'string',
+				'description': '要读取的文件路径（相对于智能体私有目录）'
+			}
+		},
+		'required': ['path']
+	} as UTSJSONObject
+
+	private agentId: string
+
+	constructor(agentId: string) {
+		this.agentId = agentId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const path = args['path'] as string | null
+			if (path == null || path!.length == 0) {
+				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
+				return
+			}
+			const content = readAgentFile(this.agentId, path!)
+			if (content == null) {
+				resolve({ content: '文件不存在或读取失败: ' + path!, isError: true } as ToolResult)
+				return
+			}
+			resolve({ content: content!, isError: false } as ToolResult)
+		})
+	}
+}
+
+/**
+ * 文件/目录写入工具
+ * 合并创建文件和创建目录的能力
+ */
+class SandboxFileWriteTool implements AgentTool {
+	name: string = 'file_write'
+	description: string = '创建文件或目录。如果 is_directory 为 true，则创建目录；否则将 content 写入文件（父目录不存在自动创建）。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'path': {
+				'type': 'string',
+				'description': '要创建的文件或目录路径（相对于智能体私有目录）'
+			},
+			'is_directory': {
+				'type': 'boolean',
+				'description': 'true 表示创建目录，false 表示写入文件（默认 false）'
+			},
+			'content': {
+				'type': 'string',
+				'description': '要写入的文件内容（is_directory 为 false 时必填）'
+			}
+		},
+		'required': ['path']
+	} as UTSJSONObject
+
+	private agentId: string
+
+	constructor(agentId: string) {
+		this.agentId = agentId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const path = args['path'] as string | null
+			const isDirectory = args['is_directory'] as boolean | null
+			const content = args['content'] as string | null
+			if (path == null || path!.length == 0) {
+				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
+				return
+			}
+			if (isDirectory == true) {
+				const ok = createAgentDirectory(this.agentId, path!)
+				resolve({
+					content: ok ? '目录创建成功: ' + path! : '目录创建失败（可能已存在同名文件）: ' + path!,
+					isError: !ok
+				} as ToolResult)
+				return
+			}
+			if (content == null) {
+				resolve({ content: '缺少必要参数: content', isError: true } as ToolResult)
+				return
+			}
+			const ok = writeAgentFile(this.agentId, path!, content!)
+			resolve({
+				content: ok ? '文件写入成功: ' + path! : '文件写入失败: ' + path!,
+				isError: !ok
+			} as ToolResult)
+		})
+	}
+}
+
+/**
+ * 文件删除工具
+ */
+class SandboxFileDeleteTool implements AgentTool {
+	name: string = 'file_delete'
+	description: string = '删除指定文件。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'path': {
+				'type': 'string',
+				'description': '要删除的文件路径（相对于智能体私有目录）'
+			}
+		},
+		'required': ['path']
+	} as UTSJSONObject
+
+	private agentId: string
+
+	constructor(agentId: string) {
+		this.agentId = agentId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const path = args['path'] as string | null
+			if (path == null || path!.length == 0) {
+				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
+				return
+			}
+			const ok = deleteAgentFile(this.agentId, path!)
+			resolve({
+				content: ok ? '文件删除成功: ' + path! : '文件删除失败: ' + path!,
+				isError: !ok
+			} as ToolResult)
+		})
+	}
+}
+
+/**
+ * 目录列表工具
+ */
+class SandboxFileListTool implements AgentTool {
+	name: string = 'file_list'
+	description: string = '列出指定目录下的文件和子目录。path 为空则列出根目录。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'path': {
+				'type': 'string',
+				'description': '要列出的目录路径（相对于智能体私有目录，为空则列出根目录）'
+			}
+		},
+		'required': [] as string[]
+	} as UTSJSONObject
+
+	private agentId: string
+
+	constructor(agentId: string) {
+		this.agentId = agentId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const path = args['path'] as string | null
+			const dirPath = (path != null && path!.length > 0) ? path! : ''
+			const files = listAgentFiles(this.agentId, dirPath)
+			if (files.length == 0) {
+				resolve({ content: '(目录为空)', isError: false } as ToolResult)
+				return
+			}
+			const lines: string[] = []
+			for (let i = 0; i < files.length; i++) {
+				const f = files[i]
+				if (f.isDirectory) {
+					lines.push('[DIR]  ' + f.name)
+				} else {
+					lines.push('[FILE] ' + f.name + ' (' + f.size + ' bytes)')
+				}
+			}
+			resolve({ content: lines.join('\n'), isError: false } as ToolResult)
+		})
+	}
+}
+
+/**
+ * 文件信息工具
+ */
+class SandboxFileInfoTool implements AgentTool {
+	name: string = 'file_info'
+	description: string = '获取文件或目录的信息（大小、修改时间、类型）。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'path': {
+				'type': 'string',
+				'description': '文件或目录路径（相对于智能体私有目录）'
+			}
+		},
+		'required': ['path']
+	} as UTSJSONObject
+
+	private agentId: string
+
+	constructor(agentId: string) {
+		this.agentId = agentId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const path = args['path'] as string | null
+			if (path == null || path!.length == 0) {
+				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
+				return
+			}
+			const info = getAgentFileInfo(this.agentId, path!)
+			if (info == null) {
+				resolve({ content: '文件不存在: ' + path!, isError: true } as ToolResult)
+				return
+			}
+			const typeStr = info!.isDirectory ? '目录' : '文件'
+			const date = new Date(info!.lastModified)
+			const timeStr = date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate() + ' ' + date.getHours() + ':' + date.getMinutes()
+			resolve({
+				content: '名称: ' + info!.name + '\n类型: ' + typeStr + '\n大小: ' + info!.size + ' bytes\n修改时间: ' + timeStr,
+				isError: false
+			} as ToolResult)
+		})
+	}
+}
+
+/**
+ * 获取工具定义列表（用于传给 LLM 的 tools 参数）
+ * @param agentId 智能体 ID
+ * @returns ToolDefinition 数组
+ */
+export function getToolDefinitions(agentId: string): ToolDefinition[] {
+	const tools = createAgentTools(agentId)
+	const defs: ToolDefinition[] = []
+	for (let i = 0; i < tools.length; i++) {
+		defs.push({
+			name: tools[i].name,
+			description: tools[i].description,
+			parameters: tools[i].parameters
+		} as ToolDefinition)
+	}
+	return defs
+}
