@@ -49,39 +49,30 @@
 
 			<view id="section-system" class="card" :class="activeSectionId == 'section-system' ? 'card-active' : ''">
 				<text class="section-title">系统提示词</text>
-				<text class="block-text">{{systemPrompt != '' ? systemPrompt : '（空）'}}</text>
+				<text class="block-text" :class="activeSectionId == 'section-system' ? 'block-text-active' : ''">{{systemPrompt != '' ? systemPrompt : '（空）'}}</text>
 			</view>
 
 			<view id="section-settings" class="card" :class="activeSectionId == 'section-settings' ? 'card-active' : ''">
 				<text class="section-title">生成参数</text>
-				<text class="code-text">{{settingsText}}</text>
+				<text class="code-text" :class="activeSectionId == 'section-settings' ? 'code-text-active' : ''">{{settingsText}}</text>
 			</view>
 
 			<view id="section-important-memory" class="card" :class="activeSectionId == 'section-important-memory' ? 'card-active' : ''" v-if="importantMemory != ''">
 				<text class="section-title">重要记忆注入</text>
-				<text class="block-text">{{importantMemory}}</text>
+				<text class="block-text" :class="activeSectionId == 'section-important-memory' ? 'block-text-active' : ''">{{importantMemory}}</text>
 			</view>
 
 			<view id="section-buffer-memory" class="card" :class="activeSectionId == 'section-buffer-memory' ? 'card-active' : ''" v-if="bufferInjection != ''">
 				<text class="section-title">短缓存注入</text>
-				<text class="block-text">{{bufferInjection}}</text>
+				<text class="block-text" :class="activeSectionId == 'section-buffer-memory' ? 'block-text-active' : ''">{{bufferInjection}}</text>
 			</view>
 
 			<view id="section-messages" class="card" :class="activeSectionId == 'section-messages' ? 'card-active' : ''">
 				<text class="section-title">发送 messages（OpenAI 格式）</text>
 				<view v-for="(chunk, index) in messagesChunks" :key="'msg-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<text class="chunk-label">片段 {{index + 1}} / {{messagesChunks.length}}</text>
-					<view v-if="isChunkActive(chunk)" class="chunk-hit-banner">
-						<text class="chunk-hit-title">当前命中</text>
-						<text class="chunk-hit-excerpt">
-							<text>{{currentSearchExcerptBefore}}</text>
-							<text v-if="currentSearchExcerptMatch != ''" class="search-mark">{{currentSearchExcerptMatch}}</text>
-							<text>{{currentSearchExcerptAfter}}</text>
-						</text>
-					</view>
-					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text">
+					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active">
 						<text>{{activeChunkPrefix(chunk)}}</text>
-						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+						<text :id="activeChunkHitAnchorId(chunk)" class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
 						<text>{{activeChunkSuffix(chunk)}}</text>
 					</text>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
@@ -91,18 +82,9 @@
 			<view id="section-tools" class="card" :class="activeSectionId == 'section-tools' ? 'card-active' : ''">
 				<text class="section-title">工具定义</text>
 				<view v-for="(chunk, index) in toolsChunks" :key="'tool-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<text class="chunk-label">片段 {{index + 1}} / {{toolsChunks.length}}</text>
-					<view v-if="isChunkActive(chunk)" class="chunk-hit-banner">
-						<text class="chunk-hit-title">当前命中</text>
-						<text class="chunk-hit-excerpt">
-							<text>{{currentSearchExcerptBefore}}</text>
-							<text v-if="currentSearchExcerptMatch != ''" class="search-mark">{{currentSearchExcerptMatch}}</text>
-							<text>{{currentSearchExcerptAfter}}</text>
-						</text>
-					</view>
-					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text">
+					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active">
 						<text>{{activeChunkPrefix(chunk)}}</text>
-						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+						<text :id="activeChunkHitAnchorId(chunk)" class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
 						<text>{{activeChunkSuffix(chunk)}}</text>
 					</text>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
@@ -112,18 +94,9 @@
 			<view id="section-request" class="card" :class="activeSectionId == 'section-request' ? 'card-active' : ''">
 				<text class="section-title">最终 request body</text>
 				<view v-for="(chunk, index) in requestBodyChunks" :key="'req-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<text class="chunk-label">片段 {{index + 1}} / {{requestBodyChunks.length}}</text>
-					<view v-if="isChunkActive(chunk)" class="chunk-hit-banner">
-						<text class="chunk-hit-title">当前命中</text>
-						<text class="chunk-hit-excerpt">
-							<text>{{currentSearchExcerptBefore}}</text>
-							<text v-if="currentSearchExcerptMatch != ''" class="search-mark">{{currentSearchExcerptMatch}}</text>
-							<text>{{currentSearchExcerptAfter}}</text>
-						</text>
-					</view>
-					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text">
+					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active">
 						<text>{{activeChunkPrefix(chunk)}}</text>
-						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+						<text :id="activeChunkHitAnchorId(chunk)" class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
 						<text>{{activeChunkSuffix(chunk)}}</text>
 					</text>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
@@ -136,18 +109,9 @@
 					<text class="mini-btn" @click="copyAll">复制</text>
 				</view>
 				<view v-for="(chunk, index) in fullJsonChunks" :key="'json-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<text class="chunk-label">片段 {{index + 1}} / {{fullJsonChunks.length}}</text>
-					<view v-if="isChunkActive(chunk)" class="chunk-hit-banner">
-						<text class="chunk-hit-title">当前命中</text>
-						<text class="chunk-hit-excerpt">
-							<text>{{currentSearchExcerptBefore}}</text>
-							<text v-if="currentSearchExcerptMatch != ''" class="search-mark">{{currentSearchExcerptMatch}}</text>
-							<text>{{currentSearchExcerptAfter}}</text>
-						</text>
-					</view>
-					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text">
+					<text v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-text code-text-active">
 						<text>{{activeChunkPrefix(chunk)}}</text>
-						<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
+						<text :id="activeChunkHitAnchorId(chunk)" class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
 						<text>{{activeChunkSuffix(chunk)}}</text>
 					</text>
 					<text v-else class="code-text">{{chunkText(chunk)}}</text>
@@ -309,6 +273,13 @@
 			chunkAnchorId(chunk: UTSJSONObject): string {
 				const value = chunk['id'] as string | null
 				return value != null ? value : ''
+			},
+
+			buildChunkHitAnchorId(chunkId: string): string {
+				if (chunkId == '') {
+					return ''
+				}
+				return chunkId + '-hit'
 			},
 
 			pushChunkMatches(list: UTSJSONObject[], chunks: UTSJSONObject[], query: string): void {
@@ -517,7 +488,7 @@
 				this.showFloatingSearchBar = true
 				this.floatingMetaText = (index + 1) + ' / ' + this.searchResults.length + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
 				if (anchorId != null && anchorId != '') {
-					this.scrollToSection(anchorId)
+					this.scrollToSearchTarget(anchorId, sectionId != null ? sectionId : '')
 				} else if (sectionId != null && sectionId != '') {
 					this.scrollToSection(sectionId)
 				}
@@ -568,6 +539,26 @@
 				}, 0)
 			},
 
+			scrollToSearchTarget(anchorId: string, sectionId: string): void {
+				if (anchorId == '') {
+					if (sectionId != '') {
+						this.scrollToSection(sectionId)
+					}
+					return
+				}
+				this.scrollToSection(anchorId)
+				if (this.activeMatchStart < 0 || this.activeMatchLength <= 0) {
+					return
+				}
+				const hitAnchorId = this.buildChunkHitAnchorId(anchorId)
+				if (hitAnchorId == '') {
+					return
+				}
+				setTimeout(() => {
+					this.scrollToSection(hitAnchorId)
+				}, 48)
+			},
+
 			scrollToTop() {
 				this.activeSectionId = ''
 				this.activeChunkId = ''
@@ -595,6 +586,11 @@
 			chunkText(chunk: UTSJSONObject): string {
 				const content = chunk['text'] as string | null
 				return content != null ? content : ''
+			},
+
+			activeChunkHitAnchorId(chunk: UTSJSONObject): string {
+				const chunkId = this.chunkAnchorId(chunk)
+				return this.buildChunkHitAnchorId(chunkId)
 			},
 
 			hasActiveChunkMatch(chunk: UTSJSONObject): boolean {
@@ -701,7 +697,7 @@
 		border-width: 2px;
 		border-style: solid;
 		border-color: #FB8FAB;
-		box-shadow: 0 8px 24px rgba(251, 143, 171, 0.16);
+		box-shadow: 0 10px 30px rgba(251, 143, 171, 0.22);
 	}
 
 	.hero-title {
@@ -761,22 +757,6 @@
 		color: #FFFFFF;
 		font-size: 13px;
 		font-weight: bold;
-	}
-
-	.search-actions {
-		flex-direction: row;
-		flex-wrap: wrap;
-		margin-top: 10px;
-	}
-
-	.ghost-btn {
-		padding: 6px 10px;
-		margin-right: 8px;
-		margin-bottom: 8px;
-		border-radius: 999px;
-		background-color: #F3F4F6;
-		color: #4B5563;
-		font-size: 12px;
 	}
 
 	.search-meta {
@@ -857,40 +837,10 @@
 	}
 
 	.chunk-wrap-active {
-		border-width: 2px;
-		border-style: solid;
-		border-color: #FB8FAB;
-		border-radius: 14px;
-		padding: 8px;
-		background-color: #FFF7FA;
-	}
-
-	.chunk-label {
-		font-size: 11px;
-		line-height: 16px;
-		color: #9CA3AF;
-		margin-bottom: 6px;
-	}
-
-	.chunk-hit-banner {
-		background-color: #FDF2F8;
-		border-radius: 10px;
-		padding: 8px 10px;
-		margin-bottom: 8px;
-	}
-
-	.chunk-hit-title {
-		font-size: 12px;
-		font-weight: bold;
-		color: #DB2777;
-		margin-bottom: 4px;
-	}
-
-	.chunk-hit-excerpt {
-		font-size: 12px;
-		line-height: 18px;
-		color: #4B5563;
-		white-space: pre-wrap;
+		border-radius: 16px;
+		padding: 4px;
+		background-color: rgba(251, 143, 171, 0.16);
+		box-shadow: 0 0 0 2px rgba(251, 143, 171, 0.32);
 	}
 
 	.block-text {
@@ -898,6 +848,13 @@
 		line-height: 21px;
 		color: var(--rice-text-color);
 		white-space: normal;
+	}
+
+	.block-text-active {
+		background-color: #FFF7FA;
+		border-radius: 12px;
+		padding: 10px 12px;
+		box-shadow: inset 0 0 0 1px rgba(251, 143, 171, 0.38);
 	}
 
 	.code-text {
@@ -909,6 +866,14 @@
 		border-radius: 12px;
 		padding: 12px;
 		font-family: monospace;
+	}
+
+	.code-text-active {
+		background-color: #1F2937;
+		border-width: 2px;
+		border-style: solid;
+		border-color: #FB8FAB;
+		box-shadow: 0 12px 28px rgba(17, 24, 39, 0.28);
 	}
 
 	.code-inline-hit {
