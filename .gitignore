@@ -6,6 +6,7 @@ unpackage/
 .idea/
 *.iml
 .vscode/
+.hbuilderx/
 
 # OS
 .DS_Store
@@ -16,4 +17,7 @@ Thumbs.db
 
 # Build
 *.log
+*.tmp
+*.temp
+*.bak
 dist/
