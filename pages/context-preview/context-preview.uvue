@@ -125,9 +125,9 @@
 				</view>
 				<text v-if="activeMatchLength <= 0 || activeMatchStart < 0" class="code-text">{{fullJsonText}}</text>
 				<text v-else class="code-text">
-					<text>{{matchBeforeText()}}</text>
+					<text class="code-plain">{{matchBeforeText()}}</text>
 					<text class="code-inline-hit">{{matchHitText()}}</text>
-					<text>{{matchAfterText()}}</text>
+					<text class="code-plain">{{matchAfterText()}}</text>
 				</text>
 			</view>
 			<view id="anchor-bottom" class="anchor-spacer"></view>
@@ -1094,17 +1094,21 @@
 	.code-text {
 		font-size: 24rpx;
 		line-height: 36rpx;
-		color: #E5E7EB;
+		color: #374151;
 		white-space: pre-wrap;
-		background-color: #111827;
+		background-color: #F9FAFB;
 		border-radius: 24rpx;
 		padding: 24rpx;
 		font-family: monospace;
 	}
 
+	.code-plain {
+		color: #374151;
+	}
+
 	.code-inline-hit {
 		background-color: #FDE68A;
-		color: #111827;
+		color: #92400E;
 		border-radius: 8rpx;
 		padding-left: 4rpx;
 		padding-right: 4rpx;
