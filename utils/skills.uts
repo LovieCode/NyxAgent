@@ -62,7 +62,11 @@ export function normalizeSkillName(rawName: string): string {
 	let result = ''
 	let lastDash = false
 	for (let i = 0; i < raw.length; i++) {
-		const code = raw.charCodeAt(i)
+		const rawCode = raw.charCodeAt(i)
+		if (rawCode == null) {
+			continue
+		}
+		const code = rawCode as number
 		const isLower = code >= 97 && code <= 122
 		const isNumber = code >= 48 && code <= 57
 		if (isLower || isNumber) {
