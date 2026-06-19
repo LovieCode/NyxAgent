@@ -389,9 +389,20 @@
 			},
 
 			clearBuffer() {
-				clearMemoryBuffer(this.agentId, this.personId, this.conversationId)
-				this.bufferContent = ''
-				uni.showToast({ position: 'bottom',  title: '已清空', icon: 'none' })
+				uni.showModal({
+					title: '清空短缓存',
+					content: '确认清空 128 字短缓存？',
+					success: (res: any) => {
+						const raw = JSON.stringify(res)
+						if (raw == null || raw == '') { return }
+						const parsed = JSON.parse(raw) as UTSJSONObject
+						if (parsed['confirm'] == true) {
+							clearMemoryBuffer(this.agentId, this.personId, this.conversationId)
+							this.bufferContent = ''
+							uni.showToast({ position: 'bottom',  title: '已清空', icon: 'none' })
+						}
+					}
+				})
 			},
 
 			parsePriority(): number {
@@ -605,20 +616,31 @@
 		color: #111827;
 	}
 
+	.meta-row {
+		justify-content: space-between;
+		flex-wrap: nowrap;
+	}
+
+	.meta-row .field-tip {
+		flex: 1;
+		font-size: 22rpx;
+		margin-right: 8rpx;
+	}
+
 	.text-btn,
 	.refresh-btn {
-		font-size: 25rpx;
+		font-size: 22rpx;
 		color: #6B7280;
-		padding: 12rpx 18rpx;
+		padding: 8rpx 14rpx;
 	}
 
 	.primary-mini {
-		font-size: 25rpx;
+		font-size: 22rpx;
 		color: #FFFFFF;
 		background-color: var(--rice-primary-color);
 		border-radius: 999rpx;
-		padding: 12rpx 22rpx;
-		margin-left: 12rpx;
+		padding: 8rpx 18rpx;
+		margin-left: 8rpx;
 	}
 
 	.chip-scroll {
