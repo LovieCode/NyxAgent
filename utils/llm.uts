@@ -410,6 +410,7 @@ function callChatAPI(
 				}
 				// 保存 Token 用量
 				const usage = responseData['usage'] as UTSJSONObject | null
+				console.log('[LLM] 非流式响应 usage: ' + (usage != null ? JSON.stringify(usage) : 'null'))
 				if (usage != null) { saveLastTokenUsage(usage) }
 				const choices = responseData['choices'] as UTSJSONObject[] | null
 				if (choices == null || choices.length == 0) {
@@ -493,6 +494,7 @@ function processSSELine(
 			if (choices == null || choices.length == 0) {
 				// 最后一块可能带 usage
 				const usage = json['usage'] as UTSJSONObject | null
+				console.log('[LLM] 流式最后块 usage: ' + (usage != null ? JSON.stringify(usage) : 'null'))
 				if (usage != null) {
 					saveLastTokenUsage(usage)
 				}
@@ -1096,6 +1098,7 @@ export function buildAgentContextPreview(
 			},
 		} as UTSJSONObject)
 	}
+	console.log('[LLM] payload lastTokenUsage: ' + (lastTokenUsage != null ? JSON.stringify(lastTokenUsage) : 'null'))
 	return {
 		providerId: resolvedProviderId,
 		baseUrl: normalizedBaseUrl,
