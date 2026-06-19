@@ -14,6 +14,7 @@ import { getGlobalGenerationSettings, getEffectiveGenerationSettings, type Gener
 import { createAgentTools, AgentTool, ToolResult } from '@/utils/agent-tools.uts'
 import { AgentEventStream, type AgentEvent } from '@/utils/event.uts'
 import { buildImportantMemoryInjection, buildBufferInjection, getMemoryEnabled, saveMemoryManagerLog, type MemoryManagerLog } from '@/utils/memory.uts'
+import { buildAgentSkillsPrompt } from '@/utils/skills.uts'
 
 type ToolCallInfo = {
 	id: string
@@ -229,6 +230,15 @@ function prepareAgentContext(
 			role: 'system',
 			content: systemPrompt,
 		} as UTSJSONObject)
+	}
+	if (allowCoreMemoryWrite == false) {
+		const skillsPrompt = buildAgentSkillsPrompt(agentId)
+		if (skillsPrompt != '') {
+			workingMessages.push({
+				role: 'system',
+				content: skillsPrompt,
+			} as UTSJSONObject)
+		}
 	}
 	const personId = 'default'
 	const importantMemory = buildImportantMemoryInjection(agentId, personId, conversationId)

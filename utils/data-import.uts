@@ -26,10 +26,16 @@ function buildFallbackStorageKeys(): string[] {
 		'settings_model',
 		'settings_gh_proxy_enabled',
 		'settings_gh_proxy_domain',
+		'settings_web_search_enabled',
+		'settings_web_search_provider',
+		'settings_web_search_provider_id',
+		'settings_web_search_model',
+		'settings_web_search_instance',
 		'settings_generation_temperature',
 		'settings_generation_max_tokens',
 		'settings_generation_max_iterations',
 		'settings_generation_stream_enabled',
+		'skills_list',
 		'settings_memory_enabled',
 		'memory_agent_id',
 		'memory_conversation_id',
@@ -150,6 +156,7 @@ export function importAllDataFromZip(zipPath: string): string {
 		const memoryBuffers = readObjectArray(data, 'memoryBuffers')
 		const memoryCore = readObjectArray(data, 'memoryCore')
 		const agents = readObjectArray(data, 'agents')
+		const skills = readObjectArray(data, 'skills')
 		const notes = readObjectArray(data, 'notes')
 		const todos = readObjectArray(data, 'todos')
 		const storage = data['storage'] as UTSJSONObject | null
@@ -164,6 +171,9 @@ export function importAllDataFromZip(zipPath: string): string {
 		updateMappedMessageAssets(messages, assetMap)
 		if (storage != null) {
 			storage['agent_list'] = JSON.stringify(agents)
+			if (skills.length > 0) {
+				storage['skills_list'] = JSON.stringify(skills)
+			}
 			storage['notes_list'] = JSON.stringify(notes)
 			storage['todo_list'] = JSON.stringify(todos)
 		}
@@ -178,7 +188,7 @@ export function importAllDataFromZip(zipPath: string): string {
 			writeStorageObject(storage, storageKeys)
 		}
 		const workspaceCount = importAgentWorkspaceFiles(zipPath)
-		return '已导入：提供商 ' + providers.length + ' 个，对话 ' + conversations.length + ' 条，消息 ' + messages.length + ' 条，记忆 ' + memoryCore.length + ' 条，资源 ' + assets.length + ' 个，Agent 文件 ' + workspaceCount + ' 个。'
+		return '已导入：提供商 ' + providers.length + ' 个，对话 ' + conversations.length + ' 条，消息 ' + messages.length + ' 条，记忆 ' + memoryCore.length + ' 条，Skills ' + skills.length + ' 个，资源 ' + assets.length + ' 个，Agent 文件 ' + workspaceCount + ' 个。'
 	} catch (_e: any) {
 		return ''
 	}

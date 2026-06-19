@@ -64,6 +64,12 @@
 			}
 		},
 		{
+			"path": "pages/settings/skills/skills",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/settings/default-models/default-models",
 			"style": {
 				"navigationStyle": "custom"

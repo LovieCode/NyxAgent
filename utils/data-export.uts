@@ -6,6 +6,7 @@
 import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings, getDatabaseFilePathForExport, getAllMemoryBuffersForExport, getAllMemoryCoreForExport } from '@/utils/database.uts'
 import { getAllDefaultTaskModels } from '@/utils/provider.uts'
 import { getAgents } from '@/utils/agent.uts'
+import { getSkills } from '@/utils/skills.uts'
 import { getAgentStoragePath, listAgentFiles } from '@/utils/agent-fs.uts'
 import { writeExportZipFile, shareExportFile, getLastShareExportError } from '@/utssdk/app-data-export/index.uts'
 
@@ -60,10 +61,16 @@ function buildKnownStorageKeys(): string[] {
 		'settings_model',
 		'settings_gh_proxy_enabled',
 		'settings_gh_proxy_domain',
+		'settings_web_search_enabled',
+		'settings_web_search_provider',
+		'settings_web_search_provider_id',
+		'settings_web_search_model',
+		'settings_web_search_instance',
 		'settings_generation_temperature',
 		'settings_generation_max_tokens',
 		'settings_generation_max_iterations',
 		'settings_generation_stream_enabled',
+		'skills_list',
 		'settings_memory_enabled',
 		'memory_agent_id',
 		'memory_conversation_id',
@@ -368,6 +375,7 @@ export function buildAllDataExport(): UTSJSONObject {
 	const notes = parseStorageArray('notes_list')
 	const todos = parseStorageArray('todo_list')
 	const agents = getAgents()
+	const skills = getSkills()
 	const fileSpecs: UTSJSONObject[] = []
 	const databaseFile = appendDatabaseFile(fileSpecs)
 	const agentFiles = collectAgentFiles(agents, fileSpecs)
@@ -388,6 +396,7 @@ export function buildAllDataExport(): UTSJSONObject {
 			appSettings: getAllAppSettings(),
 			defaultTaskModels: getAllDefaultTaskModels(),
 			agents: agents,
+			skills: skills,
 			agentFiles: agentFiles,
 			assets: assets,
 			conversations: conversations,

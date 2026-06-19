@@ -135,6 +135,34 @@
 				</view>
 			</view>
 
+			<!-- Skills -->
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="book" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<text class="card-label">Skills</text>
+				</view>
+				<text class="skill-section-desc">为当前智能体启用纯文本技能包。不同 Agent 可以使用不同 Skills。</text>
+				<view v-if="allSkills.length == 0" class="panel-empty">
+					<text class="panel-empty-text">还没有 Skill，请到 设置 / Skills 创建。</text>
+				</view>
+				<view v-else class="skill-grid">
+					<view
+						v-for="(skill, si) in allSkills"
+						:key="si"
+						class="skill-card"
+						:class="isAgentSkillSelected(skill) ? 'skill-card-active' : ''"
+						@click="toggleAgentSkill(skill)"
+					>
+						<view class="skill-card-top">
+							<text class="skill-card-name">{{getSkillName(skill)}}</text>
+							<text class="skill-card-check">{{isAgentSkillSelected(skill) ? '✓' : '+'}}</text>
+						</view>
+						<text class="skill-card-desc" lines="2" text-overflow="ellipsis">{{getSkillDesc(skill)}}</text>
+						<text class="skill-card-meta">{{getSkillMeta(skill)}}</text>
+					</view>
+				</view>
+			</view>
+
 			<!-- 上下文截断 -->
 			<view class="card">
 				<view class="card-header">
@@ -199,10 +227,11 @@
 	/**
 	 * 智能体设置页面 - 编辑名称/描述/头像/删除智能体
 	 */
-	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime } from '@/utils/agent.uts'
+	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentSkills } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, type ModelInfo } from '@/utils/provider.uts'
 	import { updateSystemPromptForAgent } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
+	import { getSkills, getAgentSkillIds, filterExistingSkillIds, skillIdListContains, readSkillId, readSkillName, readSkillDescription, readSkillEnabled, getSkillDocumentCount } from '@/utils/skills.uts'
 
 	export default {
 		data() {
@@ -214,6 +243,8 @@
 				agentAvatar: '' as string,
 				currentModel: 'deepseek-v4-flash',
 				allProviders: [] as UTSJSONObject[],
+				allSkills: [] as UTSJSONObject[],
+				selectedSkillIds: [] as string[],
 				showModelPanel: false as boolean,
 				selectedProviderId: '' as string,
 				selectedModelId: '' as string,
@@ -315,6 +346,7 @@
 				this.agentId = id
 				this.hasUnsaved = false
 				this.allProviders = getAllProviders()
+				this.allSkills = getSkills()
 				const agent = getAgentById(id)
 				if (agent != null) {
 					this.agentName = agent['name'] as string
@@ -327,6 +359,7 @@
 					if (rawModel != null) {
 						this.currentModel = rawModel as string
 					}
+					this.selectedSkillIds = filterExistingSkillIds(getAgentSkillIds(agent))
 					this.loadGenerationSettings(agent)
 				}
 				this.initModelSelection()
@@ -422,6 +455,43 @@
 				this.hasUnsaved = true
 				// 选择后自动收起面板
 				this.showModelPanel = false
+			},
+
+			getSkillName(skill: UTSJSONObject): string {
+				return readSkillName(skill)
+			},
+
+			getSkillDesc(skill: UTSJSONObject): string {
+				return readSkillDescription(skill)
+			},
+
+			getSkillMeta(skill: UTSJSONObject): string {
+				return getSkillDocumentCount(skill) + ' 文档 · ' + (readSkillEnabled(skill) ? '可用' : '已停用')
+			},
+
+			isAgentSkillSelected(skill: UTSJSONObject): boolean {
+				return skillIdListContains(this.selectedSkillIds, readSkillId(skill))
+			},
+
+			toggleAgentSkill(skill: UTSJSONObject) {
+				const skillId = readSkillId(skill)
+				if (skillId == '') {
+					return
+				}
+				const next: string[] = []
+				let removed = false
+				for (let i = 0; i < this.selectedSkillIds.length; i++) {
+					if (this.selectedSkillIds[i] == skillId) {
+						removed = true
+					} else {
+						next.push(this.selectedSkillIds[i])
+					}
+				}
+				if (removed == false) {
+					next.push(skillId)
+				}
+				this.selectedSkillIds = next
+				this.hasUnsaved = true
 			},
 
 			/** 上传/更换智能体头像 */
@@ -521,6 +591,7 @@
 				updateAgentCache(this.agentId, this.cacheEnabled)
 				updateAgentHideThinking(this.agentId, this.hideThinking)
 				updateAgentInjectDatetime(this.agentId, this.injectDatetime)
+				updateAgentSkills(this.agentId, filterExistingSkillIds(this.selectedSkillIds))
 				// 同步更新所有历史对话的 system_prompt
 				updateSystemPromptForAgent(this.agentId, this.agentSystemPrompt)
 				this.hasUnsaved = false
@@ -735,6 +806,68 @@
 	.panel-empty-text {
 		font-size: 24rpx;
 		color: #9CA3AF;
+	}
+
+	.skill-section-desc {
+		font-size: 24rpx;
+		color: #6B7280;
+		line-height: 36rpx;
+		margin-bottom: 16rpx;
+	}
+
+	.skill-grid {
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+
+	.skill-card {
+		width: 300rpx;
+		background-color: var(--rice-background);
+		border-radius: 16rpx;
+		padding: 20rpx;
+		margin-right: 14rpx;
+		margin-bottom: 14rpx;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: #F3F4F6;
+	}
+
+	.skill-card-active {
+		background-color: #FDE8EF;
+		border-color: #FB8FAB;
+	}
+
+	.skill-card-top {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 8rpx;
+	}
+
+	.skill-card-name {
+		font-size: 26rpx;
+		font-weight: bold;
+		color: #111827;
+		flex: 1;
+	}
+
+	.skill-card-check {
+		font-size: 28rpx;
+		font-weight: bold;
+		color: var(--rice-primary-color);
+		margin-left: 10rpx;
+	}
+
+	.skill-card-desc {
+		font-size: 22rpx;
+		color: #6B7280;
+		line-height: 32rpx;
+	}
+
+	.skill-card-meta {
+		font-size: 20rpx;
+		color: #9CA3AF;
+		margin-top: 10rpx;
 	}
 
 	.chip-scroll {
