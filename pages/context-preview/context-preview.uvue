@@ -6,7 +6,7 @@
 			</template>
 		</NavBar>
 		<view class="scroll-wrapper">
-			<scroll-view id="context-scroll" class="container" :scroll-y="true" :scroll-with-animation="false" :show-scrollbar="false" :scroll-top="scrollTop" @scroll="onPageScroll">
+			<scroll-view id="context-scroll" class="container" :scroll-y="true" :scroll-with-animation="false" :show-scrollbar="false" :scroll-top="scrollTop" :scroll-into-view="scrollIntoViewId" @scroll="onPageScroll">
 			<view id="anchor-top" class="anchor-spacer"></view>
 			<view class="hero-card">
 				<text class="hero-title">发送前完整上下文</text>
@@ -126,7 +126,7 @@
 				<text v-if="activeMatchLength <= 0 || activeMatchStart < 0" class="code-text">{{fullJsonText}}</text>
 				<text v-else class="code-text">
 					<text class="code-plain">{{matchBeforeText()}}</text>
-					<text class="code-inline-hit">{{matchHitText()}}</text>
+					<text class="code-inline-hit" :id="'search-hit-' + searchIndex">{{matchHitText()}}</text>
 					<text class="code-plain">{{matchAfterText()}}</text>
 				</text>
 			</view>
@@ -157,6 +157,7 @@
 				previewDisplayText: '' as string,
 				scrollTop: 0 as number,
 				scrollRequestSeq: 0 as number,
+				scrollIntoViewId: '' as string,
 				layoutTopMap: {} as UTSJSONObject,
 				searchText: '' as string,
 				searchResults: [] as UTSJSONObject[],
@@ -752,89 +753,13 @@
 				this.scrollToSectionWithOffset(id, 0)
 			},
 
-			/** 估算等宽字体每行字符数（全 rpx 单位，与屏幕宽度无关） */
-			estimateCodeCharsPerLine(): number {
-				// 设计稿 750rpx，总水平占用：container(48) + card(64) + code(48) + scrollbar(28) = 188rpx
-				// 可用宽度 = 750 - 188 = 562rpx
-				// 等宽字体字符宽 ≈ 0.6 × font-size(24rpx) = 14.4rpx
-				const charsPerLine = Math.floor((750 - 188) / (24 * 0.6))
-				return charsPerLine < 18 ? 18 : charsPerLine
-			},
-
-			/** 计算文本到 endExclusive 位置的行/列 */
-			measureTextGrid(content: string, endExclusive: number, charsPerLine: number): number[] {
-				let line = 0
-				let column = 0
-				if (content == '' || endExclusive <= 0) {
-					return [line, column]
-				}
-				let limit = endExclusive
-				if (limit > content.length) {
-					limit = content.length
-				}
-				for (let i = 0; i < limit; i++) {
-					const ch = content.charAt(i)
-					if (ch == '\n') {
-						line++
-						column = 0
-						continue
-					}
-					column++
-					if (column >= charsPerLine) {
-						line++
-						column = 0
-					}
-				}
-				return [line, column]
-			},
-
-			/** 估算匹配位置在文本中的像素偏移（相对于 section 区块顶部） */
-			estimateTextMatchOffset(content: string, matchStart: number): number {
-				if (content == '' || matchStart < 0) {
-					return 0
-				}
-				const charsPerLine = this.estimateCodeCharsPerLine()
-				const grid = this.measureTextGrid(content, matchStart, charsPerLine)
-				const line = grid.length > 0 ? grid[0] : 0
-				const info = uni.getSystemInfoSync()
-				const rpxRatio = info.windowWidth / 750
-				const lineHeightPx = 36 * rpxRatio
-				// 区块头部：card padding(32) + section-row(≈36) + margin(20) + code padding(24) ≈ 112rpx
-				const headerPx = 112 * rpxRatio
-				let offsetTop = headerPx + line * lineHeightPx
-				if (offsetTop < 0) {
-					offsetTop = 0
-				}
-				return offsetTop
-			},
-
-			/** 滚动到区块内匹配位置，尽量居中。
-			 *  用 layoutTopMap（滚动位置 0 时测量的绝对位置）+ $nextTick 两步法
-			 *  强制触发 scroll-top 属性更新，参考 hello uni-app x 官方 goTop 实现 */
-			scrollToSectionMatch(sectionId: string, matchStart: number): void {
-				const textOffset = this.estimateTextMatchOffset(this.fullJsonText, matchStart)
-				const viewCenter = this.scrollViewHeight > 0 ? Math.floor(this.scrollViewHeight / 2) : 300
-
-				const cachedTop = this.layoutTopMap[sectionId] as number | null
-				if (cachedTop == null) {
-					// 缓存未命中：触发重测并延迟重试
-					this.scheduleLayoutCache()
-					setTimeout(() => {
-						this.scrollToSectionMatch(sectionId, matchStart)
-					}, 350)
-					return
-				}
-
-				let target = cachedTop + textOffset - viewCenter
-				if (target < 0) target = 0
-
-				// 官方两步法：先设回当前实际值（scrollOffset 由 @scroll 事件同步），
-				// 延迟一帧再设目标值，确保每次传给 scroll-view 的都是"新值"
-				this.scrollTop = this.scrollOffset
+			/** 用 scroll-into-view 定位匹配高亮元素，原生渲染定位零估算 */
+			scrollToSectionMatch(_sectionId: string, _matchStart: number): void {
+				// 两步法：先清空再设值，确保每次传给 scroll-view 的都是"新值"
+				this.scrollIntoViewId = ''
 				const self = this
 				setTimeout(() => {
-					self.scrollTop = target
-					self.scrollOffset = target
+					self.scrollIntoViewId = 'search-hit-' + self.searchIndex
 				}, 50)
 			},
 
