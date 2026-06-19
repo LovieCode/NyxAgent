@@ -13,7 +13,7 @@ import { getAgentById } from '@/utils/agent.uts'
 import { getGlobalGenerationSettings, getEffectiveGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
 import { createAgentTools, AgentTool, ToolResult } from '@/utils/agent-tools.uts'
 import { AgentEventStream, type AgentEvent } from '@/utils/event.uts'
-import { buildImportantMemoryInjection, buildBufferInjection, getMemoryEnabled } from '@/utils/memory.uts'
+import { buildImportantMemoryInjection, buildBufferInjection, getMemoryEnabled, saveMemoryManagerLog, type MemoryManagerLog } from '@/utils/memory.uts'
 
 type ToolCallInfo = {
 	id: string
@@ -110,10 +110,10 @@ function buildMemoryManagerSystemPrompt(agentId: string, conversationId: string)
 		'当前 agentId=' + agentId + '，conversationId=' + conversationId + '。最终只回复一行整理结果。'
 }
 
-function buildMemoryManagerMessages(droppedMessages: UTSJSONObject[]): UTSJSONObject[] {
-	const transcript = buildDroppedMessagesTranscript(droppedMessages)
-	const content = '以下普通消息即将因为上下文截断从主对话上下文移除。请核查历史记录和已有记忆，只在确实必要时整理进重要记忆库。\n\n' +
-		'【被截断普通消息】\n' + transcript
+function buildMemoryManagerMessages(allMessages: UTSJSONObject[]): UTSJSONObject[] {
+	const transcript = buildDroppedMessagesTranscript(allMessages)
+	const content = '以下为当前对话的完整上下文，请核查并整理重要信息到记忆库。\n\n' +
+		'【完整对话上下文】\n' + transcript
 	const messages: UTSJSONObject[] = []
 	messages.push({
 		role: 'user',
@@ -122,7 +122,7 @@ function buildMemoryManagerMessages(droppedMessages: UTSJSONObject[]): UTSJSONOb
 	return messages
 }
 
-let startMemoryManagerLoop: ((droppedMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string) => boolean) | null = null
+let startMemoryManagerLoop: ((allMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string) => boolean) | null = null
 
 function collectMemoryCandidateMessages(messages: UTSJSONObject[]): UTSJSONObject[] {
 	const list: UTSJSONObject[] = []
@@ -252,7 +252,7 @@ function prepareAgentContext(
 	let remainingSkip = 0
 	if (enableContextTruncation == true) {
 		const systemCount = workingMessages.length
-		// 截断：user 消息权重 1，agent 消息权重 0.3，加权分超阈值时跳过最早的若干条对话
+		// 截断权重：user 1，普通 assistant 0.3，工具调用/结果 0.1
 		const agent = getAgentById(agentId)
 		if (agent != null) {
 			const rawThreshold = agent['truncateThreshold']
@@ -270,6 +270,9 @@ function prepareAgentContext(
 					} else if (r == 'assistant' && messages[i]['tool_calls'] == null) {
 						score = score + 0.3
 						totalDialog++
+					} else if (r == 'assistant' || r == 'tool') {
+						score = score + 0.1
+						totalDialog++
 					}
 				}
 				if ((systemCount + score) > threshold) {
@@ -281,8 +284,8 @@ function prepareAgentContext(
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i]
 		const role = msg['role'] as string | null
-		// 跳过对话消息而非工具消息：只减 user/普通assistant，工具调用/结果保留
-		if (remainingSkip > 0 && (role == 'user' || (role == 'assistant' && msg['tool_calls'] == null))) {
+		// 跳过早的对话消息（含工具调用/结果）
+		if (remainingSkip > 0 && (role == 'user' || role == 'assistant' || role == 'tool')) {
 			remainingSkip--
 			if (i == lastUserIndex) { lastUserIndex = -1 }
 			const rawContent = msg['content'] as string | null
@@ -374,6 +377,8 @@ function callChatAPI(
 		body['tools'] = openaiTools
 	}
 
+	console.log('[LLM] → ' + model + ' | ' + apiMessages.length + ' msgs | ' + tools.length + ' tools | ' + url)
+
 	uni.request({
 		url: url,
 		method: 'POST',
@@ -382,6 +387,7 @@ function callChatAPI(
 		success: (res) => {
 			const statusCode = res.statusCode as number
 			if (statusCode != 200) {
+				console.log('[LLM] ← ' + statusCode + ' error')
 				let errDetail = ''
 				try {
 					const errData = res.data as UTSJSONObject | null
@@ -402,6 +408,9 @@ function callChatAPI(
 					done(null, null)
 					return
 				}
+				// 保存 Token 用量
+				const usage = responseData['usage'] as UTSJSONObject | null
+				if (usage != null) { saveLastTokenUsage(usage) }
 				const choices = responseData['choices'] as UTSJSONObject[] | null
 				if (choices == null || choices.length == 0) {
 					done('', null)
@@ -417,6 +426,19 @@ function callChatAPI(
 				const rawText = message['content'] as string | null
 				const text = rawText != null ? rawText : ''
 				const rawToolCalls = message['tool_calls'] as UTSJSONObject[] | null
+				let tcNames = ''
+				if (rawToolCalls != null) {
+					for (let i = 0; i < rawToolCalls.length; i++) {
+						const funcObj = rawToolCalls[i]['function'] as UTSJSONObject | null
+						if (funcObj != null && funcObj['name'] != null) {
+							if (tcNames != '') { tcNames = tcNames + ',' }
+							tcNames = tcNames + (funcObj['name'] as string)
+						}
+					}
+				}
+				const preview = text != '' ? text.substring(0, text.length < 100 ? text.length : 100) : ''
+				const tag = tcNames != '' ? ' tools:' + tcNames : ''
+				console.log('[LLM] ← 200' + tag + ' | ' + preview)
 
 				if (rawToolCalls != null && rawToolCalls.length > 0) {
 					const tcList: ToolCallInfo[] = []
@@ -442,7 +464,7 @@ function callChatAPI(
 			}
 		},
 		fail: (_err: any) => {
-			done('网络请求失败: ' + _err, null)
+			done('网络请求失败: ' + _err, null, null)
 		},
 	})
 }
@@ -456,20 +478,36 @@ function processSSELine(
 	sseBufferRef: string[],
 	toolCallList: UTSJSONObject[],
 	hasToolCallsRef: boolean[],
-	onChunk: ((text: string) => void) | null
+	onChunk: ((text: string) => void) | null,
+	fullThinkingRef: string[] | null = null,
+	onThinking: ((text: string) => void) | null = null
 ): void {
 	const trimmed = line.trim()
 	if (trimmed == '' || trimmed.startsWith(':')) return
 	if (!trimmed.startsWith('data: ')) return
 	const data = trimmed.substring(6)
 	if (data == '[DONE]') return
-	try {
-		const json = JSON.parse(data) as UTSJSONObject
-		const choices = json['choices'] as UTSJSONObject[]
-		if (choices == null || choices.length == 0) return
+		try {
+			const json = JSON.parse(data) as UTSJSONObject
+			const choices = json['choices'] as UTSJSONObject[]
+			if (choices == null || choices.length == 0) {
+				// 最后一块可能带 usage
+				const usage = json['usage'] as UTSJSONObject | null
+				if (usage != null) {
+					saveLastTokenUsage(usage)
+				}
+				return
+			}
 		const choice = choices[0]
 		const delta = choice['delta'] as UTSJSONObject
 		if (delta == null) return
+
+		// 思考内容（DeepSeek/Grok 等模型的 reasoning_content）
+		const reasoning = delta['reasoning_content'] as string | null
+		if (reasoning != null && reasoning != '' && fullThinkingRef != null) {
+			fullThinkingRef[0] += reasoning
+			if (onThinking != null) onThinking(reasoning)
+		}
 
 		// 文本内容
 		const content = delta['content'] as string | null
@@ -505,6 +543,22 @@ function processSSELine(
 			}
 		}
 	} catch (_) {}
+}
+
+/**
+ * 保存最近一次 API 调用的 Token 用量
+ */
+function saveLastTokenUsage(usage: UTSJSONObject): void {
+	const promptTokens = usage['prompt_tokens'] as number | null
+	const completionTokens = usage['completion_tokens'] as number | null
+	const totalTokens = usage['total_tokens'] as number | null
+	const obj: UTSJSONObject = {} as UTSJSONObject
+	if (promptTokens != null) obj['prompt_tokens'] = promptTokens
+	if (completionTokens != null) obj['completion_tokens'] = completionTokens
+	if (totalTokens != null) obj['total_tokens'] = totalTokens
+	const json = JSON.stringify(obj)
+	uni.setStorageSync('last_token_usage', json)
+	console.log('[LLM] Token 用量已保存: ' + json)
 }
 
 /**
@@ -557,8 +611,9 @@ function callChatAPIStream(
 	tools: UTSJSONObject[],
 	settings: GenerationSettings,
 	onChunk: ((text: string) => void) | null,
-	done: (text: string | null, toolCalls: ToolCallInfo[] | null) => void,
-	cacheKey: string = ''
+	done: (text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null) => void,
+	cacheKey: string = '',
+	onThinking: ((text: string) => void) | null = null
 ): RequestTask {
 	const apiMessages = buildOpenAIMessages(systemPrompt, messages)
 
@@ -594,11 +649,14 @@ function callChatAPIStream(
 		body['cache_key'] = cacheKey
 	}
 
+	console.log('[LLM] → stream ' + model + ' | ' + apiMessages.length + ' msgs | ' + tools.length + ' tools' + (cacheKey != '' ? ' | cache' : '') + ' | ' + url)
+
 	// 流式状态（用单元素数组模拟引用传递，兼容 UTS 闭包限制）
 	const fullTextRef: string[] = ['']
 	const sseBufferRef: string[] = ['']
 	const toolCallList: UTSJSONObject[] = []
 	const hasToolCallsRef: boolean[] = [false]
+	const fullThinkingRef: string[] = ['']
 	let streamEnded = false
 
 	const task = uni.request({
@@ -611,6 +669,7 @@ function callChatAPIStream(
 			streamEnded = true
 			const statusCode = res.statusCode as number
 			if (statusCode != 200) {
+				console.log('[LLM] ← ' + statusCode + ' error')
 				let errDetail = ''
 				try {
 					if (fullTextRef[0] != '') {
@@ -622,35 +681,44 @@ function callChatAPIStream(
 						}
 					}
 				} catch (_) {}
-				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null)
+				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null, null)
 				return
 			}
 			// 处理剩余 buffer
 			if (sseBufferRef[0] != '') {
-				processSSELine(sseBufferRef[0], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk)
+				processSSELine(sseBufferRef[0], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk, fullThinkingRef, onThinking)
 				sseBufferRef[0] = ''
 			}
 			// 组装结果
 			if (hasToolCallsRef[0] == true) {
 				const tcList: ToolCallInfo[] = []
+				let tcNames = ''
 				for (let i = 0; i < toolCallList.length; i++) {
 					const tc = toolCallList[i]
 					const rawId = tc['id'] as string | null
 					const rawName = tc['name'] as string | null
 					const rawArgs = tc['arguments'] as string | null
+					if (rawName != null) {
+						if (tcNames != '') { tcNames = tcNames + ',' }
+						tcNames = tcNames + rawName
+					}
 					tcList.push({
 						id: rawId != null ? rawId : '',
 						name: rawName != null ? rawName : '',
 						arguments: rawArgs != null ? rawArgs : '{}',
 					} as ToolCallInfo)
 				}
-				done(fullTextRef[0], tcList)
+				const preview = fullTextRef[0] != '' ? fullTextRef[0].substring(0, fullTextRef[0].length < 100 ? fullTextRef[0].length : 100) : ''
+				console.log('[LLM] ← 200 tools:' + tcNames + ' | ' + preview)
+				done(fullTextRef[0], tcList, fullThinkingRef[0])
 			} else {
-				done(fullTextRef[0], null)
+				const preview = fullTextRef[0] != '' ? fullTextRef[0].substring(0, fullTextRef[0].length < 100 ? fullTextRef[0].length : 100) : ''
+				console.log('[LLM] ← 200 | ' + preview)
+				done(fullTextRef[0], null, fullThinkingRef[0])
 			}
 		},
-		fail: (_err: any) => {
-			done('网络请求失败: ' + _err, null)
+	fail: (_err: any) => {
+			done('网络请求失败: ' + _err, null, null)
 		},
 	})
 
@@ -665,7 +733,7 @@ function callChatAPIStream(
 		const parts = sseBufferRef[0].split('\n')
 		sseBufferRef[0] = parts[parts.length - 1]
 		for (let i = 0; i < parts.length - 1; i++) {
-			processSSELine(parts[i], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk)
+			processSSELine(parts[i], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk, fullThinkingRef, onThinking)
 		}
 	})
 
@@ -704,7 +772,7 @@ function runAgentLoop(
 	const toolDefs = prepared.toolDefs
 
 	if (enableMemoryManager == true && shouldRunMemoryManager(agentId, conversationId, prepared.droppedMessages) == true) {
-		const started = startMemoryManagerLoop?.invoke(prepared.droppedMessages, providerId, model, agentId, conversationId)
+		const started = startMemoryManagerLoop?.invoke(collectMemoryCandidateMessages(messages), providerId, model, agentId, conversationId)
 		if (started == true) {
 			stream.push({ type: 'memory_organize_start', message: '记忆整理已开始' })
 		}
@@ -750,20 +818,28 @@ function runAgentLoop(
 
 		stream.push({ type: 'turn_start' })
 
-		let chunkHandler: ((text: string) => void) | null = null
+	let chunkHandler: ((text: string) => void) | null = null
+		let thinkingHandler: ((text: string) => void) | null = null
 		if (settings.streamEnabled == true) {
 			chunkHandler = (text: string): void => {
 				stream.push({ type: 'text_delta', text: text })
 			}
+			thinkingHandler = (text: string): void => {
+				stream.push({ type: 'thinking_delta', thinkingText: text })
+			}
 		}
 
 		activeTask = callChatAPIStream(baseUrl, apiKey, mdl, '', workingMessages, toolDefs, settings,
-			// onChunk: 文本增量
+			// onChunk
 			chunkHandler,
-			// done: 一轮完成
-			(text: string | null, toolCalls: ToolCallInfo[] | null) => {
+			// done
+			(text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null) => {
 				activeTask = null
 				if (stream.aborted == true) return
+				// 思考内容结束
+				if (thinking != null && thinking != '') {
+					stream.push({ type: 'thinking_end', fullThinking: thinking })
+				}
 				if (toolCalls == null || toolCalls.length == 0) {
 					// 纯文本回复，结束
 					stream.push({ type: 'text_end', fullText: text != null ? text : '' })
@@ -905,14 +981,15 @@ function runAgentLoop(
 
 				executeNext?.invoke()
 			},
-			cacheKey
+			cacheKey,
+			thinkingHandler
 		)
 	}
 	continueLoop()
 }
 
-startMemoryManagerLoop = (droppedMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string): boolean => {
-	const managerMessages = buildMemoryManagerMessages(droppedMessages)
+startMemoryManagerLoop = (allMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string): boolean => {
+	const managerMessages = buildMemoryManagerMessages(allMessages)
 	if (managerMessages.length == 0) return false
 	const managerSystemPrompt = buildMemoryManagerSystemPrompt(agentId, conversationId)
 	const agent = getAgentById(agentId)
@@ -924,9 +1001,43 @@ startMemoryManagerLoop = (droppedMessages: UTSJSONObject[], providerId: string, 
 	if (settings.maxTokens > 2048) {
 		settings.maxTokens = 2048
 	}
+	// 记录本次整理的操作明细
+	const toolOps: UTSJSONObject[] = []
+	let savedCount = 0
+	let forgottenCount = 0
+	let summaryText = ''
 	const managerStream = new AgentEventStream()
-	managerStream.on((_event: AgentEvent): void => {
-		// 后台记忆管理不打扰 UI，只消费事件避免队列堆积。
+	managerStream.on((event: AgentEvent): void => {
+		if (event.type == 'tool_call' && event.toolName != null) {
+			toolOps.push({
+				tool: event.toolName,
+				args: event.toolArgs != null ? event.toolArgs : '',
+			} as UTSJSONObject)
+			if (event.toolName == 'memory_core_save') {
+				savedCount++
+			} else if (event.toolName == 'memory_core_forget') {
+				forgottenCount++
+			}
+		} else if (event.type == 'text_end' && event.fullText != null) {
+			summaryText = event.fullText
+		} else if (event.type == 'agent_end') {
+			// Agent 循环结束，写入日志
+			const now = Date.now()
+			const logId = 'mmlog_' + now + '_' + allMessages.length
+			const opsJson = toolOps.length > 0 ? JSON.stringify(toolOps) : ''
+			const log: MemoryManagerLog = {
+				id: logId,
+				agentId: agentId,
+				conversationId: conversationId,
+				executedAt: now,
+				messageCount: allMessages.length,
+				savedCount: savedCount,
+				forgottenCount: forgottenCount,
+				summary: summaryText,
+				details: opsJson,
+			} as MemoryManagerLog
+			saveMemoryManagerLog(log)
+		}
 	})
 	setTimeout(() => {
 		runAgentLoop(managerMessages, managerSystemPrompt, providerId, model, agentId, settings, managerStream, conversationId, true, false)
@@ -959,6 +1070,14 @@ export function buildAgentContextPreview(
 		resolvedProviderId = config.providerId
 	}
 	const apiMessages = buildOpenAIMessages('', prepared.workingMessages)
+	// 读取上次调用的真实 Token 用量
+	let lastTokenUsage: UTSJSONObject | null = null
+	try {
+		const rawUsage = uni.getStorageSync('last_token_usage') as string | null
+		if (rawUsage != null && rawUsage != '') {
+			lastTokenUsage = JSON.parse(rawUsage) as UTSJSONObject
+		}
+	} catch (_e: any) {}
 	const openaiTools: UTSJSONObject[] = []
 	for (let i = 0; i < prepared.toolDefs.length; i++) {
 		const t = prepared.toolDefs[i]
@@ -985,10 +1104,11 @@ export function buildAgentContextPreview(
 		providerId: resolvedProviderId,
 		baseUrl: normalizedBaseUrl,
 		model: requestModel,
-		systemPrompt: systemPrompt,
 		importantMemory: prepared.importantMemory,
 		bufferInjection: prepared.bufferInjection,
 		lastUserIndex: prepared.lastUserIndex,
+		totalMessages: messages.length,
+		lastTokenUsage: lastTokenUsage,
 		workingMessages: prepared.workingMessages,
 		openaiMessages: apiMessages,
 		toolDefs: prepared.toolDefs,

@@ -1,18 +1,29 @@
 <template>
-	<view class="tool-exec">
+	<view class="tool-exec" @click="toggleExpand">
 		<view class="tool-line">
 			<view class="tool-dot" :class="dotClass"></view>
 			<text class="tool-name">{{displayName}}</text>
 			<text class="tool-status">{{statusText}}</text>
+			<text class="tool-toggle">{{expanded ? '▾' : '▸'}}</text>
 		</view>
-		<text v-if="detailText != ''" class="tool-detail">{{detailText}}</text>
+		<text v-if="!expanded && collapsedHint != ''" class="tool-detail">{{collapsedHint}}</text>
+		<view v-if="expanded" class="tool-detail-expanded">
+			<view v-if="argsDisplay != ''" class="detail-block">
+				<text class="detail-label">参数</text>
+				<text class="detail-mono">{{argsDisplay}}</text>
+			</view>
+			<view v-if="resultDisplay != ''" class="detail-block">
+				<text class="detail-label">结果</text>
+				<text class="detail-mono">{{resultDisplay}}</text>
+			</view>
+		</view>
 	</view>
 </template>
 
 <script lang="uts">
 	/**
 	 * ToolExecution 组件 - 工具执行状态展示
-	 * 极简日志行风格，低视觉权重
+	 * 点击展开/收起查看完整参数和结果
 	 */
 
 	/** 工具名称友好映射 */
@@ -23,6 +34,12 @@
 		if (name == 'file_list') return '列出文件'
 		if (name == 'file_info') return '获取文件信息'
 		if (name == 'directory_create') return '创建目录'
+		if (name == 'memory_search') return '搜索记忆'
+		if (name == 'memory_buffer_write') return '写短缓存'
+		if (name == 'memory_core_list') return '列出记忆'
+		if (name == 'memory_core_save') return '保存记忆'
+		if (name == 'memory_core_forget') return '遗忘记忆'
+		if (name == 'web_search') return '网络搜索'
 		return name
 	}
 
@@ -45,6 +62,11 @@
 				default: ''
 			}
 		},
+		data() {
+			return {
+				expanded: false as boolean,
+			}
+		},
 		computed: {
 			dotClass() : string {
 				if (this.status == 'running') return 'dot-running'
@@ -61,11 +83,24 @@
 			displayName() : string {
 				return getDisplayName(this.toolName)
 			},
-			detailText() : string {
+			collapsedHint() : string {
 				const source = this.status == 'running' ? this.args : this.result
 				if (source.length == 0) return ''
 				return source.length > 60 ? source.substring(0, 60) + '…' : source
-			}
+			},
+			argsDisplay() : string {
+				if (this.args.length == 0) return ''
+				return this.args
+			},
+			resultDisplay() : string {
+				if (this.result.length == 0) return ''
+				return this.result
+			},
+		},
+		methods: {
+			toggleExpand() {
+				this.expanded = !this.expanded
+			},
 		},
 	}
 </script>
@@ -77,10 +112,10 @@
 		margin-right: 50px;
 		margin-top: 2px;
 		margin-bottom: 2px;
-		padding-left: 8px;
+		padding-left: 10px;
 		padding-right: 10px;
-		padding-top: 4px;
-		padding-bottom: 4px;
+		padding-top: 6px;
+		padding-bottom: 6px;
 		border-radius: 10px;
 		background-color: rgba(0, 0, 0, 0.04);
 		flex-direction: column;
@@ -122,12 +157,43 @@
 		margin-left: 5px;
 	}
 
+	.tool-toggle {
+		font-size: 12px;
+		color: #9CA3AF;
+		margin-left: auto;
+	}
+
 	.tool-detail {
 		font-size: 11px;
 		color: #9CA3AF;
 		margin-top: 1px;
 		margin-left: 10px;
-		lines: 1;
-		text-overflow: ellipsis;
+	}
+
+	.tool-detail-expanded {
+		margin-top: 6px;
+		margin-left: 10px;
+	}
+
+	.detail-block {
+		margin-bottom: 8px;
+	}
+
+	.detail-label {
+		font-size: 11px;
+		color: #6B7280;
+		font-weight: 500;
+		margin-bottom: 3px;
+	}
+
+	.detail-mono {
+		font-size: 11px;
+		line-height: 16px;
+		color: #374151;
+		font-family: monospace;
+		white-space: pre-wrap;
+		background-color: rgba(0, 0, 0, 0.03);
+		border-radius: 6px;
+		padding: 6px 8px;
 	}
 </style>

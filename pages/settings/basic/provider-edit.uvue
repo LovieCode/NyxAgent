@@ -199,18 +199,18 @@
 
 			async fetchModels() {
 				if (this.editApiBase == '') {
-					uni.showToast({ title: '请先输入接口地址', icon: 'none' })
+					uni.showToast({ position: 'bottom',  title: '请先输入接口地址', icon: 'none' })
 					return
 				}
 				if (this.editApiKey == '') {
-					uni.showToast({ title: '请先输入 API Key', icon: 'none' })
+					uni.showToast({ position: 'bottom',  title: '请先输入 API Key', icon: 'none' })
 					return
 				}
 				this.fetchingModels = true
 				const ids = await fetchProviderModels(this.editApiBase, this.editApiKey)
 				this.fetchingModels = false
 				if (ids.length == 0) {
-					uni.showToast({ title: '获取失败，请检查地址和 Key', icon: 'none' })
+					uni.showToast({ position: 'bottom',  title: '获取失败，请检查地址和 Key', icon: 'none' })
 					return
 				}
 				// 合并：保留已有模型的参数，新增不存在的模型
@@ -233,12 +233,12 @@
 					merged.push({ id: mid, ctxStr: '' } as ModelInfo)
 				}
 				this.editModels = merged
-				uni.showToast({ title: `获取到 ${ids.length} 个模型`, icon: 'success' })
+				uni.showToast({ position: 'bottom',  title: `获取到 ${ids.length} 个模型`, icon: 'success' })
 			},
 
 			saveProvider() {
 				if (this.editId == '') {
-					uni.showToast({ title: '请输入标识', icon: 'none' })
+					uni.showToast({ position: 'bottom',  title: '请输入标识', icon: 'none' })
 					return
 				}
 				if (this.editName == '') {
@@ -270,7 +270,7 @@
 					validModels.push(m)
 				}
 				saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, false)
-				uni.showToast({ title: '已保存', icon: 'success' })
+				uni.showToast({ position: 'bottom',  title: '已保存', icon: 'success' })
 				setTimeout(() => {
 					uni.navigateBack()
 				}, 500)

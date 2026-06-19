@@ -160,6 +160,37 @@
 					<text class="danger-btn-text">清空当前 Agent 记忆</text>
 				</view>
 			</view>
+
+			<!-- 记忆整理日志 -->
+			<view class="card log-card">
+				<view class="card-header">
+					<text class="card-label">📋 整理记录</text>
+					<text class="log-refresh" @click="loadManagerLogs">刷新</text>
+				</view>
+				<view v-if="managerLogs.length == 0" class="empty-card">
+					<text class="empty-text">暂无整理记录</text>
+				</view>
+				<view v-for="(log, lIdx) in managerLogs" :key="lIdx" class="log-item">
+					<view class="log-head">
+						<text class="log-time">{{formatLogTime(log)}}</text>
+						<view class="log-badges">
+							<text class="log-badge" v-if="parseLogNumber(log, 'dropped_count') > 0">消息 {{parseLogNumber(log, 'dropped_count')}} 条</text>
+							<text class="log-badge log-badge-save" v-if="parseLogNumber(log, 'saved_count') > 0">保存 {{parseLogNumber(log, 'saved_count')}}</text>
+							<text class="log-badge log-badge-forget" v-if="parseLogNumber(log, 'forgotten_count') > 0">遗忘 {{parseLogNumber(log, 'forgotten_count')}}</text>
+						</view>
+					</view>
+					<text class="log-summary" v-if="parseLogString(log, 'summary') != ''">{{parseLogString(log, 'summary')}}</text>
+					<view class="log-detail-row" v-if="parseLogString(log, 'details') != ''" @click="toggleLogDetail(log, lIdx)">
+						<text class="log-detail-toggle">{{logDetailExpanded[lIdx] == true ? '收起操作明细 ▲' : '展开操作明细 ▼'}}</text>
+					</view>
+					<view class="log-detail-list" v-if="logDetailExpanded[lIdx] == true">
+						<view v-for="(op, oIdx) in parseLogOps(log)" :key="oIdx" class="log-op-item">
+							<text class="log-op-tool">{{parseLogString(op, 'tool')}}</text>
+							<text class="log-op-args">{{parseLogString(op, 'args')}}</text>
+						</view>
+					</view>
+				</view>
+			</view>
 		</scroll-view>
 	</view>
 </template>
@@ -177,6 +208,7 @@
 		clearCoreMemoryForTarget,
 		buildMemoryTargetPersonId,
 		memoryPersonIdToLabel,
+		listMemoryManagerLogs,
 		type MemoryCoreInput,
 	} from '@/utils/memory.uts'
 	import { getAgents } from '@/utils/agent.uts'
@@ -202,6 +234,9 @@
 				newPinned: false as boolean,
 				viewTargetType: 'user' as string,
 				viewTargetId: '' as string,
+				/** 记忆整理日志 */
+				managerLogs: [] as UTSJSONObject[],
+				logDetailExpanded: {} as UTSJSONObject,
 			}
 		},
 		computed: {
@@ -234,6 +269,7 @@
 			}
 			this.agents = getAgents()
 			this.loadMemory()
+			this.loadManagerLogs()
 		},
 		methods: {
 			readAgentId(agent: UTSJSONObject): string {
@@ -343,19 +379,19 @@
 
 			saveMemoryEnabled() {
 				setMemoryEnabled(this.memoryEnabled)
-				uni.showToast({ title: '已保存', icon: 'success' })
+				uni.showToast({ position: 'bottom',  title: '已保存', icon: 'success' })
 			},
 
 			saveBuffer() {
 				const finalContent = updateMemoryBuffer(this.agentId, this.personId, this.conversationId, this.bufferContent)
 				this.bufferContent = finalContent
-				uni.showToast({ title: '短缓存已保存', icon: 'success' })
+				uni.showToast({ position: 'bottom',  title: '短缓存已保存', icon: 'success' })
 			},
 
 			clearBuffer() {
 				clearMemoryBuffer(this.agentId, this.personId, this.conversationId)
 				this.bufferContent = ''
-				uni.showToast({ title: '已清空', icon: 'none' })
+				uni.showToast({ position: 'bottom',  title: '已清空', icon: 'none' })
 			},
 
 			parsePriority(): number {
@@ -368,7 +404,7 @@
 
 			saveNewMemory() {
 				if (this.newContent.trim() == '') {
-					uni.showToast({ title: '先写内容', icon: 'none' })
+					uni.showToast({ position: 'bottom',  title: '先写内容', icon: 'none' })
 					return
 				}
 				let targetPersonId = this.buildViewTargetPersonId()
@@ -384,26 +420,26 @@
 				} as MemoryCoreInput
 				const id = saveCoreMemory(this.agentId, targetPersonId, this.conversationId, input)
 				if (id == '') {
-					uni.showToast({ title: '保存失败', icon: 'none' })
+					uni.showToast({ position: 'bottom',  title: '保存失败', icon: 'none' })
 					return
 				}
 				this.newContent = ''
 				this.newPriority = '3'
 				this.newPinned = false
 				this.loadMemory()
-				uni.showToast({ title: '已保存', icon: 'success' })
+				uni.showToast({ position: 'bottom',  title: '已保存', icon: 'success' })
 			},
 
 			forgetMemory(id: string) {
 				archiveCoreMemory(id)
 				this.loadMemory()
-				uni.showToast({ title: '已遗忘', icon: 'none' })
+				uni.showToast({ position: 'bottom',  title: '已遗忘', icon: 'none' })
 			},
 
 			forgetMemoryByItem(item: UTSJSONObject) {
 				const id = item['id'] as string | null
 				if (id == null || id == '') {
-					uni.showToast({ title: '记忆 id 异常', icon: 'none' })
+					uni.showToast({ position: 'bottom',  title: '记忆 id 异常', icon: 'none' })
 					return
 				}
 				this.forgetMemory(id)
@@ -420,10 +456,59 @@
 						if (parsed['confirm'] == true) {
 							clearCoreMemoryForTarget(this.agentId, this.buildViewTargetPersonId(), this.conversationId)
 							this.loadMemory()
-							uni.showToast({ title: '已清空', icon: 'none' })
+							uni.showToast({ position: 'bottom',  title: '已清空', icon: 'none' })
 						}
 					}
 				})
+			},
+
+			// ===== 记忆整理日志 =====
+
+			loadManagerLogs() {
+				this.managerLogs = listMemoryManagerLogs(this.agentId, this.conversationId)
+			},
+
+			formatLogTime(log: UTSJSONObject): string {
+				const ts = parseLogNumber(log, 'executed_at')
+				if (ts == 0) return ''
+				const d = new Date(ts)
+				const m = (d.getMonth() + 1).toString().padStart(2, '0')
+				const day = d.getDate().toString().padStart(2, '0')
+				const h = d.getHours().toString().padStart(2, '0')
+				const min = d.getMinutes().toString().padStart(2, '0')
+				return m + '-' + day + ' ' + h + ':' + min
+			},
+
+			/** 从 UTSJSONObject 安全读取数字 */
+			parseLogNumber(obj: UTSJSONObject, key: string): number {
+				const val = obj[key]
+				if (val == null) return 0
+				if (typeof val == 'number') return val as number
+				const num = parseFloat(val as string)
+				return isNaN(num) ? 0 : num
+			},
+
+			/** 从 UTSJSONObject 安全读取字符串 */
+			parseLogString(obj: UTSJSONObject, key: string): string {
+				const val = obj[key]
+				return val != null ? (val as string) : ''
+			},
+
+			/** 解析操作明细 JSON 数组 */
+			parseLogOps(log: UTSJSONObject): UTSJSONObject[] {
+				try {
+					const raw = parseLogString(log, 'details')
+					if (raw == '') return [] as UTSJSONObject[]
+					return JSON.parse(raw) as UTSJSONObject[]
+				} catch (_e: any) {
+					return [] as UTSJSONObject[]
+				}
+			},
+
+			toggleLogDetail(_log: UTSJSONObject, idx: number) {
+				const key = idx + ''
+				const current: boolean = (this.logDetailExpanded[key] as boolean | null) == true
+				this.logDetailExpanded[key] = current ? false : true
 			},
 		}
 	}
@@ -660,5 +745,97 @@
 		font-size: 28rpx;
 		font-weight: bold;
 		color: #DC2626;
+	}
+
+	/* ===== 记忆整理日志 ===== */
+	.log-card {
+		margin-bottom: 60rpx;
+	}
+
+	.log-refresh {
+		font-size: 24rpx;
+		color: #8B5CF6;
+		margin-left: auto;
+	}
+
+	.log-item {
+		background-color: #F9FAFB;
+		border-radius: 12rpx;
+		padding: 20rpx;
+		margin-top: 12rpx;
+	}
+
+	.log-head {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.log-time {
+		font-size: 22rpx;
+		color: #9CA3AF;
+	}
+
+	.log-badges {
+		flex-direction: row;
+	}
+
+	.log-badge {
+		font-size: 20rpx;
+		color: #6B7280;
+		background-color: #E5E7EB;
+		border-radius: 8rpx;
+		padding: 2rpx 10rpx;
+		margin-left: 8rpx;
+	}
+
+	.log-badge-save {
+		color: #059669;
+		background-color: #D1FAE5;
+	}
+
+	.log-badge-forget {
+		color: #DC2626;
+		background-color: #FEE2E2;
+	}
+
+	.log-summary {
+		font-size: 24rpx;
+		color: #374151;
+		margin-top: 12rpx;
+		line-height: 34rpx;
+	}
+
+	.log-detail-row {
+		margin-top: 10rpx;
+	}
+
+	.log-detail-toggle {
+		font-size: 22rpx;
+		color: #8B5CF6;
+	}
+
+	.log-detail-list {
+		margin-top: 10rpx;
+		padding-left: 16rpx;
+		border-left-width: 2rpx;
+		border-left-color: #E5E7EB;
+		border-left-style: solid;
+	}
+
+	.log-op-item {
+		margin-top: 8rpx;
+	}
+
+	.log-op-tool {
+		font-size: 22rpx;
+		color: #6D28D9;
+		font-weight: bold;
+	}
+
+	.log-op-args {
+		font-size: 20rpx;
+		color: #9CA3AF;
+		margin-top: 4rpx;
 	}
 </style>

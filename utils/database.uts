@@ -340,6 +340,10 @@ export function saveConversation(
 		if (isStreaming != null) {
 			extra['isStreaming'] = isStreaming
 		}
+		const thinking = msg['thinking']
+		if (thinking != null && thinking != '') {
+			extra['thinking'] = thinking
+		}
 		const isError = msg['isError']
 		if (isError != null) {
 			extra['isError'] = isError
@@ -444,10 +448,13 @@ export function getMessages(conversationId: string): UTSJSONObject[] {
 			try {
 				const extra = JSON.parse(extraStr) as UTSJSONObject
 				// 手动合并已知的 extra 字段（UTS 不支持 Object.keys）
-				if (extra['isStreaming'] != null) {
-					row['isStreaming'] = extra['isStreaming']
-				}
-				if (extra['isError'] != null) {
+		if (extra['isStreaming'] != null) {
+			row['isStreaming'] = extra['isStreaming']
+		}
+		if (extra['thinking'] != null) {
+			row['thinking'] = extra['thinking']
+		}
+		if (extra['isError'] != null) {
 					row['isError'] = extra['isError']
 				}
 				if (extra['toolName'] != null) {
@@ -581,6 +588,8 @@ export function initDefaultProviders(): void {
 		{ id: 'deepseek', name: 'DeepSeek', api_base: 'https://api.deepseek.com', api_key: '', models: '["deepseek-v4-flash","deepseek-v4-pro"]', enabled: 1 },
 		{ id: 'openai', name: 'OpenAI', api_base: 'https://api.openai.com', api_key: '', models: '["gpt-4o","gpt-4o-mini","gpt-4.1","gpt-4.1-mini","gpt-4.1-nano"]', enabled: 0 },
 		{ id: 'anthropic', name: 'Anthropic', api_base: 'https://api.anthropic.com', api_key: '', models: '["claude-sonnet-4-20250514","claude-3-5-sonnet-20241022","claude-3-5-haiku-20241022"]', enabled: 0 },
+		{ id: 'volcengine', name: '豆包(火山引擎)', api_base: 'https://ark.cn-beijing.volces.com/api/v3', api_key: '', models: '["doubao-seed-1-6-250615","doubao-seed-1-6-flash-250615","doubao-seed-1-6-thinking-250615"]', enabled: 0 },
+		{ id: 'xai', name: 'xAI(Grok)', api_base: 'https://api.x.ai', api_key: '', models: '["grok-2","grok-3","grok-3-api"]', enabled: 0 },
 		{ id: 'zai', name: '零一万物', api_base: 'https://api.z.ai/api/coding/paas/v4', api_key: '', models: '["glm-5.2","glm-5.1","glm-5-turbo","glm-4.7","glm-4.5-air"]', enabled: 0 },
 		{ id: 'kimi-coding', name: 'Kimi', api_base: 'https://api.kimi.com/coding', api_key: '', models: '["k2p7","kimi-for-coding","kimi-k2-thinking"]', enabled: 0 },
 		{ id: 'minimax-cn', name: 'MiniMax', api_base: 'https://api.minimaxi.com/anthropic', api_key: '', models: '["MiniMax-M3","MiniMax-M2.7","MiniMax-M2.7-highspeed"]', enabled: 0 },

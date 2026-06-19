@@ -126,7 +126,7 @@
 				this.temperatureStr = settings.temperature + ''
 				this.maxTokensStr = settings.maxTokens + ''
 				this.maxIterationsStr = settings.maxIterations + ''
-				uni.showToast({
+				uni.showToast({ position: 'bottom', 
 					title: '已保存',
 					icon: 'success'
 				})

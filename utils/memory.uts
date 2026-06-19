@@ -83,6 +83,18 @@ export function initMemoryTables(): void {
 		'last_used_at INTEGER NOT NULL DEFAULT 0,' +
 		'use_count INTEGER NOT NULL DEFAULT 0)'
 	)
+	db.run(
+		'CREATE TABLE IF NOT EXISTS agent_memory_manager_logs (' +
+		'id TEXT PRIMARY KEY,' +
+		'agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'conversation_id TEXT NOT NULL DEFAULT \'\',' +
+		'executed_at INTEGER NOT NULL DEFAULT 0,' +
+		'dropped_count INTEGER NOT NULL DEFAULT 0,' +
+		'saved_count INTEGER NOT NULL DEFAULT 0,' +
+		'forgotten_count INTEGER NOT NULL DEFAULT 0,' +
+		'summary TEXT NOT NULL DEFAULT \'\',' +
+		'details TEXT NOT NULL DEFAULT \'\')'
+	)
 	db.close()
 }
 
@@ -536,4 +548,43 @@ export function formatCoreMemoryList(rows: UTSJSONObject[]): string {
 		lines.push((i + 1) + '. id=' + readStringField(rows[i], 'id') + ' [' + readStringField(rows[i], 'scope') + '/' + readStringField(rows[i], 'category') + '] P' + readNumberField(rows[i], 'priority') + ' ' + readStringField(rows[i], 'content'))
 	}
 	return lines.join('\n')
+}
+
+/** 记忆管理整理日志条目 */
+export type MemoryManagerLog = {
+	id: string
+	agentId: string
+	conversationId: string
+	executedAt: number
+	/** 当前传入消息数（自动触发时为完整对话，手动触发时为候选消息数） */
+	messageCount: number
+	savedCount: number
+	forgottenCount: number
+	summary: string
+	details: string
+}
+
+/** 写入一条记忆管理整理日志 */
+export function saveMemoryManagerLog(log: MemoryManagerLog): void {
+	initMemoryTables()
+	const db = getDb()
+	db.run(
+		'INSERT INTO agent_memory_manager_logs (id, agent_id, conversation_id, executed_at, dropped_count, saved_count, forgotten_count, summary, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+		[log.id, log.agentId, log.conversationId, log.executedAt, log.messageCount, log.savedCount, log.forgottenCount, log.summary, log.details]
+	)
+	db.close()
+}
+
+/** 查询记忆管理整理日志列表（按时间倒序，最多 50 条） */
+export function listMemoryManagerLogs(agentId: string, conversationId: string): UTSJSONObject[] {
+	initMemoryTables()
+	const aid = normalizeAgentId(agentId)
+	const cid = normalizeConversationId(conversationId)
+	const db = getDb()
+	const result = db.query(
+		'SELECT * FROM agent_memory_manager_logs WHERE agent_id = ? AND conversation_id = ? ORDER BY executed_at DESC LIMIT 50',
+		[aid, cid]
+	)
+	db.close()
+	return rowsToObjects(result)
 }

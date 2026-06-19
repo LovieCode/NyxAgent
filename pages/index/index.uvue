@@ -17,7 +17,7 @@
 		</NavBar>
 
 		<!-- 消息列表 -->
-		<scroll-view class="message-list" :scroll-y="true" :scroll-top="scrollTop" @scroll="onMsgScroll">
+		<scroll-view class="message-list" :scroll-y="true" :scroll-top="scrollTop" @scroll="onMsgScroll" @touchmove="onMsgTouchMove">
 			<view v-for="(msg, index) in messages" :key="index">
 				<!-- 工具执行记录（toolResult 角色） -->
 				<ToolExecution
@@ -49,6 +49,8 @@
 					:userNickname="userNickname"
 					:userAvatar="userAvatar"
 					:toolName="msg.toolName != null ? msg.toolName : ''"
+					:thinking="msg.thinking != null ? msg.thinking : ''"
+					:hideThinking="hideThinking"
 					:isError="msg.isError == true"
 					:isStreaming="msg.isStreaming == true"
 					:cancelToken="longpressCancelToken"
@@ -65,7 +67,7 @@
 		<view class="chat-bottom">
 			<!-- 输入栏 -->
 			<view class="input-bar">
-				<view class="toolbar-toggle" @click="showToolPanel = !showToolPanel">
+					<view class="toolbar-toggle" @click="toggleToolPanel">
 					<oui-icon-unix name="plus" size="18px" color="#374151" />
 				</view>
 				<view class="input-wrap">
@@ -157,6 +159,10 @@
 				userNickname: '' as string,
 				/** 用户头像路径 */
 				userAvatar: '' as string,
+				/** 是否隐藏思考内容（来自智能体设置） */
+				hideThinking: false as boolean,
+				/** 流式滚动节拍计数器 */
+				_streamScrollTick: 0 as number,
 				/** 滚动位置 */
 				scrollTop: 0,
 				/** 当前对话唯一 ID */
@@ -229,6 +235,8 @@
 					this.currentAgentName = agent['name'] as string
 					const rawAvatar = agent['avatar']
 					this.currentAgentAvatar = rawAvatar != null ? (rawAvatar as string) : ''
+					const rawHideThinking = agent['hideThinking']
+					this.hideThinking = rawHideThinking != null ? (rawHideThinking as boolean) : false
 				}
 			},
 
@@ -243,7 +251,6 @@
 					const msgs = getMessages(convId)
 					if (msgs != null && msgs.length > 0) {
 						this.messages = msgs
-						this.scrollToBottom()
 					}
 				} catch (_e: any) {
 					// 加载失败，开始新对话
@@ -264,7 +271,6 @@
 							const msgs = getMessages(convId)
 							if (msgs != null && msgs.length > 0) {
 								this.messages = msgs
-								this.scrollToBottom()
 							}
 						}
 					}
@@ -509,6 +515,19 @@
 
 			// ===== 工具栏 =====
 
+			/** 切换工具栏面板，打开后滚动到底 */
+			toggleToolPanel() {
+				this.showToolPanel = !this.showToolPanel
+				if (this.showToolPanel == true) {
+					this.scrollToBottom()
+				}
+			},
+
+			/** 滚动时通知 ChatBubble 取消长按 */
+			onMsgTouchMove() {
+				this.longpressCancelToken++
+			},
+
 			/** 从相册选择图片 */
 			pickImage() {
 				this.showToolPanel = false
@@ -581,14 +600,14 @@
 			organizeMemoryFromToolbar() {
 				this.showToolPanel = false
 				if (this.isGenerating == true) {
-					uni.showToast({
+					uni.showToast({ position: 'bottom', 
 						title: '当前任务进行中',
 						icon: 'none'
 					})
 					return
 				}
 				if (this.messages.length == 0) {
-					uni.showToast({
+					uni.showToast({ position: 'bottom', 
 						title: '暂无可整理内容',
 						icon: 'none'
 					})
@@ -609,7 +628,7 @@
 					this.currentAgentId,
 					this.conversationId
 				)
-				uni.showToast({
+				uni.showToast({ position: 'bottom', 
 					title: started == true ? '记忆整理已开始' : '暂无可整理内容',
 					icon: 'none'
 				})
@@ -620,13 +639,13 @@
 				this.showToolPanel = false
 				if (this.isGenerating == true) {
 					this.stopGenerating()
-					uni.showToast({
+					uni.showToast({ position: 'bottom', 
 						title: '已终止',
 						icon: 'none'
 					})
 					return
 				}
-				uni.showToast({
+				uni.showToast({ position: 'bottom', 
 					title: '当前没有运行中的任务',
 					icon: 'none'
 				})
@@ -733,7 +752,7 @@
 			/** 开启新对话 */
 			startNewConversation() {
 				if (this.isGenerating) {
-					uni.showToast({ title: '请等待当前回复完成', icon: 'none' })
+					uni.showToast({ position: 'bottom',  title: '请等待当前回复完成', icon: 'none' })
 					return
 				}
 				// 先保存当前对话
@@ -795,7 +814,17 @@
 			},
 
 			scrollToBottom() {
-				this.scrollTop = this.scrollTop + 9999
+				// 流式生成时使用计数器递增确保每次值不同，非生成时用 toggle 触发滚动
+				if (this.isGenerating == true) {
+					this._streamScrollTick++
+					this.scrollTop = 100000 + this._streamScrollTick
+				} else {
+					this.scrollTop = 0
+					const self = this
+					setTimeout(() => {
+						self.scrollTop = 99999
+					}, 50)
+				}
 			},
 
 			/** 获取当前智能体的系统提示词 */
@@ -820,9 +849,11 @@
 					(this.messages[lastIdx]['isStreaming'] as boolean | null) == true) {
 					const existing = this.messages[lastIdx]
 					const oldContent = existing['content'] as string | null
+					const oldThinking = existing['thinking'] as string | null
 					this.messages.splice(lastIdx, 1, {
 						role: 'assistant',
 						content: (oldContent != null ? oldContent : '') + text,
+						thinking: oldThinking != null ? oldThinking : '',
 						msgType: 'text',
 						isStreaming: true,
 						timestamp: Date.now()
@@ -831,6 +862,7 @@
 					this.messages.push({
 						role: 'assistant',
 						content: text,
+						thinking: '',
 						msgType: 'text',
 						isStreaming: true,
 						timestamp: Date.now()
@@ -846,6 +878,7 @@
 					(this.messages[lastIdx]['isStreaming'] as boolean | null) == true) {
 					const existing = this.messages[lastIdx]
 					const oldContent = existing['content'] as string | null
+					const oldThinking = existing['thinking'] as string | null
 					let finalContent = oldContent != null ? oldContent : ''
 					if (finalContent == '' && response != '') {
 						finalContent = response
@@ -853,6 +886,7 @@
 					this.messages.splice(lastIdx, 1, {
 						role: 'assistant',
 						content: finalContent,
+						thinking: oldThinking != null ? oldThinking : '',
 						msgType: 'text',
 						isStreaming: false,
 						timestamp: Date.now()
@@ -861,12 +895,51 @@
 					this.messages.push({
 						role: 'assistant',
 						content: response,
+						thinking: '',
 						msgType: 'text',
 						isStreaming: false,
 						timestamp: Date.now()
 					} as UTSJSONObject)
 				}
 				this.scrollToBottom()
+			},
+
+			/** 追加思考增量内容到最后一条流式 assistant */
+			appendThinkingDelta(text: string) {
+				if (text == '') return
+				const lastIdx = this.messages.length - 1
+				if (lastIdx >= 0 && (this.messages[lastIdx]['role'] as string) == 'assistant' &&
+					(this.messages[lastIdx]['isStreaming'] as boolean | null) == true) {
+					const existing = this.messages[lastIdx]
+					const oldThinking = existing['thinking'] as string | null
+					const oldContent = existing['content'] as string | null
+					this.messages.splice(lastIdx, 1, {
+						role: 'assistant',
+						content: oldContent != null ? oldContent : '',
+						thinking: (oldThinking != null ? oldThinking : '') + text,
+						msgType: 'text',
+						isStreaming: true,
+						timestamp: Date.now()
+					} as UTSJSONObject)
+				}
+			},
+
+			/** 结束思考内容追加 */
+			finishAssistantThinking(text: string) {
+				const lastIdx = this.messages.length - 1
+				if (lastIdx >= 0 && (this.messages[lastIdx]['role'] as string) == 'assistant' &&
+					(this.messages[lastIdx]['isStreaming'] as boolean | null) == true) {
+					const existing = this.messages[lastIdx]
+					const oldContent = existing['content'] as string | null
+					this.messages.splice(lastIdx, 1, {
+						role: 'assistant',
+						content: oldContent != null ? oldContent : '',
+						thinking: text,
+						msgType: 'text',
+						isStreaming: true,
+						timestamp: Date.now()
+					} as UTSJSONObject)
+				}
 			},
 
 			/** 插入 assistant 工具调用上下文消息 */
@@ -953,6 +1026,10 @@
 					this.appendAssistantDelta(event.text != null ? (event.text as string) : '')
 				} else if (event.type == 'text_end') {
 					this.finishAssistantMessage(event.fullText != null ? (event.fullText as string) : '')
+				} else if (event.type == 'thinking_delta') {
+					this.appendThinkingDelta(event.thinkingText != null ? (event.thinkingText as string) : '')
+				} else if (event.type == 'thinking_end') {
+					this.finishAssistantThinking(event.fullThinking != null ? (event.fullThinking as string) : '')
 				} else if (event.type == 'tool_call') {
 					this.addToolCallMessage(event.fullText != null ? (event.fullText as string) : '', event.toolCalls != null ? (event.toolCalls as UTSJSONObject[]) : null)
 				} else if (event.type == 'tool_execution_start') {
@@ -971,7 +1048,7 @@
 				} else if (event.type == 'error') {
 					this.finishAssistantMessage(event.error != null ? (event.error as string) : '请求失败')
 				} else if (event.type == 'memory_organize_start') {
-					uni.showToast({
+					uni.showToast({ position: 'bottom', 
 						title: event.message != null ? (event.message as string) : '记忆整理已开始',
 						icon: 'none'
 					})
@@ -984,6 +1061,7 @@
 
 			simulateAIResponse(_userText: string) {
 				this.isGenerating = true
+				this._streamScrollTick = 0
 
 				// 读取当前智能体的系统提示词和模型
 				let systemPrompt = ''
@@ -1065,6 +1143,7 @@
 
 	/* 底部区域（工具栏面板 + 输入栏） */
 	.chat-bottom {
+		flex-shrink: 0;
 		background-color: var(--rice-background-2);
 		border-top-width: 1px;
 		border-top-color: var(--rice-border-color);

@@ -575,7 +575,7 @@
 					this.scrollRequestSeq = this.scrollRequestSeq + 1
 					this.showFloatingSearchBar = false
 					this.floatingMetaText = ''
-					uni.showToast({
+					uni.showToast({ position: 'bottom', 
 						title: '没有匹配内容',
 						icon: 'none'
 					})
@@ -852,7 +852,7 @@
 
 			copyAll() {
 				if (this.previewText == '') {
-					uni.showToast({
+					uni.showToast({ position: 'bottom', 
 						title: '没有可复制内容',
 						icon: 'none'
 					})
@@ -861,7 +861,7 @@
 				uni.setClipboardData({
 					data: this.previewText,
 					success: () => {
-						uni.showToast({
+						uni.showToast({ position: 'bottom', 
 							title: '已复制',
 							icon: 'none'
 						})

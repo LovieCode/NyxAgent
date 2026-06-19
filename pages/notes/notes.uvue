@@ -142,7 +142,7 @@
 				}
 				let content = this.editingContent.trim()
 				if (content == '') {
-					uni.showToast({
+					uni.showToast({ position: 'bottom', 
 						title: '请输入内容',
 						icon: 'none'
 					})
@@ -170,7 +170,7 @@
 				}
 				this.saveNotes()
 				this.isEditing = false
-				uni.showToast({
+				uni.showToast({ position: 'bottom', 
 					title: '已保存',
 					icon: 'success'
 				})
@@ -197,7 +197,7 @@
 				}
 				this.notes = newNotes
 				this.saveNotes()
-				uni.showToast({
+				uni.showToast({ position: 'bottom', 
 					title: '已删除',
 					icon: 'success'
 				})

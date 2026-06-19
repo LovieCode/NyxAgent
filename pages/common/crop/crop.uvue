@@ -178,7 +178,7 @@
 	function doCrop() {
 		const target = uni.getElementById('cropArea') as UniElement | null
 		if (target == null) {
-			uni.showToast({ title: '裁剪失败', icon: 'none' })
+			uni.showToast({ position: 'bottom',  title: '裁剪失败', icon: 'none' })
 			return
 		}
 		uni.showLoading({ title: '裁剪中...' })
@@ -195,7 +195,7 @@
 			},
 			fail: () => {
 				uni.hideLoading()
-				uni.showToast({ title: '裁剪失败', icon: 'none' })
+				uni.showToast({ position: 'bottom',  title: '裁剪失败', icon: 'none' })
 			}
 		})
 	}
