@@ -490,14 +490,14 @@ function processSSELine(
 	if (data == '[DONE]') return
 		try {
 			const json = JSON.parse(data) as UTSJSONObject
+			// 提取 usage（OpenAI 流式最后一个 chunk 中 usage 和 choices 同时存在）
+			const usage = json['usage'] as UTSJSONObject | null
+			if (usage != null) {
+				console.log('[LLM] 流式 usage: ' + JSON.stringify(usage))
+				saveLastTokenUsage(usage)
+			}
 			const choices = json['choices'] as UTSJSONObject[]
 			if (choices == null || choices.length == 0) {
-				// 最后一块可能带 usage
-				const usage = json['usage'] as UTSJSONObject | null
-				console.log('[LLM] 流式最后块 usage: ' + (usage != null ? JSON.stringify(usage) : 'null'))
-				if (usage != null) {
-					saveLastTokenUsage(usage)
-				}
 				return
 			}
 		const choice = choices[0]
