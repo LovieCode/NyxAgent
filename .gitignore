@@ -1,23 +1,26 @@
 # Dependencies
 node_modules/
-unpackage/
 
-# IDE
+# Build output
+unpackage/
+dist/
+*.log
+*.tmp
+*.temp
+*.bak
+
+# IDE / local project config
 .idea/
 *.iml
 .vscode/
 .hbuilderx/
 
+# Local agent / AI tool workspace
+.omo/
+.codex/
+.agents/
+.trae/
+
 # OS
 .DS_Store
 Thumbs.db
-
-# OpenCode workspace
-.omo/
-
-# Build
-*.log
-*.tmp
-*.temp
-*.bak
-dist/
