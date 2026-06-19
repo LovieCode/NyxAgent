@@ -25,6 +25,7 @@ import {
 		type MemoryCoreInput,
 	} from '@/utils/memory.uts'
 import { getProviderApiConfig } from '@/utils/provider.uts'
+import { listKnowledgeWorkspacePaths, readKnowledgeWorkspaceFile, writeKnowledgeWorkspaceFile, buildKnowledgeWorkspaceGuide } from '@/utils/knowledge-workspace.uts'
 
 /** ToolResult 匹配 agent-core types */
 export type ToolResult = {
@@ -58,6 +59,9 @@ export function createAgentTools(agentId: string, conversationId: string = '', p
 		new SandboxFileWriteTool(agentId) as AgentTool,
 		new SandboxFileDeleteTool(agentId) as AgentTool,
 		new SandboxFileListTool(agentId) as AgentTool,
+		new KnowledgeFolderListTool(agentId) as AgentTool,
+		new KnowledgeFolderReadTool(agentId) as AgentTool,
+		new KnowledgeFolderWriteTool(agentId) as AgentTool,
 		new MemorySearchTool(agentId, conversationId, personId) as AgentTool,
 		new MemoryBufferWriteTool(agentId, conversationId, personId) as AgentTool,
 		new WebSearchTool() as AgentTool,
@@ -291,6 +295,141 @@ class SandboxFileListTool implements AgentTool {
 				lines.push(formatAgentFileListLine(files[i], detail))
 			}
 			resolve({ content: lines.join('\n'), isError: false } as ToolResult)
+		})
+	}
+}
+
+
+/**
+ * 知识文件夹列表工具
+ * 只能访问 user/default 与当前 Agent 自己的 agents/<agentId>。
+ */
+class KnowledgeFolderListTool implements AgentTool {
+	name: string = 'knowledge_list'
+	description: string = '列出待办/笔记知识文件夹。只允许访问 user/default 与当前 Agent 自己的 agents/<agentId>。路径为空时返回根目录和格式规则。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'path': {
+				'type': 'string',
+				'description': '要列出的路径，例如 user/default、user/default/notes、agents/<agentId>、agents/<agentId>/notes；为空则列出根目录'
+			}
+		},
+		'required': [] as string[]
+	} as UTSJSONObject
+
+	private agentId: string
+
+	constructor(agentId: string) {
+		this.agentId = agentId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawPath = args['path'] as string | null
+			const path = rawPath != null ? rawPath : ''
+			const result = listKnowledgeWorkspacePaths(this.agentId, path)
+			resolve({ content: result, isError: false } as ToolResult)
+		})
+	}
+}
+
+/**
+ * 知识文件夹读取工具
+ */
+class KnowledgeFolderReadTool implements AgentTool {
+	name: string = 'knowledge_read'
+	description: string = '读取待办/笔记知识文件。支持 user/default/todo.md、user/default/notes/<id>.md、agents/<agentId>/todo.md、agents/<agentId>/notes/<id>.md。返回 Markdown，笔记中可包含 - [ ] / - [x] 待办。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'path': {
+				'type': 'string',
+				'description': '要读取的知识文件路径'
+			},
+			'include_guide': {
+				'type': 'boolean',
+				'description': '是否在结果后追加渲染/格式规则，默认 false'
+			}
+		},
+		'required': ['path']
+	} as UTSJSONObject
+
+	private agentId: string
+
+	constructor(agentId: string) {
+		this.agentId = agentId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawPath = args['path'] as string | null
+			const includeGuide = args['include_guide'] as boolean | null
+			const path = rawPath != null ? rawPath : ''
+			if (path == '') {
+				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
+				return
+			}
+			const content = readKnowledgeWorkspaceFile(this.agentId, path)
+			if (content == null) {
+				resolve({ content: '知识文件不存在或无权限访问: ' + path, isError: true } as ToolResult)
+				return
+			}
+			let finalContent = content
+			if (includeGuide == true) {
+				finalContent = finalContent + '\n\n---\n' + buildKnowledgeWorkspaceGuide(this.agentId)
+			}
+			resolve({ content: finalContent, isError: false } as ToolResult)
+		})
+	}
+}
+
+/**
+ * 知识文件夹写入工具
+ */
+class KnowledgeFolderWriteTool implements AgentTool {
+	name: string = 'knowledge_write'
+	description: string = '写入待办/笔记知识文件。只能写 user/default 或当前 Agent 自己的知识文件夹。todo.md 使用 - [ ] / - [x] 行解析；notes/<id>.md 保存为 Markdown 笔记。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'path': {
+				'type': 'string',
+				'description': '要写入的路径，例如 user/default/todo.md 或 agents/<agentId>/notes/plan.md'
+			},
+			'content': {
+				'type': 'string',
+				'description': 'Markdown 内容'
+			}
+		},
+		'required': ['path', 'content']
+	} as UTSJSONObject
+
+	private agentId: string
+
+	constructor(agentId: string) {
+		this.agentId = agentId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawPath = args['path'] as string | null
+			const rawContent = args['content'] as string | null
+			const path = rawPath != null ? rawPath : ''
+			const content = rawContent != null ? rawContent : ''
+			if (path == '') {
+				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
+				return
+			}
+			if (rawContent == null) {
+				resolve({ content: '缺少必要参数: content', isError: true } as ToolResult)
+				return
+			}
+			const ok = writeKnowledgeWorkspaceFile(this.agentId, path, content)
+			resolve({
+				content: ok ? '知识文件已写入: ' + path : '知识文件写入失败或无权限: ' + path,
+				isError: !ok
+			} as ToolResult)
 		})
 	}
 }

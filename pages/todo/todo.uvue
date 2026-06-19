@@ -103,6 +103,8 @@
 </template>
 
 <script lang="uts">
+	import { getWorkspaceTodos, saveWorkspaceTodos } from '@/utils/knowledge-workspace.uts'
+
 	/**
 	 * Todo 页面 - 任务管理界面
 	 * 扁平化粉白主题，使用 rice-ui 组件
@@ -157,20 +159,11 @@
 		},
 		methods: {
 			loadTodos() {
-				let stored = uni.getStorageSync('todo_list') as string
-				if (stored != null && stored != '') {
-					try {
-						this.todos = JSON.parse(stored) as UTSJSONObject[]
-					} catch (e) {
-						this.todos = [] as UTSJSONObject[]
-					}
-				} else {
-					this.todos = [] as UTSJSONObject[]
-				}
+				this.todos = getWorkspaceTodos('user', 'default')
 			},
 
 			saveTodos() {
-				uni.setStorageSync('todo_list', JSON.stringify(this.todos))
+				saveWorkspaceTodos('user', 'default', this.todos)
 			},
 
 			setFilter(f : string) {

@@ -7,6 +7,7 @@ import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport,
 import { getAllDefaultTaskModels } from '@/utils/provider.uts'
 import { getAgents } from '@/utils/agent.uts'
 import { getSkills } from '@/utils/skills.uts'
+import { getKnowledgeWorkspaceRecords, getWorkspaceTodos, getWorkspaceNotes, buildTodoMarkdown, buildNoteMarkdown, KNOWLEDGE_WORKSPACE_KEY, KNOWLEDGE_MIGRATED_KEY } from '@/utils/knowledge-workspace.uts'
 import { getAgentStoragePath, listAgentFiles } from '@/utils/agent-fs.uts'
 import { writeExportZipFile, shareExportFile, getLastShareExportError } from '@/utssdk/app-data-export/index.uts'
 
@@ -42,6 +43,9 @@ function appendUniqueKey(keys: string[], key: string): void {
 	if (key == '') {
 		return
 	}
+	if (key == KNOWLEDGE_WORKSPACE_KEY) {
+		return
+	}
 	for (let i = 0; i < keys.length; i++) {
 		if (keys[i] == key) {
 			return
@@ -71,6 +75,7 @@ function buildKnownStorageKeys(): string[] {
 		'settings_generation_max_iterations',
 		'settings_generation_stream_enabled',
 		'skills_list',
+		KNOWLEDGE_MIGRATED_KEY,
 		'settings_memory_enabled',
 		'memory_agent_id',
 		'memory_conversation_id',
@@ -218,6 +223,25 @@ function appendDirectorySpec(specs: UTSJSONObject[], zipPath: string): void {
 	appendZipSpec(specs, '', zipPath, 'directory')
 }
 
+function appendTextSpec(specs: UTSJSONObject[], zipPath: string, content: string): void {
+	if (zipPath == '') {
+		return
+	}
+	for (let i = 0; i < specs.length; i++) {
+		const oldZipPath = specs[i]['zipPath'] as string | null
+		const oldKind = specs[i]['kind'] as string | null
+		if (oldZipPath == zipPath && oldKind == 'text') {
+			return
+		}
+	}
+	specs.push({
+		kind: 'text',
+		sourcePath: '',
+		zipPath: zipPath,
+		content: content,
+	} as UTSJSONObject)
+}
+
 function appendAsset(assets: UTSJSONObject[], specs: UTSJSONObject[], kind: string, sourcePath: string, zipPath: string, ref: string): void {
 	if (!isLocalExportPath(sourcePath)) {
 		return
@@ -356,6 +380,52 @@ function collectAgentFiles(agents: UTSJSONObject[], specs: UTSJSONObject[]): UTS
 	return result
 }
 
+function appendKnowledgeOwnerFiles(specs: UTSJSONObject[], ownerType: string, ownerId: string, rootZipPath: string): void {
+	appendDirectorySpec(specs, rootZipPath + '/')
+	appendDirectorySpec(specs, rootZipPath + '/notes/')
+	const todos = getWorkspaceTodos(ownerType, ownerId)
+	appendTextSpec(specs, rootZipPath + '/todo.md', buildTodoMarkdown(ownerType, ownerId, todos))
+	const notes = getWorkspaceNotes(ownerType, ownerId)
+	for (let i = 0; i < notes.length; i++) {
+		const note = notes[i]
+		const noteId = note['id'] as string | null
+		if (noteId != null && noteId != '') {
+			appendTextSpec(specs, rootZipPath + '/notes/' + sanitizeZipSegment(noteId) + '.md', buildNoteMarkdown(ownerType, ownerId, note))
+		}
+	}
+}
+
+function appendKnowledgeWorkspaceFiles(agents: UTSJSONObject[], specs: UTSJSONObject[]): void {
+	appendDirectorySpec(specs, 'knowledge-workspace/')
+	appendKnowledgeOwnerFiles(specs, 'user', 'default', 'knowledge-workspace/user/default')
+	for (let i = 0; i < agents.length; i++) {
+		const rawId = agents[i]['id'] as string | null
+		if (rawId != null && rawId != '') {
+			appendKnowledgeOwnerFiles(specs, 'agent', rawId, 'knowledge-workspace/agents/' + sanitizeZipSegment(rawId))
+		}
+	}
+}
+
+function stripFileSpecContent(specs: UTSJSONObject[]): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < specs.length; i++) {
+		const item = specs[i]
+		const kind = item['kind'] as string | null
+		const sourcePath = item['sourcePath'] as string | null
+		const zipPath = item['zipPath'] as string | null
+		const clean: UTSJSONObject = {
+			kind: kind != null ? kind : 'file',
+			sourcePath: sourcePath != null ? sourcePath : '',
+			zipPath: zipPath != null ? zipPath : '',
+		} as UTSJSONObject
+		if (kind == 'text') {
+			clean['generated'] = true
+		}
+		result.push(clean)
+	}
+	return result
+}
+
 function buildFileName(exportedAt: string): string {
 	return 'agent-full-export-' + sanitizeFilePart(exportedAt) + '.zip'
 }
@@ -370,15 +440,17 @@ export function buildAllDataExport(): UTSJSONObject {
 	const messages = getAllMessagesForExport()
 	const memoryBuffers = getAllMemoryBuffersForExport()
 	const memoryCore = getAllMemoryCoreForExport()
+	const knowledgeWorkspace = getKnowledgeWorkspaceRecords()
 	const storageKeys = collectStorageKeys()
 	const storage = collectKnownStorageByKeys(storageKeys)
-	const notes = parseStorageArray('notes_list')
-	const todos = parseStorageArray('todo_list')
 	const agents = getAgents()
 	const skills = getSkills()
 	const fileSpecs: UTSJSONObject[] = []
 	const databaseFile = appendDatabaseFile(fileSpecs)
 	const agentFiles = collectAgentFiles(agents, fileSpecs)
+	appendKnowledgeWorkspaceFiles(agents, fileSpecs)
+	const notes = parseStorageArray('notes_list')
+	const todos = parseStorageArray('todo_list')
 	const assets = collectAssets(storage, agents, messages, fileSpecs)
 	return {
 		schemaVersion: EXPORT_SCHEMA_VERSION,
@@ -397,6 +469,7 @@ export function buildAllDataExport(): UTSJSONObject {
 			defaultTaskModels: getAllDefaultTaskModels(),
 			agents: agents,
 			skills: skills,
+			knowledgeWorkspace: knowledgeWorkspace,
 			agentFiles: agentFiles,
 			assets: assets,
 			conversations: conversations,
@@ -417,9 +490,12 @@ export function exportAllDataToFile(): string {
 	const exportedAt = new Date().toISOString()
 	const payload = buildAllDataExport()
 	payload['exportedAt'] = exportedAt
-	const json = JSON.stringify(payload)
 	const files = payload['files'] as UTSJSONObject[] | null
 	const filesJson = files != null ? JSON.stringify(files) : '[]'
+	if (files != null) {
+		payload['files'] = stripFileSpecContent(files)
+	}
+	const json = JSON.stringify(payload)
 	const fileName = buildFileName(exportedAt)
 	return writeExportZipFile(fileName, json, filesJson)
 }
@@ -428,7 +504,12 @@ export function exportAllDataToFile(): string {
  * 剪贴板兜底：文件系统不可用时使用。
  */
 export function exportAllDataToJson(): string {
-	return JSON.stringify(buildAllDataExport())
+	const payload = buildAllDataExport()
+	const files = payload['files'] as UTSJSONObject[] | null
+	if (files != null) {
+		payload['files'] = stripFileSpecContent(files)
+	}
+	return JSON.stringify(payload)
 }
 
 /** 分享已导出的 ZIP 文件。 */
