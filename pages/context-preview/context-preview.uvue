@@ -317,9 +317,6 @@
 				if (this.bufferInjection != '') {
 					ids.push('section-buffer-memory')
 				}
-				ids.push('section-messages')
-				ids.push('section-tools')
-				ids.push('section-request')
 				ids.push('section-full-json')
 				const query = uni.createSelectorQuery().in(this)
 				for (let i = 0; i < ids.length; i++) {
@@ -728,7 +725,14 @@
 					this.commitScrollTop(this.scrollContentHeight > 0 ? this.scrollContentHeight : 99999)
 					return
 				}
+				// 缓存未命中：触发重新测量，延迟重试
 				this.scheduleLayoutCache()
+				setTimeout(() => {
+					const retryTop = this.layoutTopMap[id] as number | null
+					if (retryTop != null) {
+						this.commitScrollTop(retryTop + offsetTop - 24)
+					}
+				}, 320)
 			},
 
 			scrollToSection(id: string): void {
