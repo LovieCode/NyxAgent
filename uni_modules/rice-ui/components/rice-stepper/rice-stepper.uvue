@@ -45,7 +45,7 @@
 		showPlus: true,
 		showInput: true,
 		autoFixed: true,
-		fontSize: '14px',
+		fontSize: '28rpx',
 		min: -Infinity,
 		max: Infinity,
 		decimalLength: 0,
@@ -362,8 +362,8 @@
 </script>
 
 <style scoped lang="scss">
-	$size: 30px;
-	$radius: 4px;
+	$size: 60rpx;
+	$radius: 8rpx;
 
 	@mixin disabled() {
 		opacity: .6;
@@ -373,8 +373,8 @@
 	}
 
 	@mixin btnRound() {
-		border-radius: 999px;
-		border: 1px solid var(--rice-primary-color);
+		border-radius: 1998rpx;
+		border: 2rpx solid var(--rice-primary-color);
 	}
 
 	.rice-stepper {
@@ -383,9 +383,9 @@
 		&__input {
 			box-sizing: border-box;
 			text-align: center;
-			margin: 0 2px;
+			margin: 0 4rpx;
 			height: $size;
-			width: 36px;
+			width: 72rpx;
 			/* #ifdef VUE3-VAPOR */
 			color: #323233; //鸿蒙蒸汽模式input的color不支持css变量
 			/* #endif */
@@ -399,12 +399,12 @@
 			}
 
 			&--outline {
-				margin: 0px;
-				border-top: 1px solid var(--rice-stepper-background);
-				border-bottom: 1px solid var(--rice-stepper-background);
+				margin: 0rpx;
+				border-top: 2rpx solid var(--rice-stepper-background);
+				border-bottom: 2rpx solid var(--rice-stepper-background);
 				/* #ifdef APP-IOS */
-				border-left: 0px solid transparent;
-				border-right: 0px solid transparent;
+				border-left: 0rpx solid transparent;
+				border-right: 0rpx solid transparent;
 				/* #endif */
 				background-color: transparent;
 			}
@@ -432,7 +432,7 @@
 			}
 
 			&--outline {
-				border: 1px solid var(--rice-stepper-background);
+				border: 2rpx solid var(--rice-stepper-background);
 				background-color: transparent;
 			}
 		}
@@ -459,7 +459,7 @@
 
 		&--outline {
 			border-radius: $radius;
-			// border: 1px solid var(--rice-stepper-background);
+			// border: 2rpx solid var(--rice-stepper-background);
 		}
 
 		&--disabled {

@@ -13,9 +13,9 @@
 			:hold-keyboard="holdKeyboard" :class="inputInnerClass" :style="[customInputStyle,iputStyle]" @input="onInput"
 			@focus="onFocus" @blur="onBlur" @keyboardheightchange="onKeyboardheightchange" @change="onChange"
 			@confirm="onConfirm" @nicknamereview="onNicknamereview" />
-		<rice-icon v-if="isShowPassword" :name="showPasswordValue?'eyes':'eyes-close'" size="17px" :custom-style="iconStyle"
+		<rice-icon v-if="isShowPassword" :name="showPasswordValue?'eyes':'eyes-close'" size="34rpx" :custom-style="iconStyle"
 			@click="changeShowPassword" />
-		<rice-icon v-if="isShowClearable" :name="clearIcon" size="17px" :custom-style="iconStyle" @click="onClear" />
+		<rice-icon v-if="isShowClearable" :name="clearIcon" size="34rpx" :custom-style="iconStyle" @click="onClear" />
 		<view v-if="$slots['suffix']!=null||suffixIcon!=null" class="rice-input__suffix">
 			<slot name="suffix">
 				<rice-icon :name="suffixIcon" :size="iconSize" :color="iconColor" @click="clickRightIcon" />
@@ -70,7 +70,7 @@
 		shape: 'square',
 		clearable: false,
 		showPassword: true,
-		iconSize: '16px',
+		iconSize: '32rpx',
 		clearTrigger: 'focus',
 		clearIcon: 'clear',
 		showPasswordTrigger: 'focus',
@@ -176,7 +176,7 @@
 
 	const iconStyle = computed(() => {
 		return {
-			paddingLeft: '6px',
+			paddingLeft: '12rpx',
 			opacity: isDisabled.value ? 0.4 : 1
 		}
 	})
@@ -223,7 +223,7 @@
 
 	const _placeholderStyle = computed(() => {
 		let baseColor = isDark.value ? '#4d4d4d' : '#c8c9cc'
-		let css = `color:${baseColor};font-size:${addUnit(props.fontSize ?? '15px')};`
+		let css = `color:${baseColor};font-size:${addUnit(props.fontSize ?? '30rpx')};`
 		return css + (props.placeholderStyle ?? "")
 	})
 
@@ -241,21 +241,21 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		height: 42px;
-		padding: 0 10px;
+		height: 84rpx;
+		padding: 0 20rpx;
 
 		&__prefix {
-			padding-right: 10px;
+			padding-right: 20rpx;
 		}
 
 		&__suffix {
-			padding-left: 10px;
+			padding-left: 20rpx;
 		}
 
 		&__input {
 			flex: 1;
 			text-align: left;
-			font-size: 15px;
+			font-size: 30rpx;
 			height: 100%;
 
 			/* #ifndef VUE3-VAPOR */
@@ -308,12 +308,12 @@
 		/* #endif */
 
 		&--surround {
-			border-radius: 4px;
-			border: 1px solid var(--rice-input-border-color);
+			border-radius: 8rpx;
+			border: 2rpx solid var(--rice-input-border-color);
 		}
 
 		&--bottom {
-			border-bottom: 1px solid var(--rice-input-border-color);
+			border-bottom: 2rpx solid var(--rice-input-border-color);
 			padding-left: 0;
 			padding-right: 0;
 		}
@@ -328,7 +328,7 @@
 		}
 
 		&--round {
-			border-radius: 100px;
+			border-radius: 200rpx;
 		}
 
 		&--disabled {

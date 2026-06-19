@@ -16,7 +16,7 @@
 			<slot v-if="$slots['rightIcon']!=null||hasStrValue(rightIcon)" name="rightIcon">
 				<rice-icon :name="rightIcon" :size="rightIconSize" :color="rightIconColor" @click="clickRightIcon" />
 			</slot>
-			<rice-icon v-if="isShowClearable" :name="clearIcon" size="17px" :custom-style="clearIconStyle" @click="onClear" />
+			<rice-icon v-if="isShowClearable" :name="clearIcon" size="34rpx" :custom-style="clearIconStyle" @click="onClear" />
 		</view>
 		<slot v-if="showAction" name="action">
 			<text class="rice-search__action" :style="actionStyle" @click="clickAction">{{actionText}}</text>
@@ -60,8 +60,8 @@
 		clearable: true,
 		clearTrigger: 'focus',
 		clearIcon: 'clear',
-		leftIconSize: '16px',
-		rightIconSize: '16px',
+		leftIconSize: '32rpx',
+		rightIconSize: '32rpx',
 		showAction: false,
 		actionText: '搜索',
 		inputAlign: 'left',
@@ -173,13 +173,13 @@
 
 	const _placeholderStyle = computed(() => {
 		let baseColor = isDark.value ? '#4d4d4d' : '#c8c9cc'
-		let css = `color:${baseColor};font-size:${addUnit(props.fontSize ?? '15px')};`
+		let css = `color:${baseColor};font-size:${addUnit(props.fontSize ?? '30rpx')};`
 		return css + (props.placeholderStyle ?? "")
 	})
 
 	const clearIconStyle = computed(() => {
 		return {
-			paddingLeft: '6px',
+			paddingLeft: '12rpx',
 		}
 	})
 
@@ -211,11 +211,11 @@
 		flex-direction: row;
 		align-items: center;
 		background-color: var(--rice-search-background);
-		padding: 10px 12px;
+		padding: 20rpx 24rpx;
 
 		&__label {
-			padding-right: 5px;
-			font-size: 14px;
+			padding-right: 10rpx;
+			font-size: 28rpx;
 			color: var(--rice-text-color);
 		}
 
@@ -224,14 +224,14 @@
 			flex-direction: row;
 			align-items: center;
 			background-color: var(--rice-search-input-background);
-			height: 36px;
-			padding: 0 10px;
-			border-radius: 4px;
+			height: 72rpx;
+			padding: 0 20rpx;
+			border-radius: 8rpx;
 
 			&__input {
 				flex: 1;
-				padding: 0 8px;
-				font-size: 15px;
+				padding: 0 16rpx;
+				font-size: 30rpx;
 				height: 100%;
 				text-align: left;
 
@@ -258,14 +258,14 @@
 			}
 
 			&--round {
-				border-radius: 999px;
+				border-radius: 1998rpx;
 			}
 		}
 
 
 		&__action {
-			padding-left: 10px;
-			font-size: 14px;
+			padding-left: 20rpx;
+			font-size: 28rpx;
 			color: var(--rice-text-color);
 		}
 

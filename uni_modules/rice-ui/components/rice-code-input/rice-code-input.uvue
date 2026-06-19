@@ -37,7 +37,7 @@
 		dot: false,
 		mode: 'box',
 		showCursor: true,
-		space: '10px',
+		space: '20rpx',
 		focus: false,
 		disabledKeyboard: false,
 		adjustPosition: true,
@@ -164,19 +164,19 @@
 		const css = new Map<string, string>()
 		const space = getPxNum(props.space)
 		if (index == props.maxlength - 1) {
-			css.set('margin-right', '0px')
+			css.set('margin-right', '0rpx')
 		} else {
 			css.set('margin-right', addUnit(props.space)!)
 		}
 		//边距为0，设置第一个盒子和最后一个盒子的圆角就行
 		if (space == 0) {
 			if (index == 0 && props.mode != 'line') {
-				css.set('border-top-left-radius', '4px')
-				css.set('border-bottom-left-radius', '4px')
+				css.set('border-top-left-radius', '8rpx')
+				css.set('border-bottom-left-radius', '8rpx')
 			}
 			if (index == props.maxlength - 1 && props.mode != 'line') {
-				css.set('border-top-right-radius', '4px')
-				css.set('border-bottom-right-radius', '4px')
+				css.set('border-top-right-radius', '8rpx')
+				css.set('border-bottom-right-radius', '8rpx')
 			}
 			if (index != props.maxlength - 1) {
 				css.set('borderRight', 'none')
@@ -231,27 +231,27 @@
 			align-items: center;
 			justify-content: center;
 			background-color: var(--rice-code-input-background);
-			height: 42px;
-			width: 42px;
-			border: 1px solid var(--rice-code-input-background);
+			height: 84rpx;
+			width: 84rpx;
+			border: 2rpx solid var(--rice-code-input-background);
 
 			&__text {
-				font-size: 16px;
+				font-size: 32rpx;
 				color: var(--rice-text-color);
 			}
 
 			&__dot {
-				height: 10px;
-				width: 10px;
-				border-radius: 100px;
+				height: 20rpx;
+				width: 20rpx;
+				border-radius: 200rpx;
 				background-color: var(--rice-text-color);
 			}
 
 			&__line {
 				position: absolute;
 				background-color: var(--rice-primary-color);
-				width: 1px;
-				height: 15px;
+				width: 2rpx;
+				height: 30rpx;
 				top: 50%;
 				left: 50%;
 				transform: translate(-50%, -50%);
@@ -261,14 +261,14 @@
 			}
 
 			&--radius {
-				border-radius: 4px;
+				border-radius: 8rpx;
 			}
 
 			&--line {
 				background-color: transparent;
 				border-style: none;
-				border-bottom: 2px solid var(--rice-code-input-background);
-				border-radius: 0px;
+				border-bottom: 4rpx solid var(--rice-code-input-background);
+				border-radius: 0rpx;
 			}
 
 
@@ -283,7 +283,7 @@
 			left: -750rpx;
 			//#endif
 			//#ifdef VUE3-VAPOR
-			left: -100px;
+			left: -200rpx;
 			font-size: 0;
 			//#endif
 			right: 0;

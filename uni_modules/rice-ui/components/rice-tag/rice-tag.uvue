@@ -3,12 +3,12 @@
 		@transitionend="onTransitionend">
 		<slot>
 			<rice-icon v-if="hasStrValue(icon)" :name="icon" :color="iconColor" :size="`${iconSize}px`"
-				:custom-style="{marginRight:'2px'}" />
+				:custom-style="{marginRight:'4rpx'}" />
 			<text :class="textClass" :style="textStyle">{{text}}</text>
 		</slot>
 
 		<view v-if="closeable" @click.stop="handleClose">
-			<rice-icon name="cross" :color="iconColor" :size="`${iconSize-2}px`" :custom-style="{marginLeft:'4px'}" />
+			<rice-icon name="cross" :color="iconColor" :size="`${iconSize-2}px`" :custom-style="{marginLeft:'8rpx'}" />
 		</view>
 
 	</view>
@@ -170,13 +170,13 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: center;
-		padding: 0 10px;
-		height: 26px;
+		padding: 0 20rpx;
+		height: 52rpx;
 		box-sizing: border-box;
 		transition-property: opacity;
 		transition-duration: .3s;
 		opacity: 1;
-		border: 1px solid var(--rice-tag-default-border);
+		border: 2rpx solid var(--rice-tag-default-border);
 
 		/* #ifndef APP */
 		color: var(--rice-text-color);
@@ -191,15 +191,15 @@
 			/* #ifdef APP */
 			color: var(--rice-text-color);
 			/* #endif */
-			font-size: 14px;
+			font-size: 28rpx;
 		}
 
 		&--round {
-			border-radius: 4px;
+			border-radius: 8rpx;
 		}
 
 		&--mark {
-			border-radius: 0 100px 100px 0;
+			border-radius: 0 200rpx 200rpx 0;
 		}
 
 

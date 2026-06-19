@@ -58,7 +58,7 @@
 	const isDisabled = computed<boolean>(() => (formDisabled?.value ?? false) || props.disabled || (radioGroup?.disabled.value ?? false))
 	const isReadonly = computed<boolean>(() => (formReadonly?.value ?? false) || props.readonly || (radioGroup?.readonly.value ?? false))
 	const _iconPosition = computed(() => props.iconPosition ?? radioGroup?.iconPosition.value ?? defIconPosition)
-	const _iconSize = computed(() => props.iconSize ?? radioGroup?.iconSize.value ?? '20px')
+	const _iconSize = computed(() => props.iconSize ?? radioGroup?.iconSize.value ?? '40rpx')
 
 	const handleClick = (e : UniPointerEvent) => {
 		e.stopPropagation()
@@ -85,11 +85,11 @@
 		if (hasStrValue(checkedColor)) {
 			if (isChecked.value) {
 				css.set('background-color', checkedColor!)
-				css.set('border', `1px solid ${checkedColor!}`)
+				css.set('border', `2rpx solid ${checkedColor!}`)
 			}
 			// #ifdef APP
 			else {
-				css.set('border', `1px solid ${isDisabled.value ? 'var(--rice-radio-disabled-border-color)' : 'var(--rice-radio-border-color)'}`)
+				css.set('border', `2rpx solid ${isDisabled.value ? 'var(--rice-radio-disabled-border-color)' : 'var(--rice-radio-border-color)'}`)
 			}
 			// #endif
 
@@ -160,16 +160,16 @@
 			/* #ifndef APP */
 			transition: all 100ms ease-in-out;
 			/* #endif */
-			width: 20px;
-			height: 20px;
-			border: 1px solid var(--rice-radio-border-color);
-			border-radius: 4px;
+			width: 40rpx;
+			height: 40rpx;
+			border: 2rpx solid var(--rice-radio-border-color);
+			border-radius: 8rpx;
 			background-color: transparent;
 
 
 			&--disabled {
 				background-color: var(--rice-radio-disabled-background);
-				border: 1px solid var(--rice-radio-disabled-border-color);
+				border: 2rpx solid var(--rice-radio-disabled-border-color);
 				/* #ifdef WEB */
 				cursor: not-allowed;
 				/* #endif */
@@ -177,13 +177,13 @@
 
 			&--checked {
 				background-color: var(--rice-primary-color);
-				border: 1px solid var(--rice-primary-color);
+				border: 2rpx solid var(--rice-primary-color);
 
 			}
 
 			&--checked--disabled {
 				background-color: var(--rice-primary-color);
-				border: 1px solid var(--rice-primary-color);
+				border: 2rpx solid var(--rice-primary-color);
 				/* #ifndef APP-HARMONY */
 				opacity: 0.4;
 				/* #endif */
@@ -194,7 +194,7 @@
 
 
 			&--round {
-				border-radius: 999px;
+				border-radius: 1998rpx;
 			}
 
 		}
@@ -206,15 +206,15 @@
 			//#endif
 
 			&--left {
-				padding-left: 8px;
+				padding-left: 16rpx;
 			}
 
 			&--right {
-				padding-right: 8px;
+				padding-right: 16rpx;
 			}
 
 			&__text {
-				font-size: 15px;
+				font-size: 30rpx;
 				color: var(--rice-text-color);
 
 				&--disabled {
@@ -227,7 +227,7 @@
 		}
 
 		&--row {
-			margin-right: 12px;
+			margin-right: 24rpx;
 
 			//#ifndef VUE3-VAPOR
 			flex: 0 1 auto;

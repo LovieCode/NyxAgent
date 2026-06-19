@@ -373,13 +373,13 @@
 		if (props.buttonLayout == 'row') {
 			css.set('flex', 1)
 		}
-		css.set('marginRight', props.showConfirmButton && !isVertical ? '12px' : '0px')
-		css.set('marginTop', props.showConfirmButton && isVertical ? '12px' : '0px')
+		css.set('marginRight', props.showConfirmButton && !isVertical ? '24rpx' : '0rpx')
+		css.set('marginTop', props.showConfirmButton && isVertical ? '24rpx' : '0rpx')
 		return css
 		// return {
 		// 	flex: props.buttonLayout == 'row' ? 1 : 'none',
-		// 	marginRight: props.showConfirmButton && !isVertical ? '12px' : '0px',
-		// 	marginTop: props.showConfirmButton && isVertical ? '12px' : '0px'
+		// 	marginRight: props.showConfirmButton && !isVertical ? '24rpx' : '0rpx',
+		// 	marginTop: props.showConfirmButton && isVertical ? '24rpx' : '0rpx'
 		// }
 	})
 
@@ -401,26 +401,26 @@
 	})
 </script>
 <style scoped lang="scss">
-	$gap: 24px;
+	$gap: 48rpx;
 
 	.rice-dialog {
 		position: fixed;
 		top: 50%;
 		left: 50%;
-		width: 320px;
+		width: 640rpx;
 		background-color: var(--rice-dialog-background);
-		border-radius: 12px;
+		border-radius: 24rpx;
 		opacity: 0;
 		transform: translate(-50%, -50%) scale(0.8);
 		transition-property: opacity, transform;
 
 		&__title {
 			align-items: center;
-			padding: $gap 16px 0;
+			padding: $gap 32rpx 0;
 
 			&__text {
 				width: 100%;
-				font-size: 17px;
+				font-size: 34rpx;
 				font-weight: bold;
 				text-align: center;
 				color: var(--rice-text-color);
@@ -443,19 +443,19 @@
 		&__content {
 			justify-content: center;
 			align-items: center;
-			padding: $gap 16px;
+			padding: $gap 32rpx;
 
 			&--has-title {
-				padding-top: 16px;
+				padding-top: 32rpx;
 			}
 		}
 
 		&__message {
-			max-height: 280px;
+			max-height: 560rpx;
 			width: 100%;
 
 			&__text {
-				font-size: 16px;
+				font-size: 32rpx;
 				color: var(--rice-dialog-message-text-color);
 				text-align: center;
 				/* #ifndef APP */
@@ -477,7 +477,7 @@
 			width: 100%;
 
 			&--border {
-				border-top: 1px solid var(--rice-border-color);
+				border-top: 2rpx solid var(--rice-border-color);
 			}
 
 			&--vertical {
@@ -485,21 +485,21 @@
 			}
 
 			&--btn {
-				padding: 0 16px $gap;
+				padding: 0 32rpx $gap;
 
 			}
 
 		}
 
 		&__button {
-			height: 48px;
+			height: 96rpx;
 			flex: 1;
 			align-items: center;
 			justify-content: center;
 
 			&__text {
 				text-align: center;
-				font-size: 16px;
+				font-size: 32rpx;
 				color: var(--rice-text-color);
 				font-weight: bold;
 
@@ -513,7 +513,7 @@
 			}
 
 			&--border {
-				border-right: 1px solid var(--rice-border-color);
+				border-right: 2rpx solid var(--rice-border-color);
 			}
 
 			//ios 平台hover如果使用css变量会有问题，按下去后背景色会一直是hover的背景色

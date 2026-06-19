@@ -84,7 +84,7 @@
 
 	const isReadonly = computed<boolean>(() => props.readonly || (checkboxGroup?.readonly.value ?? false) || (formReadonly?.value ?? false))
 	const _iconPosition = computed(() => props.iconPosition ?? checkboxGroup?.iconPosition.value ?? defCheckboxIconPosition)
-	const _iconSize = computed(() => props.iconSize ?? checkboxGroup?.iconSize.value ?? '20px')
+	const _iconSize = computed(() => props.iconSize ?? checkboxGroup?.iconSize.value ?? '40rpx')
 	const showIcon = computed<boolean>(() => isChecked.value || props.indeterminate)
 
 
@@ -123,11 +123,11 @@
 		if (hasStrValue(checkedColor)) {
 			if (isChecked.value) {
 				css.set('background-color', checkedColor!)
-				css.set('border', `1px solid ${checkedColor!}`)
+				css.set('border', `2rpx solid ${checkedColor!}`)
 			}
 			// #ifdef APP
 			else {
-				css.set('border', `1px solid ${isDisabled.value ? 'var(--rice-checkbox-disabled-border-color)' : 'var(--rice-checkbox-border-color)'}`)
+				css.set('border', `2rpx solid ${isDisabled.value ? 'var(--rice-checkbox-disabled-border-color)' : 'var(--rice-checkbox-border-color)'}`)
 			}
 			// #endif
 
@@ -196,16 +196,16 @@
 			/* #ifndef APP */
 			transition: all 100ms ease-in-out;
 			/* #endif */
-			width: 20px;
-			height: 20px;
-			border: 1px solid var(--rice-checkbox-border-color);
-			border-radius: 4px;
+			width: 40rpx;
+			height: 40rpx;
+			border: 2rpx solid var(--rice-checkbox-border-color);
+			border-radius: 8rpx;
 			background-color: transparent;
 
 
 			&--disabled {
 				background-color: var(--rice-checkbox-disabled-background);
-				border: 1px solid var(--rice-checkbox-disabled-border-color);
+				border: 2rpx solid var(--rice-checkbox-disabled-border-color);
 				/* #ifdef WEB */
 				cursor: not-allowed;
 				/* #endif */
@@ -213,13 +213,13 @@
 
 			&--checked {
 				background-color: var(--rice-primary-color);
-				border: 1px solid var(--rice-primary-color);
+				border: 2rpx solid var(--rice-primary-color);
 
 			}
 
 			&--checked--disabled {
 				background-color: var(--rice-primary-color);
-				border: 1px solid var(--rice-primary-color);
+				border: 2rpx solid var(--rice-primary-color);
 				/* #ifndef APP-HARMONY */
 				opacity: 0.4;
 				/* #endif */
@@ -230,7 +230,7 @@
 
 
 			&--round {
-				border-radius: 999px;
+				border-radius: 1998rpx;
 			}
 
 		}
@@ -242,15 +242,15 @@
 			//#endif
 
 			&--left {
-				padding-left: 8px;
+				padding-left: 16rpx;
 			}
 
 			&--right {
-				padding-right: 8px;
+				padding-right: 16rpx;
 			}
 
 			&__text {
-				font-size: 15px;
+				font-size: 30rpx;
 				color: var(--rice-text-color);
 
 				&--disabled {
@@ -263,7 +263,7 @@
 		}
 
 		&--row {
-			margin-right: 12px;
+			margin-right: 24rpx;
 			
 			//#ifndef VUE3-VAPOR
 			flex: 0 1 auto;

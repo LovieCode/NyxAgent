@@ -156,7 +156,7 @@
 	}
 
 	.detail-divider {
-		height: 0.5px;
+		height: 0.10rpx;
 		background-color: #F3F4F6;
 	}
 

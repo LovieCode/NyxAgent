@@ -66,7 +66,7 @@
 		mode: 'circular',
 		duration: 1100,
 		vertical: false,
-		size: '24px',
+		size: '48rpx',
 		textClass: '',
 		timingFunction: 'ease-in-out',
 		customStyle: () : UTSJSONObject => ({})
@@ -173,8 +173,8 @@
 
 <style scoped lang="scss">
 	@mixin circle($color) {
-		border-radius: 999px;
-		border: 2px solid $color;
+		border-radius: 1998rpx;
+		border: 4rpx solid $color;
 		/* #ifndef APP */
 		border-top-color: v-bind("color");
 		animation: rotate v-bind("props.duration + 'ms'") ease-in-out infinite;
@@ -187,15 +187,15 @@
 
 
 		&__text {
-			font-size: 14px;
+			font-size: 28rpx;
 			color: var(--rice-text-color-2);
 
 			&--row {
-				margin-left: 8px;
+				margin-left: 16rpx;
 			}
 
 			&--vertical {
-				margin-top: 8px;
+				margin-top: 16rpx;
 			}
 
 		}

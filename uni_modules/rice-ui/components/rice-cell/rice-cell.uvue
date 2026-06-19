@@ -1,7 +1,7 @@
 <template>
 	<view :class="cellClass" :style="customStyle" :hover-stay-time="100" :hover-class="hoverClass" @click="handleClick">
 		<slot name="leftIcon" v-if="hasLeftIcon">
-			<rice-icon :name="icon" :custom-style="{marginRight:'2px'}" :size="iconSize" />
+			<rice-icon :name="icon" :custom-style="{marginRight:'4rpx'}" :size="iconSize" />
 		</slot>
 		<view class="rice-cell__title" :style="titleStyle">
 			<slot name="title">
@@ -61,7 +61,7 @@
 	const hasValue = computed(() => slots['value'] != null || hasStrValue(props.value))
 	const hasLabel = computed(() => slots['label'] != null || hasStrValue(props.label))
 
-	const iconSize = computed(() => props.size == 'large' ? '17px' : '16px')
+	const iconSize = computed(() => props.size == 'large' ? '34rpx' : '32rpx')
 
 	const handleClick = () => {
 		if (hasStrValue(props.url)) {
@@ -95,12 +95,12 @@
 	@import "../../libs/style/mixins/hairline";
 
 	.rice-cell {
-		--rice-cell-title-size: 15px;
-		--rice-cell-value-size: 15px;
-		--rice-cell-label-size: 13px;
+		--rice-cell-title-size: 30rpx;
+		--rice-cell-value-size: 30rpx;
+		--rice-cell-label-size: 26rpx;
 		position: relative;
 		flex-direction: row;
-		padding: 14px 16px;
+		padding: 28rpx 32rpx;
 		background-color: var(--rice-cell-background);
 		width: 100%;
 		/* #ifdef WEB */
@@ -108,21 +108,21 @@
 
 		/* #endif */
 		&--medium {
-			--rice-cell-title-size: 16px;
-			--rice-cell-value-size: 16px;
-			--rice-cell-label-size: 14px;
+			--rice-cell-title-size: 32rpx;
+			--rice-cell-value-size: 32rpx;
+			--rice-cell-label-size: 28rpx;
 		}
 
 		&--large {
-			--rice-cell-title-size: 17px;
-			--rice-cell-value-size: 17px;
-			--rice-cell-label-size: 15px;
-			padding: 18px;
+			--rice-cell-title-size: 34rpx;
+			--rice-cell-value-size: 34rpx;
+			--rice-cell-label-size: 30rpx;
+			padding: 36rpx;
 		}
 
 		&__title {
 			flex: 1;
-			padding-right: 2px;
+			padding-right: 4rpx;
 
 			&__text {
 				color: var(--rice-text-color);
@@ -135,7 +135,7 @@
 
 		&__value {
 			flex: 1;
-			padding-right: 2px;
+			padding-right: 4rpx;
 
 			/* #ifndef APP */
 			text-align: right;
@@ -156,7 +156,7 @@
 		&__label {
 			color: var(--rice-text-color-2);
 			font-size: var(--rice-cell-label-size);
-			margin-top: 5px;
+			margin-top: 10rpx;
 			/* #ifndef APP */
 			word-wrap: break-word;
 			/* #endif */
@@ -174,7 +174,7 @@
 			position: absolute;
 			left: 0;
 			bottom: 0;
-			height: 1px;
+			height: 2rpx;
 			width: 100%;
 			transform: scale(1, 0.5);
 			background-color: var(--rice-border-color);

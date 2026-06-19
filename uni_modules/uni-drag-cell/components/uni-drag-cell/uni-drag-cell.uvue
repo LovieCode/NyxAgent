@@ -245,7 +245,7 @@
 		return `position: fixed; left: ${activeViewLeft.value}px; top: ${activeViewTop.value}px; width: ${sourceLayout.width}px; height: ${sourceLayout.height}px; z-index: 30; transition-duration: 0ms; transform: translateX(${dragOffsetX.value}px) translateY(${dragOffsetY.value}px) scale(${activeDragScale.value});`
 	}
 	const getDeletePlaceholderStyle = (baseLeft : number, baseTop : number, sourceLayout : ItemLayout) : string => {
-		return `position: absolute; left: ${baseLeft}px; top: ${baseTop}px; width: ${sourceLayout.width}px; height: ${sourceLayout.height}px; z-index: 0; transition-duration: 0ms; opacity: 0; transform: translateX(0px) translateY(0px);`
+		return `position: absolute; left: ${baseLeft}px; top: ${baseTop}px; width: ${sourceLayout.width}px; height: ${sourceLayout.height}px; z-index: 0; transition-duration: 0ms; opacity: 0; transform: translateX(0rpx) translateY(0rpx);`
 	}
 	const appLanguage = uni.getAppBaseInfo().appLanguage ?? 'en'
 
@@ -812,7 +812,7 @@
 
 		let zIndexStyle = 'z-index: 1;'
 		let transitionStyle = 'transition-duration: 200ms;'
-		let transformStyle = 'translateX(0px) translateY(0px)'
+		let transformStyle = 'translateX(0rpx) translateY(0rpx)'
 
 		// #ifdef APP-ANDROID
 		// TODO 安卓平台transition动画过程中新设置的属性不生效，暂时在安卓平台屏蔽transition动画，待安卓平台修复后移除此条件编译
@@ -964,14 +964,14 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		height: 56px;
-		border-radius: 0px;
+		height: 112rpx;
+		border-radius: 0rpx;
 		background-color: rgba(255, 59, 48, 0.92);
 		display: flex;
 		flex-direction: row;
 		align-items: center;
 		justify-content: center;
-		transform: translateY(0px);
+		transform: translateY(0rpx);
 		z-index: 20;
 	}
 
@@ -981,7 +981,7 @@
 	}
 
 	.drag-cell-delete-text {
-		font-size: 16px;
+		font-size: 32rpx;
 		font-weight: bold;
 		color: #ffffff;
 		text-align: center;

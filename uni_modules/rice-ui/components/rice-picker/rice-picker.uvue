@@ -53,10 +53,10 @@
 			<!-- footer -->
 			<slot name="bottom">
 				<view v-if="toolbarPosition=='bottom'" class="rice-picker__bottom">
-					<rice-button v-if="hasCancel" :width="hasConfirm?'120px':'185px'" :text="cancelButtonText"
-						:color="isDark?'#2b2b2b':'#f2f2f2'" :style="{marginRight:hasConfirm?'15px':'0px'}"
+					<rice-button v-if="hasCancel" :width="hasConfirm?'240rpx':'370rpx'" :text="cancelButtonText"
+						:color="isDark?'#2b2b2b':'#f2f2f2'" :style="{marginRight:hasConfirm?'30rpx':'0rpx'}"
 						:text-color="cancelButtonTextColor" @click="cancel"></rice-button>
-					<rice-button v-if="hasConfirm" :width="hasCancel?'120px':'185px'" :text="confirmButtonText" type="primary"
+					<rice-button v-if="hasConfirm" :width="hasCancel?'240rpx':'370rpx'" :text="confirmButtonText" type="primary"
 						@click="confirm" />
 				</view>
 			</slot>
@@ -95,7 +95,7 @@
 
 	const props = withDefaults(defineProps<PickerProps>(), {
 		toolbarPosition: 'bottom',
-		optionHeight: '50px',
+		optionHeight: '100rpx',
 		visibleOptionNum: 5,
 		confirmButtonText: '确定',
 		cancelButtonText: '取消',
@@ -686,7 +686,7 @@
 			bottom: 0;
 			left: 0;
 			right: 0;
-			border-radius: 12px 12px 0 0;
+			border-radius: 24rpx 24rpx 0 0;
 			transition-property: transform;
 			transform: translateY(100%);
 		}
@@ -694,7 +694,7 @@
 		&__top {
 			position: relative;
 			flex-direction: row;
-			height: 48px;
+			height: 96rpx;
 			align-items: center;
 			justify-content: space-between;
 		}
@@ -705,7 +705,7 @@
 			left: 50%;
 			transform: translateX(-50%);
 			/* #ifdef APP */
-			max-width: 200px;
+			max-width: 400rpx;
 			/* #endif */
 
 			/* #ifndef APP */
@@ -713,7 +713,7 @@
 			/* #endif */
 			text-overflow: ellipsis;
 			white-space: nowrap;
-			font-size: 16px;
+			font-size: 32rpx;
 			color: var(--rice-text-color);
 			font-weight: bold;
 		}
@@ -724,7 +724,7 @@
 			white-space: nowrap;
 			text-align: center;
 			color: var(--rice-text-color);
-			font-size: 16px;
+			font-size: 32rpx;
 
 			&--disabled {
 				color: var(--rice-picker-disabled-text-color);
@@ -732,13 +732,13 @@
 		}
 
 		&--padding-top {
-			padding-top: 16px;
+			padding-top: 32rpx;
 		}
 
 		&__cancel,
 		&__confirm {
-			padding: 5px 16px;
-			font-size: 15px;
+			padding: 10rpx 32rpx;
+			font-size: 30rpx;
 		}
 
 		&__cancel {
@@ -753,11 +753,11 @@
 			flex-direction: row;
 			align-items: center;
 			justify-content: center;
-			padding: 16px;
+			padding: 32rpx;
 		}
 
 		&__empty {
-			padding: 0 16px;
+			padding: 0 32rpx;
 			box-sizing: border-box;
 			align-items: center;
 			justify-content: center;
@@ -773,7 +773,7 @@
 
 			&__text {
 				text-align: center;
-				font-size: 15px;
+				font-size: 30rpx;
 				color: var(--rice-text-color-2);
 			}
 		}
@@ -791,8 +791,8 @@
 		}
 
 		&--loading {
-			width: 24px;
-			height: 24px;
+			width: 48rpx;
+			height: 48rpx;
 			border-color: #1989fa;
 			/* #ifdef APP-IOS */
 			color: #1989fa;

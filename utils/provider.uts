@@ -386,7 +386,14 @@ export function getDefaultTaskModel(type: string): UTSJSONObject | null {
 		return null
 	}
 	try {
-		return JSON.parse(val) as UTSJSONObject
+		const parsed = JSON.parse(val) as UTSJSONObject
+		// 校验解析结果，避免缺少 providerId / model 的脏数据
+		const rawPid = parsed['providerId']
+		const rawModel = parsed['model']
+		if (rawPid == null || rawModel == null) {
+			return null
+		}
+		return parsed
 	} catch (_e: any) {
 		return null
 	}
@@ -517,11 +524,19 @@ export function getAllDefaultTaskModels(): UTSJSONObject[] {
 	for (let i = 0; i < taskTypes.length; i++) {
 		const t = taskTypes[i]
 		const config = getDefaultTaskModel(t)
+		let providerId = ''
+		let model = ''
+		if (config != null) {
+			const rawPid = config['providerId']
+			const rawModel = config['model']
+			providerId = rawPid != null ? (rawPid as string) : ''
+			model = rawModel != null ? (rawModel as string) : ''
+		}
 		result.push({
 			type: t,
 			typeName: getTaskTypeName(t),
-			providerId: config != null ? (config['providerId'] as string) : '',
-			model: config != null ? (config['model'] as string) : '',
+			providerId: providerId,
+			model: model,
 		} as UTSJSONObject)
 	}
 	return result

@@ -144,17 +144,17 @@
 		/* #endif */
 
 		&__content {
-			padding: 0px 4px;
-			min-width: 16px;
+			padding: 0rpx 8rpx;
+			min-width: 32rpx;
 			flex-direction: row;
 			align-items: center;
 			justify-content: center;
-			border-radius: 100px;
-			border: 1px solid #fff;
+			border-radius: 200rpx;
+			border: 2rpx solid #fff;
 			background-color: var(--rice-error-color);
 
 			&__text {
-				font-size: 12px;
+				font-size: 24rpx;
 				color: #fff;
 				white-space: nowrap;
 			}
@@ -166,9 +166,9 @@
 		}
 
 		&--dot {
-			height: 12px;
-			width: 12px;
-			border-radius: 12px;
+			height: 24rpx;
+			width: 24rpx;
+			border-radius: 24rpx;
 			padding: 0;
 			min-width: 0;
 		}

@@ -37,7 +37,7 @@
 	const props = withDefaults(defineProps<SwitchProps>(), {
 		activeValue: true,
 		inactiveValue: false,
-		iconSize: '12px',
+		iconSize: '24rpx',
 		loading: false,
 		disabled: false,
 		readonly: false,
@@ -168,7 +168,7 @@
 		const css = new Map<string, string>()
 		const switchWidth = props.width != null ? getPxNum(props.width!) : 50
 		const nodeWidth = 22
-		const translateX = isChecked.value ? `${switchWidth - nodeWidth - 4}px` : '4px'
+		const translateX = isChecked.value ? `${switchWidth - nodeWidth - 4}px` : '8rpx'
 		css.set('transform', `translateX(${translateX})`)
 		return css
 	})
@@ -210,9 +210,9 @@
 		position: relative;
 		flex-direction: row;
 		align-items: center;
-		border-radius: 200px;
-		height: 28px;
-		width: 50px;
+		border-radius: 400rpx;
+		height: 56rpx;
+		width: 100rpx;
 		box-sizing: border-box;
 		transition-property: color, background-color;
 		/* #ifndef APP-IOS */
@@ -230,11 +230,11 @@
 		&__inner {
 			width: 100%;
 			transition: padding $duration;
-			padding: 0 6px 0 28px;
+			padding: 0 12rpx 0 56rpx;
 			box-sizing: border-box;
 
 			&__text {
-				font-size: 12px;
+				font-size: 24rpx;
 				text-overflow: ellipsis;
 				white-space: nowrap;
 				color: rgba(255, 255, 255, .9);
@@ -242,7 +242,7 @@
 			}
 
 			&--active {
-				padding: 0 28px 0 6px;
+				padding: 0 56rpx 0 12rpx;
 			}
 
 		}
@@ -253,18 +253,18 @@
 			align-items: center;
 			justify-content: center;
 			background-color: #fff;
-			height: 22px;
-			width: 22px;
-			border-radius: 200px;
+			height: 44rpx;
+			width: 44rpx;
+			border-radius: 400rpx;
 			transition: transform $duration;
 			/* #ifndef APP-HARMONY || APP-IOS */
-			box-shadow: 0 2px 3px rgba(0, 0, 0, 0.2);
+			box-shadow: 0 4rpx 6rpx rgba(0, 0, 0, 0.2);
 
 			/* #endif */
 
 
 			&__text {
-				font-size: 12px;
+				font-size: 24rpx;
 				transition: color $duration;
 				white-space: nowrap;
 				text-align: center;

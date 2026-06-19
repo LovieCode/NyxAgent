@@ -7,7 +7,7 @@
 		@touchcancel="onContentend">
 		<view v-if="closeable" class="rice-popup__close" :class="`rice-popup__close--${closeIconPosition}`"
 			:style="closeStyle" @click.stop="handleClose">
-			<rice-icon :name="closeIcon" size="20px" />
+			<rice-icon :name="closeIcon" size="40rpx" />
 		</view>
 		<view v-if="showDragBar==true&&position=='bottom'" class="rice-popup__drag" :class="dragWrapClass"
 			@touchstart="onDragstart" @touchmove.stop="onDragmove" @touchend.stop="onDragend" @touchcancel.stop="onDragend">
@@ -173,7 +173,7 @@
 	}
 
 	const resumedPopup = () => {
-		popupRef.value?.style.setProperty('transform', 'translateY(0px)')
+		popupRef.value?.style.setProperty('transform', 'translateY(0rpx)')
 		halfScreenY = 0
 		halfOffset = 0
 		lastDragDirection = 0
@@ -427,12 +427,12 @@
 		&__drag {
 			justify-content: center;
 			align-items: center;
-			min-height: 32px;
+			min-height: 64rpx;
 
 			&__bar {
-				height: 3px;
-				border-radius: 6px;
-				width: 20px;
+				height: 6rpx;
+				border-radius: 12rpx;
+				width: 40rpx;
 				background-color: #c8c9cc;
 			}
 		}
@@ -462,7 +462,7 @@
 			bottom: 0;
 			left: 0;
 			width: 100%;
-			transform: translate(0px, 100%);
+			transform: translate(0rpx, 100%);
 		}
 
 		&--left {
@@ -483,7 +483,7 @@
 		&__close {
 			position: absolute;
 			z-index: 9;
-			padding: 16px 16px 0 0;
+			padding: 32rpx 32rpx 0 0;
 
 			&--top-left {
 				top: 0;

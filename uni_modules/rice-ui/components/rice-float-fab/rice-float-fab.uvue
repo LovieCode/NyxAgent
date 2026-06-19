@@ -39,14 +39,14 @@
 
 	const props = withDefaults(defineProps<FloatFabProps>(), {
 		axis: 'xy',
-		height: '52px',
-		width: '52px',
+		height: '104rpx',
+		width: '104rpx',
 		overGap: true,
 		defaultPosition: 'bottom-right',
 		duration: 300,
 		iconColor: '#fff',
-		iconSize: '30px',
-		gap: '24px',
+		iconSize: '60rpx',
+		gap: '48rpx',
 		disabled: false,
 		customStyle: () : UTSJSONObject => ({})
 	})
@@ -280,7 +280,7 @@
 		css.set('height', addUnit(props.height))
 		css.set('width', addUnit(props.width))
 		//android 如果在css里面设置border-radius，这里设置的radius会无效，统一在这里设置radius值
-		css.set('border-radius', props.radius == null ? '999px' : addUnit(props.radius!))
+		css.set('border-radius', props.radius == null ? '1998rpx' : addUnit(props.radius!))
 		if (props.zIndex != null) css.set('z-index', props.zIndex!)
 		if (props.bgColor != null) css.set('background', props.bgColor!)
 

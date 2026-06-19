@@ -175,7 +175,7 @@
 	}
 
 	.nav-add-text {
-		font-size: 28rpx;
+		font-size: 32rpx;
 		color: #FFFFFF;
 		font-weight: bold;
 	}
@@ -242,7 +242,7 @@
 		justify-content: flex-end;
 		margin-top: 16rpx;
 		padding-top: 16rpx;
-		border-top-width: 0.5px;
+		border-top-width: 0.10rpx;
 		border-top-style: solid;
 		border-top-color: #F3F4F6;
 	}

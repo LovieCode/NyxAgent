@@ -11,13 +11,13 @@
 					<text v-if="hasStrValue(title)" class="rice-cascader__header__title"
 						:class="{'rice-cascader__header__title--left':titleAlign=='left'}">{{title}}</text>
 				</slot>
-				<rice-icon v-if="closeable" :name="closeIcon" size="20px" :custom-style="closeIconStyle" @click="clickClose" />
+				<rice-icon v-if="closeable" :name="closeIcon" size="40rpx" :custom-style="closeIconStyle" @click="clickClose" />
 			</view>
 
 			<rice-tabs :list="tabs" v-model="tabIndex" :init-animate="false" shrink :title-active-color="activeColor"
-				:line-color="activeColor" title-inactive-color="var(--rice-text-color)" style="padding: 0 8px;"
+				:line-color="activeColor" title-inactive-color="var(--rice-text-color)" style="padding: 0 16rpx;"
 				line-mode="zoom" />
-			<rice-divider hairline style="margin-top: -2px;margin-bottom: 0;" />
+			<rice-divider hairline style="margin-top: -4rpx;margin-bottom: 0;" />
 
 			<swiper class="rice-cascader__swiper" :current="swiperIndex" :duration="120" :disable-touch="true">
 				<!-- #ifndef MP -->
@@ -373,10 +373,10 @@
 	const closeIconStyle = computed(() => {
 		return {
 			position: 'absolute',
-			right: '16px',
-			top: '8px',
+			right: '32rpx',
+			top: '16rpx',
 			zIndex: 9,
-			padding: '4px 8px',
+			padding: '8rpx 16rpx',
 		}
 	})
 
@@ -396,27 +396,27 @@
 	.rice-cascader {
 		position: relative;
 		background-color: var(--rice-cascader-background);
-		height: 480px;
+		height: 960rpx;
 
 		&--popup {
 			position: fixed;
 			bottom: 0;
 			left: 0;
 			right: 0;
-			border-radius: 12px 12px 0 0;
+			border-radius: 24rpx 24rpx 0 0;
 			transition-property: transform;
 			transform: translateY(100%);
 		}
 
 		&__header {
 			position: relative;
-			height: 48px;
+			height: 96rpx;
 			align-items: center;
 			justify-content: center;
-			padding: 0 16px;
+			padding: 0 32rpx;
 
 			&__title {
-				font-size: 18px;
+				font-size: 36rpx;
 				font-weight: bold;
 				color: var(--rice-text-color);
 				text-align: center;
@@ -448,10 +448,10 @@
 			flex-direction: row;
 			align-items: center;
 			justify-content: space-between;
-			padding: 10px 16px;
+			padding: 20rpx 32rpx;
 
 			&__text {
-				font-size: 16px;
+				font-size: 32rpx;
 				color: var(--rice-text-color);
 
 				/* #ifdef WEB */
@@ -472,7 +472,7 @@
 			}
 
 			&--first {
-				padding-top: 20px;
+				padding-top: 40rpx;
 			}
 
 			&--border {

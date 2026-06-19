@@ -37,15 +37,15 @@
 			flex-direction: row;
 			justify-content: center;
 			align-items: center;
-			height: 30px;
+			height: 60rpx;
 			/* #ifdef WEB */
 			cursor: grab;
 
 			/* #endif */
 			&__bar {
-				height: 3px;
-				border-radius: 6px;
-				width: 20px;
+				height: 6rpx;
+				border-radius: 12rpx;
+				width: 40rpx;
 				background-color: #c8c9cc;
 			}
 		}

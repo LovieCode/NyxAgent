@@ -10,7 +10,7 @@
 				:hover-stay-time="100" :hover-class="item.disabled==true?'none':'rice-action-sheet--hover'"
 				@click="handleSelect(item,index)">
 				<rice-icon v-if="hasStrValue(item.icon)" :color="getIconColor(item)" :name="item.icon" :size="item.iconSize"
-					:font-family="item.iconFontFamily" :custom-style="{marginRight:'6px'}" />
+					:font-family="item.iconFontFamily" :custom-style="{marginRight:'12rpx'}" />
 				<text :class="getMenuTextClass(item)" :style="getMenuTextStyle(item)">{{item.name}}</text>
 				<text v-if="hasStrValue(item.subname)" :class="getMenuSubnameClass(item)">{{item.subname}}</text>
 			</view>
@@ -53,7 +53,7 @@
 		opaction: false,
 		overlay: true,
 		overlayBgColor: 'rgba(0,0,0,.6)',
-		radius: '12px',
+		radius: '24rpx',
 		closeOnClickAction: true,
 		closeOnClickOverlay: true,
 		safeAreaInsetBottom: true,
@@ -92,7 +92,7 @@
 		openTimer = setTimeout(() => {
 			actionSheetRef.value?.style.setProperty('transition-duration', props.duration + 'ms')
 			actionSheetRef.value?.style.setProperty('opacity', '1')
-			actionSheetRef.value?.style.setProperty('transform', 'translate(0px, 0px)')
+			actionSheetRef.value?.style.setProperty('transform', 'translate(0rpx, 0rpx)')
 			openedTimer = setTimeout(() => {
 				emit('opened')
 			}, props.duration)
@@ -195,7 +195,7 @@
 		if (!realShow.value) return
 		const opacity = props.opacity == true ? '0' : '1'
 		actionSheetRef.value?.style.setProperty('opacity', opacity)
-		actionSheetRef.value?.style.setProperty('transform', 'translate(0px, 100%)')
+		actionSheetRef.value?.style.setProperty('transform', 'translate(0rpx, 100%)')
 		handleCloseTimer()
 		closeTimer = setTimeout(() => {
 			realShow.value = false
@@ -327,7 +327,7 @@
 
 	@mixin common {
 		width: 100%;
-		padding: 16px;
+		padding: 32rpx;
 		background-color: var(--rice-action-sheet-menu-background);
 		flex-direction: row;
 		align-items: center;
@@ -349,7 +349,7 @@
 		width: 100%;
 		z-index: 999;
 		transition-property: transform, opacity;
-		transform: translate(0px, 100%);
+		transform: translate(0rpx, 100%);
 		background-color: var(--rice-action-sheet-menu-background);
 
 
@@ -370,14 +370,14 @@
 				white-space: nowrap;
 				width: 100%;
 				text-align: center;
-				font-size: 15px;
+				font-size: 30rpx;
 				color: var(--rice-text-color-2);
 
 			}
 		}
 
 		&__container {
-			max-height: 350px;
+			max-height: 700rpx;
 		}
 
 		&__menu {
@@ -404,8 +404,8 @@
 			&__subname {
 				width: 100%;
 				color: var(--rice-text-color-2);
-				font-size: 12px;
-				margin-top: 6px;
+				font-size: 24rpx;
+				margin-top: 12rpx;
 				text-align: center;
 
 				/* #ifdef APP */
@@ -436,7 +436,7 @@
 
 		&__gap {
 			background-color: var(--rice-action-sheet-background);
-			height: 6px;
+			height: 12rpx;
 		}
 
 		&__cancel {

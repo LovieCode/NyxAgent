@@ -705,7 +705,7 @@
 	.model-panel {
 		margin-top: 20rpx;
 		padding-top: 20rpx;
-		border-top-width: 0.5px;
+		border-top-width: 0.10rpx;
 		border-top-style: solid;
 		border-top-color: #F3F4F6;
 	}
@@ -738,7 +738,7 @@
 		border-radius: 12rpx;
 		padding: 12rpx 24rpx;
 		margin: 4rpx;
-		border-width: 1px;
+		border-width: 2rpx;
 		border-style: solid;
 		border-color: #E5E7EB;
 	}
@@ -760,7 +760,7 @@
 	}
 
 	.setting-divider {
-		height: 1px;
+		height: 2rpx;
 		background-color: #F3F4F6;
 		margin: 28rpx 0 20rpx;
 	}
@@ -839,12 +839,17 @@
 		color: #111827;
 	}
 
+	.short-input {
+		width: 120rpx;
+		flex-shrink: 0;
+	}
+
 	.model-pill {
 		background-color: #F3F4F6;
 		border-radius: 10rpx;
 		padding: 12rpx 20rpx;
 		margin: 4rpx;
-		border-width: 1px;
+		border-width: 2rpx;
 		border-style: solid;
 		border-color: #E5E7EB;
 	}
@@ -894,7 +899,7 @@
 		padding: 28rpx;
 		align-items: center;
 		justify-content: center;
-		border-width: 1px;
+		border-width: 2rpx;
 		border-style: solid;
 		border-color: #FCA5A5;
 	}

@@ -225,10 +225,10 @@
 	.bubble-user {
 		flex-direction: column;
 		align-items: flex-end;
-		margin-left: 50px;
-		margin-right: 10px;
-		margin-top: 8px;
-		margin-bottom: 8px;
+		margin-left: 100rpx;
+		margin-right: 20rpx;
+		margin-top: 16rpx;
+		margin-bottom: 16rpx;
 	}
 
 	/* 用户行：气泡 + 头像，顶部对齐 */
@@ -241,10 +241,10 @@
 
 	/* 用户气泡 - 粉色渐变背景 */
 	.user-bubble {
-		background-image: linear-gradient(to bottom right, #FB8FAB, #E8729A);
-		border-radius: 16px;
-		padding: 6px 12px;
-		max-width: 500px;
+		background-color: var(--rice-primary-color);
+		border-radius: 32rpx;
+		padding: 12rpx 24rpx;
+		max-width: 1000rpx;
 		flex-shrink: 1;
 	}
 
@@ -263,9 +263,9 @@
 	.ai-content {
 		flex-shrink: 1;
 		background-color: var(--rice-background-2);
-		border-radius: 16px;
-		padding: 10px;
-		max-width: 500px;
+		border-radius: 32rpx;
+		padding: 20rpx;
+		max-width: 1000rpx;
 	}
 
 	/* AI 气泡按压效果 */
@@ -275,129 +275,129 @@
 
 	/* 通用头像 - 小圆形 */
 	.chat-avatar {
-		width: 28px;
-		height: 28px;
-		border-radius: 14px;
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 28rpx;
 		flex-shrink: 0;
-		margin-top: 2px;
+		margin-top: 4rpx;
 	}
 
 	.chat-avatar-text {
-		font-size: 12px;
+		font-size: 24rpx;
 		color: var(--rice-background-2);
 		font-weight: bold;
 	}
 
 	/* 用户头像 - 粉色渐变 */
 	.user-avatar {
-		background-image: linear-gradient(to bottom right, #FB8FAB, #E8729A);
-		margin-left: 8px;
+		background-color: var(--rice-primary-color);
+		margin-left: 16rpx;
 		justify-content: center;
 		align-items: center;
 	}
 
 	/* 用户头像 - 自定义图片 */
 	.user-avatar-image {
-		margin-left: 8px;
+		margin-left: 16rpx;
 	}
 
 	/* AI 头像 - 灰色 */
 	.ai-avatar {
 		background-color: var(--rice-text-color-3);
-		margin-right: 8px;
+		margin-right: 16rpx;
 		justify-content: center;
 		align-items: center;
 	}
 
 	/* AI 头像 - 自定义图片 */
 	.ai-avatar-image {
-		margin-right: 8px;
+		margin-right: 16rpx;
 	}
 
 	/* AI 气泡容器 - 只提供外边距 */
 	.bubble-assistant {
 		flex-direction: column;
 		align-items: flex-start;
-		margin-left: 10px;
-		margin-right: 50px;
-		margin-top: 8px;
-		margin-bottom: 8px;
+		margin-left: 20rpx;
+		margin-right: 100rpx;
+		margin-top: 16rpx;
+		margin-bottom: 16rpx;
 	}
 
 	/* 工具气泡 - 浅灰背景 */
 	.bubble-tool {
 		flex-direction: column;
 		align-items: flex-start;
-		margin-left: 32px;
-		margin-right: 32px;
-		margin-top: 4px;
-		margin-bottom: 4px;
+		margin-left: 64rpx;
+		margin-right: 64rpx;
+		margin-top: 8rpx;
+		margin-bottom: 8rpx;
 		background-color: var(--rice-button-info-background);
-		border-radius: 8px;
-		padding: 10px;
+		border-radius: 16rpx;
+		padding: 20rpx;
 	}
 
 	/* 工具错误气泡 */
 	.bubble-tool-error {
 		flex-direction: column;
 		align-items: flex-start;
-		margin-left: 32px;
-		margin-right: 32px;
-		margin-top: 4px;
-		margin-bottom: 4px;
+		margin-left: 64rpx;
+		margin-right: 64rpx;
+		margin-top: 8rpx;
+		margin-bottom: 8rpx;
 		background-color: rgba(239,68,68,0.08);
-		border-radius: 8px;
-		padding: 10px;
-		border-width: 1px;
+		border-radius: 16rpx;
+		padding: 20rpx;
+		border-width: 2rpx;
 		border-color: #EF4444;
 	}
 
 	/* 工具标签 */
 	.tool-badge {
 		background-color: #E5E7EB;
-		border-radius: 4px;
-		padding-left: 6px;
-		padding-right: 6px;
-		padding-top: 2px;
-		padding-bottom: 2px;
-		margin-bottom: 6px;
+		border-radius: 8rpx;
+		padding-left: 12rpx;
+		padding-right: 12rpx;
+		padding-top: 4rpx;
+		padding-bottom: 4rpx;
+		margin-bottom: 12rpx;
 	}
 
 	.tool-badge-text {
-		font-size: 10px;
+		font-size: 20rpx;
 		color: var(--rice-text-color-2);
 		font-weight: bold;
 	}
 
 	/* 气泡内的图片 */
 	.bubble-image {
-		width: 200px;
-		max-height: 300px;
-		border-radius: 10px;
-		margin-bottom: 4px;
+		width: 400rpx;
+		max-height: 600rpx;
+		border-radius: 20rpx;
+		margin-bottom: 8rpx;
 	}
 
 	/* 用户文字 - 白色字，粉底由父容器提供 */
 	.text-user {
-		font-size: 15px;
+		font-size: 30rpx;
 		color: var(--rice-background-2);
-		line-height: 22px;
+		line-height: 44rpx;
 		white-space: normal;
 	}
 
 	/* AI 文字 - 深色字，白底由父容器提供 */
 	.text-assistant {
-		font-size: 15px;
+		font-size: 30rpx;
 		color: var(--rice-text-color);
-		line-height: 22px;
+		line-height: 44rpx;
 		white-space: normal;
 	}
 
 	/* 工具文字 */
 	.text-tool {
-		font-size: 13px;
+		font-size: 26rpx;
 		color: var(--rice-text-color-2);
-		line-height: 20px;
+		line-height: 40rpx;
 	}
 
 	/* 流式光标 - 粉色 */
@@ -413,21 +413,19 @@
 
 	/* 思考内容折叠区 */
 	.thinking-wrap {
-		margin-bottom: 6px;
-		padding: 4px 0;
 	}
 	.thinking-toggle {
-		font-size: 11px;
+		font-size: 22rpx;
 		color: #D1D5DB;
 	}
 	.thinking-text {
-		font-size: 12px;
+		font-size: 24rpx;
 		color: #9CA3AF;
-		line-height: 18px;
-		margin-top: 2px;
+		line-height: 36rpx;
+		margin-top: 4rpx;
 		white-space: pre-wrap;
-		padding-left: 8px;
-		border-left-width: 1px;
+		padding-left: 16rpx;
+		border-left-width: 2rpx;
 		border-left-color: #E5E7EB;
 		border-left-style: solid;
 	}

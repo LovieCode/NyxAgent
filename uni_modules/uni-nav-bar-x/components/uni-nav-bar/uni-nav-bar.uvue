@@ -1,23 +1,23 @@
 <template>
   <view style="flex-direction: row;padding-top: var(--status-bar-height);box-sizing: content-box;align-items: center;position: relative;">
-    <view style="height: 44px;align-items: center;justify-content: center;
+    <view style="height: 88rpx;align-items: center;justify-content: center;
     <!-- #ifdef WEB -->
     cursor: pointer
     <!-- #endif -->
     " class="uni-left-class-builtin" :class="leftClass">
 			<!-- 旋转边框的view实现返回箭头。因需要扩大点击区域，外面多套了一层 -->
-			<view v-if="!hideDefaultBack && slots['left']==null" style="width: 44px;height: 44px;justify-content: center;align-items: center;" @click="back">
-				<view style="width: 12px;height: 12px;transform: rotate(45deg);
-        border-left: 2px solid; border-bottom: 2px solid;" :style="{borderLeftColor:props.navigationBarTextStyle,borderBottomColor:props.navigationBarTextStyle}"></view>
+			<view v-if="!hideDefaultBack && slots['left']==null" style="width: 88rpx;height: 88rpx;justify-content: center;align-items: center;" @click="back">
+				<view style="width: 24rpx;height: 24rpx;transform: rotate(45deg);
+        border-left: 4rpx solid; border-bottom: 4rpx solid;" :style="{borderLeftColor:props.navigationBarTextStyle,borderBottomColor:props.navigationBarTextStyle}"></view>
 			</view>
       <slot name="left" v-else></slot>
     </view>
 
-    <view style="position: absolute; height: 44px; flex-direction: row; align-items: center;" class="uni-mid-class-builtin" :class="midClass" flatten>
+    <view style="position: absolute; height: 88rpx; flex-direction: row; align-items: center;" class="uni-mid-class-builtin" :class="midClass" flatten>
       <text v-if="slots['mid']==null" :style="{ color: props.navigationBarTextStyle }" flatten> {{ title }} </text>
 			<slot name="mid" v-else></slot>
     </view>
-    <view style="position: absolute; height: 44px; flex-direction: row; align-items: center;right: 0;" class="uni-right-class-builtin" :class="rightClass" flatten>
+    <view style="position: absolute; height: 88rpx; flex-direction: row; align-items: center;right: 0;" class="uni-right-class-builtin" :class="rightClass" flatten>
       <slot name="right"></slot>
     </view>
 
@@ -311,17 +311,17 @@
 
 <style>
 	.uni-left-class-builtin {
-    width: 44px;
-		margin-left: 6px;
+    width: 88rpx;
+		margin-left: 12rpx;
 	}
   .uni-mid-class-builtin {
     justify-content: center;
-		left: 52px; /* padding 6 + 44 = 52*/
-    right: 52px;
+		left: 104rpx; /* padding 6 + 44 = 52*/
+    right: 104rpx;
   }
   .uni-right-class-builtin {
-    width: 44px;
-    margin-right: 6px;
+    width: 88rpx;
+    margin-right: 12rpx;
   }
 
 </style>
