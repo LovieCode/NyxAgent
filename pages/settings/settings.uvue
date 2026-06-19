@@ -59,6 +59,17 @@
 					<text class="menu-arrow">›</text>
 				</view>
 				<view class="menu-divider"></view>
+				<view class="menu-item" @click="goSubPage('skills')">
+					<view class="menu-item-left">
+						<oui-icon-unix name="book" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
+						<view class="menu-text">
+							<text class="menu-title">Skills</text>
+							<text class="menu-desc">纯文本技能包，多文档，按 Agent 启用</text>
+						</view>
+					</view>
+					<text class="menu-arrow">›</text>
+				</view>
+				<view class="menu-divider"></view>
 				<view class="menu-item" @click="confirmExportAllData">
 					<view class="menu-item-left">
 						<oui-icon-unix name="download" size="28rpx" color="#6B7280" style="margin-right:20rpx" />

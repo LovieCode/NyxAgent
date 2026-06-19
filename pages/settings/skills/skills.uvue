@@ -1,0 +1,577 @@
+<template>
+	<view class="page-shell rice-theme-light">
+		<NavBar title="Skills" showBack />
+		<scroll-view class="container" :scroll-y="true">
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="book" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+					<text class="card-title">纯文本 Skills</text>
+				</view>
+				<text class="desc">Skill 是一组可复用的纯文本指令。支持一个 Skill 多个文档，保存后在「智能体设置」里给不同 Agent 单独启用。</text>
+				<text class="hint">规范：name 使用小写字母 / 数字 / 连字符；Markdown 可带 frontmatter：name、description。</text>
+				<view class="action-row">
+					<view class="primary-btn" @click="createNewSkill">
+						<text class="primary-btn-text">新建 Skill</text>
+					</view>
+					<view class="secondary-btn" @click="toggleImportPanel">
+						<text class="secondary-btn-text">粘贴导入</text>
+					</view>
+				</view>
+				<view v-if="showImportPanel" class="import-panel">
+					<textarea class="large-textarea" v-model="importMarkdown" placeholder="粘贴 SKILL.md 内容..." placeholder-style="color:#D1D5DB;font-size:26rpx;" />
+					<view class="primary-btn import-btn" @click="importMarkdownSkill">
+						<text class="primary-btn-text">导入为 Skill</text>
+					</view>
+				</view>
+			</view>
+
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="file-text" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+					<text class="card-title">Skill 列表</text>
+				</view>
+				<view v-if="skills.length == 0" class="empty-box">
+					<text class="empty-text">还没有 Skill。先新建一个，或者粘贴导入 SKILL.md。</text>
+				</view>
+				<view v-for="(skill, index) in skills" :key="index" class="skill-item" :class="selectedSkillId == getSkillId(skill) ? 'skill-item-active' : ''" @click="selectSkill(skill)">
+					<view class="skill-info">
+						<text class="skill-name">{{getSkillName(skill)}}</text>
+						<text class="skill-desc" lines="2" text-overflow="ellipsis">{{getSkillDescriptionText(skill)}}</text>
+					</view>
+					<view class="skill-meta">
+						<text class="skill-meta-text">{{getDocCountText(skill)}}</text>
+						<text class="skill-status" :class="isSkillEnabled(skill) ? 'skill-status-on' : 'skill-status-off'">{{isSkillEnabled(skill) ? '启用' : '停用'}}</text>
+					</view>
+				</view>
+			</view>
+
+			<view v-if="selectedSkillId != ''" class="card">
+				<view class="card-header between">
+					<view class="header-left">
+						<oui-icon-unix name="edit" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+						<text class="card-title">编辑 Skill</text>
+					</view>
+					<rice-switch v-model="skillEnabled" />
+				</view>
+
+				<text class="input-label">Name</text>
+				<input class="flat-input" v-model="skillName" placeholder="lowercase-name" placeholder-style="color:#D1D5DB;font-size:26rpx;" />
+				<text class="input-label">Description</text>
+				<textarea class="small-textarea" v-model="skillDescription" placeholder="描述这个 Skill 什么时候应该被使用" placeholder-style="color:#D1D5DB;font-size:26rpx;" />
+
+				<view class="divider"></view>
+				<view class="card-header between">
+					<view class="header-left">
+						<oui-icon-unix name="snippets" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+						<text class="card-title">文档</text>
+					</view>
+					<view class="mini-btn" @click="addDocument">
+						<text class="mini-btn-text">+ 文档</text>
+					</view>
+				</view>
+				<scroll-view class="doc-tabs" :scroll-x="true" :show-scrollbar="false">
+					<view class="doc-tab-row">
+						<view v-for="(doc, docIndex) in documents" :key="docIndex" class="doc-tab" :class="selectedDocIndex == docIndex ? 'doc-tab-active' : ''" @click="selectDocument(docIndex)">
+							<text class="doc-tab-text" :class="selectedDocIndex == docIndex ? 'doc-tab-text-active' : ''">{{getDocumentTitle(doc)}}</text>
+						</view>
+					</view>
+				</scroll-view>
+
+				<text class="input-label">文档标题 / 路径</text>
+				<input class="flat-input" v-model="docTitle" placeholder="SKILL.md" placeholder-style="color:#D1D5DB;font-size:26rpx;" />
+				<text class="input-label">文档内容</text>
+				<textarea class="large-textarea" v-model="docContent" placeholder="写入纯文本指令..." placeholder-style="color:#D1D5DB;font-size:26rpx;" />
+
+				<view class="action-row">
+					<view class="primary-btn" @click="saveCurrentSkill">
+						<text class="primary-btn-text">保存 Skill</text>
+					</view>
+					<view class="secondary-btn" @click="deleteCurrentDocument">
+						<text class="secondary-btn-text">删文档</text>
+					</view>
+					<view class="danger-btn" @click="confirmDeleteSkill">
+						<text class="danger-btn-text">删除</text>
+					</view>
+				</view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script lang="uts">
+	import { getSkills, upsertSkill, deleteSkill, createSkillRecord, createSkillDocument, createSkillFromMarkdown, normalizeSkillName, readSkillId, readSkillName, readSkillDescription, readSkillEnabled, readSkillDocuments, readSkillDocumentTitle, readSkillDocumentContent, getSkillDocumentCount } from '@/utils/skills.uts'
+
+	export default {
+		data() {
+			return {
+				skills: [] as UTSJSONObject[],
+				selectedSkillId: '' as string,
+				skillName: '' as string,
+				skillDescription: '' as string,
+				skillEnabled: true as boolean,
+				documents: [] as UTSJSONObject[],
+				selectedDocIndex: 0 as number,
+				docTitle: '' as string,
+				docContent: '' as string,
+				skillCreatedAt: 0 as number,
+				showImportPanel: false as boolean,
+				importMarkdown: '' as string,
+			}
+		},
+		onLoad() {
+			this.reloadSkills()
+		},
+		methods: {
+			reloadSkills() {
+				this.skills = getSkills()
+				if (this.selectedSkillId == '' && this.skills.length > 0) {
+					this.loadSkillToEditor(this.skills[0])
+				}
+			},
+
+			getSkillId(skill: UTSJSONObject): string {
+				return readSkillId(skill)
+			},
+
+			getSkillName(skill: UTSJSONObject): string {
+				return readSkillName(skill)
+			},
+
+			getSkillDescriptionText(skill: UTSJSONObject): string {
+				return readSkillDescription(skill)
+			},
+
+			getDocCountText(skill: UTSJSONObject): string {
+				return getSkillDocumentCount(skill) + ' 文档'
+			},
+
+			isSkillEnabled(skill: UTSJSONObject): boolean {
+				return readSkillEnabled(skill)
+			},
+
+			getDocumentTitle(doc: UTSJSONObject): string {
+				return readSkillDocumentTitle(doc)
+			},
+
+			loadSkillToEditor(skill: UTSJSONObject) {
+				this.selectedSkillId = readSkillId(skill)
+				this.skillName = readSkillName(skill)
+				this.skillDescription = readSkillDescription(skill)
+				this.skillEnabled = readSkillEnabled(skill)
+				const rawCreatedAt = skill['createdAt'] as number | null
+				this.skillCreatedAt = rawCreatedAt != null ? rawCreatedAt : Date.now()
+				this.documents = readSkillDocuments(skill)
+				if (this.documents.length == 0) {
+					this.documents.push(createSkillDocument('SKILL.md', ''))
+				}
+				this.selectedDocIndex = 0
+				this.loadSelectedDocumentFields()
+			},
+
+			selectSkill(skill: UTSJSONObject) {
+				if (this.selectedSkillId != '' && this.selectedSkillId != readSkillId(skill)) {
+					this.saveCurrentSkillSilently()
+				}
+				this.loadSkillToEditor(skill)
+			},
+
+			loadSelectedDocumentFields() {
+				if (this.documents.length == 0) {
+					this.docTitle = 'SKILL.md'
+					this.docContent = ''
+					return
+				}
+				if (this.selectedDocIndex < 0) {
+					this.selectedDocIndex = 0
+				}
+				if (this.selectedDocIndex >= this.documents.length) {
+					this.selectedDocIndex = this.documents.length - 1
+				}
+				const doc = this.documents[this.selectedDocIndex]
+				this.docTitle = readSkillDocumentTitle(doc)
+				this.docContent = readSkillDocumentContent(doc)
+			},
+
+			syncDocumentFields() {
+				if (this.documents.length == 0) {
+					return
+				}
+				if (this.selectedDocIndex < 0 || this.selectedDocIndex >= this.documents.length) {
+					return
+				}
+				const doc = this.documents[this.selectedDocIndex]
+				doc['title'] = this.docTitle.trim() != '' ? this.docTitle.trim() : 'doc-' + (this.selectedDocIndex + 1) + '.md'
+				doc['content'] = this.docContent
+				doc['updatedAt'] = Date.now()
+			},
+
+			selectDocument(index: number) {
+				this.syncDocumentFields()
+				this.selectedDocIndex = index
+				this.loadSelectedDocumentFields()
+			},
+
+			addDocument() {
+				this.syncDocumentFields()
+				this.documents.push(createSkillDocument('doc-' + (this.documents.length + 1) + '.md', ''))
+				this.selectedDocIndex = this.documents.length - 1
+				this.loadSelectedDocumentFields()
+			},
+
+			deleteCurrentDocument() {
+				if (this.documents.length <= 1) {
+					uni.showToast({ position: 'bottom', title: '至少保留一个文档', icon: 'none' })
+					return
+				}
+				const next: UTSJSONObject[] = []
+				for (let i = 0; i < this.documents.length; i++) {
+					if (i != this.selectedDocIndex) {
+						next.push(this.documents[i])
+					}
+				}
+				this.documents = next
+				if (this.selectedDocIndex >= this.documents.length) {
+					this.selectedDocIndex = this.documents.length - 1
+				}
+				this.loadSelectedDocumentFields()
+			},
+
+			buildCurrentSkill(): UTSJSONObject {
+				this.syncDocumentFields()
+				const name = normalizeSkillName(this.skillName)
+				const desc = this.skillDescription.trim()
+				const skill: UTSJSONObject = {
+					id: this.selectedSkillId,
+					name: name,
+					description: desc != '' ? desc : '纯文本 Skill',
+					enabled: this.skillEnabled,
+					documents: this.documents,
+					createdAt: this.skillCreatedAt > 0 ? this.skillCreatedAt : Date.now(),
+					updatedAt: Date.now(),
+				} as UTSJSONObject
+				return skill
+			},
+
+			saveCurrentSkillSilently() {
+				if (this.selectedSkillId == '') {
+					return
+				}
+				upsertSkill(this.buildCurrentSkill())
+				this.skills = getSkills()
+			},
+
+			saveCurrentSkill() {
+				if (this.skillName.trim() == '') {
+					uni.showToast({ position: 'bottom', title: 'Name 不能为空', icon: 'none' })
+					return
+				}
+				this.saveCurrentSkillSilently()
+				this.skillName = normalizeSkillName(this.skillName)
+				uni.showToast({ position: 'bottom', title: '已保存', icon: 'success' })
+			},
+
+			createNewSkill() {
+				this.saveCurrentSkillSilently()
+				const docs: UTSJSONObject[] = []
+				docs.push(createSkillDocument('SKILL.md', ''))
+				const skill = createSkillRecord('new-skill-' + Date.now(), '描述这个 Skill 适用的任务', docs)
+				upsertSkill(skill)
+				this.skills = getSkills()
+				this.loadSkillToEditor(skill)
+			},
+
+			toggleImportPanel() {
+				this.showImportPanel = !this.showImportPanel
+			},
+
+			importMarkdownSkill() {
+				const text = this.importMarkdown.trim()
+				if (text == '') {
+					uni.showToast({ position: 'bottom', title: '内容不能为空', icon: 'none' })
+					return
+				}
+				this.saveCurrentSkillSilently()
+				const skill = createSkillFromMarkdown(text, 'imported-skill')
+				upsertSkill(skill)
+				this.importMarkdown = ''
+				this.showImportPanel = false
+				this.skills = getSkills()
+				this.loadSkillToEditor(skill)
+				uni.showToast({ position: 'bottom', title: '已导入', icon: 'success' })
+			},
+
+			confirmDeleteSkill() {
+				if (this.selectedSkillId == '') {
+					return
+				}
+				uni.showModal({
+					title: '删除 Skill',
+					content: '确定删除「' + this.skillName + '」吗？Agent 启用列表中会自动失效。',
+					confirmColor: '#EF4444',
+					success: (res) => {
+						if (res.confirm == true) {
+							deleteSkill(this.selectedSkillId)
+							this.selectedSkillId = ''
+							this.skillName = ''
+							this.skillDescription = ''
+							this.documents = [] as UTSJSONObject[]
+							this.docTitle = ''
+							this.docContent = ''
+							this.reloadSkills()
+							uni.showToast({ position: 'bottom', title: '已删除', icon: 'success' })
+						}
+					}
+				})
+			},
+		}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+		padding: 32rpx;
+	}
+
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 20rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+	}
+
+	.card-header {
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 18rpx;
+	}
+
+	.between {
+		justify-content: space-between;
+	}
+
+	.header-left {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.card-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	.desc {
+		font-size: 25rpx;
+		color: #6B7280;
+		line-height: 38rpx;
+	}
+
+	.hint {
+		font-size: 22rpx;
+		color: #9CA3AF;
+		line-height: 34rpx;
+		margin-top: 12rpx;
+	}
+
+	.action-row {
+		flex-direction: row;
+		align-items: center;
+		margin-top: 22rpx;
+	}
+
+	.primary-btn,
+	.secondary-btn,
+	.danger-btn,
+	.mini-btn {
+		border-radius: 14rpx;
+		padding: 18rpx 24rpx;
+		align-items: center;
+		justify-content: center;
+		margin-right: 14rpx;
+	}
+
+	.primary-btn {
+		background-color: var(--rice-primary-color);
+	}
+
+	.secondary-btn {
+		background-color: #F3F4F6;
+	}
+
+	.danger-btn {
+		background-color: #FEF2F2;
+	}
+
+	.mini-btn {
+		background-color: var(--rice-primary-color-1);
+		padding: 12rpx 18rpx;
+		margin-right: 0;
+	}
+
+	.primary-btn-text,
+	.secondary-btn-text,
+	.danger-btn-text,
+	.mini-btn-text {
+		font-size: 25rpx;
+		font-weight: bold;
+	}
+
+	.primary-btn-text {
+		color: #FFFFFF;
+	}
+
+	.secondary-btn-text {
+		color: #374151;
+	}
+
+	.danger-btn-text {
+		color: #EF4444;
+	}
+
+	.mini-btn-text {
+		color: var(--rice-primary-color);
+	}
+
+	.import-panel {
+		margin-top: 20rpx;
+	}
+
+	.import-btn {
+		margin-top: 18rpx;
+		margin-right: 0;
+	}
+
+	.empty-box {
+		background-color: #F9FAFB;
+		border-radius: 14rpx;
+		padding: 28rpx;
+	}
+
+	.empty-text {
+		font-size: 25rpx;
+		color: #9CA3AF;
+		line-height: 36rpx;
+	}
+
+	.skill-item {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		background-color: #F9FAFB;
+		border-radius: 16rpx;
+		padding: 24rpx;
+		margin-bottom: 14rpx;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: #F3F4F6;
+	}
+
+	.skill-item-active {
+		background-color: #FDE8EF;
+		border-color: #FB8FAB;
+	}
+
+	.skill-info {
+		flex: 1;
+		padding-right: 16rpx;
+	}
+
+	.skill-name {
+		font-size: 28rpx;
+		font-weight: bold;
+		color: #111827;
+	}
+
+	.skill-desc {
+		font-size: 22rpx;
+		color: #6B7280;
+		line-height: 32rpx;
+		margin-top: 8rpx;
+	}
+
+	.skill-meta {
+		align-items: flex-end;
+	}
+
+	.skill-meta-text {
+		font-size: 22rpx;
+		color: #9CA3AF;
+	}
+
+	.skill-status {
+		font-size: 22rpx;
+		font-weight: bold;
+		margin-top: 8rpx;
+	}
+
+	.skill-status-on {
+		color: #DB2777;
+	}
+
+	.skill-status-off {
+		color: #9CA3AF;
+	}
+
+	.input-label {
+		font-size: 24rpx;
+		color: #6B7280;
+		margin-top: 18rpx;
+		margin-bottom: 10rpx;
+	}
+
+	.flat-input,
+	.small-textarea,
+	.large-textarea {
+		background-color: #F9FAFB;
+		border-radius: 14rpx;
+		padding: 22rpx;
+		font-size: 27rpx;
+		color: #111827;
+		line-height: 40rpx;
+	}
+
+	.small-textarea {
+		height: 150rpx;
+	}
+
+	.large-textarea {
+		height: 420rpx;
+	}
+
+	.divider {
+		height: 2rpx;
+		background-color: #F3F4F6;
+		margin: 28rpx 0 22rpx;
+	}
+
+	.doc-tabs {
+		flex-direction: row;
+		margin-bottom: 14rpx;
+	}
+
+	.doc-tab-row {
+		flex-direction: row;
+	}
+
+	.doc-tab {
+		background-color: #F3F4F6;
+		border-radius: 999rpx;
+		padding: 12rpx 22rpx;
+		margin-right: 12rpx;
+	}
+
+	.doc-tab-active {
+		background-color: #111827;
+	}
+
+	.doc-tab-text {
+		font-size: 23rpx;
+		color: #4B5563;
+	}
+
+	.doc-tab-text-active {
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+</style>

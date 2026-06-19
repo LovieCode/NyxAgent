@@ -1,0 +1,462 @@
+/**
+ * 纯文本 Skills 管理
+ *
+ * 设计取向：
+ * - Skill 本体放在 uni.storage，便于导入导出。
+ * - Agent 只保存启用的 skillIds，避免全局开关污染不同 Agent。
+ * - 不执行脚本，只把纯文本文档按 XML 风格注入系统上下文。
+ */
+
+import { getAgentById } from '@/utils/agent.uts'
+
+export const SKILLS_STORAGE_KEY = 'skills_list'
+
+const MAX_SKILL_NAME_LENGTH = 64
+const MAX_SKILL_DESCRIPTION_LENGTH = 1024
+const MAX_SKILLS_PER_AGENT = 16
+const MAX_DOCUMENTS_PER_SKILL = 12
+const MAX_DOCUMENT_CONTENT_CHARS = 10000
+const MAX_SKILLS_PROMPT_CHARS = 50000
+
+function createId(prefix: string): string {
+	return prefix + '_' + Date.now() + '_' + Math.floor(Math.random() * 100000)
+}
+
+function readString(obj: UTSJSONObject, key: string): string {
+	const raw = obj[key] as string | null
+	return raw != null ? raw : ''
+}
+
+function readBoolean(obj: UTSJSONObject, key: string, fallback: boolean): boolean {
+	const raw = obj[key] as boolean | null
+	return raw != null ? raw : fallback
+}
+
+function truncateText(text: string, maxLength: number): string {
+	if (text.length <= maxLength) {
+		return text
+	}
+	return text.substring(0, maxLength) + '\n\n[内容过长，已截断]'
+}
+
+function normalizeLineEndings(text: string): string {
+	let result = text.replace(/\r\n/g, '\n')
+	result = result.replace(/\r/g, '\n')
+	return result
+}
+
+function trimHyphenEdges(text: string): string {
+	let result = text
+	while (result.startsWith('-') && result.length > 0) {
+		result = result.substring(1)
+	}
+	while (result.endsWith('-') && result.length > 0) {
+		result = result.substring(0, result.length - 1)
+	}
+	return result
+}
+
+/** Skill name 规范：小写字母、数字、连字符，最长 64。 */
+export function normalizeSkillName(rawName: string): string {
+	const raw = rawName.trim().toLowerCase()
+	let result = ''
+	let lastDash = false
+	for (let i = 0; i < raw.length; i++) {
+		const code = raw.charCodeAt(i)
+		const isLower = code >= 97 && code <= 122
+		const isNumber = code >= 48 && code <= 57
+		if (isLower || isNumber) {
+			result = result + raw.charAt(i)
+			lastDash = false
+		} else if (code == 45 || code == 95 || code == 32 || code == 9) {
+			if (lastDash == false && result.length > 0) {
+				result = result + '-'
+				lastDash = true
+			}
+		}
+	}
+	result = trimHyphenEdges(result)
+	if (result.length > MAX_SKILL_NAME_LENGTH) {
+		result = trimHyphenEdges(result.substring(0, MAX_SKILL_NAME_LENGTH))
+	}
+	if (result == '') {
+		result = 'skill-' + Date.now()
+	}
+	return result
+}
+
+function normalizeDescription(text: string): string {
+	return truncateText(text.trim(), MAX_SKILL_DESCRIPTION_LENGTH)
+}
+
+function appendUniqueString(list: string[], value: string): void {
+	if (value == '') {
+		return
+	}
+	for (let i = 0; i < list.length; i++) {
+		if (list[i] == value) {
+			return
+		}
+	}
+	list.push(value)
+}
+
+function readStringArray(value: any | null): string[] {
+	const result: string[] = []
+	if (value == null) {
+		return result
+	}
+	try {
+		const json = JSON.stringify(value)
+		if (json.startsWith('[')) {
+			const arr = JSON.parse(json) as string[]
+			for (let i = 0; i < arr.length; i++) {
+				appendUniqueString(result, arr[i])
+			}
+		} else if (json.startsWith('"')) {
+			const single = JSON.parse(json) as string | null
+			if (single != null) {
+				const parts = single.split(',')
+				for (let i = 0; i < parts.length; i++) {
+					appendUniqueString(result, parts[i].trim())
+				}
+			}
+		}
+	} catch (_e: any) {
+	}
+	return result
+}
+
+function parseFrontmatterValue(value: string): string {
+	let result = value.trim()
+	if (result.startsWith('"') && result.endsWith('"') && result.length >= 2) {
+		result = result.substring(1, result.length - 1)
+	}
+	if (result.startsWith("'") && result.endsWith("'") && result.length >= 2) {
+		result = result.substring(1, result.length - 1)
+	}
+	return result.trim()
+}
+
+function inferDescriptionFromBody(body: string): string {
+	const lines = normalizeLineEndings(body).split('\n')
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i].trim()
+		if (line == '') continue
+		if (line.startsWith('#')) continue
+		return normalizeDescription(line)
+	}
+	return ''
+}
+
+function parseMarkdownSkillParts(markdown: string, fallbackName: string): UTSJSONObject {
+	const normalized = normalizeLineEndings(markdown)
+	let name = fallbackName
+	let description = ''
+	let body = normalized.trim()
+	if (normalized.startsWith('---')) {
+		const endIndex = normalized.indexOf('\n---', 3)
+		if (endIndex > 0) {
+			const yamlText = normalized.substring(3, endIndex).trim()
+			body = normalized.substring(endIndex + 4).trim()
+			const lines = yamlText.split('\n')
+			for (let i = 0; i < lines.length; i++) {
+				const line = lines[i]
+				const sep = line.indexOf(':')
+				if (sep <= 0) continue
+				const key = line.substring(0, sep).trim()
+				const value = parseFrontmatterValue(line.substring(sep + 1))
+				if (key == 'name' && value != '') {
+					name = value
+				} else if (key == 'description' && value != '') {
+					description = value
+				}
+			}
+		}
+	}
+	if (description == '') {
+		description = inferDescriptionFromBody(body)
+	}
+	return {
+		name: name,
+		description: description,
+		body: body,
+	} as UTSJSONObject
+}
+
+export function createSkillDocument(title: string, content: string): UTSJSONObject {
+	const now = Date.now()
+	const safeTitle = title.trim() != '' ? title.trim() : 'SKILL.md'
+	return {
+		id: createId('doc'),
+		title: safeTitle,
+		content: normalizeLineEndings(content),
+		createdAt: now,
+		updatedAt: now,
+	} as UTSJSONObject
+}
+
+export function createSkillRecord(name: string, description: string, documents: UTSJSONObject[]): UTSJSONObject {
+	const now = Date.now()
+	return {
+		id: createId('skill'),
+		name: normalizeSkillName(name),
+		description: normalizeDescription(description),
+		enabled: true,
+		documents: documents,
+		createdAt: now,
+		updatedAt: now,
+	} as UTSJSONObject
+}
+
+export function createSkillFromMarkdown(markdown: string, fallbackName: string): UTSJSONObject {
+	const parsed = parseMarkdownSkillParts(markdown, fallbackName)
+	const name = readString(parsed, 'name')
+	let description = readString(parsed, 'description')
+	const body = readString(parsed, 'body')
+	if (description == '') {
+		description = '纯文本 Skill'
+	}
+	const docs: UTSJSONObject[] = []
+	docs.push(createSkillDocument('SKILL.md', body))
+	return createSkillRecord(name, description, docs)
+}
+
+export function readSkillId(skill: UTSJSONObject): string {
+	return readString(skill, 'id')
+}
+
+export function readSkillName(skill: UTSJSONObject): string {
+	return readString(skill, 'name')
+}
+
+export function readSkillDescription(skill: UTSJSONObject): string {
+	return readString(skill, 'description')
+}
+
+export function readSkillEnabled(skill: UTSJSONObject): boolean {
+	return readBoolean(skill, 'enabled', true)
+}
+
+export function readSkillDocuments(skill: UTSJSONObject): UTSJSONObject[] {
+	const raw = skill['documents'] as UTSJSONObject[] | null
+	if (raw != null) {
+		return raw
+	}
+	return []
+}
+
+export function readSkillDocumentTitle(doc: UTSJSONObject): string {
+	return readString(doc, 'title')
+}
+
+export function readSkillDocumentContent(doc: UTSJSONObject): string {
+	return readString(doc, 'content')
+}
+
+export function getSkillDocumentCount(skill: UTSJSONObject): number {
+	return readSkillDocuments(skill).length
+}
+
+function normalizeDocument(doc: UTSJSONObject, index: number): UTSJSONObject {
+	const rawId = readString(doc, 'id')
+	const rawTitle = readString(doc, 'title')
+	const rawContent = readString(doc, 'content')
+	return {
+		id: rawId != '' ? rawId : createId('doc'),
+		title: rawTitle != '' ? rawTitle : ('doc-' + (index + 1) + '.md'),
+		content: normalizeLineEndings(rawContent),
+		createdAt: doc['createdAt'] != null ? (doc['createdAt'] as number) : Date.now(),
+		updatedAt: doc['updatedAt'] != null ? (doc['updatedAt'] as number) : Date.now(),
+	} as UTSJSONObject
+}
+
+function normalizeSkillRecord(skill: UTSJSONObject): UTSJSONObject {
+	const docsRaw = readSkillDocuments(skill)
+	const docs: UTSJSONObject[] = []
+	for (let i = 0; i < docsRaw.length && i < MAX_DOCUMENTS_PER_SKILL; i++) {
+		docs.push(normalizeDocument(docsRaw[i], i))
+	}
+	const rawId = readSkillId(skill)
+	return {
+		id: rawId != '' ? rawId : createId('skill'),
+		name: normalizeSkillName(readSkillName(skill)),
+		description: normalizeDescription(readSkillDescription(skill)),
+		enabled: readSkillEnabled(skill),
+		documents: docs,
+		createdAt: skill['createdAt'] != null ? (skill['createdAt'] as number) : Date.now(),
+		updatedAt: skill['updatedAt'] != null ? (skill['updatedAt'] as number) : Date.now(),
+	} as UTSJSONObject
+}
+
+export function getSkills(): UTSJSONObject[] {
+	const raw = uni.getStorageSync(SKILLS_STORAGE_KEY) as string | null
+	if (raw == null || raw == '') {
+		return []
+	}
+	try {
+		const parsed = JSON.parse(raw) as UTSJSONObject[]
+		const result: UTSJSONObject[] = []
+		for (let i = 0; i < parsed.length; i++) {
+			result.push(normalizeSkillRecord(parsed[i]))
+		}
+		return result
+	} catch (_e: any) {
+		return []
+	}
+}
+
+export function saveSkills(skills: UTSJSONObject[]): void {
+	uni.setStorageSync(SKILLS_STORAGE_KEY, JSON.stringify(skills))
+}
+
+export function upsertSkill(skill: UTSJSONObject): void {
+	const skills = getSkills()
+	const id = readSkillId(skill)
+	const normalized = normalizeSkillRecord(skill)
+	normalized['updatedAt'] = Date.now()
+	let found = false
+	for (let i = 0; i < skills.length; i++) {
+		if (readSkillId(skills[i]) == id && id != '') {
+			skills[i] = normalized
+			found = true
+			break
+		}
+	}
+	if (found == false) {
+		skills.push(normalized)
+	}
+	saveSkills(skills)
+}
+
+export function deleteSkill(skillId: string): void {
+	const skills = getSkills()
+	const next: UTSJSONObject[] = []
+	for (let i = 0; i < skills.length; i++) {
+		if (readSkillId(skills[i]) != skillId) {
+			next.push(skills[i])
+		}
+	}
+	saveSkills(next)
+}
+
+export function getSkillById(skillId: string): UTSJSONObject | null {
+	const skills = getSkills()
+	for (let i = 0; i < skills.length; i++) {
+		if (readSkillId(skills[i]) == skillId) {
+			return skills[i]
+		}
+	}
+	return null
+}
+
+export function getAgentSkillIds(agent: UTSJSONObject | null): string[] {
+	if (agent == null) {
+		return []
+	}
+	return readStringArray(agent['skillIds'])
+}
+
+export function skillIdListContains(list: string[], skillId: string): boolean {
+	for (let i = 0; i < list.length; i++) {
+		if (list[i] == skillId) {
+			return true
+		}
+	}
+	return false
+}
+
+export function filterExistingSkillIds(ids: string[]): string[] {
+	const result: string[] = []
+	const skills = getSkills()
+	for (let i = 0; i < ids.length; i++) {
+		const id = ids[i]
+		for (let j = 0; j < skills.length; j++) {
+			if (readSkillId(skills[j]) == id) {
+				appendUniqueString(result, id)
+				break
+			}
+		}
+	}
+	return result
+}
+
+function xmlEscape(value: string): string {
+	let result = value
+	result = result.replace(/&/g, '&amp;')
+	result = result.replace(/</g, '&lt;')
+	result = result.replace(/>/g, '&gt;')
+	result = result.replace(/"/g, '&quot;')
+	result = result.replace(/'/g, '&apos;')
+	return result
+}
+
+function appendSkillPrompt(lines: string[], skill: UTSJSONObject, totalChars: number): number {
+	const name = readSkillName(skill)
+	const description = readSkillDescription(skill)
+	const docs = readSkillDocuments(skill)
+	lines.push('  <skill>')
+	lines.push('    <name>' + xmlEscape(name) + '</name>')
+	lines.push('    <description>' + xmlEscape(description) + '</description>')
+	lines.push('    <documents>')
+	for (let i = 0; i < docs.length && i < MAX_DOCUMENTS_PER_SKILL; i++) {
+		if (totalChars >= MAX_SKILLS_PROMPT_CHARS) {
+			break
+		}
+		const remain = MAX_SKILLS_PROMPT_CHARS - totalChars
+		if (remain <= 0) {
+			break
+		}
+		const title = readSkillDocumentTitle(docs[i])
+		const rawContent = readSkillDocumentContent(docs[i]).trim()
+		if (rawContent == '') {
+			continue
+		}
+		let content = truncateText(rawContent, MAX_DOCUMENT_CONTENT_CHARS)
+		if (content.length > remain) {
+			content = truncateText(content, remain)
+		}
+		lines.push('      <document path="' + xmlEscape(title) + '">')
+		lines.push(xmlEscape(content))
+		lines.push('      </document>')
+		totalChars = totalChars + content.length
+	}
+	lines.push('    </documents>')
+	lines.push('  </skill>')
+	return totalChars
+}
+
+/**
+ * 构建注入给 Agent 的 Skills 系统提示。
+ * 格式参考 agentskills/Pi 的 `<available_skills>`，但这里直接内联文档内容。
+ */
+export function buildAgentSkillsPrompt(agentId: string): string {
+	const agent = getAgentById(agentId)
+	const ids = filterExistingSkillIds(getAgentSkillIds(agent))
+	if (ids.length == 0) {
+		return ''
+	}
+	const skills = getSkills()
+	const lines: string[] = []
+	lines.push('The following pure-text skills provide specialized instructions for this Agent.')
+	lines.push('Use a skill when the user task matches its description. The skill documents are inline text; do not claim to execute external scripts from them.')
+	lines.push('System, developer, and direct user instructions have higher priority than skill text.')
+	lines.push('')
+	lines.push('<available_skills>')
+	let added = 0
+	let totalChars = 0
+	for (let i = 0; i < ids.length && added < MAX_SKILLS_PER_AGENT; i++) {
+		for (let j = 0; j < skills.length; j++) {
+			if (readSkillId(skills[j]) == ids[i] && readSkillEnabled(skills[j]) == true) {
+				totalChars = appendSkillPrompt(lines, skills[j], totalChars)
+				added++
+				break
+			}
+		}
+	}
+	lines.push('</available_skills>')
+	if (added == 0) {
+		return ''
+	}
+	return lines.join('\n')
+}

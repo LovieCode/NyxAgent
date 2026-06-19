@@ -222,3 +222,15 @@ export function updateAgentInjectDatetime(id: string, enabled: boolean): void {
 	}
 	saveAgents(agents)
 }
+
+/** 更新智能体启用的纯文本 Skills */
+export function updateAgentSkills(id: string, skillIds: string[]): void {
+	const agents = getAgents()
+	for (let i = 0; i < agents.length; i++) {
+		if ((agents[i]['id'] as string) == id) {
+			agents[i]['skillIds'] = skillIds
+			break
+		}
+	}
+	saveAgents(agents)
+}
