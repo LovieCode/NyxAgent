@@ -564,7 +564,7 @@ export type MemoryManagerLog = {
 	details: string
 }
 
-/** 写入一条记忆管理整理日志 */
+/** 写入一条记忆管理整理日志，每个 agent 最多保留 5 条 */
 export function saveMemoryManagerLog(log: MemoryManagerLog): void {
 	initMemoryTables()
 	const db = getDb()
@@ -572,17 +572,22 @@ export function saveMemoryManagerLog(log: MemoryManagerLog): void {
 		'INSERT INTO agent_memory_manager_logs (id, agent_id, conversation_id, executed_at, dropped_count, saved_count, forgotten_count, summary, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		[log.id, log.agentId, log.conversationId, log.executedAt, log.messageCount, log.savedCount, log.forgottenCount, log.summary, log.details]
 	)
+	// 每个 agent 只保留最近 5 条，删除多余的旧记录
+	db.run(
+		'DELETE FROM agent_memory_manager_logs WHERE agent_id = ? AND id NOT IN (SELECT id FROM agent_memory_manager_logs WHERE agent_id = ? ORDER BY executed_at DESC LIMIT 5)',
+		[log.agentId, log.agentId]
+	)
 	db.close()
 }
 
-/** 查询记忆管理整理日志列表（按时间倒序，最多 50 条） */
+/** 查询记忆管理整理日志列表（按时间倒序，最多 5 条） */
 export function listMemoryManagerLogs(agentId: string, conversationId: string): UTSJSONObject[] {
 	initMemoryTables()
 	const aid = normalizeAgentId(agentId)
 	const cid = normalizeConversationId(conversationId)
 	const db = getDb()
 	const result = db.query(
-		'SELECT * FROM agent_memory_manager_logs WHERE agent_id = ? AND conversation_id = ? ORDER BY executed_at DESC LIMIT 50',
+		'SELECT * FROM agent_memory_manager_logs WHERE agent_id = ? AND conversation_id = ? ORDER BY executed_at DESC LIMIT 5',
 		[aid, cid]
 	)
 	db.close()
