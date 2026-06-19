@@ -283,11 +283,14 @@
 				this.hasUnsaved = true
 			}
 			// 检查裁剪页面是否有返回结果
+			const cropTarget = uni.getStorageSync('crop_target') as string
 			const cropResult = uni.getStorageSync('crop_result') as string
-			if (cropResult != null && cropResult != '') {
+			if (cropTarget == 'agent_avatar' && cropResult != null && cropResult != '') {
 				this.agentAvatar = cropResult
 				updateAgentAvatar(this.agentId, cropResult)
 				uni.removeStorageSync('crop_result')
+				uni.removeStorageSync('crop_target')
+				uni.removeStorageSync('crop_image_path')
 			}
 		},
 		methods: {
@@ -422,6 +425,8 @@
 						const parsed = JSON.parse(raw) as UTSJSONObject
 						const paths = parsed['tempFilePaths'] as string[]
 						if (paths != null && paths.length > 0) {
+							uni.removeStorageSync('crop_result')
+							uni.setStorageSync('crop_target', 'agent_avatar')
 							uni.setStorageSync('crop_image_path', paths[0])
 							uni.navigateTo({
 								url: '/pages/common/crop/crop'

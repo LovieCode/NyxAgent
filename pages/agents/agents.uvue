@@ -240,6 +240,7 @@
 		},
 		onShow() {
 			this.loadAgents()
+			this.consumeCreateAvatarCropResult()
 		},
 		methods: {
 			templateKey(tpl: UTSJSONObject): string {
@@ -280,6 +281,46 @@
 			createAvatar(): string {
 				const value = this.createData['avatar'] as string | null
 				return value != null ? value : ''
+			},
+
+			consumeCreateAvatarCropResult(): void {
+				const target = uni.getStorageSync('crop_target') as string
+				if (target != 'create_agent_avatar') {
+					return
+				}
+				const cropResult = uni.getStorageSync('crop_result') as string
+				if (cropResult != null && cropResult != '') {
+					this.createData['avatar'] = cropResult
+				}
+				uni.removeStorageSync('crop_result')
+				uni.removeStorageSync('crop_target')
+				uni.removeStorageSync('crop_image_path')
+			},
+
+			parseChosenImagePath(res: any): string {
+				try {
+					const raw = JSON.stringify(res)
+					if (raw == null || raw == '') { return '' }
+					const parsed = JSON.parse(raw) as UTSJSONObject
+					const tempFilePaths = parsed['tempFilePaths'] as string[] | null
+					if (tempFilePaths != null && tempFilePaths.length > 0) {
+						return tempFilePaths[0]
+					}
+					const tempFiles = parsed['tempFiles'] as UTSJSONObject[] | null
+					if (tempFiles != null && tempFiles.length > 0) {
+						const first = tempFiles[0]
+						const path = first['path'] as string | null
+						if (path != null && path != '') {
+							return path
+						}
+						const tempFilePath = first['tempFilePath'] as string | null
+						if (tempFilePath != null && tempFilePath != '') {
+							return tempFilePath
+						}
+					}
+				} catch (_e: any) {
+				}
+				return ''
 			},
 
 			resetCreateData(): void {
@@ -374,19 +415,26 @@
 			},
 
 			/** 为新建智能体选择头像 */
-			pickCreateAvatar() {
+			pickCreateAvatar(): void {
 				uni.chooseImage({
 					count: 1,
 					sourceType: ['album', 'camera'],
 					sizeType: ['compressed'],
 					success: (res: any) => {
-						const raw = JSON.stringify(res)
-						if (raw == null || raw == '') { return }
-						const parsed = JSON.parse(raw) as UTSJSONObject
-						const paths = parsed['tempFilePaths'] as string[]
-						if (paths != null && paths.length > 0) {
-							this.createData['avatar'] = paths[0]
+						const path = this.parseChosenImagePath(res)
+						if (path == '') {
+							uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
+							return
 						}
+						uni.removeStorageSync('crop_result')
+						uni.setStorageSync('crop_target', 'create_agent_avatar')
+						uni.setStorageSync('crop_image_path', path)
+						uni.navigateTo({
+							url: '/pages/common/crop/crop'
+						})
+					},
+					fail: () => {
+						uni.showToast({ position: 'bottom', title: '选择图片失败', icon: 'none' })
 					}
 				})
 			},
