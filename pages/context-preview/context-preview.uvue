@@ -800,27 +800,46 @@
 				const charsPerLine = this.estimateCodeCharsPerLine()
 				const grid = this.measureTextGrid(content, matchStart, charsPerLine)
 				const line = grid.length > 0 ? grid[0] : 0
-				// 行高用 rpx 动态换算：line-height:36rpx → px
 				const info = uni.getSystemInfoSync()
 				const rpxRatio = info.windowWidth / 750
 				const lineHeightPx = 36 * rpxRatio
-				let offsetTop = 6 + line * lineHeightPx
+				// code-text 上 padding: 24rpx
+				const paddingTop = 24 * rpxRatio
+				let offsetTop = paddingTop + line * lineHeightPx
 				if (offsetTop < 0) {
 					offsetTop = 0
 				}
 				return offsetTop
 			},
 
-			/** 滚动到区块内匹配位置，尽量居中 */
+			/** 滚动到区块内匹配位置，实时测量 + 直接赋值，尽量居中 */
 			scrollToSectionMatch(sectionId: string, matchStart: number): void {
 				const textOffset = this.estimateTextMatchOffset(this.fullJsonText, matchStart)
-				// 半屏高度，未测量时用 300px 兜底
 				const viewCenter = this.scrollViewHeight > 0 ? Math.floor(this.scrollViewHeight / 2) : 300
-				// scrollToSectionWithOffset 内部公式: scrollTop = cachedTop + offsetTop - 24
-				// 要居中: scrollTop = cachedTop + textOffset - viewCenter
-				// 因此 offsetTop = textOffset - viewCenter + 24
-				const centeredOffset = textOffset - viewCenter + 24
-				this.scrollToSectionWithOffset(sectionId, centeredOffset > 0 ? centeredOffset : 0)
+
+				// 实时测量区块位置，不用 layoutTopMap 缓存
+				const query = uni.createSelectorQuery().in(this)
+				query.select('#' + sectionId).boundingClientRect()
+				query.select('#context-scroll').boundingClientRect()
+				query.exec((res: any) => {
+					const rows = res as UTSArray<any> | null
+					if (rows == null || rows.length < 2) return
+					const sectionRect = rows[0] as NodeInfo | null
+					const scrollRect = rows[1] as NodeInfo | null
+					if (sectionRect == null || scrollRect == null) return
+					const sectionTop = sectionRect.top as number | null
+					const containerTop = scrollRect.top as number | null
+					if (sectionTop == null || containerTop == null) return
+
+					// 区块在滚动容器内的相对位置
+					const sectionRelative = sectionTop - containerTop
+					let target = sectionRelative + textOffset - viewCenter
+					if (target < 0) target = 0
+
+					// 直接赋值（和滚动条拖拽一致），不走 commitScrollTop 的延迟 / seq 取消
+					this.scrollTop = target
+					this.scrollOffset = target
+				})
 			},
 
 			scrollToTop() {
