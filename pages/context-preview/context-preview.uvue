@@ -752,17 +752,13 @@
 				this.scrollToSectionWithOffset(id, 0)
 			},
 
-			/** 估算等宽字体每行字符数 */
+			/** 估算等宽字体每行字符数（全 rpx 单位，与屏幕宽度无关） */
 			estimateCodeCharsPerLine(): number {
-				const info = uni.getSystemInfoSync()
-				const windowWidth = info.windowWidth
-				const usableWidth = windowWidth - 116
-				const charWidth = 7.2
-				let value = Math.floor(usableWidth / charWidth)
-				if (value < 18) {
-					value = 18
-				}
-				return value
+				// 设计稿 750rpx，总水平占用：container(48) + card(64) + code(48) + scrollbar(28) = 188rpx
+				// 可用宽度 = 750 - 188 = 562rpx
+				// 等宽字体字符宽 ≈ 0.6 × font-size(24rpx) = 14.4rpx
+				const charsPerLine = Math.floor((750 - 188) / (24 * 0.6))
+				return charsPerLine < 18 ? 18 : charsPerLine
 			},
 
 			/** 计算文本到 endExclusive 位置的行/列 */
@@ -792,7 +788,7 @@
 				return [line, column]
 			},
 
-			/** 估算匹配位置在文本中的像素偏移 */
+			/** 估算匹配位置在文本中的像素偏移（相对于 section 区块顶部） */
 			estimateTextMatchOffset(content: string, matchStart: number): number {
 				if (content == '' || matchStart < 0) {
 					return 0
@@ -803,9 +799,9 @@
 				const info = uni.getSystemInfoSync()
 				const rpxRatio = info.windowWidth / 750
 				const lineHeightPx = 36 * rpxRatio
-				// code-text 上 padding: 24rpx
-				const paddingTop = 24 * rpxRatio
-				let offsetTop = paddingTop + line * lineHeightPx
+				// 区块头部：card padding(32) + section-row(≈36) + margin(20) + code padding(24) ≈ 112rpx
+				const headerPx = 112 * rpxRatio
+				let offsetTop = headerPx + line * lineHeightPx
 				if (offsetTop < 0) {
 					offsetTop = 0
 				}
