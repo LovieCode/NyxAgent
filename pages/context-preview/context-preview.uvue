@@ -27,14 +27,7 @@
 					<text class="search-btn" @click="applySearch">搜索</text>
 				</view>
 				<text class="search-meta">{{searchMetaText}}</text>
-				<view v-if="currentSearchTitle != ''" class="search-hit-card">
-					<text class="search-hit-title">{{currentSearchTitle}}</text>
-					<text class="search-hit-excerpt">
-						<text>{{currentSearchExcerptBefore}}</text>
-						<text v-if="currentSearchExcerptMatch != ''" class="search-mark">{{currentSearchExcerptMatch}}</text>
-						<text>{{currentSearchExcerptAfter}}</text>
-					</text>
-				</view>
+	
 			</view>
 
 			<view id="section-summary" class="card" :class="activeSectionId == 'section-summary' ? 'card-active' : ''">
@@ -164,11 +157,7 @@
 				searchResults: [] as UTSJSONObject[],
 				searchIndex: -1 as number,
 				searchMetaText: '输入关键词后可在各段内容之间跳转定位。' as string,
-				currentSearchTitle: '' as string,
-				currentSearchExcerpt: '' as string,
-				currentSearchExcerptBefore: '' as string,
-				currentSearchExcerptMatch: '' as string,
-				currentSearchExcerptAfter: '' as string,
+	
 				activeSectionId: '' as string,
 
 				searchJumpBusy: false as boolean,
@@ -597,29 +586,6 @@
 				}
 			},
 
-			setCurrentSearchExcerpt(text: string): void {
-				this.currentSearchExcerpt = text
-				const query = this.searchText.trim()
-				if (query == '' || text == '') {
-					this.currentSearchExcerptBefore = text
-					this.currentSearchExcerptMatch = ''
-					this.currentSearchExcerptAfter = ''
-					return
-				}
-				const source = text.toLowerCase()
-				const needle = query.toLowerCase()
-				const firstIndex = source.indexOf(needle)
-				if (firstIndex < 0) {
-					this.currentSearchExcerptBefore = text
-					this.currentSearchExcerptMatch = ''
-					this.currentSearchExcerptAfter = ''
-					return
-				}
-				this.currentSearchExcerptBefore = text.substring(0, firstIndex)
-				this.currentSearchExcerptMatch = text.substring(firstIndex, firstIndex + query.length)
-				this.currentSearchExcerptAfter = text.substring(firstIndex + query.length)
-			},
-
 			applySearch() {
 				const query = this.searchText.trim()
 				if (query == '') {
@@ -634,8 +600,6 @@
 				if (results.length == 0) {
 					this.searchIndex = -1
 					this.searchMetaText = '没有找到匹配项。'
-					this.currentSearchTitle = ''
-					this.setCurrentSearchExcerpt('')
 					this.activeSectionId = ''
 					this.searchJumpBusy = false
 					this.queuedSearchIndex = -1
@@ -665,13 +629,9 @@
 				this.searchIndex = index
 				const item = this.searchResults[index]
 				const sectionId = item['sectionId'] as string | null
-				const title = item['title'] as string | null
-				const excerpt = item['excerpt'] as string | null
 				const count = item['count'] as number | null
 				const occurrence = item['occurrence'] as number | null
 				this.searchMetaText = '命中 ' + this.searchResults.length + ' 处，当前第 ' + (index + 1) + ' 处' + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
-				this.currentSearchTitle = title != null ? title : ''
-				this.setCurrentSearchExcerpt(excerpt != null ? excerpt : '')
 				this.activeSectionId = sectionId != null ? sectionId : ''
 				this.showFloatingSearchBar = true
 				this.floatingMetaText = (index + 1) + ' / ' + this.searchResults.length + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
@@ -727,8 +687,6 @@
 				this.searchResults = [] as UTSJSONObject[]
 				this.searchIndex = -1
 				this.searchMetaText = '输入关键词后可在各段内容之间跳转定位。'
-				this.currentSearchTitle = ''
-				this.setCurrentSearchExcerpt('')
 				this.activeSectionId = ''
 				this.searchJumpBusy = false
 				this.queuedSearchIndex = -1
@@ -999,36 +957,6 @@
 	.floating-btn-danger {
 		background-color: #FEE2E2;
 		color: #DC2626;
-	}
-
-	.search-hit-card {
-		margin-top: 20rpx;
-		padding: 24rpx;
-		border-radius: 24rpx;
-		background-color: #FFF7FA;
-	}
-
-	.search-hit-title {
-		font-size: 26rpx;
-		font-weight: bold;
-		color: #DB2777;
-		margin-bottom: 12rpx;
-	}
-
-	.search-hit-excerpt {
-		font-size: 24rpx;
-		line-height: 38rpx;
-		color: #4B5563;
-		white-space: pre-wrap;
-	}
-
-	.search-mark {
-		background-color: #FDE68A;
-		color: #7C2D12;
-		border-radius: 12rpx;
-		padding-left: 4rpx;
-		padding-right: 4rpx;
-		font-weight: bold;
 	}
 
 	.block-text {
