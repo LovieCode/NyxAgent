@@ -377,7 +377,11 @@ function callChatAPI(
 		body['tools'] = openaiTools
 	}
 
-	console.log('[LLM] → ' + model + ' | ' + apiMessages.length + ' msgs | ' + tools.length + ' tools | ' + url)
+	console.log('[LLM] ====== REQUEST ======')
+	console.log('[LLM] URL: ' + url)
+	console.log('[LLM] Model: ' + model + ' | Messages: ' + apiMessages.length + ' | Tools: ' + tools.length)
+	console.log('[LLM] Body: ' + JSON.stringify(body))
+	console.log('[LLM] =======================')
 
 	uni.request({
 		url: url,
@@ -387,7 +391,6 @@ function callChatAPI(
 		success: (res) => {
 			const statusCode = res.statusCode as number
 			if (statusCode != 200) {
-				console.log('[LLM] ← ' + statusCode + ' error')
 				let errDetail = ''
 				try {
 					const errData = res.data as UTSJSONObject | null
@@ -399,6 +402,9 @@ function callChatAPI(
 						}
 					}
 				} catch (_) {}
+				console.log('[LLM] ====== RESPONSE ERROR ======')
+				console.log('[LLM] Status: ' + statusCode + errDetail)
+				console.log('[LLM] =============================')
 				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null)
 				return
 			}
@@ -437,9 +443,11 @@ function callChatAPI(
 						}
 					}
 				}
-				const preview = text != '' ? text.substring(0, text.length < 100 ? text.length : 100) : ''
+				const preview = text != '' ? text.substring(0, text.length < 200 ? text.length : 200) : ''
 				const tag = tcNames != '' ? ' tools:' + tcNames : ''
-				console.log('[LLM] ← 200' + tag + ' | ' + preview)
+				console.log('[LLM] ====== RESPONSE ======')
+				console.log('[LLM] Status: 200' + tag + ' | ' + preview)
+				console.log('[LLM] =======================')
 
 				if (rawToolCalls != null && rawToolCalls.length > 0) {
 					const tcList: ToolCallInfo[] = []
@@ -657,7 +665,11 @@ function callChatAPIStream(
 		body['cache_key'] = cacheKey
 	}
 
-	console.log('[LLM] → stream ' + model + ' | ' + apiMessages.length + ' msgs | ' + tools.length + ' tools' + (cacheKey != '' ? ' | cache' : '') + ' | ' + url)
+	console.log('[LLM] ====== STREAM REQUEST ======')
+	console.log('[LLM] URL: ' + url)
+	console.log('[LLM] Model: ' + model + ' | Messages: ' + apiMessages.length + ' | Tools: ' + tools.length + (cacheKey != '' ? ' | Cache: ' + cacheKey : ''))
+	console.log('[LLM] Body: ' + JSON.stringify(body))
+	console.log('[LLM] =============================')
 
 	// 流式状态（用单元素数组模拟引用传递，兼容 UTS 闭包限制）
 	const fullTextRef: string[] = ['']
@@ -677,7 +689,6 @@ function callChatAPIStream(
 			streamEnded = true
 			const statusCode = res.statusCode as number
 			if (statusCode != 200) {
-				console.log('[LLM] ← ' + statusCode + ' error')
 				let errDetail = ''
 				try {
 					if (fullTextRef[0] != '') {
@@ -689,6 +700,9 @@ function callChatAPIStream(
 						}
 					}
 				} catch (_) {}
+				console.log('[LLM] ====== STREAM ERROR ======')
+				console.log('[LLM] Status: ' + statusCode + errDetail)
+				console.log('[LLM] ===========================')
 				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null, null)
 				return
 			}
@@ -716,12 +730,16 @@ function callChatAPIStream(
 						arguments: rawArgs != null ? rawArgs : '{}',
 					} as ToolCallInfo)
 				}
-				const preview = fullTextRef[0] != '' ? fullTextRef[0].substring(0, fullTextRef[0].length < 100 ? fullTextRef[0].length : 100) : ''
-				console.log('[LLM] ← 200 tools:' + tcNames + ' | ' + preview)
+				const preview = fullTextRef[0] != '' ? fullTextRef[0].substring(0, fullTextRef[0].length < 200 ? fullTextRef[0].length : 200) : ''
+				console.log('[LLM] ====== STREAM RESPONSE ======')
+				console.log('[LLM] Status: 200 tools:' + tcNames + ' | ' + preview)
+				console.log('[LLM] ==============================')
 				done(fullTextRef[0], tcList, fullThinkingRef[0])
 			} else {
-				const preview = fullTextRef[0] != '' ? fullTextRef[0].substring(0, fullTextRef[0].length < 100 ? fullTextRef[0].length : 100) : ''
-				console.log('[LLM] ← 200 | ' + preview)
+				const preview = fullTextRef[0] != '' ? fullTextRef[0].substring(0, fullTextRef[0].length < 200 ? fullTextRef[0].length : 200) : ''
+				console.log('[LLM] ====== STREAM RESPONSE ======')
+				console.log('[LLM] Status: 200 | ' + preview)
+				console.log('[LLM] ==============================')
 				done(fullTextRef[0], null, fullThinkingRef[0])
 			}
 		},
