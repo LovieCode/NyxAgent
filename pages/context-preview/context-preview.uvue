@@ -5,7 +5,8 @@
 				<text class="nav-btn" @click="copyAll">复制</text>
 			</template>
 		</NavBar>
-		<scroll-view id="context-scroll" class="container" :scroll-y="true" :scroll-with-animation="false" :scroll-top="scrollTop">
+		<view class="scroll-wrapper">
+			<scroll-view id="context-scroll" class="container" :scroll-y="true" :scroll-with-animation="false" :show-scrollbar="false" :scroll-top="scrollTop" @scroll="onScrollViewScroll">
 			<view id="anchor-top" class="anchor-spacer"></view>
 			<view class="hero-card">
 				<text class="hero-title">发送前完整上下文</text>
@@ -47,16 +48,6 @@
 				<text class="meta-line">短缓存：{{bufferInjection != '' ? '已注入' : '无'}}</text>
 			</view>
 
-			<view id="section-system" class="card" :class="activeSectionId == 'section-system' ? 'card-active' : ''">
-				<text class="section-title">系统提示词</text>
-				<text class="block-text" :class="activeSectionId == 'section-system' ? 'block-text-active' : ''">{{systemPrompt != '' ? systemPrompt : '（空）'}}</text>
-			</view>
-
-			<view id="section-settings" class="card" :class="activeSectionId == 'section-settings' ? 'card-active' : ''">
-				<text class="section-title">生成参数</text>
-				<text class="code-text" :class="activeSectionId == 'section-settings' ? 'code-text-active' : ''">{{settingsText}}</text>
-			</view>
-
 			<view id="section-important-memory" class="card" :class="activeSectionId == 'section-important-memory' ? 'card-active' : ''" v-if="importantMemory != ''">
 				<text class="section-title">重要记忆注入</text>
 				<text class="block-text" :class="activeSectionId == 'section-important-memory' ? 'block-text-active' : ''">{{importantMemory}}</text>
@@ -65,48 +56,6 @@
 			<view id="section-buffer-memory" class="card" :class="activeSectionId == 'section-buffer-memory' ? 'card-active' : ''" v-if="bufferInjection != ''">
 				<text class="section-title">短缓存注入</text>
 				<text class="block-text" :class="activeSectionId == 'section-buffer-memory' ? 'block-text-active' : ''">{{bufferInjection}}</text>
-			</view>
-
-			<view id="section-messages" class="card" :class="activeSectionId == 'section-messages' ? 'card-active' : ''">
-				<text class="section-title">发送 messages（OpenAI 格式）</text>
-				<view v-for="(chunk, index) in messagesChunks" :key="'msg-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-panel-active">
-						<text class="code-text code-text-panel code-text-active">
-							<text>{{activeChunkPrefix(chunk)}}</text>
-							<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
-							<text>{{activeChunkSuffix(chunk)}}</text>
-						</text>
-					</view>
-					<text v-else class="code-text">{{chunkText(chunk)}}</text>
-				</view>
-			</view>
-
-			<view id="section-tools" class="card" :class="activeSectionId == 'section-tools' ? 'card-active' : ''">
-				<text class="section-title">工具定义</text>
-				<view v-for="(chunk, index) in toolsChunks" :key="'tool-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-panel-active">
-						<text class="code-text code-text-panel code-text-active">
-							<text>{{activeChunkPrefix(chunk)}}</text>
-							<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
-							<text>{{activeChunkSuffix(chunk)}}</text>
-						</text>
-					</view>
-					<text v-else class="code-text">{{chunkText(chunk)}}</text>
-				</view>
-			</view>
-
-			<view id="section-request" class="card" :class="activeSectionId == 'section-request' ? 'card-active' : ''">
-				<text class="section-title">最终 request body</text>
-				<view v-for="(chunk, index) in requestBodyChunks" :key="'req-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-panel-active">
-						<text class="code-text code-text-panel code-text-active">
-							<text>{{activeChunkPrefix(chunk)}}</text>
-							<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
-							<text>{{activeChunkSuffix(chunk)}}</text>
-						</text>
-					</view>
-					<text v-else class="code-text">{{chunkText(chunk)}}</text>
-				</view>
 			</view>
 
 			<view id="section-full-json" class="card" :class="activeSectionId == 'section-full-json' ? 'card-active' : ''">
@@ -127,6 +76,10 @@
 			</view>
 			<view id="anchor-bottom" class="anchor-spacer"></view>
 		</scroll-view>
+		<view class="custom-scrollbar" v-if="scrollViewHeight > 0 && scrollContentHeight > scrollViewHeight" @touchstart="onScrollbarTrackTap" @touchend="onScrollbarTouchEnd">
+			<view class="scrollbar-thumb" :style="scrollbarThumbStyle" @touchstart.stop="onScrollbarThumbStart" @touchmove.stop.prevent="onScrollbarThumbMove" />
+		</view>
+	</view>
 		<view v-if="showFloatingSearchBar" class="floating-search-bar">
 			<text class="floating-search-meta">{{floatingMetaText}}</text>
 			<view class="floating-search-actions">
@@ -169,24 +122,43 @@
 				providerId: '' as string,
 				baseUrl: '' as string,
 				model: '' as string,
-				systemPrompt: '' as string,
 				importantMemory: '' as string,
 				bufferInjection: '' as string,
 				messageCount: 0 as number,
 				toolCount: 0 as number,
-				settingsText: '（空）' as string,
-				messagesText: '[]' as string,
-				toolsText: '[]' as string,
-				requestBodyText: '{}' as string,
-				messagesPreviewText: '[]' as string,
-				toolsPreviewText: '[]' as string,
-				requestBodyPreviewText: '{}' as string,
-				previewJsonShortText: '（没有可展示的上下文）' as string,
-				messagesChunks: [] as UTSJSONObject[],
-				toolsChunks: [] as UTSJSONObject[],
-				requestBodyChunks: [] as UTSJSONObject[],
+				settingsTemperature: '—' as string,
+				settingsMaxTokens: '—' as string,
+				settingsMaxIterations: '—' as string,
+				settingsStreamEnabled: false as boolean,
 				fullJsonChunks: [] as UTSJSONObject[],
+				// 自定义滚动条
+				scrollViewHeight: 0 as number,
+				scrollContentHeight: 0 as number,
+				scrollOffset: 0 as number,
+				scrollbarDragging: false as boolean,
+				scrollbarDragStartY: 0 as number,
+				scrollbarDragStartTop: 0 as number,
+				scrollbarTrackTop: 0 as number,
+				scrollbarThrottleTimer: 0 as number,
+				scrollbarPendingTarget: -1 as number,
 			}
+		},
+		computed: {
+			scrollbarThumbStyle(): string {
+				if (this.scrollContentHeight <= 0 || this.scrollViewHeight <= 0) {
+					return 'top:0;height:0;'
+				}
+				const trackH = this.scrollViewHeight - 4
+				const ratio = this.scrollViewHeight / this.scrollContentHeight
+				const thumbH = Math.max(trackH * ratio, 36)
+				const maxTop = trackH - thumbH
+				const currentOffset = this.scrollOffset
+				const rawTop = (currentOffset / this.scrollContentHeight) * trackH
+				let top = rawTop
+				if (top < 0) top = 0
+				if (top > maxTop) top = maxTop
+				return 'top:' + top + 'px;height:' + thumbH + 'px;'
+			},
 		},
 		onLoad() {
 			const raw = uni.getStorageSync('context_preview_payload') as string | null
@@ -197,14 +169,12 @@
 			}
 			this.previewText = raw
 			this.previewDisplayText = this.decodeDisplayEscapes(raw)
-			this.previewJsonShortText = this.buildPreviewBlock(this.previewDisplayText, 12000)
 			this.fullJsonChunks = this.buildChunks('section-full-json', '完整 JSON', this.previewDisplayText, 640)
 			try {
 				const parsed = JSON.parse(raw) as UTSJSONObject
 				const providerId = parsed['providerId'] as string | null
 				const baseUrl = parsed['baseUrl'] as string | null
 				const model = parsed['model'] as string | null
-				const systemPrompt = parsed['systemPrompt'] as string | null
 				const importantMemory = parsed['importantMemory'] as string | null
 				const bufferInjection = parsed['bufferInjection'] as string | null
 				const settings = parsed['settings'] as UTSJSONObject | null
@@ -214,32 +184,25 @@
 				this.providerId = providerId != null ? providerId : ''
 				this.baseUrl = baseUrl != null ? baseUrl : ''
 				this.model = model != null ? model : ''
-				this.systemPrompt = systemPrompt != null ? systemPrompt : ''
 				this.importantMemory = importantMemory != null ? importantMemory : ''
 				this.bufferInjection = bufferInjection != null ? bufferInjection : ''
 				this.messageCount = openaiMessages != null ? openaiMessages.length : 0
 				this.toolCount = openaiTools != null ? openaiTools.length : 0
 				if (settings != null) {
-					this.settingsText = this.decodeDisplayEscapes(this.formatJsonObjectSegment(settings, '（空）'))
-				}
-				if (openaiMessages != null) {
-					this.messagesText = this.decodeDisplayEscapes(this.formatJsonArraySegment(openaiMessages, '[]'))
-					this.messagesPreviewText = this.buildPreviewBlock(this.messagesText, 12000)
-					this.messagesChunks = this.buildChunks('section-messages', '发送 messages', this.messagesText, 520)
-				}
-				if (openaiTools != null) {
-					this.toolsText = this.decodeDisplayEscapes(this.formatJsonArraySegment(openaiTools, '[]'))
-					this.toolsPreviewText = this.buildPreviewBlock(this.toolsText, 8000)
-					this.toolsChunks = this.buildChunks('section-tools', '工具定义', this.toolsText, 520)
-				}
-				if (requestBody != null) {
-					this.requestBodyText = this.decodeDisplayEscapes(this.formatJsonObjectSegment(requestBody, '{}'))
-					this.requestBodyPreviewText = this.buildPreviewBlock(this.requestBodyText, 12000)
-					this.requestBodyChunks = this.buildChunks('section-request', '最终 request body', this.requestBodyText, 520)
+					const temp = settings['temperature'] as number | null
+					const mt = settings['maxTokens'] as number | null
+					const mi = settings['maxIterations'] as number | null
+					const se = settings['streamEnabled'] as boolean | null
+					if (temp != null) { this.settingsTemperature = '' + temp }
+					if (mt != null) { this.settingsMaxTokens = '' + mt }
+					if (mi != null) { this.settingsMaxIterations = '' + mi }
+					if (se != null) { this.settingsStreamEnabled = se }
 				}
 			} catch (_e: any) {
 			}
 			this.scheduleLayoutCache()
+			setTimeout(() => { this.measureScrollSize() }, 300)
+			setTimeout(() => { this.measureScrollSize() }, 800)
 		},
 		methods: {
 			scheduleLayoutCache(): void {
@@ -252,7 +215,7 @@
 			},
 
 			cacheLayoutMetrics(): void {
-				const ids: string[] = ['context-scroll', 'anchor-top', 'anchor-bottom', 'section-summary', 'section-system', 'section-settings']
+				const ids: string[] = ['context-scroll', 'anchor-top', 'anchor-bottom', 'section-summary']
 				if (this.importantMemory != '') {
 					ids.push('section-important-memory')
 				}
@@ -263,15 +226,6 @@
 				ids.push('section-tools')
 				ids.push('section-request')
 				ids.push('section-full-json')
-				for (let i = 0; i < this.messagesChunks.length; i++) {
-					ids.push(this.chunkAnchorId(this.messagesChunks[i]))
-				}
-				for (let i = 0; i < this.toolsChunks.length; i++) {
-					ids.push(this.chunkAnchorId(this.toolsChunks[i]))
-				}
-				for (let i = 0; i < this.requestBodyChunks.length; i++) {
-					ids.push(this.chunkAnchorId(this.requestBodyChunks[i]))
-				}
 				for (let i = 0; i < this.fullJsonChunks.length; i++) {
 					ids.push(this.chunkAnchorId(this.fullJsonChunks[i]))
 				}
@@ -307,6 +261,101 @@
 						map[id] = top - baseTop
 					}
 					this.layoutTopMap = map
+				})
+			},
+
+			// ====== 自定义滚动条方法 ======
+
+			/** 同步滚动位置到自定义滚动条 */
+			onScrollViewScroll(e: any) {
+				const d = e as UTSJSONObject
+				const detail = d['detail'] as UTSJSONObject | null
+				if (detail == null) return
+				const st = detail['scrollTop'] as number | null
+				if (st != null) {
+					this.scrollOffset = st
+				}
+				const sh = detail['scrollHeight'] as number | null
+				if (sh != null && sh > this.scrollContentHeight) {
+					this.scrollContentHeight = sh
+				}
+			},
+
+			/** 点滚动条轨道直接跳转 */
+			onScrollbarTrackTap(e: UniTouchEvent) {
+				const y = this.getTouchRelativeY(e)
+				if (y == null || this.scrollContentHeight <= 0 || this.scrollViewHeight <= 0) return
+				const trackH = this.scrollViewHeight - 4
+				if (trackH <= 0) return
+				const ratio = y / trackH
+				let target = ratio * this.scrollContentHeight
+				if (target < 0) target = 0
+				const max = this.scrollContentHeight - this.scrollViewHeight
+				if (target > max) target = max
+				this.scrollTop = target
+				this.scrollOffset = target
+				this.scrollRequestSeq++
+			},
+
+			/** 开始拖拽滚动条滑块 */
+			onScrollbarThumbStart(e: UniTouchEvent) {
+				const y = this.getTouchRelativeY(e)
+				if (y == null) return
+				this.scrollbarDragStartTop = this.scrollTop
+				this.scrollbarDragStartY = y
+				this.scrollbarDragging = true
+			},
+
+			/** 拖拽滚动条滑块中 */
+			onScrollbarThumbMove(e: UniTouchEvent) {
+				if (this.scrollbarDragging == false) return
+				const y = this.getTouchRelativeY(e)
+				if (y == null || this.scrollContentHeight <= 0 || this.scrollViewHeight <= 0) return
+				const dy = y - this.scrollbarDragStartY
+				const trackH = this.scrollViewHeight - 4
+				if (trackH <= 0) return
+				const scale = this.scrollContentHeight / trackH
+				let target = this.scrollbarDragStartTop + dy * scale
+				if (target < 0) target = 0
+				const max = this.scrollContentHeight - this.scrollViewHeight
+				if (target > max) target = max
+				this.scrollTop = target
+				this.scrollOffset = target
+				this.scrollRequestSeq++
+			},
+
+			/** 拖拽结束 */
+			onScrollbarTouchEnd(_e: UniTouchEvent) {
+				this.scrollbarDragging = false
+			},
+
+			/** 从触摸事件提取 Y 坐标（相对于轨道顶部） */
+			getTouchRelativeY(e: UniTouchEvent): number | null {
+				if (e.touches.length == 0) return null
+				const pageY = e.touches[0].pageY
+				if (this.scrollbarTrackTop <= 0) return null
+				return pageY - this.scrollbarTrackTop
+			},
+
+			/** 测量滚动尺寸 */
+			measureScrollSize() {
+				const query = uni.createSelectorQuery().in(this)
+				query.select('#context-scroll').boundingClientRect()
+				query.exec((res: any) => {
+					const rows = res as UTSArray<any> | null
+					if (rows == null || rows.length < 1) return
+					const viewRect = rows[0] as NodeInfo | null
+					if (viewRect != null) {
+						if (viewRect.height != null) {
+							this.scrollViewHeight = viewRect.height as number
+						}
+						if (viewRect.top != null) {
+							this.scrollbarTrackTop = viewRect.top as number
+						}
+					}
+					const lines = this.previewDisplayText.length / 1200
+					const estHeight = (lines + 1) * this.scrollViewHeight
+					this.scrollContentHeight = estHeight
 				})
 			},
 
@@ -359,24 +408,6 @@
 			findChunkById(id: string): UTSJSONObject | null {
 				if (id == '') {
 					return null
-				}
-				for (let i = 0; i < this.messagesChunks.length; i++) {
-					const chunk = this.messagesChunks[i]
-					if (this.chunkAnchorId(chunk) == id) {
-						return chunk
-					}
-				}
-				for (let i = 0; i < this.toolsChunks.length; i++) {
-					const chunk = this.toolsChunks[i]
-					if (this.chunkAnchorId(chunk) == id) {
-						return chunk
-					}
-				}
-				for (let i = 0; i < this.requestBodyChunks.length; i++) {
-					const chunk = this.requestBodyChunks[i]
-					if (this.chunkAnchorId(chunk) == id) {
-						return chunk
-					}
 				}
 				for (let i = 0; i < this.fullJsonChunks.length; i++) {
 					const chunk = this.fullJsonChunks[i]
@@ -514,6 +545,20 @@
 				} as UTSJSONObject
 			},
 
+			/** 构建摘要搜索文本（含生成参数） */
+			buildSummarySearchText(): string {
+				return '接口 ' + this.providerId + '\n' +
+					'模型 ' + this.model + '\n' +
+					'温度 ' + this.settingsTemperature + '\n' +
+					'最大Token ' + this.settingsMaxTokens + '\n' +
+					'最大轮次 ' + this.settingsMaxIterations + '\n' +
+					'消息 ' + this.messageCount + ' 条\n' +
+					'工具 ' + this.toolCount + ' 个\n' +
+					'流式 ' + (this.settingsStreamEnabled ? '开' : '关') + '\n' +
+					'记忆 ' + (this.importantMemory != '' ? '有' : '无') + '\n' +
+					'地址 ' + this.baseUrl
+			},
+
 			pushSearchResult(list: UTSJSONObject[], sectionId: string, title: string, content: string, query: string): void {
 				const result = this.buildSearchResult(sectionId, title, content, query)
 				if (result != null) {
@@ -551,14 +596,8 @@
 					return
 				}
 				const results: UTSJSONObject[] = []
-				this.pushSearchResult(results, 'section-summary', '摘要', 'Provider: ' + this.providerId + '\nBase URL: ' + this.baseUrl + '\nModel: ' + this.model, query)
-				this.pushSearchResult(results, 'section-system', '系统提示词', this.systemPrompt, query)
-				this.pushSearchResult(results, 'section-settings', '生成参数', this.settingsText, query)
+				this.pushSearchResult(results, 'section-summary', '摘要', this.buildSummarySearchText(), query)
 				this.pushSearchResult(results, 'section-important-memory', '重要记忆注入', this.importantMemory, query)
-				this.pushSearchResult(results, 'section-buffer-memory', '短缓存注入', this.bufferInjection, query)
-				this.pushChunkMatches(results, this.messagesChunks, query)
-				this.pushChunkMatches(results, this.toolsChunks, query)
-				this.pushChunkMatches(results, this.requestBodyChunks, query)
 				this.pushChunkMatches(results, this.fullJsonChunks, query)
 				this.searchResults = results
 				if (results.length == 0) {
@@ -886,7 +925,7 @@
 	.hero-card,
 	.card {
 		background-color: #FFFFFF;
-		border-radius: 18px;
+		border-radius: 16px;
 		padding: 16px;
 		margin-bottom: 12px;
 	}
@@ -931,6 +970,30 @@
 		color: var(--rice-text-color-2);
 	}
 
+	.summary-grid {
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: flex-start;
+	}
+
+	.summary-item {
+		flex-direction: row;
+		align-items: center;
+		padding: 6px 16px 6px 0;
+	}
+
+	.summary-label {
+		font-size: 12px;
+		color: #9CA3AF;
+		margin-right: 6px;
+		flex-shrink: 0;
+	}
+
+	.summary-value {
+		font-size: 13px;
+		color: var(--rice-text-color);
+	}
+
 	.search-row {
 		flex-direction: row;
 		align-items: center;
@@ -968,16 +1031,16 @@
 		left: 12px;
 		right: 12px;
 		bottom: 12px;
-		background-color: rgba(17, 24, 39, 0.94);
+		background-color: #FFFFFF;
 		border-radius: 16px;
 		padding: 12px;
-		box-shadow: 0 10px 24px rgba(17, 24, 39, 0.18);
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
 	}
 
 	.floating-search-meta {
 		font-size: 12px;
 		line-height: 18px;
-		color: #F3F4F6;
+		color: #6B7280;
 		margin-bottom: 10px;
 	}
 
@@ -991,13 +1054,14 @@
 		margin-right: 8px;
 		margin-bottom: 8px;
 		border-radius: 999px;
-		background-color: rgba(255, 255, 255, 0.12);
-		color: #FFFFFF;
+		background-color: #F3F4F6;
+		color: #374151;
 		font-size: 12px;
 	}
 
 	.floating-btn-danger {
-		background-color: rgba(239, 68, 68, 0.22);
+		background-color: #FEE2E2;
+		color: #DC2626;
 	}
 
 	.search-hit-card {
@@ -1109,5 +1173,29 @@
 
 	.anchor-spacer {
 		height: 2px;
+	}
+
+	/* 自定义滚动条 */
+	.scroll-wrapper {
+		flex: 1;
+		position: relative;
+	}
+
+	.custom-scrollbar {
+		position: absolute;
+		right: 2px;
+		top: 2px;
+		bottom: 2px;
+		width: 14px;
+		border-radius: 7px;
+		background-color: rgba(0, 0, 0, 0.04);
+	}
+
+	.scrollbar-thumb {
+		position: absolute;
+		left: 3px;
+		right: 3px;
+		border-radius: 4px;
+		background-color: rgba(0, 0, 0, 0.18);
 	}
 </style>

@@ -59,10 +59,42 @@
 					<text class="fetching-text">正在获取模型列表...</text>
 				</view>
 
+				<!-- 模型选择器（获取成功后显示） -->
+				<view v-if="showModelPicker" class="model-picker">
+					<view class="picker-header">
+						<text class="picker-title">获取到 {{fetchedModelIds.length}} 个模型</text>
+						<text class="picker-select-all" @click="toggleSelectAllModels">{{allModelsSelected ? '取消全选' : '全选'}}</text>
+					</view>
+					<input
+						class="picker-search"
+						type="text"
+						v-model="pickerSearchText"
+						placeholder="搜索模型..."
+						placeholder-style="color:#9CA3AF"
+					/>
+					<scroll-view class="picker-list" :scroll-y="true" style="max-height:320rpx;">
+						<view v-for="(mid, pidx) in fetchedModelIds" :key="pidx">
+							<view v-if="modelMatchesSearch(mid)" class="picker-row" @click="toggleModelSelection(pidx)">
+							<view class="picker-checkbox" :class="selectedModelIndexes[pidx] == true ? 'picker-checkbox-on' : ''">
+								<text v-if="selectedModelIndexes[pidx] == true" class="picker-checkmark">✓</text>
+							</view>
+							<text class="picker-model-id">{{mid}}</text>
+						</view>
+						</view>
+						<view v-if="filteredModelCount == 0 && pickerSearchText != ''" class="picker-empty">
+							<text class="picker-empty-text">无匹配模型</text>
+						</view>
+					</scroll-view>
+					<view class="picker-actions">
+						<text class="picker-cancel" @click="cancelModelPicker">取消</text>
+						<text class="picker-confirm" @click="confirmAddModels">添加选中 ({{selectedModelCount}})</text>
+					</view>
+				</view>
+
 				<!-- 模型列表 -->
-				<view v-for="(m, mi) in editModels" :key="mi" class="model-card" @click="toggleExpand(mi)">
+				<view v-for="(m, mi) in editModels" :key="mi" class="model-card">
 					<!-- 折叠态概要 -->
-					<view class="model-row">
+					<view class="model-row" @click="toggleExpand(mi)">
 						<view class="model-row-left">
 							<text class="model-index">{{mi + 1}}</text>
 							<view class="model-summary">
@@ -133,6 +165,10 @@
 				editApiBase: '' as string,
 				editModels: [] as ModelInfo[],
 				fetchingModels: false as boolean,
+				showModelPicker: false as boolean,
+				fetchedModelIds: [] as string[],
+				selectedModelIndexes: [] as boolean[],
+				pickerSearchText: '' as string,
 			}
 		},
 		onLoad() {
@@ -158,6 +194,32 @@
 				} catch (_e: any) {}
 				uni.removeStorageSync('provider_edit_data')
 			}
+		},
+		computed: {
+			selectedModelCount(): number {
+				let count = 0
+				for (let i = 0; i < this.selectedModelIndexes.length; i++) {
+					if (this.selectedModelIndexes[i] == true) {
+						count++
+					}
+				}
+				return count
+			},
+			allModelsSelected(): boolean {
+				if (this.fetchedModelIds.length == 0) return false
+				return this.selectedModelCount >= this.fetchedModelIds.length
+			},
+			filteredModelCount(): number {
+				if (this.pickerSearchText == '') return this.fetchedModelIds.length
+				const needle = this.pickerSearchText.toLowerCase()
+				let count = 0
+				for (let i = 0; i < this.fetchedModelIds.length; i++) {
+					if (this.fetchedModelIds[i].toLowerCase().indexOf(needle) >= 0) {
+						count++
+					}
+				}
+				return count
+			},
 		},
 		methods: {
 			goBack() {
@@ -213,7 +275,7 @@
 					uni.showToast({ position: 'bottom',  title: '获取失败，请检查地址和 Key', icon: 'none' })
 					return
 				}
-				// 合并：保留已有模型的参数，新增不存在的模型
+				// 过滤已有模型，只展示新增的
 				const existingMap: UTSJSONObject = {} as UTSJSONObject
 				for (let i = 0; i < this.editModels.length; i++) {
 					const mid = this.editModels[i].id
@@ -221,19 +283,62 @@
 						existingMap[mid] = true
 					}
 				}
-				const merged: ModelInfo[] = []
-				for (let i = 0; i < this.editModels.length; i++) {
-					merged.push(this.editModels[i])
-				}
+				const newIds: string[] = []
 				for (let i = 0; i < ids.length; i++) {
-					const mid = ids[i]
-					if (existingMap[mid] != null) {
-						continue
+					if (existingMap[ids[i]] == null) {
+						newIds.push(ids[i])
 					}
-					merged.push({ id: mid, ctxStr: '' } as ModelInfo)
 				}
-				this.editModels = merged
-				uni.showToast({ position: 'bottom',  title: `获取到 ${ids.length} 个模型`, icon: 'success' })
+				if (newIds.length == 0) {
+					uni.showToast({ position: 'bottom',  title: '所有模型已存在', icon: 'none' })
+					return
+				}
+				this.fetchedModelIds = newIds
+				this.selectedModelIndexes = []
+				for (let i = 0; i < newIds.length; i++) {
+					this.selectedModelIndexes.push(false)
+				}
+				this.showModelPicker = true
+			},
+
+			toggleSelectAllModels() {
+				const select = this.allModelsSelected ? false : true
+				for (let i = 0; i < this.selectedModelIndexes.length; i++) {
+					this.selectedModelIndexes[i] = select
+				}
+			},
+
+			toggleModelSelection(index: number) {
+				if (index >= 0 && index < this.selectedModelIndexes.length) {
+					this.selectedModelIndexes[index] = !this.selectedModelIndexes[index]
+				}
+			},
+
+			modelMatchesSearch(id: string): boolean {
+				if (this.pickerSearchText == '') return true
+				return id.toLowerCase().indexOf(this.pickerSearchText.toLowerCase()) >= 0
+			},
+
+			cancelModelPicker() {
+				this.showModelPicker = false
+				this.fetchedModelIds = []
+				this.selectedModelIndexes = []
+				this.pickerSearchText = ''
+			},
+
+			confirmAddModels() {
+				let addedCount = 0
+				for (let i = 0; i < this.fetchedModelIds.length; i++) {
+					if (this.selectedModelIndexes[i] == true) {
+						this.editModels.push({ id: this.fetchedModelIds[i], ctxStr: '' } as ModelInfo)
+						addedCount++
+					}
+				}
+				this.showModelPicker = false
+				this.fetchedModelIds = []
+				this.selectedModelIndexes = []
+				this.pickerSearchText = ''
+				uni.showToast({ position: 'bottom',  title: '已添加 ' + addedCount + ' 个模型', icon: 'success' })
 			},
 
 			saveProvider() {
@@ -269,7 +374,7 @@
 					}
 					validModels.push(m)
 				}
-				saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, false)
+				saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, true)
 				uni.showToast({ position: 'bottom',  title: '已保存', icon: 'success' })
 				setTimeout(() => {
 					uni.navigateBack()
@@ -475,5 +580,110 @@
 
 	.save-wrap {
 		padding: 20rpx 0 60rpx 0;
+	}
+
+	/* 模型选择器 */
+	.model-picker {
+		background-color: #F9FAFB;
+		border-radius: 14rpx;
+		padding: 18rpx;
+		margin-bottom: 16rpx;
+	}
+
+	.picker-header {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 12rpx;
+	}
+
+	.picker-title {
+		font-size: 24rpx;
+		color: #374151;
+		flex: 1;
+	}
+
+	.picker-select-all {
+		font-size: 22rpx;
+		color: var(--rice-primary-color);
+		padding: 4rpx 10rpx;
+	}
+
+	.picker-search {
+		background-color: #FFFFFF;
+		border-radius: 10rpx;
+		padding: 14rpx 16rpx;
+		font-size: 24rpx;
+		color: #111827;
+		margin-bottom: 10rpx;
+	}
+
+	.picker-list {
+		margin-bottom: 12rpx;
+	}
+
+	.picker-row {
+		flex-direction: row;
+		align-items: center;
+		padding: 10rpx 8rpx;
+	}
+
+	.picker-checkbox {
+		width: 32rpx;
+		height: 32rpx;
+		border-radius: 6rpx;
+		border: 2rpx solid #D1D5DB;
+		margin-right: 12rpx;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.picker-checkbox-on {
+		background-color: var(--rice-primary-color);
+		border-color: var(--rice-primary-color);
+	}
+
+	.picker-checkmark {
+		font-size: 20rpx;
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+
+	.picker-model-id {
+		font-size: 24rpx;
+		color: #111827;
+		flex: 1;
+	}
+
+	.picker-actions {
+		flex-direction: row;
+		justify-content: flex-end;
+		align-items: center;
+	}
+
+	.picker-cancel {
+		font-size: 24rpx;
+		color: #6B7280;
+		padding: 10rpx 20rpx;
+		margin-right: 16rpx;
+	}
+
+	.picker-confirm {
+		font-size: 24rpx;
+		color: #FFFFFF;
+		background-color: var(--rice-primary-color);
+		border-radius: 10rpx;
+		padding: 10rpx 24rpx;
+		font-weight: bold;
+	}
+
+	.picker-empty {
+		padding: 30rpx;
+		align-items: center;
+	}
+
+	.picker-empty-text {
+		font-size: 24rpx;
+		color: #9CA3AF;
 	}
 </style>

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
 	<view class="page-shell rice-theme-light">
 		<NavBar title="关于" showBack />
 		<scroll-view class="container" :scroll-y="true">
@@ -60,7 +60,12 @@
 		data() {
 			return {}
 		},
-		methods: {}
+		onLoad() {},
+		methods: {
+			goBack() {
+				uni.navigateBack()
+			}
+		}
 	}
 </script>
 
@@ -69,7 +74,6 @@
 		flex: 1;
 		padding: 32rpx;
 	}
-
 
 	/* Logo 和 App 名称区域 - 居中展示 */
 	.about-hero {

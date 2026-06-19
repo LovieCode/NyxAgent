@@ -3,6 +3,59 @@
 		<NavBar title="插件设置" showBack />
 		<scroll-view class="container" :scroll-y="true">
 
+			<!-- 网络搜索 -->
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="search" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+					<text class="card-title">网络搜索</text>
+				</view>
+				<text class="plugin-desc">为 Agent 提供联网搜索能力。可选择免费 SearXNG 或调用 AI 提供商内置搜索（Grok / 豆包 等）。</text>
+				<view class="setting-row" style="margin-top: 20rpx;">
+					<text class="setting-label">启用网络搜索</text>
+					<rice-switch v-model="webSearchEnabled" @change="saveSettings" />
+				</view>
+				<view v-if="webSearchEnabled">
+					<text class="input-label" style="margin-top: 20rpx;">搜索引擎</text>
+					<view class="chip-row">
+						<view class="chip" :class="webSearchProvider == 'searxng' ? 'chip-active' : ''" @click="selectProvider('searxng')">
+							<text class="chip-text" :class="webSearchProvider == 'searxng' ? 'chip-text-active' : ''">SearXNG</text>
+						</view>
+						<view class="chip" :class="webSearchProvider == 'grok' ? 'chip-active' : ''" @click="selectProvider('grok')">
+							<text class="chip-text" :class="webSearchProvider == 'grok' ? 'chip-text-active' : ''">AI 模型</text>
+						</view>
+					</view>
+					<view v-if="webSearchProvider == 'searxng'" class="input-wrap" style="margin-top: 16rpx;">
+						<text class="input-label">自定义实例地址（选填）</text>
+						<input
+							class="flat-input"
+							v-model="webSearchInstance"
+							placeholder="留空使用默认公共实例，或填入自建地址"
+							placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+						/>
+						<text class="input-hint">自建实例可避免查询日志泄露：docker run -d -p 8080:8080 searxng/searxng</text>
+					</view>
+					<view v-if="webSearchProvider == 'grok'">
+						<text class="input-label" style="margin-top: 16rpx;">选择提供商</text>
+						<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
+							<view class="chip-row">
+								<view v-for="(p, pi) in providers" :key="pi" class="chip" :class="webSearchProviderId == readProviderId(p) ? 'chip-active' : ''" @click="selectSearchProvider(p)">
+									<text class="chip-text" :class="webSearchProviderId == readProviderId(p) ? 'chip-text-active' : ''">{{readProviderName(p)}}</text>
+								</view>
+							</view>
+						</scroll-view>
+						<text class="input-hint">使用已配置的 API 提供商。Grok 选 xAI，豆包选火山引擎，第三方兼容 API 选对应提供商。火山引擎自动走 Responses API 注册 web_search 工具。</text>
+						<text class="input-label" style="margin-top: 12rpx;">选择模型</text>
+						<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
+							<view class="chip-row">
+								<view v-for="(m, mi) in searchProviderModels" :key="mi" class="chip" :class="webSearchModel == readModelId(m) ? 'chip-active' : ''" @click="selectSearchModel(m)">
+									<text class="chip-text" :class="webSearchModel == readModelId(m) ? 'chip-text-active' : ''">{{readModelName(m)}}</text>
+								</view>
+							</view>
+						</scroll-view>
+						<text class="input-hint">留空默认使用第一个模型。Grok 建议选 grok-2 或 grok-3。</text>
+					</view>
+				</view>
+			</view>
 			<!-- GitHub 代理开关 -->
 			<view class="card">
 				<view class="card-header">
@@ -36,14 +89,22 @@
 
 <script lang="uts">
 	/**
-	 * 插件设置子页面 - GitHub 代理配置
+	 * 插件设置子页面 - GitHub 代理 / 网络搜索配置
 	 */
+	import { getAllProviders, getProviderModels, parseModels } from '@/utils/provider.uts'
 
 	export default {
 		data() {
 			return {
 				ghProxyEnabled: false as boolean,
-				ghProxyDomain: '' as string
+				ghProxyDomain: '' as string,
+				webSearchEnabled: false as boolean,
+				webSearchProvider: 'searxng' as string,
+				webSearchProviderId: '' as string,
+				webSearchModel: '' as string,
+				webSearchInstance: '' as string,
+				providers: [] as UTSJSONObject[],
+				searchProviderModels: [] as UTSJSONObject[],
 			}
 		},
 		onLoad() {
@@ -55,20 +116,91 @@
 				this.ghProxyEnabled = (proxyEnabled != null && proxyEnabled == 'true')
 				let proxyDomain = uni.getStorageSync('settings_gh_proxy_domain') as string
 				this.ghProxyDomain = (proxyDomain != null) ? proxyDomain : ''
+				let wsEnabled = uni.getStorageSync('settings_web_search_enabled') as string
+				this.webSearchEnabled = (wsEnabled != null && wsEnabled == 'true')
+				let wsProvider = uni.getStorageSync('settings_web_search_provider') as string
+				this.webSearchProvider = (wsProvider != null && wsProvider != '') ? wsProvider : 'searxng'
+				let wsProviderId = uni.getStorageSync('settings_web_search_provider_id') as string
+				this.webSearchProviderId = (wsProviderId != null) ? wsProviderId : ''
+				let wsModel = uni.getStorageSync('settings_web_search_model') as string
+				this.webSearchModel = (wsModel != null) ? wsModel : ''
+				let wsInstance = uni.getStorageSync('settings_web_search_instance') as string
+				this.webSearchInstance = (wsInstance != null) ? wsInstance : ''
+				this.providers = getAllProviders()
+				this.loadSearchProviderModels()
 			},
 
 			saveSettings() {
 				uni.setStorageSync('settings_gh_proxy_enabled', this.ghProxyEnabled ? 'true' : 'false')
 				uni.setStorageSync('settings_gh_proxy_domain', this.ghProxyDomain)
-				uni.showToast({ position: 'bottom', 
+				uni.setStorageSync('settings_web_search_enabled', this.webSearchEnabled ? 'true' : 'false')
+				uni.setStorageSync('settings_web_search_provider', this.webSearchProvider)
+				uni.setStorageSync('settings_web_search_provider_id', this.webSearchProviderId)
+				uni.setStorageSync('settings_web_search_model', this.webSearchModel)
+				uni.setStorageSync('settings_web_search_instance', this.webSearchInstance)
+				uni.showToast({
 					title: '已保存',
 					icon: 'success'
 				})
 			},
 
+			selectProvider(provider: string) {
+				this.webSearchProvider = provider
+				this.saveSettings()
+			},
+
+			selectSearchProvider(provider: UTSJSONObject) {
+				const id = provider['id'] as string | null
+				this.webSearchProviderId = (id != null) ? id : ''
+				this.webSearchModel = ''
+				this.loadSearchProviderModels()
+				this.saveSettings()
+			},
+
+			selectSearchModel(model: UTSJSONObject) {
+				const id = model['id'] as string | null
+				this.webSearchModel = (id != null) ? id : ''
+				this.saveSettings()
+			},
+
+			loadSearchProviderModels() {
+				if (this.webSearchProviderId == '') {
+					this.searchProviderModels = []
+					return
+				}
+				const models = getProviderModels(this.webSearchProviderId)
+				const list: UTSJSONObject[] = []
+				for (let i = 0; i < models.length; i++) {
+					list.push({
+						id: models[i].id,
+						name: models[i].name != null && models[i].name != '' ? models[i].name : models[i].id,
+					} as UTSJSONObject)
+				}
+				this.searchProviderModels = list
+			},
+
+			readProviderId(provider: UTSJSONObject): string {
+				const value = provider['id'] as string | null
+				return value != null ? value : ''
+			},
+
+			readProviderName(provider: UTSJSONObject): string {
+				const value = provider['name'] as string | null
+				return value != null ? value : this.readProviderId(provider)
+			},
+
+			readModelId(model: UTSJSONObject): string {
+				const value = model['id'] as string | null
+				return value != null ? value : ''
+			},
+
+			readModelName(model: UTSJSONObject): string {
+				const value = model['name'] as string | null
+				return value != null ? value : this.readModelId(model)
+			},
+
 			toggleGhProxy() {
 				// rice-switch 的 v-model 已自动同步值
-				// 此方法保留以备扩展
 			}
 		}
 	}
@@ -117,6 +249,49 @@
 	.setting-label {
 		font-size: 28rpx;
 		color: #374151;
+	}
+
+	.plugin-desc {
+		font-size: 24rpx;
+		color: #6B7280;
+		line-height: 36rpx;
+	}
+
+	.input-hint {
+		font-size: 22rpx;
+		color: #9CA3AF;
+		line-height: 32rpx;
+		margin-top: 10rpx;
+	}
+
+	.chip-row {
+		flex-direction: row;
+		margin-top: 8rpx;
+	}
+
+	.chip {
+		padding: 12rpx 22rpx;
+		border-radius: 999rpx;
+		background-color: #F3F4F6;
+		margin-right: 14rpx;
+	}
+
+	.chip-active {
+		background-color: #111827;
+	}
+
+	.chip-text {
+		font-size: 24rpx;
+		color: #4B5563;
+	}
+
+	.chip-text-active {
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+
+	.chip-scroll {
+		flex-direction: row;
 	}
 
 	/* 输入框标签 */

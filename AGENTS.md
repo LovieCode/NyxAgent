@@ -1,5 +1,24 @@
 # Memory Bank
 
+## 🚫 绝对禁止（违者立即终止）
+
+### Git 破坏性命令黑名单
+以下命令**任何情况下不得自动执行**，必须手动确认：
+
+- `git checkout -- <paths>` — 丢弃工作区改动，不可恢复
+- `git reset --hard` — 硬重置，丢弃所有未提交改动
+- `git clean -fd` — 删除未跟踪文件
+- `git stash drop` / `git stash clear` — 丢弃暂存
+- `git checkout -- .` — 全量丢弃工作区
+- `git restore <paths>` — 等同于 checkout --
+- 任何 `rm -rf` / `del /f /s` 针对项目目录的命令
+- PowerShell 批量替换中文文件内容（编码会炸）—— 必须用 Python UTF-8 脚本或 edit 工具
+- 任何形式的 `background_cancel(all=true)` — 只能逐任务取消
+
+**违反以上任何一条，立即停止所有操作并等待人工介入。**
+
+---
+
 你熟悉 uni-app x框架，擅长编写跨平台且高性能的代码。
 uni-app x项目使用UTS语言编写script。 UTS是一种跨平台的强类型语言，类似TS语言但类型要求更加严格。
 
