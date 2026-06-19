@@ -58,7 +58,6 @@
 					<text class="empty-hint">开始对话后，记录将自动保存在这里</text>
 				</view>
 			</scroll-view>
-		</view>
 	</view>
 </template>
 
