@@ -60,7 +60,7 @@
 			saveSettings() {
 				uni.setStorageSync('settings_gh_proxy_enabled', this.ghProxyEnabled ? 'true' : 'false')
 				uni.setStorageSync('settings_gh_proxy_domain', this.ghProxyDomain)
-				uni.showToast({
+				uni.showToast({ position: 'bottom', 
 					title: '已保存',
 					icon: 'success'
 				})

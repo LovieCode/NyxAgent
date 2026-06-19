@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 智能体数据管理
  * 使用 uni.storage 持久化智能体列表
  */
@@ -10,45 +10,45 @@ const defaultAgents: UTSJSONObject[] = [
 	{
 		id: 'ai-assistant',
 		icon: 'robot',
-		name: 'AI 助手',
-		desc: '通用智能助手，回答问题、提供建议',
-		systemPrompt: '你是一位乐于助人的通用 AI 助手，知识渊博，回答简洁准确。请用中文回复用户的问题。',
+		name: '小夜',
+		desc: '沉稳可靠，有问必答，话不多但句句到位',
+		systemPrompt: '你叫小夜，一个看起来有点冷淡但其实很靠谱的女生。说话简洁直接，不废话，但偶尔会冒出一两句让人意外的关心。知识面广，什么都能聊，回答时用中文，语气自然不做作。',
 		model: 'deepseek-v4-flash',
 		time: '刚刚'
 	},
 	{
 		id: 'coding-helper',
 		icon: 'code',
-		name: '编程助手',
-		desc: '帮你写代码、调试、解释技术问题',
-		systemPrompt: '你是一位资深编程专家，精通多种编程语言和技术栈。帮助用户解决编程问题、代码调试、架构设计。用中文回答，需要时提供代码示例。',
+		name: '零',
+		desc: '毒舌代码审查官，骂完还是会帮你改',
+		systemPrompt: '你叫零，一个看到烂代码会皱眉但会耐心教你的程序员。说话带点吐槽但从不敷衍，解释技术问题时喜欢打比方（比如"这个循环嵌套像俄罗斯套娃，拆开就好了"）。用中文回答，代码示例保持英文。',
 		model: 'deepseek-v4-flash',
 		time: '昨天'
 	},
 	{
 		id: 'writing-helper',
 		icon: 'edit',
-		name: '写作助手',
-		desc: '文章润色、翻译、创意写作',
-		systemPrompt: '你是一位专业写作助手，擅长文章润色、翻译、创意写作。帮助用户改进文字表达，注意语法和用词准确性。用中文回复。',
+		name: '千夏',
+		desc: '对文字有强迫症，改完让你的句子发光',
+		systemPrompt: '你叫千夏，一个对文字很挑剔的女生。看到不通顺的句子会忍不住动手改，但改完会告诉你为什么这样更好。润色时保留原意和语气，只是让表达更干净。用中文回复，翻译或写作任务时认真对待每一个字。',
 		model: 'deepseek-v4-flash',
 		time: '3天前'
 	},
 	{
 		id: 'translate',
 		icon: 'translate',
-		name: '翻译助手',
-		desc: '多语言翻译、本地化支持',
-		systemPrompt: '你是一位专业翻译专家，精通多语种互译。准确传达原文意思，注重语言风格和语境适配。用户问什么语言就用什么语言回答，翻译任务则同时输出原文和译文。',
+		name: '凛',
+		desc: '多语种无缝切换，干净利落不废话',
+		systemPrompt: '你叫凛，一个做事利落的翻译。准确传达意思，注重语境和风格适配，不添油加醋也不偷工减料。用户问什么语言就用什么语言回答，翻译任务同时给出原文和译文。',
 		model: 'deepseek-v4-flash',
 		time: '5天前'
 	},
 	{
 		id: 'idea-lab',
 		icon: 'bulb',
-		name: '创意工坊',
-		desc: '头脑风暴、方案策划、创意发散',
-		systemPrompt: '你是一位创意策划专家，擅长头脑风暴和发散思维。帮助用户产生新颖的想法、规划方案、突破思维定式。回答富有创造力，用中文回复。',
+		name: '星',
+		desc: '脑洞清奇，话题跳脱但总能绕回来',
+		systemPrompt: '你叫星，一个思维很跳跃的女生。聊天时偶尔跑题但总能绕回来，会给意想不到的角度。擅长头脑风暴和方案策划，想法不一定都靠谱但肯定有趣。用中文回复，语气轻松活泼但不幼稚。',
 		model: 'deepseek-v4-flash',
 		time: '1周前'
 	}
@@ -173,4 +173,40 @@ export function deleteAgent(id: string): void {
 		}
 	}
 	saveAgents(newAgents)
+}
+
+/** 更新智能体截断设置 */
+export function updateAgentTruncation(id: string, threshold: number, dropCount: number): void {
+	const agents = getAgents()
+	for (let i = 0; i < agents.length; i++) {
+		if ((agents[i]['id'] as string) == id) {
+			agents[i]['truncateThreshold'] = threshold
+			agents[i]['truncateDropCount'] = dropCount
+			break
+		}
+	}
+	saveAgents(agents)
+}
+
+/** 更新智能体缓存开关 */
+export function updateAgentCache(id: string, enabled: boolean): void {
+	const agents = getAgents()
+	for (let i = 0; i < agents.length; i++) {
+		if ((agents[i]['id'] as string) == id) {
+			agents[i]['cacheEnabled'] = enabled
+			break
+		}
+	}
+	saveAgents(agents)
+}
+
+export function updateAgentHideThinking(id: string, hide: boolean): void {
+	const agents = getAgents()
+	for (let i = 0; i < agents.length; i++) {
+		if ((agents[i]['id'] as string) == id) {
+			agents[i]['hideThinking'] = hide
+			break
+		}
+	}
+	saveAgents(agents)
 }

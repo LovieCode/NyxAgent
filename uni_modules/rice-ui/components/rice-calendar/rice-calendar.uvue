@@ -493,7 +493,7 @@
 		emit('overRange')
 		if (props.showRangePrompt == false) return
 		const rangePrompt = props.rangePrompt ?? `最多选择${props.maxRange}天`
-		uni.showToast({
+		uni.showToast({ position: 'bottom', 
 			title: rangePrompt,
 			icon: 'none'
 		})

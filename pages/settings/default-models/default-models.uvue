@@ -145,7 +145,7 @@
 						setDefaultTaskModel(type, providerId, model)
 					}
 				}
-				uni.showToast({
+				uni.showToast({ position: 'bottom', 
 					title: '已保存',
 					icon: 'success'
 				})

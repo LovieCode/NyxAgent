@@ -186,7 +186,7 @@
 
 			batchDelete() {
 				if (this.selectedIds.length == 0) {
-					uni.showToast({ title: '请选择要删除的对话', icon: 'none' })
+					uni.showToast({ position: 'bottom',  title: '请选择要删除的对话', icon: 'none' })
 					return
 				}
 				uni.showModal({
@@ -200,7 +200,7 @@
 							this.selectedIds = []
 							this.editMode = false
 							this.loadHistory()
-							uni.showToast({
+							uni.showToast({ position: 'bottom', 
 								title: '已删除',
 								icon: 'success'
 							})
@@ -248,7 +248,7 @@
 			exportConversation(item: UTSJSONObject) {
 				const id = item['id'] as string | null
 				if (id == null || id == '') {
-					uni.showToast({ title: '对话不存在', icon: 'none' })
+					uni.showToast({ position: 'bottom',  title: '对话不存在', icon: 'none' })
 					return
 				}
 				const titleRaw = item['title'] as string | null
@@ -279,10 +279,10 @@
 				uni.setClipboardData({
 					data: markdown,
 					success: () => {
-						uni.showToast({ title: '已复制 Markdown', icon: 'success' })
+						uni.showToast({ position: 'bottom',  title: '已复制 Markdown', icon: 'success' })
 					},
 					fail: () => {
-						uni.showToast({ title: '导出失败', icon: 'none' })
+						uni.showToast({ position: 'bottom',  title: '导出失败', icon: 'none' })
 					}
 				})
 			},
@@ -305,7 +305,7 @@
 								deleteConversation(this.historyList[i]['id'] as string)
 							}
 							this.historyList = []
-							uni.showToast({
+							uni.showToast({ position: 'bottom', 
 								title: '已清空',
 								icon: 'success'
 							})

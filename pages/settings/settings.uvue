@@ -217,7 +217,7 @@
 				uni.setStorageSync('settings_model', this.selectedModel)
 				uni.setStorageSync('settings_gh_proxy_enabled', this.ghProxyEnabled ? 'true' : 'false')
 				uni.setStorageSync('settings_gh_proxy_domain', this.ghProxyDomain)
-				uni.showToast({
+				uni.showToast({ position: 'bottom', 
 					title: '已保存',
 					icon: 'success'
 				})
@@ -284,13 +284,13 @@
 					success: (res: any) => {
 						const path = this.parseChosenFilePath(res)
 						if (path == '') {
-							uni.showToast({ title: '未选择文件', icon: 'none' })
+							uni.showToast({ position: 'bottom',  title: '未选择文件', icon: 'none' })
 							return
 						}
 						this.importAllData(path)
 					},
 					fail: () => {
-						uni.showToast({ title: '选择文件失败', icon: 'none' })
+						uni.showToast({ position: 'bottom',  title: '选择文件失败', icon: 'none' })
 					}
 				})
 			},
@@ -319,7 +319,7 @@
 			importAllData(path: string) {
 				const summary = importAllDataFromZip(path)
 				if (summary == '') {
-					uni.showToast({ title: '导入失败', icon: 'none' })
+					uni.showToast({ position: 'bottom',  title: '导入失败', icon: 'none' })
 					return
 				}
 				uni.showModal({
@@ -365,20 +365,20 @@
 					uni.setClipboardData({
 						data: json,
 						success: () => {
-							uni.showToast({
+							uni.showToast({ position: 'bottom', 
 								title: '已复制导出清单',
 								icon: 'success'
 							})
 						},
 						fail: () => {
-							uni.showToast({
+							uni.showToast({ position: 'bottom', 
 								title: '导出失败',
 								icon: 'none'
 							})
 						}
 					})
 				} catch (_e: any) {
-					uni.showToast({
+					uni.showToast({ position: 'bottom', 
 						title: '导出失败',
 						icon: 'none'
 					})

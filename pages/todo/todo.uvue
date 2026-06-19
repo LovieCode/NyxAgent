@@ -218,7 +218,7 @@
 
 			addTodo() {
 				if (this.newTitle.trim() == '') {
-					uni.showToast({
+					uni.showToast({ position: 'bottom', 
 						title: '请输入标题',
 						icon: 'none'
 					})
@@ -240,7 +240,7 @@
 				this.todos.unshift(newTodo)
 				this.saveTodos()
 				this.showAdd = false
-				uni.showToast({
+				uni.showToast({ position: 'bottom', 
 					title: '已添加',
 					icon: 'success'
 				})

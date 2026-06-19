@@ -71,6 +71,8 @@ function getDefaultUrl(providerId: string): string {
 	if (providerId == 'xiaomi') return 'https://api.xiaomimimo.com/v1'
 	if (providerId == 'ant-ling') return 'https://api.ant-ling.com/v1'
 	if (providerId == 'siliconflow') return 'https://api.siliconflow.cn/v1'
+	if (providerId == 'volcengine') return 'https://ark.cn-beijing.volces.com/api/v3'
+	if (providerId == 'xai') return 'https://api.x.ai'
 	return ''
 }
 
@@ -262,10 +264,11 @@ export function getProviderApiConfig(id: string): UTSJSONObject | null {
  * 从提供商的 API 获取模型列表
  * 调用 GET {baseUrl}/v1/models
  */
-export function fetchProviderModels(apiBase: string, apiKey: string): Promise<string[]> {
+ export function fetchProviderModels(apiBase: string, apiKey: string): Promise<string[]> {
 	return new Promise<string[]>((resolve) => {
 		let baseUrl = apiBase
 		if (baseUrl == '') {
+			console.log('[Provider] 获取模型列表 ← 地址为空')
 			resolve([])
 			return
 		}
@@ -274,9 +277,17 @@ export function fetchProviderModels(apiBase: string, apiKey: string): Promise<st
 			baseUrl = baseUrl.substring(0, baseUrl.length - 1)
 		}
 		const url = baseUrl + '/v1/models'
+		// 火山引擎 / 豆包 使用非标准端点 /api/v3/models
+		let fetchUrl = url
+		if (baseUrl.indexOf('volces.com') >= 0 || baseUrl.indexOf('volcengine.com') >= 0) {
+			fetchUrl = baseUrl + '/models'
+		}
+		const hasKey = apiKey != null && apiKey != ''
+		const keyPreview = hasKey ? apiKey.substring(0, apiKey.length < 8 ? apiKey.length : 8) + '...' : '无'
+		console.log('[Provider] 获取模型列表 → ' + baseUrl + ' | Key=' + keyPreview)
 
 		uni.request({
-			url: url,
+			url: fetchUrl,
 			method: 'GET',
 			header: {
 				'Authorization': 'Bearer ' + apiKey,
@@ -287,11 +298,13 @@ export function fetchProviderModels(apiBase: string, apiKey: string): Promise<st
 					try {
 						const data = res.data as UTSJSONObject
 						if (data == null) {
+							console.log('[Provider] 获取模型列表 ← 200 | 响应体为空')
 							resolve([])
 							return
 						}
 						const modelList = data['data'] as any[] | null
 						if (modelList == null || modelList.length == 0) {
+							console.log('[Provider] 获取模型列表 ← 200 | data 数组为空，完整响应: ' + JSON.stringify(data).substring(0, JSON.stringify(data).length < 300 ? JSON.stringify(data).length : 300))
 							resolve([])
 							return
 						}
@@ -303,15 +316,27 @@ export function fetchProviderModels(apiBase: string, apiKey: string): Promise<st
 								ids.push(mid)
 							}
 						}
+						console.log('[Provider] 获取模型列表 ← 200 | ' + ids.length + ' 个模型: ' + ids.join(', '))
 						resolve(ids)
 					} catch (_e: any) {
+						console.log('[Provider] 获取模型列表 ← 200 | JSON 解析失败')
 						resolve([])
 					}
 				} else {
+					let errBody = ''
+					try {
+						const rawData = res.data as UTSJSONObject | null
+						if (rawData != null) {
+							errBody = JSON.stringify(rawData)
+						}
+					} catch (_e: any) {}
+					const preview = errBody != '' ? errBody.substring(0, errBody.length < 300 ? errBody.length : 300) : '(无)'
+					console.log('[Provider] 获取模型列表 ← ' + statusCode + ' | ' + preview)
 					resolve([])
 				}
 			},
 			fail: (_err: any) => {
+				console.log('[Provider] 获取模型列表 ← 网络失败 | ' + url)
 				resolve([])
 			}
 		})

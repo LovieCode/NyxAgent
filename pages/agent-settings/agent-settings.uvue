@@ -135,6 +135,42 @@
 				</view>
 			</view>
 
+			<!-- 上下文截断 -->
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="scissors" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<text class="card-label">上下文截断</text>
+				</view>
+				<view class="setting-row">
+					<view class="setting-text">
+						<text class="setting-title">截断阈值（分）</text>
+						<text class="setting-desc">超分后丢弃较早对话，0 不启用</text>
+					</view>
+					<input class="param-input short-input" type="text" v-model="truncateThresholdStr" placeholder="0" />
+				</view>
+				<view class="setting-row">
+					<view class="setting-text">
+						<text class="setting-title">丢弃条数</text>
+						<text class="setting-desc">触发截断时移除的对话对数</text>
+					</view>
+					<input class="param-input short-input" type="text" v-model="truncateDropCountStr" placeholder="20" />
+				</view>
+				<view class="setting-row">
+					<view class="setting-text">
+						<text class="setting-title">缓存启用</text>
+						<text class="setting-desc">开启后重复请求使用缓存加速</text>
+					</view>
+					<rice-switch v-model="cacheEnabled" />
+				</view>
+				<view class="setting-row">
+					<view class="setting-text">
+						<text class="setting-title">隐藏思考过程</text>
+						<text class="setting-desc">AI 回复中的思考折叠区不显示</text>
+					</view>
+					<rice-switch v-model="hideThinking" />
+				</view>
+			</view>
+
 			<!-- 保存按钮 -->
 			<view class="save-wrap">
 				<view class="save-btn" @click="saveSettings">
@@ -156,7 +192,7 @@
 	/**
 	 * 智能体设置页面 - 编辑名称/描述/头像/删除智能体
 	 */
-	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel, updateAgentGenerationSettings } from '@/utils/agent.uts'
+	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, type ModelInfo } from '@/utils/provider.uts'
 	import { updateSystemPromptForAgent } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
@@ -179,6 +215,14 @@
 				maxTokensStr: '' as string,
 				maxIterationsStr: '' as string,
 				streamEnabled: true as boolean,
+				/** 上下文截断阈值（分），0 不启用 */
+				truncateThresholdStr: '40' as string,
+				/** 触发截断时丢弃的对话对数 */
+				truncateDropCountStr: '20' as string,
+				/** 缓存启用 */
+				cacheEnabled: false as boolean,
+				/** 隐藏思考过程 */
+				hideThinking: false as boolean,
 				globalGenerationHint: '' as string,
 				/** 编辑器返回后标记未保存 */
 				hasUnsaved: false as boolean,
@@ -250,7 +294,7 @@
 			loadAgent() {
 				const id = uni.getStorageSync('active_agent_id') as string
 				if (id == null || id == '') {
-					uni.showToast({
+					uni.showToast({ position: 'bottom', 
 						title: '未选择智能体',
 						icon: 'none'
 					})
@@ -316,6 +360,16 @@
 				this.maxTokensStr = (rawMaxTokens != null ? rawMaxTokens : global.maxTokens) + ''
 				this.maxIterationsStr = (rawMaxIterations != null ? rawMaxIterations : global.maxIterations) + ''
 				this.streamEnabled = rawStreamEnabled != null ? rawStreamEnabled : global.streamEnabled
+
+				// 截断/缓存/隐藏思考
+				const rawThreshold = agent['truncateThreshold'] as number | null
+				const rawDropCount = agent['truncateDropCount'] as number | null
+				const rawCacheEnabled = agent['cacheEnabled'] as boolean | null
+				const rawHideThinking = agent['hideThinking'] as boolean | null
+				this.truncateThresholdStr = (rawThreshold != null ? rawThreshold : 40) + ''
+				this.truncateDropCountStr = (rawDropCount != null ? rawDropCount : 20) + ''
+				this.cacheEnabled = rawCacheEnabled == true
+				this.hideThinking = rawHideThinking == true
 			},
 
 			/** 从 currentModel 解析出选中的提供商和模型 */
@@ -418,7 +472,7 @@
 				const name = this.agentName.trim()
 				const desc = this.agentDesc.trim()
 				if (name == '') {
-					uni.showToast({
+					uni.showToast({ position: 'bottom', 
 						title: '名称不能为空',
 						icon: 'none'
 					})
@@ -444,10 +498,16 @@
 					this.maxIterationsStr = parsedMaxIterations + ''
 				}
 				updateAgentGenerationSettings(this.agentId, temperature, maxTokens, maxIterations, streamEnabled)
+				// 保存截断/缓存/隐藏思考
+				const threshold = parseFloat(this.truncateThresholdStr)
+				const dropCount = parseInt(this.truncateDropCountStr)
+				updateAgentTruncation(this.agentId, isNaN(threshold) ? 40 : threshold, isNaN(dropCount) ? 20 : dropCount)
+				updateAgentCache(this.agentId, this.cacheEnabled)
+				updateAgentHideThinking(this.agentId, this.hideThinking)
 				// 同步更新所有历史对话的 system_prompt
 				updateSystemPromptForAgent(this.agentId, this.agentSystemPrompt)
 				this.hasUnsaved = false
-				uni.showToast({
+				uni.showToast({ position: 'bottom', 
 					title: '已保存',
 					icon: 'success'
 				})
@@ -466,7 +526,7 @@
 							if (activeId == this.agentId) {
 								uni.removeStorageSync('active_agent_id')
 							}
-							uni.showToast({
+							uni.showToast({ position: 'bottom', 
 								title: '已删除',
 								icon: 'success'
 							})

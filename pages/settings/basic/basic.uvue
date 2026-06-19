@@ -149,7 +149,7 @@
 						if (res.confirm) {
 							deleteProvider(id)
 							this.loadProviders()
-							uni.showToast({
+							uni.showToast({ position: 'bottom', 
 								title: '已删除',
 								icon: 'success'
 							})
