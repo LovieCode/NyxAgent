@@ -154,7 +154,7 @@
 <style>
 	.container {
 		flex: 1;
-		padding: 16px 16px 0;
+		padding: 16px 12px 0;
 	}
 
 	/* 头像区域 */
@@ -195,7 +195,7 @@
 	.form-card {
 		background-color: #FFFFFF;
 		border-radius: 16px;
-		padding: 0 16px;
+		padding: 0 12px;
 	}
 
 	.form-item {
