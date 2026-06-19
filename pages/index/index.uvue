@@ -205,13 +205,18 @@
 			}
 		},
 
-		onShow() {
-			// 每次显示页面时刷新智能体信息和用户昵称
-			this.loadUserNickname()
-			this.loadCurrentAgent()
-		},
+	onShow() {
+				// 每次显示页面时刷新智能体信息和用户昵称
+				this.loadUserNickname()
+				this.loadCurrentAgent()
+			},
 
-		onHide() {
+			onReady() {
+				// DOM 就绪后滚动到底部
+				this.scrollToBottom()
+			},
+
+			onHide() {
 			// 离开页面时保存当前对话
 			this.saveCurrentConversation()
 		},

@@ -55,6 +55,7 @@
 			</view>
 
 		</scroll-view>
+		<TabBar current="pages/settings/settings" />
 	</view>
 </template>
 
@@ -145,7 +146,7 @@
 						setDefaultTaskModel(type, providerId, model)
 					}
 				}
-				uni.showToast({ position: 'bottom', 
+				uni.showToast({
 					title: '已保存',
 					icon: 'success'
 				})

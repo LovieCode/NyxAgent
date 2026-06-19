@@ -1,5 +1,5 @@
 <template>
-	<view class="page-shell rice-theme-light">
+	<view class="page-shell">
 		<NavBar :title="navTitle" showBack @back="onBack">
 			<template #right>
 				<text class="done-btn" @click="saveAndBack">完成</text>
@@ -20,7 +20,8 @@
 
 <script lang="uts">
 	/**
-	 * 全屏编辑器页�?	 * 通过 uni.storage 与调用方传值：
+	 * 全屏编辑器页面
+	 * 通过 uni.storage 与调用方传值：
 	 *   - 调用方先写入 editor_content（初始文本）和 editor_title（导航标题）
 	 *   - 本页面保存时写入 editor_result
 	 *   - 调用方在 onShow 中读取 editor_result
@@ -40,8 +41,7 @@
 				this.navTitle = title
 			}
 			// 先加载原始内容（保证无弹窗时文本正常显示）
-			const rawContent = uni.getStorageSync('editor_content') as string | null
-			const content = rawContent != null ? rawContent : ''
+			const content = (uni.getStorageSync('editor_content') as string) ?? ''
 			this.editText = content
 			this.initialText = content
 			// 检查是否有草稿需要恢复

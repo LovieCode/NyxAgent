@@ -1,4 +1,4 @@
-﻿<template>
+<template>
 	<view class="page-shell rice-theme-light">
 		<NavBar title="模型设置" showBack />
 		<scroll-view class="container" :scroll-y="true">
@@ -44,7 +44,7 @@
 						@click="selectModel(m.id)"
 					>
 						<text class="pill-text" :class="selectedModel == m.id ? 'pill-text-active' : ''">{{m.id}}</text>
-        <text v-if="m.context != null && m.context > 0" class="pill-ctx">{{m.context}}k</text>
+						<text v-if="m.context != null && m.context > 0" class="pill-ctx">{{(m.context / 1000)}}k</text>
 					</view>
 				</view>
 			</view>
@@ -54,6 +54,7 @@
 				<rice-button type="primary" text="保存" size="large" shape="round" @click="saveSettings" />
 			</view>
 		</scroll-view>
+		<TabBar current="pages/settings/settings" />
 	</view>
 </template>
 
@@ -112,9 +113,9 @@
 					if (agent != null) {
 						const rawModel = agent['model'] as string | null
 						if (rawModel != null) {
-		const parsed = this.parseModelKey(rawModel)
-						providerId = parsed['providerId'] as string
-						modelId = parsed['modelId'] as string
+							const parsed = this.parseModelKey(rawModel)
+							providerId = parsed['providerId'] as string
+							modelId = parsed['modelId'] as string
 						}
 					}
 				}
@@ -183,7 +184,7 @@
 
 			saveSettings() {
 				if (this.selectedProvider == '' || this.selectedModel == '') {
-					uni.showToast({ position: 'bottom',  title: '请选择提供商和模型', icon: 'none' })
+					uni.showToast({ title: '请选择提供商和模型', icon: 'none' })
 					return
 				}
 				if (this.pendingAgentId != '') {
@@ -193,7 +194,7 @@
 					setDefaultTaskModel('chat', this.selectedProvider, this.selectedModel)
 					uni.setStorageSync('settings_model', this.selectedModel)
 				}
-				uni.showToast({ position: 'bottom',  title: '已保存', icon: 'success' })
+				uni.showToast({ title: '已保存', icon: 'success' })
 			}
 		}
 	}
