@@ -800,17 +800,27 @@
 				const charsPerLine = this.estimateCodeCharsPerLine()
 				const grid = this.measureTextGrid(content, matchStart, charsPerLine)
 				const line = grid.length > 0 ? grid[0] : 0
-				let offsetTop = 6 + line * 18
+				// 行高用 rpx 动态换算：line-height:36rpx → px
+				const info = uni.getSystemInfoSync()
+				const rpxRatio = info.windowWidth / 750
+				const lineHeightPx = 36 * rpxRatio
+				let offsetTop = 6 + line * lineHeightPx
 				if (offsetTop < 0) {
 					offsetTop = 0
 				}
 				return offsetTop
 			},
 
-			/** 滚动到区块内匹配位置 */
+			/** 滚动到区块内匹配位置，尽量居中 */
 			scrollToSectionMatch(sectionId: string, matchStart: number): void {
-				const offsetTop = this.estimateTextMatchOffset(this.fullJsonText, matchStart)
-				this.scrollToSectionWithOffset(sectionId, offsetTop)
+				const textOffset = this.estimateTextMatchOffset(this.fullJsonText, matchStart)
+				// 半屏高度，未测量时用 300px 兜底
+				const viewCenter = this.scrollViewHeight > 0 ? Math.floor(this.scrollViewHeight / 2) : 300
+				// scrollToSectionWithOffset 内部公式: scrollTop = cachedTop + offsetTop - 24
+				// 要居中: scrollTop = cachedTop + textOffset - viewCenter
+				// 因此 offsetTop = textOffset - viewCenter + 24
+				const centeredOffset = textOffset - viewCenter + 24
+				this.scrollToSectionWithOffset(sectionId, centeredOffset > 0 ? centeredOffset : 0)
 			},
 
 			scrollToTop() {
