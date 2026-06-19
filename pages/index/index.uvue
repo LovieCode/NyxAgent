@@ -136,6 +136,7 @@
 	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
 	import { getAgentById } from '@/utils/agent.uts'
 	import { getDefaultTaskModel } from '@/utils/provider.uts'
+	import { Lunar, LunarInfoType } from '@/uni_modules/rice-ui/components/rice-calendar/lunar.uts'
 
 	export default {
 		data() {
@@ -162,6 +163,8 @@
 				userAvatar: '' as string,
 				/** 是否隐藏思考内容（来自智能体设置） */
 				hideThinking: false as boolean,
+				/** 是否注入日期时间（来自智能体设置） */
+				injectDatetime: false as boolean,
 				/** 流式滚动节拍计数器 */
 				_streamScrollTick: 0 as number,
 				/** 滚动位置 */
@@ -243,6 +246,8 @@
 					this.currentAgentAvatar = rawAvatar != null ? (rawAvatar as string) : ''
 					const rawHideThinking = agent['hideThinking']
 					this.hideThinking = rawHideThinking != null ? (rawHideThinking as boolean) : false
+					const rawInjectDatetime = agent['injectDatetime']
+					this.injectDatetime = rawInjectDatetime != null ? (rawInjectDatetime as boolean) : false
 				}
 			},
 
@@ -301,7 +306,7 @@
 			},
 
 			sendMessage() {
-				const text = this.inputText.trim()
+				let text = this.inputText.trim()
 				if (text == '' || this.isGenerating) {
 					return
 				}
@@ -310,10 +315,87 @@
 				}
 				// 发新消息时允许保存（从历史加载后 savedFlag 为 true 会阻止保存）
 				this.savedFlag = false
+				// 注入日期时间
+				if (this.injectDatetime) {
+					text = this.buildDatetimePrefix() + '\n' + text
+				}
 				this.addTextMessage('user', text)
 				this.inputText = ''
 				this.scrollToBottom()
 				this.simulateAIResponse(text)
+			},
+
+			/** 构建日期时间注入前缀（含农历、节气、节日） */
+			buildDatetimePrefix(): string {
+				const now = new Date()
+				const year = now.getFullYear()
+				const month = now.getMonth() + 1
+				const day = now.getDate()
+				const hour = now.getHours()
+				const minute = now.getMinutes()
+				const weekdays = ['日', '一', '二', '三', '四', '五', '六']
+				const weekday = weekdays[now.getDay()]
+				const timeStr = hour + ':' + (minute < 10 ? '0' + minute : ('' + minute))
+				let prefix = '[当前时间：' + year + '年' + month + '月' + day + '日 周' + weekday + ' ' + timeStr + ']'
+				// 农历 + 节日 + 节气
+				const lunar = new Lunar()
+				const info = lunar.solar2lunar(year, month, day)
+				if (info.isLeap) {
+					prefix = prefix + ' 农历闰' + info.IMonthCn + info.IDayCn
+				} else {
+					prefix = prefix + ' 农历' + info.IMonthCn + info.IDayCn
+				}
+				const holiday = this.getHolidayHint(month, day, info)
+				if (holiday != '') {
+					prefix = prefix + ' ' + holiday
+				}
+				return prefix
+			},
+
+			/** 获取节日/节气提示（公历精确 + 农历精确 + 节气） */
+			getHolidayHint(solarMonth: number, solarDay: number, info: LunarInfoType): string {
+				// === 节气 ===
+				if (info.isTerm == true && info.Term != null) {
+					return '今日' + (info.Term as string)
+				}
+				// === 农历节日（精确） ===
+				const lm = info.lMonth
+				const ld = info.lDay
+				if (lm == 1 && ld == 1) return '今天是春节（农历正月初一）'
+				if (lm == 1 && ld == 15) return '今天是元宵节（农历正月十五）'
+				if (lm == 5 && ld == 5) return '今天是端午节（农历五月初五）'
+				if (lm == 7 && ld == 7) return '今天是七夕（农历七月初七）'
+				if (lm == 7 && ld == 15) return '今天是中元节（农历七月十五）'
+				if (lm == 8 && ld == 15) return '今天是中秋节（农历八月十五）'
+				if (lm == 9 && ld == 9) return '今天是重阳节（农历九月初九）'
+				if (lm == 12 && ld == 30) return '今天是除夕（农历腊月三十）'
+				if (lm == 12 && ld == 29) return '今天是除夕（农历腊月廿九）'
+				if (lm == 12 && ld == 8) return '今天是腊八节（农历腊月初八）'
+				if (lm == 12 && ld == 23) return '今天是北方小年（农历腊月廿三）'
+				if (lm == 12 && ld == 24) return '今天是南方小年（农历腊月廿四）'
+				if (lm == 1 && ld == 2) return '今天是正月初二（回娘家）'
+				if (lm == 1 && ld == 3) return '今天是正月初三'
+				if (lm == 1 && ld == 5) return '今天是正月初五（破五/迎财神）'
+				if (lm == 1 && ld == 7) return '今天是正月初七（人日）'
+				if (lm == 2 && ld == 2) return '今天是龙抬头（农历二月初二）'
+				if (lm == 3 && ld == 3) return '今天是上巳节（农历三月初三）'
+				if (lm == 4 && ld == 8) return '今天是佛诞日（农历四月初八）'
+				if (lm == 6 && ld == 6) return '今天是天贶节（农历六月初六）'
+				// === 公历节日 ===
+				if (solarMonth == 1 && solarDay == 1) return '今天是元旦'
+				if (solarMonth == 2 && solarDay == 14) return '今天是情人节'
+				if (solarMonth == 3 && solarDay == 8) return '今天是妇女节'
+				if (solarMonth == 3 && solarDay == 12) return '今天是植树节'
+				if (solarMonth == 4 && solarDay == 1) return '今天是愚人节'
+				if (solarMonth == 5 && solarDay == 1) return '今天是劳动节'
+				if (solarMonth == 5 && solarDay == 4) return '今天是青年节'
+				if (solarMonth == 6 && solarDay == 1) return '今天是儿童节'
+				if (solarMonth == 7 && solarDay == 1) return '今天是建党节'
+				if (solarMonth == 8 && solarDay == 1) return '今天是建军节'
+				if (solarMonth == 9 && solarDay == 10) return '今天是教师节'
+				if (solarMonth == 10 && solarDay >= 1 && solarDay <= 7) return '今天是国庆假期'
+				if (solarMonth == 12 && solarDay == 25) return '今天是圣诞节'
+				return ''
 			},
 
 			/** 长按消息弹出操作菜单 */

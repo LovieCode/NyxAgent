@@ -169,6 +169,13 @@
 					</view>
 					<rice-switch v-model="hideThinking" />
 				</view>
+				<view class="setting-row">
+					<view class="setting-text">
+						<text class="setting-title">注入日期时间</text>
+						<text class="setting-desc">每条消息前自动附加当前日期、星期、节日</text>
+					</view>
+					<rice-switch v-model="injectDatetime" />
+				</view>
 			</view>
 
 			<!-- 保存按钮 -->
@@ -192,7 +199,7 @@
 	/**
 	 * 智能体设置页面 - 编辑名称/描述/头像/删除智能体
 	 */
-	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking } from '@/utils/agent.uts'
+	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, type ModelInfo } from '@/utils/provider.uts'
 	import { updateSystemPromptForAgent } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
@@ -223,6 +230,8 @@
 				cacheEnabled: false as boolean,
 				/** 隐藏思考过程 */
 				hideThinking: false as boolean,
+				/** 注入日期时间 */
+				injectDatetime: false as boolean,
 				globalGenerationHint: '' as string,
 				/** 编辑器返回后标记未保存 */
 				hasUnsaved: false as boolean,
@@ -364,15 +373,17 @@
 				this.maxIterationsStr = (rawMaxIterations != null ? rawMaxIterations : global.maxIterations) + ''
 				this.streamEnabled = rawStreamEnabled != null ? rawStreamEnabled : global.streamEnabled
 
-				// 截断/缓存/隐藏思考
+				// 截断/缓存/隐藏思考/注入日期
 				const rawThreshold = agent['truncateThreshold'] as number | null
 				const rawDropCount = agent['truncateDropCount'] as number | null
 				const rawCacheEnabled = agent['cacheEnabled'] as boolean | null
 				const rawHideThinking = agent['hideThinking'] as boolean | null
+				const rawInjectDatetime = agent['injectDatetime'] as boolean | null
 				this.truncateThresholdStr = (rawThreshold != null ? rawThreshold : 40) + ''
 				this.truncateDropCountStr = (rawDropCount != null ? rawDropCount : 20) + ''
 				this.cacheEnabled = rawCacheEnabled == true
 				this.hideThinking = rawHideThinking == true
+				this.injectDatetime = rawInjectDatetime == true
 			},
 
 			/** 从 currentModel 解析出选中的提供商和模型 */
@@ -509,6 +520,7 @@
 				updateAgentTruncation(this.agentId, isNaN(threshold) ? 40 : threshold, isNaN(dropCount) ? 20 : dropCount)
 				updateAgentCache(this.agentId, this.cacheEnabled)
 				updateAgentHideThinking(this.agentId, this.hideThinking)
+				updateAgentInjectDatetime(this.agentId, this.injectDatetime)
 				// 同步更新所有历史对话的 system_prompt
 				updateSystemPromptForAgent(this.agentId, this.agentSystemPrompt)
 				this.hasUnsaved = false
