@@ -61,8 +61,6 @@
 				<text class="empty-text">开始对话</text>
 				<text class="empty-hint">输入文字或长按语音按钮</text>
 			</view>
-			<!-- 滚动锚点——scroll-into-view 定位到这里即滚到底 -->
-			<view id="msg-bottom-anchor" style="height:1px"></view>
 		</scroll-view>
 
 		<!-- 底部区域（输入栏 + 工具栏） -->
@@ -115,8 +113,8 @@
 						<text class="toolbar-grid-label">记忆整理</text>
 					</view>
 					<view class="toolbar-grid-item" @click="openContextPreview">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="eye" size="26px" color="var(--rice-primary-color)" /></view>
-						<text class="toolbar-grid-label">原始上下文</text>
+						<view class="toolbar-grid-icon"><oui-icon-unix name="robot" size="26px" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">记忆整理</text>
 					</view>
 					<view class="toolbar-grid-item" @click="stopTaskFromToolbar">
 						<view class="toolbar-grid-icon"><oui-icon-unix name="stop" size="26px" color="#EF4444" /></view>
@@ -204,13 +202,6 @@
 			// 仍然没有，生成新对话 ID
 			if (this.conversationId == '') {
 				this.conversationId = '' + Date.now()
-			}
-		},
-
-		onReady() {
-			// DOM 渲染完成后，有消息就滚到底
-			if (this.messages.length > 0) {
-				this.scrollToBottom()
 			}
 		},
 
@@ -1117,18 +1108,14 @@
 <style>
 	/* 页面内容区域 */
 	.chat-page {
-		position: relative;
 		flex: 1;
 		flex-direction: column;
 	}
 
-	/* 消息列表——absolute 定位确保填满 NavBar 和输入栏之间的所有空间 */
+	/* 消息列表 */
 	.message-list {
-		position: absolute;
-		top: 84px;
-		bottom: 50px;
-		left: 0;
-		right: 0;
+		flex: 1;
+		flex-direction: column;
 	}
 
 	/* NavBar 右侧图标按钮 */
