@@ -281,6 +281,19 @@
 				}
 			},
 
+			/** 节流设置滚动位置（16ms 间隔，约 60fps） */
+			applyScrollTarget(target: number) {
+				const now = Date.now()
+				if (now - this.scrollbarThrottleTimer < 16) {
+					this.scrollbarPendingTarget = target
+					return
+				}
+				this.scrollbarThrottleTimer = now
+				this.scrollTop = target
+				this.scrollOffset = target
+				this.scrollRequestSeq++
+			},
+
 			/** 点滚动条轨道直接跳转 */
 			onScrollbarTrackTap(e: UniTouchEvent) {
 				const y = this.getTouchRelativeY(e)
@@ -292,9 +305,7 @@
 				if (target < 0) target = 0
 				const max = this.scrollContentHeight - this.scrollViewHeight
 				if (target > max) target = max
-				this.scrollTop = target
-				this.scrollOffset = target
-				this.scrollRequestSeq++
+				this.applyScrollTarget(target)
 			},
 
 			/** 开始拖拽滚动条滑块 */
@@ -319,13 +330,18 @@
 				if (target < 0) target = 0
 				const max = this.scrollContentHeight - this.scrollViewHeight
 				if (target > max) target = max
-				this.scrollTop = target
-				this.scrollOffset = target
-				this.scrollRequestSeq++
+				this.applyScrollTarget(target)
 			},
 
 			/** 拖拽结束 */
 			onScrollbarTouchEnd(_e: UniTouchEvent) {
+				// 把挂起的最后一次目标位置补上
+				if (this.scrollbarPendingTarget >= 0) {
+					this.scrollTop = this.scrollbarPendingTarget
+					this.scrollOffset = this.scrollbarPendingTarget
+					this.scrollRequestSeq++
+					this.scrollbarPendingTarget = -1
+				}
 				this.scrollbarDragging = false
 			},
 

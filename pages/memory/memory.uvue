@@ -605,20 +605,31 @@
 		color: #111827;
 	}
 
+	.meta-row {
+		justify-content: space-between;
+		flex-wrap: nowrap;
+	}
+
+	.meta-row .field-tip {
+		flex: 1;
+		font-size: 22rpx;
+		margin-right: 8rpx;
+	}
+
 	.text-btn,
 	.refresh-btn {
-		font-size: 25rpx;
+		font-size: 22rpx;
 		color: #6B7280;
-		padding: 12rpx 18rpx;
+		padding: 8rpx 14rpx;
 	}
 
 	.primary-mini {
-		font-size: 25rpx;
+		font-size: 22rpx;
 		color: #FFFFFF;
 		background-color: var(--rice-primary-color);
 		border-radius: 999rpx;
-		padding: 12rpx 22rpx;
-		margin-left: 12rpx;
+		padding: 8rpx 18rpx;
+		margin-left: 8rpx;
 	}
 
 	.chip-scroll {
