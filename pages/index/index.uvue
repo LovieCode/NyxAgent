@@ -88,19 +88,19 @@
 			<!-- 工具栏面板（输入栏下方展开） -->
 			<view v-if="showToolPanel" class="toolbar-panel">
 				<view class="toolbar-grid">
-					<view class="toolbar-grid-item" @click="pickImage; showToolPanel = false">
+					<view class="toolbar-grid-item" @click="pickImage">
 						<view class="toolbar-grid-icon"><oui-icon-unix name="image" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">图片</text>
 					</view>
-					<view class="toolbar-grid-item" @click="takePhoto; showToolPanel = false">
+					<view class="toolbar-grid-item" @click="takePhoto">
 						<view class="toolbar-grid-icon"><oui-icon-unix name="camera" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">拍照</text>
 					</view>
-					<view class="toolbar-grid-item" @click="pickFile; showToolPanel = false">
+					<view class="toolbar-grid-item" @click="pickFile">
 						<view class="toolbar-grid-icon"><oui-icon-unix name="file" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">文件</text>
 					</view>
-					<view class="toolbar-grid-item" @click="pickLocation; showToolPanel = false">
+					<view class="toolbar-grid-item" @click="pickLocation">
 						<view class="toolbar-grid-icon"><oui-icon-unix name="location" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">位置</text>
 					</view>
