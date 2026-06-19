@@ -114,6 +114,7 @@
 			<view class="scrollbar-thumb" :style="scrollbarThumbStyle" @touchstart.stop="onScrollbarThumbStart" @touchmove.stop.prevent="onScrollbarThumbMove" />
 		</view>
 	</view>
+	</view>
 </template>
 
 <script lang="uts">
