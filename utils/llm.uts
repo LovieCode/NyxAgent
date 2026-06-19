@@ -549,9 +549,15 @@ function processSSELine(
  * 保存最近一次 API 调用的 Token 用量
  */
 function saveLastTokenUsage(usage: UTSJSONObject): void {
-	const promptTokens = usage['prompt_tokens'] as number | null
-	const completionTokens = usage['completion_tokens'] as number | null
-	const totalTokens = usage['total_tokens'] as number | null
+	let promptTokens = usage['prompt_tokens'] as number | null
+	let completionTokens = usage['completion_tokens'] as number | null
+	let totalTokens = usage['total_tokens'] as number | null
+	// Anthropic 格式兼容：input_tokens / output_tokens
+	if (promptTokens == null) promptTokens = usage['input_tokens'] as number | null
+	if (completionTokens == null) completionTokens = usage['output_tokens'] as number | null
+	if (totalTokens == null && promptTokens != null && completionTokens != null) {
+		totalTokens = promptTokens + completionTokens
+	}
 	const obj: UTSJSONObject = {} as UTSJSONObject
 	if (promptTokens != null) obj['prompt_tokens'] = promptTokens
 	if (completionTokens != null) obj['completion_tokens'] = completionTokens
@@ -1090,16 +1096,6 @@ export function buildAgentContextPreview(
 			},
 		} as UTSJSONObject)
 	}
-	const requestBody: UTSJSONObject = {
-		model: requestModel,
-		messages: apiMessages,
-		max_tokens: settings.maxTokens,
-		temperature: settings.temperature,
-		stream: true,
-	} as UTSJSONObject
-	if (openaiTools.length > 0) {
-		requestBody['tools'] = openaiTools
-	}
 	return {
 		providerId: resolvedProviderId,
 		baseUrl: normalizedBaseUrl,
@@ -1119,7 +1115,6 @@ export function buildAgentContextPreview(
 			maxIterations: settings.maxIterations,
 			streamEnabled: settings.streamEnabled,
 		} as UTSJSONObject,
-		requestBody: requestBody,
 	} as UTSJSONObject
 }
 

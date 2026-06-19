@@ -84,9 +84,10 @@
 						<text class="summary-label">短缓存</text>
 						<text class="summary-value">{{bufferInjection != '' ? '有' : '无'}}</text>
 					</view>
-					<view v-if="lastTotalTokens > 0" class="summary-item" style="background-color:#F0FFF4;border-radius:16rpx;padding:8rpx 16rpx;">
+					<view class="summary-item" style="background-color:#F0FFF4;border-radius:16rpx;padding:8rpx 16rpx;">
 						<text class="summary-label" style="color:#059669;">上次调用</text>
-						<text class="summary-value" style="color:#059669;">{{lastPromptTokens}} → {{lastCompletionTokens}}（共 {{lastTotalTokens}}）</text>
+						<text v-if="lastTotalTokens > 0" class="summary-value" style="color:#059669;">{{lastPromptTokens}} → {{lastCompletionTokens}}（共 {{lastTotalTokens}}）</text>
+						<text v-else class="summary-value" style="color:#059669;">—</text>
 					</view>
 				</view>
 			</view>
