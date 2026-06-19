@@ -605,31 +605,20 @@
 		color: #111827;
 	}
 
-	.meta-row {
-		justify-content: space-between;
-		flex-wrap: nowrap;
-	}
-
-	.meta-row .field-tip {
-		flex: 1;
-		font-size: 22rpx;
-		margin-right: 8rpx;
-	}
-
 	.text-btn,
 	.refresh-btn {
-		font-size: 22rpx;
+		font-size: 25rpx;
 		color: #6B7280;
-		padding: 8rpx 14rpx;
+		padding: 12rpx 18rpx;
 	}
 
 	.primary-mini {
-		font-size: 22rpx;
+		font-size: 25rpx;
 		color: #FFFFFF;
 		background-color: var(--rice-primary-color);
 		border-radius: 999rpx;
-		padding: 8rpx 18rpx;
-		margin-left: 8rpx;
+		padding: 12rpx 22rpx;
+		margin-left: 12rpx;
 	}
 
 	.chip-scroll {
