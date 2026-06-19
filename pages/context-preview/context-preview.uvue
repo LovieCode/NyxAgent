@@ -582,6 +582,7 @@
 						excerpt: excerpt,
 						count: total,
 						occurrence: j + 1,
+						matchStart: hit,
 					} as UTSJSONObject)
 				}
 			},
@@ -631,11 +632,14 @@
 				const sectionId = item['sectionId'] as string | null
 				const count = item['count'] as number | null
 				const occurrence = item['occurrence'] as number | null
+				const matchStart = item['matchStart'] as number | null
 				this.searchMetaText = '命中 ' + this.searchResults.length + ' 处，当前第 ' + (index + 1) + ' 处' + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
 				this.activeSectionId = sectionId != null ? sectionId : ''
 				this.showFloatingSearchBar = true
 				this.floatingMetaText = (index + 1) + ' / ' + this.searchResults.length + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
-				this.scrollToSection(sectionId != null ? sectionId : '')
+				if (sectionId != null && sectionId != '') {
+					this.scrollToSectionMatch(sectionId, matchStart != null ? matchStart : 0)
+				}
 			},
 
 			queueFocusSearchIndex(index: number): void {
@@ -729,6 +733,67 @@
 
 			scrollToSection(id: string): void {
 				this.scrollToSectionWithOffset(id, 0)
+			},
+
+			/** 估算等宽字体每行字符数 */
+			estimateCodeCharsPerLine(): number {
+				const info = uni.getSystemInfoSync()
+				const windowWidth = info.windowWidth
+				const usableWidth = windowWidth - 116
+				const charWidth = 7.2
+				let value = Math.floor(usableWidth / charWidth)
+				if (value < 18) {
+					value = 18
+				}
+				return value
+			},
+
+			/** 计算文本到 endExclusive 位置的行/列 */
+			measureTextGrid(content: string, endExclusive: number, charsPerLine: number): number[] {
+				let line = 0
+				let column = 0
+				if (content == '' || endExclusive <= 0) {
+					return [line, column]
+				}
+				let limit = endExclusive
+				if (limit > content.length) {
+					limit = content.length
+				}
+				for (let i = 0; i < limit; i++) {
+					const ch = content.charAt(i)
+					if (ch == '\n') {
+						line++
+						column = 0
+						continue
+					}
+					column++
+					if (column >= charsPerLine) {
+						line++
+						column = 0
+					}
+				}
+				return [line, column]
+			},
+
+			/** 估算匹配位置在文本中的像素偏移 */
+			estimateTextMatchOffset(content: string, matchStart: number): number {
+				if (content == '' || matchStart < 0) {
+					return 0
+				}
+				const charsPerLine = this.estimateCodeCharsPerLine()
+				const grid = this.measureTextGrid(content, matchStart, charsPerLine)
+				const line = grid.length > 0 ? grid[0] : 0
+				let offsetTop = 6 + line * 18
+				if (offsetTop < 0) {
+					offsetTop = 0
+				}
+				return offsetTop
+			},
+
+			/** 滚动到区块内匹配位置 */
+			scrollToSectionMatch(sectionId: string, matchStart: number): void {
+				const offsetTop = this.estimateTextMatchOffset(this.fullJsonText, matchStart)
+				this.scrollToSectionWithOffset(sectionId, offsetTop)
 			},
 
 			scrollToTop() {
