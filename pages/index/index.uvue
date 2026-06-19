@@ -135,6 +135,7 @@
 	import { agentChat, buildAgentContextPreview, organizeAgentMemory } from '@/utils/llm.uts'
 	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
 	import { getAgentById } from '@/utils/agent.uts'
+	import { getDefaultTaskModel } from '@/utils/provider.uts'
 
 	export default {
 		data() {
@@ -659,6 +660,11 @@
 			// ===== 语音输入 =====
 
 			startVoice() {
+				const sttConfig = getDefaultTaskModel('stt')
+				if (sttConfig == null) {
+					uni.showToast({ position: 'bottom',  title: '请先在设置中配置语音识别模型', icon: 'none' })
+					return
+				}
 				this.isListening = true
 				const recorder = uni.getRecorderManager()
 				recorder.onStop((res: any): void => {
