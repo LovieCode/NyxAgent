@@ -6,7 +6,7 @@
 			</template>
 		</NavBar>
 		<view class="scroll-wrapper">
-			<scroll-view id="context-scroll" class="container" :scroll-y="true" :scroll-with-animation="false" :show-scrollbar="false" :scroll-top="scrollTop">
+			<scroll-view id="context-scroll" class="container" :scroll-y="true" :scroll-with-animation="false" :show-scrollbar="false" :scroll-top="scrollTop" @scroll="onPageScroll">
 			<view id="anchor-top" class="anchor-spacer"></view>
 			<view class="hero-card">
 				<text class="hero-title">发送前完整上下文</text>
@@ -130,16 +130,7 @@
 					<text class="section-title">完整 JSON</text>
 					<text class="mini-btn" @click="copyAll">复制</text>
 				</view>
-				<view v-for="(chunk, index) in fullJsonChunks" :key="'json-' + index" :id="chunkAnchorId(chunk)" class="chunk-wrap" :class="isChunkActive(chunk) ? 'chunk-wrap-active' : ''">
-					<view v-if="isChunkActive(chunk) && hasActiveChunkMatch(chunk)" class="code-panel code-panel-active">
-						<text class="code-text code-text-panel code-text-active">
-							<text>{{activeChunkPrefix(chunk)}}</text>
-							<text class="code-inline-hit">{{activeChunkMatch(chunk)}}</text>
-							<text>{{activeChunkSuffix(chunk)}}</text>
-						</text>
-					</view>
-					<text v-else class="code-text">{{chunkText(chunk)}}</text>
-				</view>
+				<text class="code-text">{{fullJsonText}}</text>
 			</view>
 			<view id="anchor-bottom" class="anchor-spacer"></view>
 		</scroll-view>
@@ -179,9 +170,7 @@
 				currentSearchExcerptMatch: '' as string,
 				currentSearchExcerptAfter: '' as string,
 				activeSectionId: '' as string,
-				activeChunkId: '' as string,
-				activeMatchStart: -1 as number,
-				activeMatchLength: 0 as number,
+
 				searchJumpBusy: false as boolean,
 				queuedSearchIndex: -1 as number,
 				showFloatingSearchBar: false as boolean,
@@ -211,7 +200,7 @@
 				settingsMaxTokens: '—' as string,
 				settingsMaxIterations: '—' as string,
 				settingsStreamEnabled: false as boolean,
-				fullJsonChunks: [] as UTSJSONObject[],
+				fullJsonText: '' as string,
 				// 自定义滚动条
 				scrollViewHeight: 0 as number,
 				scrollContentHeight: 0 as number,
@@ -233,8 +222,9 @@
 				const ratio = this.scrollViewHeight / this.scrollContentHeight
 				const thumbH = Math.max(trackH * ratio, 36)
 				const maxTop = trackH - thumbH
+				const maxScroll = this.scrollContentHeight - this.scrollViewHeight
 				const currentOffset = this.scrollOffset
-				const rawTop = (currentOffset / this.scrollContentHeight) * trackH
+				const rawTop = maxScroll > 0 ? (currentOffset / maxScroll) * maxTop : 0
 				let top = rawTop
 				if (top < 0) top = 0
 				if (top > maxTop) top = maxTop
@@ -250,7 +240,7 @@
 			}
 			this.previewText = raw
 			this.previewDisplayText = this.decodeDisplayEscapes(raw)
-			this.fullJsonChunks = this.buildChunks('section-full-json', '完整 JSON', this.previewDisplayText, 280)
+			this.fullJsonText = this.previewDisplayText
 			try {
 				const parsed = JSON.parse(raw) as UTSJSONObject
 				const providerId = parsed['providerId'] as string | null
@@ -319,7 +309,7 @@
 			this.scheduleLayoutCache()
 			setTimeout(() => { this.measureScrollSize() }, 300)
 			setTimeout(() => { this.measureScrollSize() }, 800)
-		},
+	},
 		methods: {
 			scheduleLayoutCache(): void {
 				setTimeout(() => {
@@ -342,9 +332,6 @@
 				ids.push('section-tools')
 				ids.push('section-request')
 				ids.push('section-full-json')
-				for (let i = 0; i < this.fullJsonChunks.length; i++) {
-					ids.push(this.chunkAnchorId(this.fullJsonChunks[i]))
-				}
 				const query = uni.createSelectorQuery().in(this)
 				for (let i = 0; i < ids.length; i++) {
 					const id = ids[i]
@@ -380,6 +367,11 @@
 				})
 			},
 
+			/** 页面滚动时同步偏移量给自定义滚动条 */
+			onPageScroll(e: UniScrollEvent): void {
+				this.scrollOffset = e.detail.scrollTop
+			},
+
 			// ====== 自定义滚动条方法 ======
 
 			/** 点滚动条轨道直接跳转 */
@@ -388,11 +380,11 @@
 				if (y == null || this.scrollContentHeight <= 0 || this.scrollViewHeight <= 0) return
 				const trackH = this.scrollViewHeight - 4
 				if (trackH <= 0) return
+				const maxScroll = this.scrollContentHeight - this.scrollViewHeight
 				const ratio = y / trackH
-				let target = ratio * this.scrollContentHeight
+				let target = ratio * maxScroll
 				if (target < 0) target = 0
-				const max = this.scrollContentHeight - this.scrollViewHeight
-				if (target > max) target = max
+				if (target > maxScroll) target = maxScroll
 				this.scrollTop = target
 				this.scrollOffset = target
 				this.scrollRequestSeq++
@@ -415,11 +407,14 @@
 				const dy = y - this.scrollbarDragStartY
 				const trackH = this.scrollViewHeight - 4
 				if (trackH <= 0) return
-				const scale = this.scrollContentHeight / trackH
+				const maxScroll = this.scrollContentHeight - this.scrollViewHeight
+				const ratio = this.scrollViewHeight / this.scrollContentHeight
+				const thumbH = Math.max(trackH * ratio, 36)
+				const maxTop = trackH - thumbH
+				const scale = maxTop > 0 ? maxScroll / maxTop : 0
 				let target = this.scrollbarDragStartTop + dy * scale
 				if (target < 0) target = 0
-				const max = this.scrollContentHeight - this.scrollViewHeight
-				if (target > max) target = max
+				if (target > maxScroll) target = maxScroll
 				this.scrollTop = target
 				this.scrollOffset = target
 				this.scrollRequestSeq++
@@ -442,10 +437,12 @@
 			measureScrollSize() {
 				const query = uni.createSelectorQuery().in(this)
 				query.select('#context-scroll').boundingClientRect()
+				query.select('#anchor-bottom').boundingClientRect()
 				query.exec((res: any) => {
 					const rows = res as UTSArray<any> | null
-					if (rows == null || rows.length < 1) return
+					if (rows == null || rows.length < 2) return
 					const viewRect = rows[0] as NodeInfo | null
+					const anchorRect = rows[1] as NodeInfo | null
 					if (viewRect != null) {
 						if (viewRect.height != null) {
 							this.scrollViewHeight = viewRect.height as number
@@ -454,9 +451,14 @@
 							this.scrollbarTrackTop = viewRect.top as number
 						}
 					}
-					const lines = this.previewDisplayText.length / 1200
-					const estHeight = (lines + 1) * this.scrollViewHeight
-					this.scrollContentHeight = estHeight
+					if (anchorRect != null && viewRect != null) {
+						const anchorTop = anchorRect.top as number | null
+						const viewTop = viewRect.top as number | null
+						const anchorH = anchorRect.height as number | null
+						if (anchorTop != null && viewTop != null && anchorH != null) {
+							this.scrollContentHeight = anchorTop - viewTop + anchorH
+						}
+					}
 				})
 			},
 
@@ -475,133 +477,7 @@
 				return text.substring(0, limit) + '\n\n…… 已截断显示，使用搜索定位或复制查看完整内容 ……'
 			},
 
-			buildChunks(sectionId: string, title: string, text: string, chunkSize: number): UTSJSONObject[] {
-				const list: UTSJSONObject[] = []
-				if (text == '') {
-					return list
-				}
-				let start = 0
-				let index = 0
-				while (start < text.length) {
-					let end = start + chunkSize
-					if (end > text.length) {
-						end = text.length
-					}
-					list.push({
-						id: sectionId + '-chunk-' + index,
-						sectionId: sectionId,
-						title: title,
-						text: text.substring(start, end),
-						start: start,
-						end: end,
-					} as UTSJSONObject)
-					start = end
-					index++
-				}
-				return list
-			},
-
-			chunkAnchorId(chunk: UTSJSONObject): string {
-				const value = chunk['id'] as string | null
-				return value != null ? value : ''
-			},
-
-			findChunkById(id: string): UTSJSONObject | null {
-				if (id == '') {
-					return null
-				}
-				for (let i = 0; i < this.fullJsonChunks.length; i++) {
-					const chunk = this.fullJsonChunks[i]
-					if (this.chunkAnchorId(chunk) == id) {
-						return chunk
-					}
-				}
-				return null
-			},
-
-			measureTextGrid(content: string, endExclusive: number, charsPerLine: number): number[] {
-				let line = 0
-				let column = 0
-				if (content == '' || endExclusive <= 0) {
-					return [line, column]
-				}
-				let limit = endExclusive
-				if (limit > content.length) {
-					limit = content.length
-				}
-				for (let i = 0; i < limit; i++) {
-					const ch = content.charAt(i)
-					if (ch == '\n') {
-						line++
-						column = 0
-						continue
-					}
-					column++
-					if (column >= charsPerLine) {
-						line++
-						column = 0
-					}
-				}
-				return [line, column]
-			},
-
-			pushChunkMatches(list: UTSJSONObject[], chunks: UTSJSONObject[], query: string): void {
-				if (query == '') {
-					return
-				}
-				const needle = query.toLowerCase()
-				for (let i = 0; i < chunks.length; i++) {
-					const chunk = chunks[i]
-					const content = chunk['text'] as string | null
-					if (content == null || content == '') {
-						continue
-					}
-					const source = content.toLowerCase()
-					const firstIndex = source.indexOf(needle)
-					if (firstIndex < 0) {
-						continue
-					}
-					let hits: number[] = []
-					let fromIndex = 0
-					while (fromIndex < source.length) {
-						const hit = source.indexOf(needle, fromIndex)
-						if (hit < 0) {
-							break
-						}
-						hits.push(hit)
-						fromIndex = hit + needle.length
-					}
-					const total = hits.length
-					for (let j = 0; j < hits.length; j++) {
-						const hit = hits[j]
-						let start = hit - 48
-						if (start < 0) {
-							start = 0
-						}
-						let end = hit + needle.length + 96
-						if (end > content.length) {
-							end = content.length
-						}
-						let excerpt = content.substring(start, end)
-						if (start > 0) {
-							excerpt = '…' + excerpt
-						}
-						if (end < content.length) {
-							excerpt = excerpt + '…'
-						}
-						list.push({
-							sectionId: chunk['sectionId'] as string,
-							anchorId: chunk['id'] as string,
-							title: chunk['title'] as string,
-							excerpt: excerpt,
-							count: total,
-							occurrence: j + 1,
-							matchStart: hit,
-							matchLength: needle.length,
-						} as UTSJSONObject)
-					}
-				}
-			},
+			/** 在全文中搜索匹配并构建搜索结果 */
 
 			buildSearchResult(sectionId: string, title: string, content: string, query: string): UTSJSONObject | null {
 				if (content == '' || query == '') {
@@ -673,6 +549,54 @@
 				}
 			},
 
+			/** 在完整 JSON 文本中搜索所有匹配并构建搜索结果 */
+			pushFullTextMatches(list: UTSJSONObject[], sectionId: string, title: string, content: string, query: string): void {
+				if (query == '' || content == '') {
+					return
+				}
+				const needle = query.toLowerCase()
+				const source = content.toLowerCase()
+				let hits: number[] = []
+				let fromIndex = 0
+				while (fromIndex < source.length) {
+					const hit = source.indexOf(needle, fromIndex)
+					if (hit < 0) {
+						break
+					}
+					hits.push(hit)
+					fromIndex = hit + needle.length
+				}
+				if (hits.length == 0) {
+					return
+				}
+				const total = hits.length
+				for (let j = 0; j < hits.length; j++) {
+					const hit = hits[j]
+					let start = hit - 48
+					if (start < 0) {
+						start = 0
+					}
+					let end = hit + needle.length + 96
+					if (end > content.length) {
+						end = content.length
+					}
+					let excerpt = content.substring(start, end)
+					if (start > 0) {
+						excerpt = '…' + excerpt
+					}
+					if (end < content.length) {
+						excerpt = excerpt + '…'
+					}
+					list.push({
+						sectionId: sectionId,
+						title: title,
+						excerpt: excerpt,
+						count: total,
+						occurrence: j + 1,
+					} as UTSJSONObject)
+				}
+			},
+
 			setCurrentSearchExcerpt(text: string): void {
 				this.currentSearchExcerpt = text
 				const query = this.searchText.trim()
@@ -705,7 +629,7 @@
 				const results: UTSJSONObject[] = []
 				this.pushSearchResult(results, 'section-summary', '摘要', this.buildSummarySearchText(), query)
 				this.pushSearchResult(results, 'section-important-memory', '重要记忆注入', this.importantMemory, query)
-				this.pushChunkMatches(results, this.fullJsonChunks, query)
+				this.pushFullTextMatches(results, 'section-full-json', '完整 JSON', this.fullJsonText, query)
 				this.searchResults = results
 				if (results.length == 0) {
 					this.searchIndex = -1
@@ -713,9 +637,6 @@
 					this.currentSearchTitle = ''
 					this.setCurrentSearchExcerpt('')
 					this.activeSectionId = ''
-					this.activeChunkId = ''
-					this.activeMatchStart = -1
-					this.activeMatchLength = 0
 					this.searchJumpBusy = false
 					this.queuedSearchIndex = -1
 					this.scrollRequestSeq = this.scrollRequestSeq + 1
@@ -730,9 +651,6 @@
 				this.searchIndex = 0
 				this.searchMetaText = '找到 ' + results.length + ' 处命中。点击下一个 / 上一个开始跳转。'
 				this.activeSectionId = ''
-				this.activeChunkId = ''
-				this.activeMatchStart = -1
-				this.activeMatchLength = 0
 				this.searchJumpBusy = false
 				this.queuedSearchIndex = -1
 				this.showFloatingSearchBar = true
@@ -747,23 +665,17 @@
 				this.searchIndex = index
 				const item = this.searchResults[index]
 				const sectionId = item['sectionId'] as string | null
-				const anchorId = item['anchorId'] as string | null
 				const title = item['title'] as string | null
 				const excerpt = item['excerpt'] as string | null
 				const count = item['count'] as number | null
 				const occurrence = item['occurrence'] as number | null
-				const matchStart = item['matchStart'] as number | null
-				const matchLength = item['matchLength'] as number | null
 				this.searchMetaText = '命中 ' + this.searchResults.length + ' 处，当前第 ' + (index + 1) + ' 处' + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
 				this.currentSearchTitle = title != null ? title : ''
 				this.setCurrentSearchExcerpt(excerpt != null ? excerpt : '')
 				this.activeSectionId = sectionId != null ? sectionId : ''
-				this.activeChunkId = anchorId != null ? anchorId : ''
-				this.activeMatchStart = matchStart != null ? matchStart : -1
-				this.activeMatchLength = matchLength != null ? matchLength : 0
 				this.showFloatingSearchBar = true
 				this.floatingMetaText = (index + 1) + ' / ' + this.searchResults.length + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
-				this.scrollToSearchTarget(sectionId, anchorId, matchStart)
+				this.scrollToSection(sectionId != null ? sectionId : '')
 			},
 
 			queueFocusSearchIndex(index: number): void {
@@ -818,9 +730,6 @@
 				this.currentSearchTitle = ''
 				this.setCurrentSearchExcerpt('')
 				this.activeSectionId = ''
-				this.activeChunkId = ''
-				this.activeMatchStart = -1
-				this.activeMatchLength = 0
 				this.searchJumpBusy = false
 				this.queuedSearchIndex = -1
 				this.scrollRequestSeq = this.scrollRequestSeq + 1
@@ -840,7 +749,6 @@
 						return
 					}
 					this.scrollTop = safeTop
-					this.scrollOffset = safeTop
 				}, 16)
 			},
 
@@ -855,7 +763,7 @@
 					return
 				}
 				if (id == 'anchor-bottom') {
-					this.commitScrollTop(this.scrollTop + 99999)
+					this.commitScrollTop(this.scrollContentHeight > 0 ? this.scrollContentHeight : 99999)
 					return
 				}
 				this.scheduleLayoutCache()
@@ -865,113 +773,38 @@
 				this.scrollToSectionWithOffset(id, 0)
 			},
 
-			estimateTextMatchOffset(content: string, matchStart: number): number {
-				if (content == '' || matchStart < 0) {
-					return 0
-				}
-				const charsPerLine = this.estimateCodeCharsPerLine()
-				const grid = this.measureTextGrid(content, matchStart, charsPerLine)
-				const line = grid.length > 0 ? grid[0] : 0
-				let offsetTop = 6 + line * 18
-				if (offsetTop < 0) {
-					offsetTop = 0
-				}
-				return offsetTop
-			},
-
-			scrollToSearchTarget(sectionId: string | null, anchorId: string | null, matchStart: number | null): void {
-				if (anchorId != null && anchorId != '') {
-					const chunk = this.findChunkById(anchorId)
-					if (chunk != null) {
-						const content = this.chunkText(chunk)
-						const offsetTop = this.estimateTextMatchOffset(content, matchStart != null ? matchStart : -1)
-						this.scrollToSectionWithOffset(anchorId, offsetTop)
-						return
-					}
-					this.scrollToSectionWithOffset(anchorId, 0)
-					return
-				}
-				if (sectionId != null && sectionId != '') {
-					this.scrollToSectionWithOffset(sectionId, 0)
-				}
-			},
-
 			scrollToTop() {
 				this.activeSectionId = ''
-				this.activeChunkId = ''
-				this.activeMatchStart = -1
-				this.activeMatchLength = 0
 				this.scrollToSection('anchor-top')
 			},
 
 			scrollToBottom() {
 				this.activeSectionId = ''
-				this.activeChunkId = ''
-				this.activeMatchStart = -1
-				this.activeMatchLength = 0
-				this.scrollToSection('anchor-bottom')
+				// 用真实锚点坐标定位
+				const query = uni.createSelectorQuery().in(this)
+				query.select('#anchor-bottom').boundingClientRect()
+				query.select('#context-scroll').boundingClientRect()
+				query.exec((res: any) => {
+					const rows = res as UTSArray<any> | null
+					if (rows == null || rows.length < 2) {
+						this.commitScrollTop(99999)
+						return
+					}
+					const anchorRect = rows[0] as NodeInfo | null
+					const scrollRect = rows[1] as NodeInfo | null
+					if (anchorRect == null || scrollRect == null) {
+						this.commitScrollTop(99999)
+						return
+					}
+					const anchorTop = anchorRect.top as number | null
+					const scrollTop = scrollRect.top as number | null
+					if (anchorTop != null && scrollTop != null) {
+						this.commitScrollTop(anchorTop - scrollTop + 20)
+					} else {
+						this.commitScrollTop(99999)
+					}
+				})
 			},
-
-			isChunkActive(chunk: UTSJSONObject): boolean {
-				const id = chunk['id'] as string | null
-				if (id == null || id == '') {
-					return false
-				}
-				return this.activeChunkId == id
-			},
-
-			chunkText(chunk: UTSJSONObject): string {
-				const content = chunk['text'] as string | null
-				return content != null ? content : ''
-			},
-
-			estimateCodeCharsPerLine(): number {
-				const info = uni.getSystemInfoSync()
-				const windowWidth = info.windowWidth
-				const usableWidth = windowWidth - 116
-				const charWidth = 7.2
-				let value = Math.floor(usableWidth / charWidth)
-				if (value < 18) {
-					value = 18
-				}
-				return value
-			},
-
-			hasActiveChunkMatch(chunk: UTSJSONObject): boolean {
-				if (this.isChunkActive(chunk) == false) {
-					return false
-				}
-				if (this.activeMatchStart < 0 || this.activeMatchLength <= 0) {
-					return false
-				}
-				const content = this.chunkText(chunk)
-				if (content == '') {
-					return false
-				}
-				return this.activeMatchStart + this.activeMatchLength <= content.length
-			},
-
-			activeChunkPrefix(chunk: UTSJSONObject): string {
-				if (this.hasActiveChunkMatch(chunk) == false) {
-					return this.chunkText(chunk)
-				}
-				return this.chunkText(chunk).substring(0, this.activeMatchStart)
-			},
-
-			activeChunkMatch(chunk: UTSJSONObject): string {
-				if (this.hasActiveChunkMatch(chunk) == false) {
-					return ''
-				}
-				return this.chunkText(chunk).substring(this.activeMatchStart, this.activeMatchStart + this.activeMatchLength)
-			},
-
-			activeChunkSuffix(chunk: UTSJSONObject): string {
-				if (this.hasActiveChunkMatch(chunk) == false) {
-					return ''
-				}
-				return this.chunkText(chunk).substring(this.activeMatchStart + this.activeMatchLength)
-			},
-
 
 			formatJsonObjectSegment(value: UTSJSONObject, fallback: string): string {
 				try {
@@ -1039,10 +872,6 @@
 	}
 
 	.card-active {
-		border-width: 4rpx;
-		border-style: solid;
-		border-color: #FB8FAB;
-		box-shadow: 0 20rpx 60rpx rgba(251, 143, 171, 0.22);
 	}
 
 	.hero-title {
@@ -1202,19 +1031,6 @@
 		font-weight: bold;
 	}
 
-	.chunk-wrap {
-		margin-top: 20rpx;
-	}
-
-	.chunk-wrap-active {
-		border-radius: 24rpx;
-		padding: 4rpx;
-		background-color: rgba(251, 143, 171, 0.1);
-		border-width: 2rpx;
-		border-style: solid;
-		border-color: rgba(251, 143, 171, 0.28);
-	}
-
 	.block-text {
 		font-size: 26rpx;
 		line-height: 42rpx;
@@ -1240,34 +1056,6 @@
 		font-family: monospace;
 	}
 
-	.code-panel {
-		position: relative;
-	}
-
-	.code-text-panel {
-		position: relative;
-		z-index: 2;
-	}
-
-	.code-panel-active {
-		border-radius: 24rpx;
-		box-shadow: 0 0 0 2rpx rgba(251, 143, 171, 0.45);
-	}
-
-	.code-text-active {
-		background-color: #111827;
-		box-shadow: inset 0 0 0 2rpx rgba(251, 143, 171, 0.55);
-	}
-
-	.code-inline-hit {
-		background-color: #FDE68A;
-		color: #111827;
-		border-radius: 8rpx;
-		padding-left: 4rpx;
-		padding-right: 4rpx;
-		font-weight: bold;
-	}
-
 	.nav-btn,
 	.mini-btn {
 		font-size: 28rpx;
@@ -1287,6 +1075,7 @@
 	.scroll-wrapper {
 		flex: 1;
 		position: relative;
+		overflow: hidden;
 	}
 
 	.custom-scrollbar {
