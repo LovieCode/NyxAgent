@@ -169,7 +169,7 @@
 			}
 			this.previewText = raw
 			this.previewDisplayText = this.decodeDisplayEscapes(raw)
-			this.fullJsonChunks = this.buildChunks('section-full-json', '完整 JSON', this.previewDisplayText, 640)
+			this.fullJsonChunks = this.buildChunks('section-full-json', '完整 JSON', this.previewDisplayText, 280)
 			try {
 				const parsed = JSON.parse(raw) as UTSJSONObject
 				const providerId = parsed['providerId'] as string | null
