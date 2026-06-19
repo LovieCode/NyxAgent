@@ -238,10 +238,12 @@
 				this.toolCount = openaiTools != null ? openaiTools.length : 0
 				// 上次调用的真实 Token 用量
 				const ltu = parsed['lastTokenUsage'] as UTSJSONObject | null
+				console.log('[Preview] lastTokenUsage raw: ' + (ltu != null ? JSON.stringify(ltu) : 'null'))
 				if (ltu != null) {
 					const pt = ltu['prompt_tokens'] as number | null
 					const ct = ltu['completion_tokens'] as number | null
 					const tt = ltu['total_tokens'] as number | null
+					console.log('[Preview] parsed tokens: pt=' + pt + ' ct=' + ct + ' tt=' + tt)
 					if (pt != null) this.lastPromptTokens = pt
 					if (ct != null) this.lastCompletionTokens = ct
 					if (tt != null) this.lastTotalTokens = tt
