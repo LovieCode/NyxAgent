@@ -59,7 +59,7 @@
 		list: () : TabsOptions[] => ([] as TabsOptions[]),
 		lineMode: 'slide',
 		shrink: false,
-		lineWidth: '20px',
+		lineWidth: '40rpx',
 		initAnimate: true,
 		itemStyle: () : UTSJSONObject => ({}),
 		customStyle: () : UTSJSONObject => ({}),
@@ -162,9 +162,9 @@
 
 	const getActiveZoomStyle = (index : number) => {
 		const css = new Map<string, string>()
-		let width = '0px'
+		let width = '0rpx'
 		if (index == modelValue.value) {
-			width = addUnit(props.lineWidth ?? '20px')
+			width = addUnit(props.lineWidth ?? '40rpx')
 		}
 		css.set('width', width)
 		return css
@@ -265,7 +265,7 @@
 <style scoped lang="scss">
 	.rice-tabs {
 		flex-direction: row;
-		height: 44px;
+		height: 88rpx;
 		background-color: var(--rice-tabs-background);
 
 		&__scroll {
@@ -294,7 +294,7 @@
 			flex-direction: row;
 			align-items: center;
 			justify-content: center;
-			padding: 0 12px;
+			padding: 0 24rpx;
 			flex-grow: 1;
 			flex-shrink: 0;
 			overflow: visible;
@@ -308,7 +308,7 @@
 			/* #endif */
 			&__text {
 				transition: color .3s;
-				font-size: 15px;
+				font-size: 30rpx;
 				color: var(--rice-text-color-2);
 			}
 
@@ -326,21 +326,21 @@
 			&__line {
 				position: absolute;
 				z-index: 1;
-				bottom: 2px;
+				bottom: 4rpx;
 				left: 50%;
-				border-radius: 100px;
+				border-radius: 200rpx;
 				transform: translateX(-50%);
 				transition-property: width;
 				transition-duration: 250ms;
-				width: 0px;
-				height: 3px;
+				width: 0rpx;
+				height: 6rpx;
 				background-color: var(--rice-primary-color);
 			}
 
 		}
 
 		&--shrink {
-			padding: 0 8px;
+			padding: 0 16rpx;
 			/* #ifndef VUE3-VAPOR */
 			flex: none;
 			/* #endif */
@@ -352,13 +352,13 @@
 		&__indicator {
 			position: absolute;
 			z-index: 1;
-			bottom: 2px;
-			left: 0px;
-			border-radius: 100px;
+			bottom: 4rpx;
+			left: 0rpx;
+			border-radius: 200rpx;
 			transition-property: transform, width;
 			transition-duration: 250ms;
-			width: 20px;
-			height: 3px;
+			width: 40rpx;
+			height: 6rpx;
 			background-color: var(--rice-primary-color);
 
 			&--animate {

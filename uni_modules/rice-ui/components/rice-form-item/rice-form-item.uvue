@@ -379,7 +379,7 @@
 			bottom: 0;
 			left: 0;
 			right: 0;
-			border-bottom: 1px solid $color;
+			border-bottom: 2rpx solid $color;
 			transform: scale(1, 0.5);
 		}
 	}
@@ -388,7 +388,7 @@
 
 	.rice-form-item {
 
-		padding: 15px 0;
+		padding: 30rpx 0;
 
 		&__inner {
 			flex-direction: row;
@@ -402,18 +402,18 @@
 		&__label {
 			flex-direction: row;
 			align-items: center;
-			padding-right: 12px;
+			padding-right: 24rpx;
 
 			&__text {
 				/* #ifndef APP */
 				flex: 0 1 auto;
 				/* #endif */
-				font-size: 15px;
+				font-size: 30rpx;
 				color: var(--rice-text-color);
 			}
 
 			&--top {
-				margin-bottom: 8px;
+				margin-bottom: 16rpx;
 			}
 
 			&--right {
@@ -434,11 +434,11 @@
 		}
 
 		&__error {
-			margin-top: 5px;
+			margin-top: 10rpx;
 
 			&__text {
 				color: var(--rice-form-error-color);
-				font-size: 12px;
+				font-size: 24rpx;
 				/* #ifndef APP */
 				word-break: break-all;
 				/* #endif */
@@ -447,12 +447,12 @@
 
 		&--required {
 			color: var(--rice-form-error-color);
-			font-size: 15px;
+			font-size: 30rpx;
 		}
 
 		&--border {
 			/* #ifdef APP */
-			border-bottom: 0.5px solid var(--rice-form-item-border);
+			border-bottom: 0.10rpx solid var(--rice-form-item-border);
 			/* #endif */
 
 			/* #ifndef APP */
@@ -463,7 +463,7 @@
 
 			&--error {
 				/* #ifdef APP */
-				border-bottom: 0.5px solid var(--rice-form-error-color);
+				border-bottom: 0.10rpx solid var(--rice-form-error-color);
 				/* #endif */
 
 				/* #ifndef APP */

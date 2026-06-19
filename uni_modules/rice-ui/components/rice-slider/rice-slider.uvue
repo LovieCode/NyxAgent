@@ -239,17 +239,17 @@
 		}
 		if (props.mode == 'capsule') {
 			if (isRange.value) {
-				css.set('border-radius', '0px')
+				css.set('border-radius', '0rpx')
 			} else {
-				css.set('border-top-right-radius', '0px')
-				css.set('border-bottom-right-radius', '0px')
+				css.set('border-top-right-radius', '0rpx')
+				css.set('border-bottom-right-radius', '0rpx')
 				// #ifdef APP-ANDROID
-				css.set('border-top-left-radius', '99px')
-				css.set('border-bottom-left-radius', '99px')
+				css.set('border-top-left-radius', '198rpx')
+				css.set('border-bottom-left-radius', '198rpx')
 				// #endif
 			}
 		} else {
-			css.set('border-radius', '99px')
+			css.set('border-radius', '198rpx')
 		}
 
 		return css
@@ -542,8 +542,8 @@
 <style scoped lang="scss">
 	@mixin textStyle {
 		color: var(--rice-text-color);
-		font-size: 14px;
-		width: 40px;
+		font-size: 28rpx;
+		width: 80rpx;
 		white-space: nowrap;
 		/* #ifndef APP */
 		word-break: keep-all;
@@ -551,7 +551,7 @@
 	}
 
 	.rice-slider {
-		padding: 4px 0;
+		padding: 8rpx 0;
 		flex-direction: column;
 
 		&__content {
@@ -566,12 +566,12 @@
 
 		&__track {
 			width: 100%;
-			height: 4px;
-			border-radius: 99px;
+			height: 8rpx;
+			border-radius: 198rpx;
 			background-color: var(--rice-slider-inactive-background);
 
 			&--capsule {
-				height: 18px;
+				height: 36rpx;
 			}
 
 		}
@@ -580,20 +580,20 @@
 			position: absolute;
 			background-color: var(--rice-primary-color);
 			/* #ifndef APP-ANDROID */
-			border-radius: 99px;
+			border-radius: 198rpx;
 			/* #endif */
 
 		}
 
 		&__top {
 			position: relative;
-			height: 25px;
-			padding: 0 2px;
+			height: 50rpx;
+			padding: 0 4rpx;
 		}
 
 		&__value {
 			color: var(--rice-text-color);
-			font-size: 14px;
+			font-size: 28rpx;
 			white-space: nowrap;
 			/* #ifndef APP */
 			word-break: keep-all;
@@ -607,29 +607,29 @@
 			}
 
 			&__left {
-				padding-right: 4px;
-				width: 45px;
+				padding-right: 8rpx;
+				width: 90rpx;
 				text-align: right;
 			}
 
 			&__right {
-				padding-left: 4px;
-				width: 45px;
+				padding-left: 8rpx;
+				width: 90rpx;
 				text-align: left;
 			}
 		}
 
 		&__button {
 			position: absolute;
-			width: 25px;
-			height: 25px;
-			border-radius: 999px;
+			width: 50rpx;
+			height: 50rpx;
+			border-radius: 1998rpx;
 			background-color: #fff;
 			/* #ifndef APP*/
-			border: 1px solid var(--rice-border-color);
+			border: 2rpx solid var(--rice-border-color);
 			/* #endif */
 			/* #ifdef APP */
-			border: 1px solid var(--rice-border-color);
+			border: 2rpx solid var(--rice-border-color);
 			/* #endif */
 			/* #ifdef WEB */
 			cursor: grab;

@@ -8,7 +8,7 @@
 	>
 		<oui-icon-unix
 			name="audio"
-			:size="isListening ? '24px' : '20px'"
+			:size="isListening ? '48rpx' : '40rpx'"
 			:color="isListening ? '#FFFFFF' : '#6B7280'"
 		/>
 	</view>
@@ -41,21 +41,21 @@
 <style>
 	/* 语音按钮 - 浅灰背景 */
 	.voice-btn {
-		width: 36px;
-		height: 36px;
-		border-radius: 18px;
+		width: 72rpx;
+		height: 72rpx;
+		border-radius: 36rpx;
 		background-color: #F3F4F6;
 		justify-content: center;
 		align-items: center;
-		margin-left: 8px;
+		margin-left: 16rpx;
 	}
 
 	/* 监听中 - 淡粉强调 */
 	.voice-btn-active {
 		background-color: #FB8FAB;
-		width: 42px;
-		height: 42px;
-		border-radius: 21px;
+		width: 84rpx;
+		height: 84rpx;
+		border-radius: 42rpx;
 	}
 
 	/* 图标由 oui-icon-unix 渲染 */

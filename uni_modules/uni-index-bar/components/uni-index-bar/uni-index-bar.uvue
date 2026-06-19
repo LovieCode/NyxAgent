@@ -203,8 +203,8 @@
 		right: 0;
 		top: 50%;
 		transform: translateY(-50%);
-		width: 28px;
-		font-size: 11px;
+		width: 56rpx;
+		font-size: 22rpx;
 		color: #757575;
 		text-align: center;
 		line-height: 1.4;
@@ -213,11 +213,11 @@
 
 	.indicator {
 		position: absolute;
-		right: 50px;
-		width: 50px;
-		height: 50px;
+		right: 100rpx;
+		width: 100rpx;
+		height: 100rpx;
 		background-color: #c9c9c9;
-		border-radius: 25px 25px 25px 0;
+		border-radius: 50rpx 50rpx 50rpx 0;
 		transform: rotate(225deg);
 		align-items: center;
 		justify-content: center;
@@ -225,7 +225,7 @@
 	}
 
 	.indicator-text {
-		font-size: 22px;
+		font-size: 44rpx;
 		color: #ffffff;
 		text-align: center;
 		transform: rotate(-225deg);

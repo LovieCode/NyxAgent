@@ -25,7 +25,7 @@
 								@click="clickMenu('left',index)">
 							<!-- #endif -->
 								<rice-icon v-if="hasStrValue(item.icon)" :name="item.icon" :size="item.iconSize"
-									:color="item.style?.['color']" :custom-style="{marginRight:hasStrValue(item.text)?'4px':'0'}" />
+									:color="item.style?.['color']" :custom-style="{marginRight:hasStrValue(item.text)?'8rpx':'0'}" />
 								<text :style="getMenuTextStyle(item.style)" class="rice-swipe__cell__text">{{item.text}}</text>
 							</view>
 					</slot>
@@ -47,7 +47,7 @@
 								@click="clickMenu('right',index)">
 							<!-- #endif -->
 								<rice-icon v-if="hasStrValue(item.icon)" :name="item.icon" :size="item.iconSize"
-									:color="item.style?.['color']" :custom-style="{marginRight:hasStrValue(item.text)?'4px':'0'}" />
+									:color="item.style?.['color']" :custom-style="{marginRight:hasStrValue(item.text)?'8rpx':'0'}" />
 								<text class="rice-swipe__cell__text" :style="getMenuTextStyle(item.style)">{{item.text}}</text>
 							</view>
 					</slot>
@@ -458,7 +458,7 @@
 		}
 
 		&__text {
-			font-size: 14px;
+			font-size: 28rpx;
 
 		}
 

@@ -279,7 +279,7 @@
 
 		&__text {
 			color: var(--rice-text-color-2);
-			font-size: 14px;
+			font-size: 28rpx;
 			text-align: center;
 			/* #ifndef APP */
 			word-break: break-all;

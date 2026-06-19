@@ -102,7 +102,7 @@
 
 	const _iconSize = computed(() => {
 		if (props.iconSize != null) return props.iconSize!
-		return hasStrValue(props.text) ? '20px' : '24px'
+		return hasStrValue(props.text) ? '40rpx' : '48rpx'
 	})
 
 
@@ -126,9 +126,9 @@
 		if (props.radius != null) {
 			css.set('border-radius', props.radius!)
 		} else if (props.mode == 'half-round') {
-			css.set('border-radius', '999px 0 0 999px')
+			css.set('border-radius', '1998rpx 0 0 1998rpx')
 		} else {
-			css.set('border-radius', '999px')
+			css.set('border-radius', '1998rpx')
 		}
 		// #endif
 		return css
@@ -170,15 +170,15 @@
 		transition-duration: .3s;
 		/* #endif */
 		transition-timing-function: cubic-bezier(0.25, 0.8, 0.5, 1);
-		border: 1px solid var(--rice-border-color);
+		border: 2rpx solid var(--rice-border-color);
 		opacity: 0;
 		/* #ifdef APP */
-		bottom: 100px;
-		right: 20px;
+		bottom: 200rpx;
+		right: 40rpx;
 		/* #endif */
 		/* #ifndef APP */
-		bottom: calc(var(--uni-safe-area-inset-bottom) + 100px);
-		right: calc(var(--uni-safe-area-inset-right) + 20px);
+		bottom: calc(var(--uni-safe-area-inset-bottom) + 200rpx);
+		right: calc(var(--uni-safe-area-inset-right) + 40rpx);
 		color: var(--rice-text-color);
 		/* #endif */
 
@@ -197,31 +197,31 @@
 
 		&--round {
 			/* #ifndef APP-ANDROID */
-			border-radius: 999px;
+			border-radius: 1998rpx;
 			/* #endif */
 			/* #ifdef APP */
-			right: 20px;
+			right: 40rpx;
 			/* #endif */
 			/* #ifndef APP */
-			right: calc(var(--uni-safe-area-inset-right) + 20px);
+			right: calc(var(--uni-safe-area-inset-right) + 40rpx);
 			/* #endif */
-			height: 48px;
-			width: 48px;
+			height: 96rpx;
+			width: 96rpx;
 		}
 
 		&--half-round {
 			flex-direction: row;
 			right: 0;
-			width: 64px;
-			height: 40px;
+			width: 128rpx;
+			height: 80rpx;
 			/* #ifndef APP-ANDROID */
-			border-radius: 999px 0 0 999px;
+			border-radius: 1998rpx 0 0 1998rpx;
 			/* #endif */
 
 			&__text {
 
-				width: 25px;
-				margin-left: 2px;
+				width: 50rpx;
+				margin-left: 4rpx;
 			}
 		}
 
@@ -239,7 +239,7 @@
 
 		&__text {
 			color: var(--rice-text-color);
-			font-size: 10px;
+			font-size: 20rpx;
 		}
 
 	}

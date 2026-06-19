@@ -49,7 +49,7 @@
 		const css = new Map<string, string>()
 		if (props.strokeWidth != null) css.set('height', addUnit(props.strokeWidth))
 		if (props.inactiveColor != null) css.set('background', props.inactiveColor)
-		css.set('border-radius', addUnit(props.radius ?? '100px'))
+		css.set('border-radius', addUnit(props.radius ?? '200rpx'))
 		return css
 	})
 
@@ -74,7 +74,7 @@
 
 		if (props.color != null) css.set('background', props.color)
 
-		css.set('border-radius', addUnit(props.radius ?? '100px'))
+		css.set('border-radius', addUnit(props.radius ?? '200rpx'))
 		return css
 	})
 
@@ -128,7 +128,7 @@
 
 		&__wrapper {
 			flex: 1;
-			height: 6px;
+			height: 12rpx;
 			background-color: var(--rice-progress-background);
 		}
 
@@ -144,19 +144,19 @@
 
 		&__text {
 			color: var(--rice-text-color-2);
-			font-size: 14px;
-			margin-left: 8px;
-			min-width: 40px;
+			font-size: 28rpx;
+			margin-left: 16rpx;
+			min-width: 80rpx;
 
 			&--inside {
-				margin-right: 8px;
+				margin-right: 16rpx;
 				color: #f5f5f5;
 				min-width: 0;
 			}
 		}
 
 		&--inside {
-			height: 20px;
+			height: 40rpx;
 		}
 	}
 </style>

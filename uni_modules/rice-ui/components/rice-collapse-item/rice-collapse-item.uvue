@@ -111,7 +111,7 @@
 	 * bug:https://issues.dcloud.net.cn/pages/issues/detail?id=19405
 	 */
 	const appAnimation = (newVal : boolean) => {
-		const newHeight = newVal ? `${contentHeight.value}px` : '0px'
+		const newHeight = newVal ? `${contentHeight.value}px` : '0rpx'
 		const an = wrapperRef.value?.animate({
 			height: [newHeight]
 		}, {
@@ -160,7 +160,7 @@
 
 		} else {
 			timer = setTimeout(() => {
-				wrapperRef.value?.style.setProperty('height', '0px')
+				wrapperRef.value?.style.setProperty('height', '0rpx')
 			}, 20)
 		}
 
@@ -254,18 +254,18 @@
 			justify-content: space-between;
 			align-items: center;
 			flex-direction: row;
-			padding: 14px 16px;
+			padding: 28rpx 32rpx;
 
 			&--border {
 				/* #ifdef APP-ANDROID */
-				border-bottom: 0.5px solid var(--rice-border-color);
+				border-bottom: 0.10rpx solid var(--rice-border-color);
 				/* #endif */
 
 				/* #ifndef APP-ANDROID */
 				position: absolute;
 				left: 0;
 				bottom: 0;
-				height: 1px;
+				height: 2rpx;
 				width: 100%;
 				transform: scale(1, 0.5);
 				background-color: var(--rice-border-color);
@@ -277,11 +277,11 @@
 
 		&__title {
 			flex: 1;
-			padding-right: 2px;
+			padding-right: 4rpx;
 
 			&--text {
 				color: var(--rice-text-color);
-				font-size: 15px;
+				font-size: 30rpx;
 				/* #ifndef APP */
 				word-wrap: break-word;
 				/* #endif */
@@ -294,7 +294,7 @@
 
 		&__value {
 			flex: 1;
-			padding-right: 2px;
+			padding-right: 4rpx;
 
 			/* #ifndef APP */
 			text-align: right;
@@ -304,7 +304,7 @@
 
 			&--text {
 				color: var(--rice-text-color-2);
-				font-size: 15px;
+				font-size: 30rpx;
 				text-align: right;
 				/* #ifndef APP */
 				word-wrap: break-word;
@@ -318,7 +318,7 @@
 
 		&__wrapper {
 			position: relative;
-			height: 0px;
+			height: 0rpx;
 			// android 和 ios 使用animation实现，不需要transition
 			/* #ifndef APP-ANDROID || APP-IOS */
 			transition-property: height;
@@ -333,11 +333,11 @@
 
 		&__content {
 			position: relative;
-			padding: 12px 16px;
+			padding: 24rpx 32rpx;
 
 			&--text {
 				color: var(--rice-text-color-2);
-				font-size: 14px;
+				font-size: 28rpx;
 				/* #ifndef APP */
 				word-wrap: break-word;
 				word-break: break-all;
@@ -350,7 +350,7 @@
 			position: absolute;
 			bottom: 0;
 			left: 0;
-			height: 1px;
+			height: 2rpx;
 			transform: scale(1, 0.5);
 			width: 100%;
 			background-color: var(--rice-border-color);

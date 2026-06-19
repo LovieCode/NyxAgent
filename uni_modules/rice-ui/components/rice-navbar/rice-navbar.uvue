@@ -52,8 +52,8 @@
 		leftIcon: 'arrow-left',
 		safeAreaInsetTop: true,
 		autoBack: true,
-		height: '44px',
-		leftIconSize: '20px',
+		height: '88rpx',
+		leftIconSize: '40rpx',
 		navbarClass: "",
 		titleTextClass: "",
 		customStyle: () : UTSJSONObject => ({})
@@ -150,7 +150,7 @@
 		align-items: center;
 		justify-content: center;
 		background-color: var(--rice-navbar-background);
-		height: 44px;
+		height: 88rpx;
 		box-sizing: content-box;
 		width: 100%;
 
@@ -166,12 +166,12 @@
 		&--placeholder {
 			width: 100%;
 			/* #ifdef WEB */
-			height: calc(44px + env(safe-area-inset-top));
+			height: calc(88rpx + env(safe-area-inset-top));
 			/* #endif */
 		}
 
 		&--border {
-			border-bottom: 1px solid var(--rice-border-color);
+			border-bottom: 2rpx solid var(--rice-border-color);
 		}
 
 
@@ -179,7 +179,7 @@
 		&--safearea-top {
 
 			/* #ifdef WEB */
-			height: calc(44px + env(safe-area-inset-top));
+			height: calc(88rpx + env(safe-area-inset-top));
 			/* #endif */
 
 			/* #ifdef APP */
@@ -194,7 +194,7 @@
 			position: absolute;
 			bottom: 0;
 			top: 0;
-			padding: 0 10px;
+			padding: 0 20rpx;
 			flex-direction: row;
 			align-items: center;
 			/* #ifndef APP */
@@ -211,7 +211,7 @@
 			}
 
 			&__text {
-				font-size: 14px;
+				font-size: 28rpx;
 				color: var(--rice-text-color)
 			}
 
@@ -227,7 +227,7 @@
 
 		&__center {
 			align-items: center;
-			padding: 0 10px;
+			padding: 0 20rpx;
 			box-sizing: border-box;
 			width: 70%;
 
@@ -241,7 +241,7 @@
 
 		&__title {
 			width: 100%;
-			font-size: 15px;
+			font-size: 30rpx;
 			color: var(--rice-text-color);
 			font-weight: bold;
 			text-align: center;

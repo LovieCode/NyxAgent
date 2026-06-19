@@ -48,7 +48,7 @@
 		showLoading: true,
 		errorIcon: 'photo-fail',
 		loadingIcon: "photo",
-		iconSize: "30px",
+		iconSize: "60rpx",
 		preview: false,
 		lazyLoad: false,
 		fadeShow: false,
@@ -151,7 +151,7 @@
 		}
 
 		&--round {
-			border-radius: 999px;
+			border-radius: 1998rpx;
 		}
 
 		&__loading,

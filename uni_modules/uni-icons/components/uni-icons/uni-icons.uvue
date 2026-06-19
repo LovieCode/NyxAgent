@@ -84,7 +84,7 @@
 
 	.uni-icons {
 		font-family: UniIconsFontFamily;
-		font-size: 18px;
+		font-size: 36rpx;
 		font-style: normal;
 		color: #333;
 	}

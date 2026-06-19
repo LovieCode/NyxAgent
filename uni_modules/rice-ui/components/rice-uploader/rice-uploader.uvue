@@ -9,35 +9,35 @@
 				:show-fullscreen-btn="false" :show-play-btn="false" :show-center-play-btn="false"
 				:enable-progress-gesture="false" :object-fit="objectFit" class="rice-uploader__preview__image" />
 			<view v-else class="rice-uploader__preview__file">
-				<rice-icon name="file-success-fill" size="25px" />
+				<rice-icon name="file-success-fill" size="50rpx" />
 				<text class="rice-uploader__preview__text">{{getFileViewName(item)}}</text>
 			</view>
 			<!-- 播放icon -->
 			<view v-if="item.fileType=='video'" class="rice-uploader__preview__play">
-				<rice-icon name="play" size="35px" color="#fff"
+				<rice-icon name="play" size="70rpx" color="#fff"
 					:custom-style="{opacity:(item.status=='failed'||item.status=='uploading')?0.4:0.8}" />
 			</view>
 			<view v-if="item.status=='uploading'||item.status=='failed'" class="rice-uploader__status">
-				<rice-icon v-if="item.status=='failed'" name="clear" color="#fff" size="24px" />
-				<rice-loading v-else-if="item.status=='uploading'" color="#fff" size="22px" />
+				<rice-icon v-if="item.status=='failed'" name="clear" color="#fff" size="48rpx" />
+				<rice-loading v-else-if="item.status=='uploading'" color="#fff" size="44rpx" />
 				<text class="rice-uploader__status__text">{{getUploadingText(item)}}</text>
 			</view>
 			<view v-if="showDeletable(item)" class="rice-uploader__delete"
 				:style="splitCssProperty(deleteStyle).rectCssProperty" @click.stop="handleRemove(item,index)">
 				<slot name="delete">
-					<rice-icon :name="deleteIcon" color="#fff" size="12px"
+					<rice-icon :name="deleteIcon" color="#fff" size="24rpx"
 						:custom-style="splitCssProperty(deleteStyle).textCssProperty" />
 				</slot>
 			</view>
 			<view v-if="item.status=='success'&&showSuccess" class="rice-uploader__success">
-				<rice-icon name="checked" color="#fff" size="12px" />
+				<rice-icon name="checked" color="#fff" size="24rpx" />
 			</view>
 		</view>
 		<!-- 待选择区域 -->
 		<view v-if="!isOverLimit||!showFileList" @click="startChooseFiles">
 			<slot>
 				<view class="rice-uploader__item" :style="uploadItemStyle">
-					<rice-icon :name="uploadIcon" size="26px" :style="uploadIconStyle"></rice-icon>
+					<rice-icon :name="uploadIcon" size="52rpx" :style="uploadIconStyle"></rice-icon>
 					<text class="rice-uploader__item__text" v-if="hasStrValue(uploadText)">{{uploadText}}</text>
 				</view>
 			</slot>
@@ -601,11 +601,11 @@
 
 <style scoped lang="scss">
 	@mixin uploadPreview {
-		height: 80px;
-		width: 80px;
-		border-radius: 4px;
+		height: 160rpx;
+		width: 160rpx;
+		border-radius: 8rpx;
 		background-color: var(--rice-uploader-background);
-		margin: 0 8px 8px 0;
+		margin: 0 16rpx 16rpx 0;
 	}
 
 	.rice-uploader {
@@ -645,7 +645,7 @@
 				white-space: nowrap;
 				text-overflow: ellipsis;
 				color: var(--rice-text-color-2);
-				font-size: 12px;
+				font-size: 24rpx;
 				text-align: center;
 			}
 		}
@@ -657,7 +657,7 @@
 
 			&__text {
 				color: var(--rice-text-color-2);
-				font-size: 12px;
+				font-size: 24rpx;
 			}
 		}
 
@@ -671,12 +671,12 @@
 			left: 0;
 			right: 0;
 			background-color: rgba(0, 0, 0, .4);
-			padding: 0 2px;
+			padding: 0 4rpx;
 
 			&__text {
 				color: #fff;
-				font-size: 12px;
-				margin-top: 4px;
+				font-size: 24rpx;
+				margin-top: 8rpx;
 				text-align: center;
 				/* #ifndef APP */
 				word-break: break-all;
@@ -691,20 +691,20 @@
 			right: 0;
 			align-items: center;
 			justify-content: center;
-			height: 18px;
-			width: 18px;
+			height: 36rpx;
+			width: 36rpx;
 		}
 
 		&__success {
 			bottom: 0;
 			background-color: var(--rice-success-color);
-			border-top-left-radius: 6px;
+			border-top-left-radius: 12rpx;
 		}
 
 		&__delete {
 			top: 0;
 			background-color: rgba(0, 0, 0, .4);
-			border-bottom-left-radius: 6px;
+			border-bottom-left-radius: 12rpx;
 		}
 
 

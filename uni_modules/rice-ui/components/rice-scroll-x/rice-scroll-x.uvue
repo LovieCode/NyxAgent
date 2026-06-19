@@ -29,8 +29,8 @@
 	}>()
 	const props = withDefaults(defineProps<ScrollXProps>(), {
 		showIndicator: true,
-		indicatorWidth: '50px',
-		indicatorBarWidth: '20px',
+		indicatorWidth: '100rpx',
+		indicatorBarWidth: '40rpx',
 		indicatorActiveClass: "",
 		indicatorClass: "",
 		indicatorStyle: () : UTSJSONObject => ({}),
@@ -127,17 +127,17 @@
 			flex-direction: row;
 			justify-content: center;
 			margin-top: var(--rice-padding-md);
-			height: 4px;
+			height: 8rpx;
 
 			&__line {
 				height: 100%;
-				border-radius: 100px;
+				border-radius: 200rpx;
 				background-color: var(--rice-scroll-x-indicator-background);
 			}
 
 			&__bar {
 				height: 100%;
-				border-radius: 100px;
+				border-radius: 200rpx;
 				background-color: var(--rice-primary-color);
 			}
 		}

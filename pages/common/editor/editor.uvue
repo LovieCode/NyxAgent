@@ -10,7 +10,7 @@
 				class="editor-input"
 				v-model="editText"
 				placeholder="输入内容..."
-				placeholder-style="color:#D1D5DB;font-size:16px;"
+				placeholder-style="color:#D1D5DB;font-size:32rpx;"
 				:auto-height="true"
 				@input="onInput"
 			/>
@@ -119,22 +119,22 @@
 	.editor-wrap {
 		flex: 1;
 		background-color: #FFFFFF;
-		padding: 16px;
+		padding: 32rpx;
 	}
 
 	.editor-input {
 		flex: 1;
-		font-size: 16px;
+		font-size: 32rpx;
 		color: #111827;
-		line-height: 26px;
+		line-height: 52rpx;
 		padding: 0;
 		background-color: transparent;
 	}
 
 	.done-btn {
-		font-size: 15px;
+		font-size: 30rpx;
 		color: #FFFFFF;
 		font-weight: bold;
-		padding: 8px 4px;
+		padding: 16rpx 8rpx;
 	}
 </style>

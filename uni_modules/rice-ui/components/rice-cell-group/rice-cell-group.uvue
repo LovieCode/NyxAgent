@@ -50,9 +50,9 @@
 		background-color: var(--rice-cell-background);
 
 		&__title {
-			padding: 16px;
+			padding: 32rpx;
 			color: var(--rice-text-color-2);
-			font-size: 15px;
+			font-size: 30rpx;
 
 		}
 

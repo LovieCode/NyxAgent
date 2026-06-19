@@ -4,7 +4,7 @@
 	<view v-if="isShow" class="rice-calendar" :class="rootClass" :style="[rootStyle,customStyle]" ref="calendarRef">
 		<view v-if="showTitle||closeable" class="rice-calendar__title">
 			<text v-if="showTitle" class="rice-calendar__title__text">{{title}}</text>
-			<rice-icon v-if="closeable" :name="closeIcon" :custom-style="closeStyle" size="20px" @click="clickClose" />
+			<rice-icon v-if="closeable" :name="closeIcon" :custom-style="closeStyle" size="40rpx" @click="clickClose" />
 		</view>
 		<slot name="header" :panelDate="getPanelYearMonth()" :currentWeek="currentWeekIndex+1">
 			<view v-if="switchMode!='none'||showSubtitle" class="rice-calendar__switch">
@@ -93,7 +93,7 @@
 		showTitle: true,
 		title: '请选择日期',
 		showSubtitle: true,
-		rowHeight: '60px',
+		rowHeight: '120rpx',
 		firstDayOfWeek: 1,
 		showConfirmBtn: true,
 		confirmText: '确认',
@@ -1053,13 +1053,13 @@
 	 */
 	const closeStyle = ref({
 		position: 'absolute',
-		right: '16px',
-		top: '12px',
+		right: '32rpx',
+		top: '24rpx',
 		zIndex: 9
 	})
 
 	const switchArrowStyle = ref({
-		padding: "10px 4px"
+		padding: "20rpx 8rpx"
 	})
 
 	watch(() : any | null => props.date, () => {
@@ -1165,7 +1165,7 @@
 			bottom: 0;
 			left: 0;
 			right: 0;
-			border-radius: 12px 12px 0 0;
+			border-radius: 24rpx 24rpx 0 0;
 			transition-property: transform;
 			transform: translateY(100%);
 		}
@@ -1174,14 +1174,14 @@
 
 		&__title {
 			position: relative;
-			height: 48px;
+			height: 96rpx;
 			align-items: center;
 			justify-content: center;
-			padding: 0 16px;
+			padding: 0 32rpx;
 
 			&__text {
-				padding: 8px 16px;
-				font-size: 16px;
+				padding: 16rpx 32rpx;
+				font-size: 32rpx;
 				font-weight: bold;
 				color: var(--rice-text-color);
 				text-align: center;
@@ -1196,7 +1196,7 @@
 			flex-direction: row;
 			align-items: center;
 			justify-content: space-between;
-			padding: 12px;
+			padding: 24rpx;
 
 			&__action {
 				flex-direction: row;
@@ -1204,7 +1204,7 @@
 
 			&__text {
 				color: var(--rice-text-color);
-				font-size: 14px;
+				font-size: 28rpx;
 				font-weight: bold;
 				flex: 1;
 				text-align: center;
@@ -1216,13 +1216,13 @@
 			flex-direction: row;
 			align-items: center;
 			justify-content: space-between;
-			height: 46px;
-			border-bottom: 1px solid var(--rice-border-color);
-			border-top: 1px solid var(--rice-border-color);
+			height: 92rpx;
+			border-bottom: 2rpx solid var(--rice-border-color);
+			border-top: 2rpx solid var(--rice-border-color);
 		}
 
 		&__week {
-			font-size: 14px;
+			font-size: 28rpx;
 			color: var(--rice-calendar-info-text);
 			flex: 1;
 			text-align: center;
@@ -1233,13 +1233,13 @@
 		&__body {
 			position: relative;
 			/* #ifdef APP && !VUE3-VAPOR */
-			height: 300px;
+			height: 600rpx;
 			/* #endif */
-			margin: 0 2px 4px;
+			margin: 0 4rpx 8rpx;
 
 			&--week {
 				/* #ifdef APP && !VUE3-VAPOR */
-				height: 60px;
+				height: 120rpx;
 				/* #endif */
 			}
 
@@ -1256,21 +1256,21 @@
 				z-index: 0;
 				/* #endif */
 				color: var(--rice-calendar-mark-color);
-				font-size: 160px;
+				font-size: 320rpx;
 				pointer-events: none;
 
 			}
 		}
 
 		&__footer {
-			padding: 12px 16px 16px;
+			padding: 24rpx 32rpx 32rpx;
 		}
 
 		/* #ifdef VUE3-VAPOR || WEB || MP */
 		&__days {
 			z-index: 2;
 			flex-direction: row;
-			margin-top: 4px;
+			margin-top: 8rpx;
 		}
 
 		&__day {
@@ -1278,11 +1278,11 @@
 			align-items: center;
 			justify-content: center;
 			width: 14.285%;
-			height: 60px;
+			height: 120rpx;
 
 			&__text {
 				color: var(--rice-text-color);
-				font-size: 16px;
+				font-size: 32rpx;
 			}
 
 
@@ -1290,7 +1290,7 @@
 			&__bottom {
 				position: absolute;
 				color: var(--rice-calendar-info-text);
-				font-size: 11px;
+				font-size: 22rpx;
 				left: 0;
 				width: 100%;
 				text-align: center;
@@ -1298,15 +1298,15 @@
 			}
 
 			&__top {
-				top: 6px;
+				top: 12rpx;
 			}
 
 			&__bottom {
-				bottom: 6px;
+				bottom: 12rpx;
 			}
 
 			&--selected {
-				border-radius: 4px;
+				border-radius: 8rpx;
 				background-color: var(--rice-primary-color);
 
 				&__text {
@@ -1316,13 +1316,13 @@
 
 
 			&--range--end {
-				border-top-left-radius: 0px;
-				border-bottom-left-radius: 0px;
+				border-top-left-radius: 0rpx;
+				border-bottom-left-radius: 0rpx;
 			}
 
 			&--range--start {
-				border-top-right-radius: 0px;
-				border-bottom-right-radius: 0px;
+				border-top-right-radius: 0rpx;
+				border-bottom-right-radius: 0rpx;
 			}
 
 

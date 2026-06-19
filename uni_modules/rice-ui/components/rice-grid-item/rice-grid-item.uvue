@@ -32,7 +32,7 @@
 
 	const grid = inject<GridProvice | null>(gridInjectKey, null)
 	const isHorizontal = computed(() => grid?.vertical.value != true)
-	const _iconSize = computed(() => props.iconSize ?? grid?.iconSize.value ?? '32px')
+	const _iconSize = computed(() => props.iconSize ?? grid?.iconSize.value ?? '64rpx')
 	const _iconColor = computed<string | null>(() => props.iconColor ?? grid?.iconColor.value)
 	const hoverClass = computed(() => grid?.clickable.value == true ? 'rice-grid-item--hover' : 'none')
 
@@ -100,7 +100,7 @@
 	@import "../../libs/style/mixins/hairline";
 
 	.rice-grid-item {
-		padding: 12px 8px;
+		padding: 24rpx 16rpx;
 		background-color: var(--rice-grid-background);
 		box-sizing: border-box;
 		align-items: center;
@@ -110,9 +110,9 @@
 		/* #endif */
 
 		&__text {
-			font-size: 14px;
+			font-size: 28rpx;
 			color: var(--rice-text-color);
-			margin-top: 6px;
+			margin-top: 12rpx;
 			text-align: center;
 			// #ifndef APP
 			word-break: break-all;
@@ -124,8 +124,8 @@
 			justify-content: center;
 
 			&__text {
-				margin-top: 0px;
-				margin-left: 6px;
+				margin-top: 0rpx;
+				margin-left: 12rpx;
 				text-align: left;
 				flex: 0 1 auto;
 			}

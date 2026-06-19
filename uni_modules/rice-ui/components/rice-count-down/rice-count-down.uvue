@@ -78,7 +78,7 @@
 <style scoped lang="scss">
 	.rice-count-down {
 		&__text {
-			font-size: 15px;
+			font-size: 30rpx;
 			color: var(--rice-text-color);
 		}
 	}

@@ -214,7 +214,7 @@
 
 <style>
   .time-text {
-    font-size: 12px;
+    font-size: 24rpx;
     color: #999999;
   }
 </style>

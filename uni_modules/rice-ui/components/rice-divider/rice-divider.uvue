@@ -79,17 +79,17 @@
 	.rice-divider {
 		flex-direction: row;
 		align-items: center;
-		margin: 16px auto;
+		margin: 32rpx auto;
 		width: 100%;
 
 		&--single {
-			border-top: 1px solid var(--rice-divider-line-color);
+			border-top: 2rpx solid var(--rice-divider-line-color);
 			transform: scale(1, 1);
 		}
 
 
 		&__text {
-			font-size: 14px;
+			font-size: 28rpx;
 			color: var(--rice-text-color-2);
 		}
 
@@ -97,19 +97,19 @@
 		&__right {
 			flex: 1;
 			box-sizing: border-box;
-			border-top: 1px solid var(--rice-divider-line-color);
+			border-top: 2rpx solid var(--rice-divider-line-color);
 		}
 
 		&__left {
-			margin-right: 12px;
+			margin-right: 24rpx;
 		}
 
 		&__right {
-			margin-left: 12px;
+			margin-left: 24rpx;
 		}
 
 		&--sides {
-			width: 30px;
+			width: 60rpx;
 			flex: 0 1 auto;
 
 		}

@@ -32,7 +32,7 @@
 								:model-value="(todo['completed'] as boolean)"
 								shape="round"
 								checked-color="#FB8FAB"
-								icon-size="20px"
+								icon-size="40rpx"
 								@change="toggleTodo(todo['id'] as string)"
 							/>
 						</view>
@@ -51,7 +51,7 @@
 							</view>
 						</view>
 						<view class="todo-right" @click.stop="deleteTodo(todo['id'] as string)">
-							<rice-icon name="delete" size="16px" color="#9CA3AF" />
+							<rice-icon name="delete" size="32rpx" color="#9CA3AF" />
 						</view>
 					</view>
 				</view>
@@ -307,7 +307,7 @@
 		flex-direction: row;
 		padding: 16rpx 30rpx;
 		background-color: #FFFFFF;
-		border-bottom-width: 0.5px;
+		border-bottom-width: 0.10rpx;
 		border-bottom-color: #F3F4F6;
 		border-bottom-style: solid;
 	}
@@ -338,7 +338,7 @@
 		flex-direction: row;
 		align-items: flex-start;
 		padding: 16rpx 0;
-		border-bottom-width: 0.5px;
+		border-bottom-width: 0.10rpx;
 		border-bottom-color: #F3F4F6;
 		border-bottom-style: solid;
 	}
@@ -405,7 +405,7 @@
 		border-radius: 12rpx;
 		background-color: #F3F4F6;
 		margin-right: 16rpx;
-		border-width: 1px;
+		border-width: 2rpx;
 		border-style: solid;
 		border-color: #E5E7EB;
 	}

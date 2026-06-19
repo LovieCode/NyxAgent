@@ -24,7 +24,7 @@
 
 	const props = withDefaults(defineProps<IconProps>(), {
 		name: "",
-		size: '16px',
+		size: '32rpx',
 		customStyle: () : UTSJSONObject => ({})
 	})
 
@@ -84,8 +84,8 @@
 		}
 
 		&__image {
-			height: 16px;
-			width: 16px;
+			height: 32rpx;
+			width: 32rpx;
 		}
 	}
 </style>

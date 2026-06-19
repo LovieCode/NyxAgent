@@ -53,7 +53,7 @@
 
 				<!-- 空状态 -->
 				<view v-else class="empty-state">
-					<oui-icon-unix name="time-circle" size="48px" color="#D1D5DB" />
+					<oui-icon-unix name="time-circle" size="96rpx" color="#D1D5DB" />
 					<text class="empty-text">暂无历史记录</text>
 					<text class="empty-hint">开始对话后，记录将自动保存在这里</text>
 				</view>
@@ -343,7 +343,7 @@
 	/* 列表滚动区 */
 	.list-scroll {
 		flex: 1;
-		padding: 16px;
+		padding: 32rpx;
 	}
 
 	.list-content {
@@ -353,10 +353,10 @@
 	/* 历史记录卡片 */
 	.history-card {
 		background-color: var(--rice-background-2);
-		border-radius: 14px;
-		padding: 16px;
-		margin-bottom: 12px;
-		border-width: 1px;
+		border-radius: 28rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+		border-width: 2rpx;
 		border-style: solid;
 		border-color: var(--rice-border-color);
 	}
@@ -373,19 +373,19 @@
 
 	/* 复选框列 */
 	.check-col {
-		width: 40px;
+		width: 80rpx;
 		height: 100%;
 		justify-content: center;
 		align-items: center;
-		margin-right: 8px;
-		padding-top: 2px;
+		margin-right: 16rpx;
+		padding-top: 4rpx;
 	}
 
 	.checkbox {
-		width: 22px;
-		height: 22px;
-		border-radius: 11px;
-		border-width: 2px;
+		width: 44rpx;
+		height: 44rpx;
+		border-radius: 22rpx;
+		border-width: 4rpx;
 		border-style: solid;
 		border-color: #D1D5DB;
 		justify-content: center;
@@ -398,7 +398,7 @@
 	}
 
 	.checkmark {
-		font-size: 14px;
+		font-size: 28rpx;
 		color: #FFFFFF;
 		font-weight: bold;
 	}
@@ -411,28 +411,28 @@
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 8px;
+		margin-bottom: 16rpx;
 	}
 
 	.card-title {
-		font-size: 16px;
+		font-size: 32rpx;
 		font-weight: bold;
 		color: var(--rice-text-color);
 		flex: 1;
 	}
 
 	.card-time {
-		font-size: 12px;
+		font-size: 24rpx;
 		color: var(--rice-text-color-3);
-		margin-left: 8px;
+		margin-left: 16rpx;
 	}
 
 	.card-preview {
-		font-size: 14px;
+		font-size: 28rpx;
 		color: var(--rice-text-color-2);
 		lines: 1;
 		text-overflow: ellipsis;
-		margin-bottom: 10px;
+		margin-bottom: 20rpx;
 	}
 
 	.card-meta {
@@ -441,20 +441,20 @@
 	}
 
 	.meta-msgs {
-		font-size: 12px;
+		font-size: 24rpx;
 		color: var(--rice-text-color-3);
-		margin-right: 12px;
+		margin-right: 24rpx;
 	}
 
 	.meta-model {
-		font-size: 11px;
+		font-size: 22rpx;
 		color: var(--rice-primary-color);
 		background-color: var(--rice-primary-color-1);
-		padding-left: 6px;
-		padding-right: 6px;
-		padding-top: 2px;
-		padding-bottom: 2px;
-		border-radius: 6px;
+		padding-left: 12rpx;
+		padding-right: 12rpx;
+		padding-top: 4rpx;
+		padding-bottom: 4rpx;
+		border-radius: 12rpx;
 	}
 
 	/* 空状态 */
@@ -462,20 +462,20 @@
 		flex: 1;
 		justify-content: center;
 		align-items: center;
-		padding-top: 120px;
+		padding-top: 240rpx;
 	}
 
 	.empty-text {
-		font-size: 18px;
+		font-size: 36rpx;
 		color: var(--rice-text-color-3);
-		margin-top: 16px;
+		margin-top: 32rpx;
 		font-weight: bold;
 	}
 
 	.empty-hint {
-		font-size: 13px;
+		font-size: 26rpx;
 		color: var(--rice-text-color-3);
-		margin-top: 6px;
+		margin-top: 12rpx;
 		text-align: center;
 	}
 </style>

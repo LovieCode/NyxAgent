@@ -98,26 +98,27 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		padding-left: 10px;
-		padding-right: 10px;
-		height: 40px;
+		padding-left: 20rpx;
+		padding-right: 20rpx;
+		height: 96rpx;
 		background-color: var(--rice-primary-color);
 	}
 
 	/* 阴影线 */
 	.nb-shadow {
-		height: 1px;
+		height: 2rpx;
 		background-color: rgba(0,0,0,0.06);
 	}
 
 	.nb-left {
-		width: 104px;
+		width: 240rpx;
+		height: 96rpx;
 		flex-direction: row;
 		align-items: center;
 	}
 
 	.nb-title {
-		font-size: 16px;
+		font-size: 38rpx;
 		font-weight: bold;
 		color: var(--rice-text-color-white);
 	}
@@ -128,7 +129,8 @@
 	}
 
 	.nb-right {
-		width: 104px;
+		width: 240rpx;
+		height: 96rpx;
 		flex-direction: row;
 		align-items: center;
 		justify-content: flex-end;
@@ -141,14 +143,14 @@
 	}
 
 	.back-arrow {
-		font-size: 20px;
+		font-size: 48rpx;
 		color: var(--rice-text-color-white);
 	}
 
 	.back-text {
-		font-size: 14px;
+		font-size: 34rpx;
 		color: var(--rice-text-color-white);
-		margin-left: 2px;
-		padding-top: 2px;
+		margin-left: 8rpx;
+		padding-top: 10rpx;
 	}
 </style>

@@ -44,8 +44,8 @@
 	// #ifdef APP-ANDROID
 	const _radius = computed(() => {
 		if (props.radius != null) return props.radius
-		if (props.round) return '999px'
-		return '4px'
+		if (props.round) return '1998rpx'
+		return '8rpx'
 	})
 	// #endif
 
@@ -55,9 +55,9 @@
 
 	const iconSize = computed(() => {
 		if (props.fontSize != null) return props.fontSize
-		if (props.size == 'large') return '20px'
-		if (props.size == 'mini') return '14px'
-		return '16px'
+		if (props.size == 'large') return '40rpx'
+		if (props.size == 'mini') return '28rpx'
+		return '32rpx'
 	})
 
 
@@ -157,27 +157,27 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: center;
-		height: 48px;
-		width: 48px;
+		height: 96rpx;
+		width: 96rpx;
 		/* #ifndef APP-ANDROID */
-		border-radius: 4px;
+		border-radius: 8rpx;
 		/* #endif */
 
 		&--round {
 			/* #ifndef APP-ANDROID */
-			border-radius: 999px;
+			border-radius: 1998rpx;
 			/* #endif */
 		}
 
 
 		&--mini {
-			height: 40px;
-			width: 40px;
+			height: 80rpx;
+			width: 80rpx;
 		}
 
 		&--large {
-			height: 62px;
-			width: 62px;
+			height: 124rpx;
+			width: 124rpx;
 		}
 
 
@@ -185,21 +185,21 @@
 			height: 100%;
 			width: 100%;
 			/* #ifndef APP-ANDROID */
-			border-radius: 4px;
+			border-radius: 8rpx;
 			/* #endif */
 		}
 
 
 		&__text {
 			color: #fff;
-			font-size: 16px;
+			font-size: 32rpx;
 
 			&--large {
-				font-size: 20px;
+				font-size: 40rpx;
 			}
 
 			&--mini {
-				font-size: 14px;
+				font-size: 28rpx;
 			}
 		}
 

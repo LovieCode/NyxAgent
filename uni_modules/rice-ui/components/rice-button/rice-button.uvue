@@ -62,13 +62,13 @@
 
 	const _iconSize = computed<string | number>(() => {
 		if (hasStrValue(props.iconSize)) return props.iconSize!
-		return iconSizeTypes[props.size ?? 'default'] ?? '16px'
+		return iconSizeTypes[props.size ?? 'default'] ?? '32rpx'
 	})
 
 
 	const _loadingSize = computed<string | number>(() => {
 		if (hasStrValue(props.loadingSize)) return props.loadingSize!
-		return loadingSizeTypes[props.size ?? 'default'] ?? '18px'
+		return loadingSizeTypes[props.size ?? 'default'] ?? '36rpx'
 	})
 
 	const buttonType = computed<string>(() => {
@@ -166,7 +166,7 @@
 		const textColor = getTextColor()
 		if (textColor != "") css.set('color', textColor)
 		if (props.textSize != null) css.set('font-size', addUnit(props.textSize!))
-		if (hasStrValue(props.icon) || props.loading) css.set('margin-left', '4px')
+		if (hasStrValue(props.icon) || props.loading) css.set('margin-left', '8rpx')
 		return css
 	})
 
@@ -261,12 +261,12 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: center;
-		border-radius: 4px;
-		height: 42px;
-		padding: 0 15px;
+		border-radius: 8rpx;
+		height: 84rpx;
+		padding: 0 30rpx;
 		box-sizing: border-box;
 		opacity: 1;
-		border: 1px solid var(--rice-button-default-border);
+		border: 2rpx solid var(--rice-button-default-border);
 		/* #ifndef APP */
 		color: var(--rice-text-color-white);
 
@@ -278,15 +278,15 @@
 
 		&__text {
 			color: var(--rice-text-color-white);
-			font-size: 14px;
+			font-size: 28rpx;
 		}
 
 		&--square {
-			border-radius: 0px;
+			border-radius: 0rpx;
 		}
 
 		&--round {
-			border-radius: 990px;
+			border-radius: 1980rpx;
 		}
 
 		&--hover {

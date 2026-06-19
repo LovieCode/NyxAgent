@@ -240,7 +240,7 @@
 		border-radius: 16rpx;
 		padding: 24rpx;
 		margin-bottom: 16rpx;
-		border-width: 0.5px;
+		border-width: 0.10rpx;
 		border-color: #E5E7EB;
 		border-style: solid;
 	}

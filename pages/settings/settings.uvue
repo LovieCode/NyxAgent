@@ -430,15 +430,15 @@
 	}
 
 	.toggle-vis-btn {
-		width: 44px;
-		height: 44px;
+		width: 88rpx;
+		height: 88rpx;
 		justify-content: center;
 		align-items: center;
 		margin-left: 8rpx;
 	}
 
 	.toggle-vis-icon {
-		font-size: 24px;
+		font-size: 48rpx;
 	}
 
 	/* 扁平输入框 */
@@ -515,7 +515,7 @@
 	}
 
 	.menu-divider {
-		height: 0.5px;
+		height: 0.10rpx;
 		background-color: #F3F4F6;
 		margin-left: 84rpx;
 	}
@@ -531,7 +531,7 @@
 		border-radius: 12rpx;
 		padding: 14rpx 28rpx;
 		margin: 8rpx;
-		border-width: 1px;
+		border-width: 2rpx;
 		border-style: solid;
 		border-color: #E5E7EB;
 	}

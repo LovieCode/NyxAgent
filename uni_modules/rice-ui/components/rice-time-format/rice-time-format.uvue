@@ -132,7 +132,7 @@
 
 <style scoped lang="scss">
 	.rice-time-format {
-		font-size: 14px;
+		font-size: 28rpx;
 		color: var(--rice-text-color);
 	}
 </style>

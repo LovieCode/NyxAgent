@@ -1,8 +1,8 @@
 <template>
 	<view v-if="state.show" :class="noticeBarClass" :style="[noticeBarStyle,customStyle]">
 		<slot name="leftIcon">
-			<rice-icon v-if="hasStrValue(leftIcon)" :name="leftIcon" :color="iconColor" size="18px"
-				:custom-style="{width:'25px'}" @click="clickLeft" />
+			<rice-icon v-if="hasStrValue(leftIcon)" :name="leftIcon" :color="iconColor" size="36rpx"
+				:custom-style="{width:'50rpx'}" @click="clickLeft" />
 		</slot>
 		<view class="rice-notice-bar__wrapper" ref="wrapperRef" @click="handleClick">
 			<!-- #ifdef APP-IOS || APP-HARMONY -->
@@ -16,11 +16,11 @@
 			<!-- #endif -->
 		</view>
 		<slot name="rightIcon">
-			<rice-icon v-if="hasStrValue(rightIcon)" :name="rightIcon" :custom-style="{width:'25px',textAlign:'right'}"
-				:color="iconColor" size="18px" @click="clickRight" />
+			<rice-icon v-if="hasStrValue(rightIcon)" :name="rightIcon" :custom-style="{width:'50rpx',textAlign:'right'}"
+				:color="iconColor" size="36rpx" @click="clickRight" />
 		</slot>
-		<rice-icon v-if="closeable" name="cross" :custom-style="{width:'25px',textAlign:'right',}" :color="iconColor"
-			size="18px" @click="handleClose" />
+		<rice-icon v-if="closeable" name="cross" :custom-style="{width:'50rpx',textAlign:'right',}" :color="iconColor"
+			size="36rpx" @click="handleClose" />
 	</view>
 </template>
 
@@ -203,14 +203,14 @@
 		flex-direction: row;
 		align-items: center;
 		/* #ifndef APP */
-		height: 45px;
+		height: 90rpx;
 		/* #endif */
 
 		/* #ifdef APP */
-		min-height: 45px;
+		min-height: 90rpx;
 		/* #endif */
 
-		padding: 0 16px;
+		padding: 0 32rpx;
 
 		&--primary {
 			background-color: var(--rice-primary-color-1);
@@ -253,7 +253,7 @@
 			position: relative;
 			flex-direction: row;
 			align-items: center;
-			width: 10000px;
+			width: 20000rpx;
 			height: 100%;
 
 			&--auto {
@@ -266,10 +266,10 @@
 		&__content {
 			position: absolute;
 			white-space: nowrap;
-			transform: translateX(0px);
+			transform: translateX(0rpx);
 			transition-property: transform;
 			transition-timing-function: linear;
-			font-size: 15px;
+			font-size: 30rpx;
 
 			&--wrapable {
 				position: relative;
@@ -315,7 +315,7 @@
 			/* #ifndef APP */
 			height: auto;
 			/* #endif */
-			padding: 14px 16px;
+			padding: 28rpx 32rpx;
 		}
 	}
 </style>

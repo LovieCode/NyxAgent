@@ -108,7 +108,7 @@
 						<text class="summary-label">短缓存</text>
 						<text class="summary-value">{{bufferInjection != '' ? '有' : '无'}}</text>
 					</view>
-					<view v-if="lastTotalTokens > 0" class="summary-item" style="background-color:#F0FFF4;border-radius:8px;padding:4px 8px;">
+					<view v-if="lastTotalTokens > 0" class="summary-item" style="background-color:#F0FFF4;border-radius:16rpx;padding:8rpx 16rpx;">
 						<text class="summary-label" style="color:#059669;">上次调用</text>
 						<text class="summary-value" style="color:#059669;">{{lastPromptTokens}} → {{lastCompletionTokens}}（共 {{lastTotalTokens}}）</text>
 					</view>
@@ -1026,55 +1026,55 @@
 <style>
 	.container {
 		flex: 1;
-		padding: 12px;
-		padding-bottom: 96px;
+		padding: 24rpx;
+		padding-bottom: 192rpx;
 	}
 
 	.hero-card,
 	.card {
 		background-color: #FFFFFF;
-		border-radius: 16px;
-		padding: 16px;
-		margin-bottom: 12px;
+		border-radius: 32rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
 	}
 
 	.card-active {
-		border-width: 2px;
+		border-width: 4rpx;
 		border-style: solid;
 		border-color: #FB8FAB;
-		box-shadow: 0 10px 30px rgba(251, 143, 171, 0.22);
+		box-shadow: 0 20rpx 60rpx rgba(251, 143, 171, 0.22);
 	}
 
 	.hero-title {
-		font-size: 18px;
+		font-size: 36rpx;
 		color: var(--rice-text-color);
 		font-weight: bold;
-		margin-bottom: 8px;
+		margin-bottom: 16rpx;
 	}
 
 	.hero-desc {
-		font-size: 13px;
-		line-height: 20px;
+		font-size: 26rpx;
+		line-height: 40rpx;
 		color: var(--rice-text-color-2);
 	}
 
 	.section-title {
-		font-size: 15px;
+		font-size: 30rpx;
 		font-weight: bold;
 		color: var(--rice-text-color);
-		margin-bottom: 10px;
+		margin-bottom: 20rpx;
 	}
 
 	.section-row {
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		margin-bottom: 10px;
+		margin-bottom: 20rpx;
 	}
 
 	.meta-line {
-		font-size: 13px;
-		line-height: 22px;
+		font-size: 26rpx;
+		line-height: 44rpx;
 		color: var(--rice-text-color-2);
 	}
 
@@ -1087,18 +1087,18 @@
 	.summary-item {
 		flex-direction: row;
 		align-items: center;
-		padding: 6px 16px 6px 0;
+		padding: 12rpx 32rpx 12rpx 0;
 	}
 
 	.summary-label {
-		font-size: 12px;
+		font-size: 24rpx;
 		color: #9CA3AF;
-		margin-right: 6px;
+		margin-right: 12rpx;
 		flex-shrink: 0;
 	}
 
 	.summary-value {
-		font-size: 13px;
+		font-size: 26rpx;
 		color: var(--rice-text-color);
 	}
 
@@ -1109,47 +1109,47 @@
 
 	.search-input {
 		flex: 1;
-		height: 38px;
+		height: 76rpx;
 		background-color: #F9FAFB;
-		border-radius: 10px;
-		padding-left: 12px;
-		padding-right: 12px;
-		font-size: 13px;
+		border-radius: 20rpx;
+		padding-left: 24rpx;
+		padding-right: 24rpx;
+		font-size: 26rpx;
 		color: var(--rice-text-color);
 	}
 
 	.search-btn {
-		margin-left: 10px;
-		padding: 9px 14px;
-		border-radius: 10px;
+		margin-left: 20rpx;
+		padding: 18rpx 28rpx;
+		border-radius: 20rpx;
 		background-color: var(--rice-primary-color);
 		color: #FFFFFF;
-		font-size: 13px;
+		font-size: 26rpx;
 		font-weight: bold;
 	}
 
 	.search-meta {
-		font-size: 12px;
-		line-height: 20px;
+		font-size: 24rpx;
+		line-height: 40rpx;
 		color: #6B7280;
 	}
 
 	.floating-search-bar {
 		position: absolute;
-		left: 12px;
-		right: 12px;
-		bottom: 12px;
+		left: 24rpx;
+		right: 24rpx;
+		bottom: 24rpx;
 		background-color: #FFFFFF;
-		border-radius: 16px;
-		padding: 12px;
-		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+		border-radius: 32rpx;
+		padding: 24rpx;
+		box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.10);
 	}
 
 	.floating-search-meta {
-		font-size: 12px;
-		line-height: 18px;
+		font-size: 24rpx;
+		line-height: 36rpx;
 		color: #6B7280;
-		margin-bottom: 10px;
+		margin-bottom: 20rpx;
 	}
 
 	.floating-search-actions {
@@ -1158,13 +1158,13 @@
 	}
 
 	.floating-btn {
-		padding: 7px 11px;
-		margin-right: 8px;
-		margin-bottom: 8px;
-		border-radius: 999px;
+		padding: 14rpx 22rpx;
+		margin-right: 16rpx;
+		margin-bottom: 16rpx;
+		border-radius: 1998rpx;
 		background-color: #F3F4F6;
 		color: #374151;
-		font-size: 12px;
+		font-size: 24rpx;
 	}
 
 	.floating-btn-danger {
@@ -1173,22 +1173,22 @@
 	}
 
 	.search-hit-card {
-		margin-top: 10px;
-		padding: 12px;
-		border-radius: 12px;
+		margin-top: 20rpx;
+		padding: 24rpx;
+		border-radius: 24rpx;
 		background-color: #FFF7FA;
 	}
 
 	.search-hit-title {
-		font-size: 13px;
+		font-size: 26rpx;
 		font-weight: bold;
 		color: #DB2777;
-		margin-bottom: 6px;
+		margin-bottom: 12rpx;
 	}
 
 	.search-hit-excerpt {
-		font-size: 12px;
-		line-height: 19px;
+		font-size: 24rpx;
+		line-height: 38rpx;
 		color: #4B5563;
 		white-space: pre-wrap;
 	}
@@ -1196,47 +1196,47 @@
 	.search-mark {
 		background-color: #FDE68A;
 		color: #7C2D12;
-		border-radius: 6px;
-		padding-left: 2px;
-		padding-right: 2px;
+		border-radius: 12rpx;
+		padding-left: 4rpx;
+		padding-right: 4rpx;
 		font-weight: bold;
 	}
 
 	.chunk-wrap {
-		margin-top: 10px;
+		margin-top: 20rpx;
 	}
 
 	.chunk-wrap-active {
-		border-radius: 12px;
-		padding: 2px;
+		border-radius: 24rpx;
+		padding: 4rpx;
 		background-color: rgba(251, 143, 171, 0.1);
-		border-width: 1px;
+		border-width: 2rpx;
 		border-style: solid;
 		border-color: rgba(251, 143, 171, 0.28);
 	}
 
 	.block-text {
-		font-size: 13px;
-		line-height: 21px;
+		font-size: 26rpx;
+		line-height: 42rpx;
 		color: var(--rice-text-color);
 		white-space: normal;
 	}
 
 	.block-text-active {
 		background-color: #FFF7FA;
-		border-radius: 12px;
-		padding: 10px 12px;
-		box-shadow: inset 0 0 0 1px rgba(251, 143, 171, 0.38);
+		border-radius: 24rpx;
+		padding: 20rpx 24rpx;
+		box-shadow: inset 0 0 0 2rpx rgba(251, 143, 171, 0.38);
 	}
 
 	.code-text {
-		font-size: 12px;
-		line-height: 18px;
+		font-size: 24rpx;
+		line-height: 36rpx;
 		color: #E5E7EB;
 		white-space: pre-wrap;
 		background-color: #111827;
-		border-radius: 12px;
-		padding: 12px;
+		border-radius: 24rpx;
+		padding: 24rpx;
 		font-family: monospace;
 	}
 
@@ -1250,27 +1250,27 @@
 	}
 
 	.code-panel-active {
-		border-radius: 12px;
-		box-shadow: 0 0 0 1px rgba(251, 143, 171, 0.45);
+		border-radius: 24rpx;
+		box-shadow: 0 0 0 2rpx rgba(251, 143, 171, 0.45);
 	}
 
 	.code-text-active {
 		background-color: #111827;
-		box-shadow: inset 0 0 0 1px rgba(251, 143, 171, 0.55);
+		box-shadow: inset 0 0 0 2rpx rgba(251, 143, 171, 0.55);
 	}
 
 	.code-inline-hit {
 		background-color: #FDE68A;
 		color: #111827;
-		border-radius: 4px;
-		padding-left: 2px;
-		padding-right: 2px;
+		border-radius: 8rpx;
+		padding-left: 4rpx;
+		padding-right: 4rpx;
 		font-weight: bold;
 	}
 
 	.nav-btn,
 	.mini-btn {
-		font-size: 14px;
+		font-size: 28rpx;
 		color: #FFFFFF;
 		font-weight: bold;
 	}
@@ -1280,7 +1280,7 @@
 	}
 
 	.anchor-spacer {
-		height: 2px;
+		height: 4rpx;
 	}
 
 	/* 自定义滚动条 */
@@ -1291,19 +1291,19 @@
 
 	.custom-scrollbar {
 		position: absolute;
-		right: 2px;
-		top: 2px;
-		bottom: 2px;
-		width: 14px;
-		border-radius: 7px;
+		right: 4rpx;
+		top: 4rpx;
+		bottom: 4rpx;
+		width: 28rpx;
+		border-radius: 14rpx;
 		background-color: rgba(0, 0, 0, 0.04);
 	}
 
 	.scrollbar-thumb {
 		position: absolute;
-		left: 3px;
-		right: 3px;
-		border-radius: 4px;
+		left: 6rpx;
+		right: 6rpx;
+		border-radius: 8rpx;
 		background-color: rgba(0, 0, 0, 0.18);
 	}
 </style>
