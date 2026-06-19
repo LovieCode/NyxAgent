@@ -123,7 +123,12 @@
 					<text class="section-title">完整 JSON</text>
 					<text class="mini-btn" @click="copyAll">复制</text>
 				</view>
-				<text class="code-text">{{fullJsonText}}</text>
+				<text v-if="activeMatchLength <= 0 || activeMatchStart < 0" class="code-text">{{fullJsonText}}</text>
+				<text v-else class="code-text">
+					<text>{{matchBeforeText()}}</text>
+					<text class="code-inline-hit">{{matchHitText()}}</text>
+					<text>{{matchAfterText()}}</text>
+				</text>
 			</view>
 			<view id="anchor-bottom" class="anchor-spacer"></view>
 		</scroll-view>
@@ -159,6 +164,8 @@
 				searchMetaText: '输入关键词后可在各段内容之间跳转定位。' as string,
 	
 				activeSectionId: '' as string,
+				activeMatchStart: -1 as number,
+				activeMatchLength: 0 as number,
 
 				searchJumpBusy: false as boolean,
 				queuedSearchIndex: -1 as number,
@@ -580,6 +587,7 @@
 						count: total,
 						occurrence: j + 1,
 						matchStart: hit,
+						matchLength: needle.length,
 					} as UTSJSONObject)
 				}
 			},
@@ -630,8 +638,11 @@
 				const count = item['count'] as number | null
 				const occurrence = item['occurrence'] as number | null
 				const matchStart = item['matchStart'] as number | null
+				const matchLength = item['matchLength'] as number | null
 				this.searchMetaText = '命中 ' + this.searchResults.length + ' 处，当前第 ' + (index + 1) + ' 处' + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
 				this.activeSectionId = sectionId != null ? sectionId : ''
+				this.activeMatchStart = matchStart != null ? matchStart : -1
+				this.activeMatchLength = matchLength != null ? matchLength : 0
 				this.showFloatingSearchBar = true
 				this.floatingMetaText = (index + 1) + ' / ' + this.searchResults.length + (count != null && occurrence != null ? '（本段 ' + occurrence + '/' + count + '）' : '')
 				if (sectionId != null && sectionId != '') {
@@ -689,6 +700,8 @@
 				this.searchIndex = -1
 				this.searchMetaText = '输入关键词后可在各段内容之间跳转定位。'
 				this.activeSectionId = ''
+				this.activeMatchStart = -1
+				this.activeMatchLength = 0
 				this.searchJumpBusy = false
 				this.queuedSearchIndex = -1
 				this.scrollRequestSeq = this.scrollRequestSeq + 1
@@ -802,11 +815,15 @@
 
 			scrollToTop() {
 				this.activeSectionId = ''
+				this.activeMatchStart = -1
+				this.activeMatchLength = 0
 				this.scrollToSection('anchor-top')
 			},
 
 			scrollToBottom() {
 				this.activeSectionId = ''
+				this.activeMatchStart = -1
+				this.activeMatchLength = 0
 				// 用真实锚点坐标定位
 				const query = uni.createSelectorQuery().in(this)
 				query.select('#anchor-bottom').boundingClientRect()
@@ -831,6 +848,38 @@
 						this.commitScrollTop(99999)
 					}
 				})
+			},
+
+			/** 匹配位置之前的文本 */
+			matchBeforeText(): string {
+				if (this.activeMatchStart < 0 || this.activeMatchStart >= this.fullJsonText.length) {
+					return ''
+				}
+				return this.fullJsonText.substring(0, this.activeMatchStart)
+			},
+
+			/** 匹配命中的文本 */
+			matchHitText(): string {
+				if (this.activeMatchStart < 0 || this.activeMatchLength <= 0) {
+					return ''
+				}
+				const end = this.activeMatchStart + this.activeMatchLength
+				if (end > this.fullJsonText.length) {
+					return ''
+				}
+				return this.fullJsonText.substring(this.activeMatchStart, end)
+			},
+
+			/** 匹配位置之后的文本 */
+			matchAfterText(): string {
+				if (this.activeMatchStart < 0 || this.activeMatchLength <= 0) {
+					return ''
+				}
+				const end = this.activeMatchStart + this.activeMatchLength
+				if (end >= this.fullJsonText.length) {
+					return ''
+				}
+				return this.fullJsonText.substring(end)
 			},
 
 			formatJsonObjectSegment(value: UTSJSONObject, fallback: string): string {
@@ -1051,6 +1100,15 @@
 		border-radius: 24rpx;
 		padding: 24rpx;
 		font-family: monospace;
+	}
+
+	.code-inline-hit {
+		background-color: #FDE68A;
+		color: #111827;
+		border-radius: 8rpx;
+		padding-left: 4rpx;
+		padding-right: 4rpx;
+		font-weight: bold;
 	}
 
 	.nav-btn,
