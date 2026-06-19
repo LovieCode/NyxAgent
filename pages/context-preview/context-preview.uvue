@@ -6,7 +6,7 @@
 			</template>
 		</NavBar>
 		<view class="scroll-wrapper">
-			<scroll-view id="context-scroll" class="container" :scroll-y="true" :scroll-with-animation="false" :show-scrollbar="false" :scroll-top="scrollTop" @scroll="onScrollViewScroll">
+			<scroll-view id="context-scroll" class="container" :scroll-y="true" :scroll-with-animation="false" :show-scrollbar="false" :scroll-top="scrollTop">
 			<view id="anchor-top" class="anchor-spacer"></view>
 			<view class="hero-card">
 				<text class="hero-title">发送前完整上下文</text>
@@ -381,20 +381,6 @@
 			},
 
 			// ====== 自定义滚动条方法 ======
-
-			/** 同步滚动位置到自定义滚动条 */
-			onScrollViewScroll(e: any) {
-				const detail = e['detail'] as UTSJSONObject | null
-				if (detail == null) return
-				const st = detail['scrollTop'] as number | null
-				if (st != null) {
-					this.scrollOffset = st
-				}
-				const sh = detail['scrollHeight'] as number | null
-				if (sh != null && sh > this.scrollContentHeight) {
-					this.scrollContentHeight = sh
-				}
-			},
 
 			/** 点滚动条轨道直接跳转 */
 			onScrollbarTrackTap(e: UniTouchEvent) {
