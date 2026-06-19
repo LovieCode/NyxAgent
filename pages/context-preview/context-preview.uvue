@@ -39,13 +39,80 @@
 
 			<view id="section-summary" class="card" :class="activeSectionId == 'section-summary' ? 'card-active' : ''">
 				<text class="section-title">摘要</text>
-				<text class="meta-line">Provider：{{providerId != '' ? providerId : '未解析'}}</text>
-				<text class="meta-line">Base URL：{{baseUrl != '' ? baseUrl : '未解析'}}</text>
-				<text class="meta-line">Model：{{model != '' ? model : '未解析'}}</text>
-				<text class="meta-line">消息数：{{messageCount}}</text>
-				<text class="meta-line">工具数：{{toolCount}}</text>
-				<text class="meta-line">重要记忆：{{importantMemory != '' ? '已注入' : '无'}}</text>
-				<text class="meta-line">短缓存：{{bufferInjection != '' ? '已注入' : '无'}}</text>
+				<view class="summary-grid">
+					<view class="summary-item">
+						<text class="summary-label">模型</text>
+						<text class="summary-value">{{model != '' ? model : '未解析'}}</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">接口</text>
+						<text class="summary-value">{{providerId != '' ? providerId : '未解析'}}</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">地址</text>
+						<text class="summary-value">{{baseUrl != '' ? baseUrl : '未解析'}}</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">温度</text>
+						<text class="summary-value">{{settingsTemperature}}</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">最大 Token</text>
+						<text class="summary-value">{{settingsMaxTokens}}</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">最大轮次</text>
+						<text class="summary-value">{{settingsMaxIterations}}</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">流式</text>
+						<text class="summary-value">{{settingsStreamEnabled ? '开' : '关'}}</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">原始消息</text>
+						<text class="summary-value">{{totalMessages}} 条</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">保留消息</text>
+						<text class="summary-value">{{messageCount}} 条</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">上下文总 Token</text>
+						<text class="summary-value">≈ {{totalTokens}}</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">用户消息</text>
+						<text class="summary-value">{{userMsgCount}} 条 · {{userCharCount}} 字</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">AI 消息</text>
+						<text class="summary-value">{{assistantMsgCount}} 条 · {{assistantCharCount}} 字</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">系统消息</text>
+						<text class="summary-value">{{systemMsgCount}} 条 · {{systemCharCount}} 字</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">工具消息</text>
+						<text class="summary-value">{{toolMsgCount}} 条 · {{toolCharCount}} 字</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">工具定义</text>
+						<text class="summary-value">{{toolCount}} 个</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">重要记忆</text>
+						<text class="summary-value">{{importantMemory != '' ? '有' : '无'}}</text>
+					</view>
+					<view class="summary-item">
+						<text class="summary-label">短缓存</text>
+						<text class="summary-value">{{bufferInjection != '' ? '有' : '无'}}</text>
+					</view>
+					<view v-if="lastTotalTokens > 0" class="summary-item" style="background-color:#F0FFF4;border-radius:8px;padding:4px 8px;">
+						<text class="summary-label" style="color:#059669;">上次调用</text>
+						<text class="summary-value" style="color:#059669;">{{lastPromptTokens}} → {{lastCompletionTokens}}（共 {{lastTotalTokens}}）</text>
+					</view>
+				</view>
 			</view>
 
 			<view id="section-important-memory" class="card" :class="activeSectionId == 'section-important-memory' ? 'card-active' : ''" v-if="importantMemory != ''">
@@ -125,6 +192,20 @@
 				importantMemory: '' as string,
 				bufferInjection: '' as string,
 				messageCount: 0 as number,
+				totalMessages: 0 as number,
+				userMsgCount: 0 as number,
+				userCharCount: 0 as number,
+				assistantMsgCount: 0 as number,
+				assistantCharCount: 0 as number,
+				systemMsgCount: 0 as number,
+				systemCharCount: 0 as number,
+				toolMsgCount: 0 as number,
+				toolCharCount: 0 as number,
+				totalCharCount: 0 as number,
+				totalTokens: 0 as number,
+				lastPromptTokens: 0 as number,
+				lastCompletionTokens: 0 as number,
+				lastTotalTokens: 0 as number,
 				toolCount: 0 as number,
 				settingsTemperature: '—' as string,
 				settingsMaxTokens: '—' as string,
@@ -187,7 +268,42 @@
 				this.importantMemory = importantMemory != null ? importantMemory : ''
 				this.bufferInjection = bufferInjection != null ? bufferInjection : ''
 				this.messageCount = openaiMessages != null ? openaiMessages.length : 0
+				const rawTotal = parsed['totalMessages'] as number | null
+				this.totalMessages = rawTotal != null ? rawTotal : this.messageCount
+				// 按角色统计消息数和字数
+				if (openaiMessages != null) {
+					let uc = 0; let ucc = 0; let ac = 0; let acc = 0
+					let sc = 0; let scc = 0; let tc = 0; let tcc = 0
+					let allChars = 0
+					for (let i = 0; i < openaiMessages.length; i++) {
+						const msg = openaiMessages[i]
+						const role = msg['role'] as string | null
+						const content = msg['content'] as string | null
+						const clen = content != null ? content.length : 0
+						allChars += clen
+						if (role == 'user') { uc++; ucc += clen }
+						else if (role == 'assistant') { ac++; acc += clen }
+						else if (role == 'system') { sc++; scc += clen }
+						else if (role == 'tool') { tc++; tcc += clen }
+					}
+					this.userMsgCount = uc; this.userCharCount = ucc
+					this.assistantMsgCount = ac; this.assistantCharCount = acc
+					this.systemMsgCount = sc; this.systemCharCount = scc
+					this.toolMsgCount = tc; this.toolCharCount = tcc
+					this.totalCharCount = allChars
+					this.totalTokens = Math.round(allChars / 2)
+				}
 				this.toolCount = openaiTools != null ? openaiTools.length : 0
+				// 上次调用的真实 Token 用量
+				const ltu = parsed['lastTokenUsage'] as UTSJSONObject | null
+				if (ltu != null) {
+					const pt = ltu['prompt_tokens'] as number | null
+					const ct = ltu['completion_tokens'] as number | null
+					const tt = ltu['total_tokens'] as number | null
+					if (pt != null) this.lastPromptTokens = pt
+					if (ct != null) this.lastCompletionTokens = ct
+					if (tt != null) this.lastTotalTokens = tt
+				}
 				if (settings != null) {
 					const temp = settings['temperature'] as number | null
 					const mt = settings['maxTokens'] as number | null
@@ -552,8 +668,14 @@
 					'温度 ' + this.settingsTemperature + '\n' +
 					'最大Token ' + this.settingsMaxTokens + '\n' +
 					'最大轮次 ' + this.settingsMaxIterations + '\n' +
-					'消息 ' + this.messageCount + ' 条\n' +
-					'工具 ' + this.toolCount + ' 个\n' +
+					'保留消息 ' + this.messageCount + ' 条\n' +
+					'原始消息 ' + this.totalMessages + ' 条\n' +
+					'上下文总 Token ≈ ' + this.totalTokens + '\n' +
+					'用户 ' + this.userMsgCount + ' 条 · ' + this.userCharCount + ' 字\n' +
+					'AI ' + this.assistantMsgCount + ' 条 · ' + this.assistantCharCount + ' 字\n' +
+					'系统 ' + this.systemMsgCount + ' 条 · ' + this.systemCharCount + ' 字\n' +
+					'工具 ' + this.toolMsgCount + ' 条 · ' + this.toolCharCount + ' 字\n' +
+					'工具定义 ' + this.toolCount + ' 个\n' +
 					'流式 ' + (this.settingsStreamEnabled ? '开' : '关') + '\n' +
 					'记忆 ' + (this.importantMemory != '' ? '有' : '无') + '\n' +
 					'地址 ' + this.baseUrl
