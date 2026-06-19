@@ -19,6 +19,7 @@ import Environment from 'android.os.Environment'
 // #endif
 
 const MAX_ZIP_SOURCE_BYTES: number = 50 * 1024 * 1024
+const MAX_ZIP_TEXT_CHARS: number = 512 * 1024
 let lastShareExportError = ''
 
 function setShareExportError(message: string): void {
@@ -182,6 +183,14 @@ export function writeExportZipFile(fileName: string, manifestJson: string, fileS
 					const kind = rawKind != null ? rawKind : 'file'
 					if (kind == 'directory') {
 						addDirectoryEntry(zip, rawZipPath)
+					} else if (kind == 'text') {
+						const rawContent = spec['content'] as string | null
+						if (rawContent != null && rawContent.length <= MAX_ZIP_TEXT_CHARS) {
+							const tempText = new File(root.absolutePath + '/.export-text-' + i + '.tmp')
+							tempText.writeText(rawContent)
+							addFileEntry(zip, rawZipPath, tempText)
+							tempText.delete()
+						}
 					} else if (rawSourcePath != null && rawSourcePath != '') {
 						const source = new File(normalizeSourcePath(rawSourcePath))
 						addFileEntry(zip, rawZipPath, source)
