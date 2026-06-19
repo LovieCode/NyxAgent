@@ -16,6 +16,7 @@ dist/
 .hbuilderx/
 
 # Local agent / AI tool workspace
+pi/
 .omo/
 .codex/
 .agents/
