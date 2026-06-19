@@ -306,7 +306,7 @@
 			},
 
 			sendMessage() {
-				let text = this.inputText.trim()
+				const text = this.inputText.trim()
 				if (text == '' || this.isGenerating) {
 					return
 				}
@@ -315,10 +315,6 @@
 				}
 				// 发新消息时允许保存（从历史加载后 savedFlag 为 true 会阻止保存）
 				this.savedFlag = false
-				// 注入日期时间
-				if (this.injectDatetime) {
-					text = this.buildDatetimePrefix() + '\n' + text
-				}
 				this.addTextMessage('user', text)
 				this.inputText = ''
 				this.scrollToBottom()
@@ -396,6 +392,30 @@
 				if (solarMonth == 10 && solarDay >= 1 && solarDay <= 7) return '今天是国庆假期'
 				if (solarMonth == 12 && solarDay == 25) return '今天是圣诞节'
 				return ''
+			},
+
+			/** 构建运行时消息副本：日期时间只临时注入给 Agent，不写入消息列表/数据库/UI。 */
+			buildRuntimeMessages(): UTSJSONObject[] {
+				const runtimeMessages: UTSJSONObject[] = []
+				let lastUserIndex = -1
+				for (let i = 0; i < this.messages.length; i++) {
+					const source = this.messages[i]
+					const raw = JSON.stringify(source)
+					const copied = JSON.parse(raw) as UTSJSONObject
+					runtimeMessages.push(copied)
+					const role = copied['role'] as string | null
+					if (role == 'user') {
+						lastUserIndex = i
+					}
+				}
+				if (this.injectDatetime == true && lastUserIndex >= 0 && lastUserIndex < runtimeMessages.length) {
+					const target = runtimeMessages[lastUserIndex]
+					const rawContent = target['content'] as string | null
+					const content = rawContent != null ? rawContent : ''
+					target['content'] = this.buildDatetimePrefix() + '\n' + content
+					runtimeMessages.splice(lastUserIndex, 1, target)
+				}
+				return runtimeMessages
 			},
 
 			/** 长按消息弹出操作菜单 */
@@ -817,8 +837,9 @@
 						agentModel = rawModel != null ? rawModel : ''
 					}
 				}
+				const runtimeMessages = this.buildRuntimeMessages()
 				const preview = buildAgentContextPreview(
-					this.messages,
+					runtimeMessages,
 					systemPrompt,
 					'',
 					agentModel,
@@ -1174,8 +1195,9 @@
 				}
 
 				// 使用 ReAct Agent Loop（带沙箱文件工具）
+				const runtimeMessages = this.buildRuntimeMessages()
 				const stream: AgentEventStream = agentChat(
-					this.messages,
+					runtimeMessages,
 					systemPrompt,
 					'',           // providerId → 自动从 DB 读取
 					agentModel,
