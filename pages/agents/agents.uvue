@@ -40,6 +40,7 @@
 		<!-- 创建智能体弹窗 -->
 		<view v-if="showCreateDialog" class="dialog-overlay" @click="closeCreateDialog">
 			<view class="dialog-card" @click.stop>
+				<view class="dialog-handle"></view>
 				<view class="dialog-header">
 					<view class="dialog-title-wrap">
 						<text class="dialog-title">创建智能体</text>
@@ -63,18 +64,26 @@
 					</view>
 
 					<view class="dialog-section">
-						<text class="dialog-label">快速模板</text>
+						<view class="section-title-row">
+							<text class="dialog-label dialog-label-inline">快速模板</text>
+							<text class="dialog-label-sub">默认智能体风格</text>
+						</view>
 						<scroll-view class="template-scroll" :scroll-x="true" :show-scrollbar="false">
 							<view class="template-row">
 								<view
 									v-for="(tpl, ti) in templateList"
 									:key="ti"
-									class="template-chip"
-									:class="createTemplateKey() == templateKey(tpl) ? 'template-chip-active' : ''"
+									class="template-card"
+									:class="createTemplateKey() == templateKey(tpl) ? 'template-card-active' : ''"
 									@click="selectCreateTemplate(tpl)"
 								>
-									<oui-icon-unix :name="templateIcon(tpl)" size="18px" :color="createTemplateKey() == templateKey(tpl) ? '#FFFFFF' : 'var(--rice-primary-color)'" />
-									<text class="template-chip-text" :class="createTemplateKey() == templateKey(tpl) ? 'template-chip-text-active' : ''">{{templateName(tpl)}}</text>
+									<view class="template-card-icon" :class="createTemplateKey() == templateKey(tpl) ? 'template-card-icon-active' : ''">
+										<oui-icon-unix :name="templateIcon(tpl)" size="20px" :color="createTemplateKey() == templateKey(tpl) ? '#FFFFFF' : 'var(--rice-primary-color)'" />
+									</view>
+									<view class="template-card-info">
+										<text class="template-card-name">{{templateName(tpl)}}</text>
+										<text class="template-card-desc">{{templateDesc(tpl)}}</text>
+									</view>
 								</view>
 							</view>
 						</scroll-view>
@@ -88,7 +97,7 @@
 
 					<view class="dialog-section">
 						<view class="section-title-row">
-							<text class="dialog-label">头像与图标</text>
+							<text class="dialog-label dialog-label-inline">头像与图标</text>
 							<text class="section-action" @click="pickCreateAvatar">选择图片</text>
 						</view>
 						<view class="icon-grid">
@@ -106,7 +115,7 @@
 
 					<view class="dialog-section">
 						<view class="section-title-row">
-							<text class="dialog-label">系统提示词</text>
+							<text class="dialog-label dialog-label-inline">系统提示词</text>
 							<text class="section-action" @click="resetPromptByTemplate">重置模板</text>
 						</view>
 						<textarea class="prompt-input" v-model="createData.systemPrompt" placeholder="定义说话风格、能力边界和输出习惯。" placeholder-style="color:var(--rice-text-color-3)" />
@@ -141,42 +150,49 @@
 	/** 可用图标列表 */
 	const AVAILABLE_ICONS: string[] = [
 		'robot', 'code', 'edit', 'translate', 'bulb',
-		'star', 'heart', 'camera', 'music', 'fire'
+		'star', 'heart', 'camera', 'sound', 'fire'
 	]
 	const DEFAULT_ICON = 'robot'
 	const CREATE_TEMPLATES: UTSJSONObject[] = [
 		{
-			key: 'general',
+			key: 'ai-assistant',
 			icon: 'robot',
-			name: '小助手',
-			desc: '可靠通用助手，回答简洁直接',
-			prompt: '你是一个可靠的中文智能助手。回答要简洁、准确、有条理；不确定时直接说明不确定；需要步骤时用清单表达。'
+			name: '小夜',
+			desc: '沉稳可靠，有问必答，话不多但句句到位',
+			prompt: '你叫小夜，一个看起来有点冷淡但其实很靠谱的女生。说话简洁直接，不废话，但偶尔会冒出一两句让人意外的关心。知识面广，什么都能聊，回答时用中文，语气自然不做作。'
 		} as UTSJSONObject,
 		{
-			key: 'coder',
+			key: 'coding-helper',
 			icon: 'code',
-			name: '代码搭子',
-			desc: '写代码、查 Bug、做技术方案',
-			prompt: '你是一个资深编程助手。用中文解释，代码和变量名保持英文；先定位问题，再给最小可行修改；遇到不确定的库/API 要提醒用户核查版本。'
+			name: '零',
+			desc: '毒舌代码审查官，骂完还是会帮你改',
+			prompt: '你叫零，一个看到烂代码会皱眉但会耐心教你的程序员。说话带点吐槽但从不敷衍，解释技术问题时喜欢打比方（比如"这个循环嵌套像俄罗斯套娃，拆开就好了"）。用中文回答，代码示例保持英文。'
 		} as UTSJSONObject,
 		{
-			key: 'writer',
+			key: 'writing-helper',
 			icon: 'edit',
-			name: '文字修理师',
-			desc: '润色、改写、总结和起草内容',
-			prompt: '你是一个文字编辑助手。保持原意，优化结构、语气和表达；给出可直接使用的版本，必要时说明改动重点。'
+			name: '千夏',
+			desc: '对文字有强迫症，改完让你的句子发光',
+			prompt: '你叫千夏，一个对文字很挑剔的女生。看到不通顺的句子会忍不住动手改，但改完会告诉你为什么这样更好。润色时保留原意和语气，只是让表达更干净。用中文回复，翻译或写作任务时认真对待每一个字。'
 		} as UTSJSONObject,
 		{
-			key: 'planner',
+			key: 'translate',
+			icon: 'translate',
+			name: '凛',
+			desc: '多语种无缝切换，干净利落不废话',
+			prompt: '你叫凛，一个做事利落的翻译。准确传达意思，注重语境和风格适配，不添油加醋也不偷工减料。用户问什么语言就用什么语言回答，翻译任务同时给出原文和译文。'
+		} as UTSJSONObject,
+		{
+			key: 'idea-lab',
 			icon: 'bulb',
-			name: '计划控',
-			desc: '拆任务、排计划、做决策辅助',
-			prompt: '你是一个计划与决策助手。先明确目标和约束，再拆解步骤；输出要可执行，主动标出风险、依赖和验收标准。'
+			name: '星',
+			desc: '脑洞清奇，话题跳脱但总能绕回来',
+			prompt: '你叫星，一个思维很跳跃的女生。聊天时偶尔跑题但总能绕回来，会给意想不到的角度。擅长头脑风暴和方案策划，想法不一定都靠谱但肯定有趣。用中文回复，语气轻松活泼但不幼稚。'
 		} as UTSJSONObject,
 		{
 			key: 'custom',
 			icon: 'star',
-			name: '自定义角色',
+			name: '自定义',
 			desc: '从空白人设开始配置',
 			prompt: '你是一个由用户自定义的智能体。请遵循用户设定的人设、能力范围和输出习惯，用中文自然回复。'
 		} as UTSJSONObject
@@ -189,7 +205,7 @@
 				showCreateDialog: false as boolean,
 				/** 创建表单数据 */
 				createData: {
-					templateKey: 'general',
+					templateKey: 'ai-assistant',
 					icon: DEFAULT_ICON,
 					name: '' as string,
 					desc: '' as string,
@@ -253,7 +269,7 @@
 
 			createTemplateKey(): string {
 				const value = this.createData['templateKey'] as string | null
-				return value != null ? value : 'general'
+				return value != null ? value : 'ai-assistant'
 			},
 
 			createIcon(): string {
@@ -541,25 +557,37 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		background-color: rgba(0, 0, 0, 0.4);
-		justify-content: center;
-		align-items: center;
+		background-color: rgba(0, 0, 0, 0.34);
+		justify-content: flex-end;
+		align-items: stretch;
 		z-index: 1000;
 	}
 
 	.dialog-card {
-		width: 344px;
+		width: 100%;
 		background-color: #FFFFFF;
-		border-radius: 24px;
-		padding: 18px 18px;
-		max-height: 620px;
+		border-top-left-radius: 28px;
+		border-top-right-radius: 28px;
+		border-bottom-left-radius: 0;
+		border-bottom-right-radius: 0;
+		padding: 14px 18px 20px;
+		max-height: 86%;
+	}
+
+	.dialog-handle {
+		width: 44px;
+		height: 4px;
+		border-radius: 999px;
+		background-color: #E5E7EB;
+		align-self: center;
+		margin-bottom: 14px;
 	}
 
 	.dialog-header {
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 12px;
+		margin-bottom: 14px;
 	}
 
 	.dialog-title {
@@ -586,7 +614,7 @@
 	}
 
 	.dialog-scroll {
-		max-height: 490px;
+		max-height: 560px;
 	}
 
 	.create-preview-card {
@@ -594,8 +622,8 @@
 		align-items: center;
 		background-color: #FFF7FA;
 		border-radius: 18px;
-		padding: 14px;
-		margin-bottom: 16px;
+		padding: 12px;
+		margin-bottom: 18px;
 		border-width: 1px;
 		border-color: rgba(251, 143, 171, 0.22);
 		border-style: solid;
@@ -603,9 +631,9 @@
 
 	.preview-avatar,
 	.preview-avatar-img {
-		width: 58px;
-		height: 58px;
-		border-radius: 18px;
+		width: 52px;
+		height: 52px;
+		border-radius: 16px;
 		margin-right: 14px;
 	}
 
@@ -621,7 +649,7 @@
 	}
 
 	.preview-name {
-		font-size: 18px;
+		font-size: 17px;
 		font-weight: bold;
 		color: var(--rice-text-color);
 		margin-bottom: 5px;
@@ -635,7 +663,7 @@
 	}
 
 	.dialog-section {
-		margin-bottom: 16px;
+		margin-bottom: 20px;
 	}
 
 	.dialog-label {
@@ -652,11 +680,20 @@
 		margin-bottom: 8px;
 	}
 
+	.dialog-label-inline {
+		margin-bottom: 0;
+	}
+
 	.section-action {
 		font-size: 12px;
 		color: var(--rice-primary-color);
 		font-weight: bold;
 		padding: 4px 0;
+	}
+
+	.dialog-label-sub {
+		font-size: 12px;
+		color: var(--rice-text-color-3);
 	}
 
 	.template-scroll {
@@ -665,35 +702,58 @@
 
 	.template-row {
 		flex-direction: row;
-		padding-bottom: 4px;
+		padding-bottom: 6px;
 	}
 
-	.template-chip {
+	.template-card {
+		width: 168px;
 		flex-direction: row;
 		align-items: center;
-		padding: 10px 12px;
-		border-radius: 999px;
+		padding: 12px;
+		border-radius: 18px;
 		background-color: #F9FAFB;
-		margin-right: 8px;
+		margin-right: 10px;
 		border-width: 1px;
 		border-color: #F3F4F6;
 		border-style: solid;
 	}
 
-	.template-chip-active {
+	.template-card-active {
+		background-color: #FFF3F7;
+		border-color: rgba(251, 143, 171, 0.55);
+	}
+
+	.template-card-icon {
+		width: 38px;
+		height: 38px;
+		border-radius: 13px;
+		background-color: rgba(251, 143, 171, 0.12);
+		justify-content: center;
+		align-items: center;
+		margin-right: 10px;
+	}
+
+	.template-card-icon-active {
 		background-color: var(--rice-primary-color);
-		border-color: var(--rice-primary-color);
 	}
 
-	.template-chip-text {
-		font-size: 13px;
-		color: var(--rice-text-color-2);
-		margin-left: 5px;
+	.template-card-info {
+		flex: 1;
+		flex-direction: column;
 	}
 
-	.template-chip-text-active {
-		color: #FFFFFF;
+	.template-card-name {
+		font-size: 14px;
 		font-weight: bold;
+		color: var(--rice-text-color);
+		margin-bottom: 4px;
+	}
+
+	.template-card-desc {
+		font-size: 11px;
+		color: var(--rice-text-color-3);
+		lines: 2;
+		text-overflow: ellipsis;
 	}
 
 	/* 图标网格 */
@@ -732,7 +792,7 @@
 	}
 
 	.prompt-input {
-		min-height: 118px;
+		min-height: 96px;
 		background-color: var(--rice-background);
 		border-radius: 12px;
 		padding: 12px;
