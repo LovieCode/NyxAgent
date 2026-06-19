@@ -384,8 +384,7 @@
 
 			/** 同步滚动位置到自定义滚动条 */
 			onScrollViewScroll(e: any) {
-				const d = e as UTSJSONObject
-				const detail = d['detail'] as UTSJSONObject | null
+				const detail = e['detail'] as UTSJSONObject | null
 				if (detail == null) return
 				const st = detail['scrollTop'] as number | null
 				if (st != null) {
