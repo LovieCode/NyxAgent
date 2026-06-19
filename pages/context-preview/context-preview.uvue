@@ -840,6 +840,7 @@
 						return
 					}
 					this.scrollTop = safeTop
+					this.scrollOffset = safeTop
 				}, 16)
 			},
 
