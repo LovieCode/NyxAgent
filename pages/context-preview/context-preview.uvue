@@ -812,34 +812,34 @@
 				return offsetTop
 			},
 
-			/** 滚动到区块内匹配位置，实时测量 + 直接赋值，尽量居中 */
+			/** 滚动到区块内匹配位置，尽量居中。
+			 *  用 layoutTopMap（滚动位置 0 时测量的绝对位置）+ $nextTick 两步法
+			 *  强制触发 scroll-top 属性更新，参考 hello uni-app x 官方 goTop 实现 */
 			scrollToSectionMatch(sectionId: string, matchStart: number): void {
 				const textOffset = this.estimateTextMatchOffset(this.fullJsonText, matchStart)
 				const viewCenter = this.scrollViewHeight > 0 ? Math.floor(this.scrollViewHeight / 2) : 300
 
-				// 实时测量区块位置，不用 layoutTopMap 缓存
-				const query = uni.createSelectorQuery().in(this)
-				query.select('#' + sectionId).boundingClientRect()
-				query.select('#context-scroll').boundingClientRect()
-				query.exec((res: any) => {
-					const rows = res as UTSArray<any> | null
-					if (rows == null || rows.length < 2) return
-					const sectionRect = rows[0] as NodeInfo | null
-					const scrollRect = rows[1] as NodeInfo | null
-					if (sectionRect == null || scrollRect == null) return
-					const sectionTop = sectionRect.top as number | null
-					const containerTop = scrollRect.top as number | null
-					if (sectionTop == null || containerTop == null) return
+				const cachedTop = this.layoutTopMap[sectionId] as number | null
+				if (cachedTop == null) {
+					// 缓存未命中：触发重测并延迟重试
+					this.scheduleLayoutCache()
+					setTimeout(() => {
+						this.scrollToSectionMatch(sectionId, matchStart)
+					}, 350)
+					return
+				}
 
-					// 区块在滚动容器内的相对位置
-					const sectionRelative = sectionTop - containerTop
-					let target = sectionRelative + textOffset - viewCenter
-					if (target < 0) target = 0
+				let target = cachedTop + textOffset - viewCenter
+				if (target < 0) target = 0
 
-					// 直接赋值（和滚动条拖拽一致），不走 commitScrollTop 的延迟 / seq 取消
-					this.scrollTop = target
-					this.scrollOffset = target
-				})
+				// 官方两步法：先设回当前实际值（scrollOffset 由 @scroll 事件同步），
+				// 延迟一帧再设目标值，确保每次传给 scroll-view 的都是"新值"
+				this.scrollTop = this.scrollOffset
+				const self = this
+				setTimeout(() => {
+					self.scrollTop = target
+					self.scrollOffset = target
+				}, 50)
 			},
 
 			scrollToTop() {
