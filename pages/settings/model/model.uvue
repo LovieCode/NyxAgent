@@ -44,7 +44,7 @@
 						@click="selectModel(m.id)"
 					>
 						<text class="pill-text" :class="selectedModel == m.id ? 'pill-text-active' : ''">{{m.id}}</text>
-						<text v-if="m.context != null && m.context > 0" class="pill-ctx">{{(m.context / 1000)}}k</text>
+						<text v-if="m.context != null && m.context > 0" class="pill-ctx">{{(m.context! / 1000)}}k</text>
 					</view>
 				</view>
 			</view>

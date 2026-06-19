@@ -108,11 +108,11 @@
 						<view class="toolbar-grid-icon"><oui-icon-unix name="robot" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">记忆管理</text>
 					</view>
-					<view class="toolbar-grid-item" @click="openContextPreview">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="eye" size="26px" color="var(--rice-primary-color)" /></view>
-						<text class="toolbar-grid-label">原始上下文</text>
-					</view>
 					<view class="toolbar-grid-item" @click="organizeMemoryFromToolbar">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="robot" size="26px" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">记忆整理</text>
+					</view>
+					<view class="toolbar-grid-item" @click="openContextPreview">
 						<view class="toolbar-grid-icon"><oui-icon-unix name="robot" size="26px" color="var(--rice-primary-color)" /></view>
 						<text class="toolbar-grid-label">记忆整理</text>
 					</view>
