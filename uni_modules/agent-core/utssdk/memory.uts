@@ -541,21 +541,18 @@ export function buildBufferInjection(agentId: string, personId: string, conversa
 }
 
 export function searchCoreMemory(agentId: string, personId: string, conversationId: string, query: string, limit: number): string {
-	initMemoryTables()
-	const aid = normalizeAgentId(agentId)
-	const pid = normalizeMemoryPersonId(personId)
-	const cid = normalizeConversationId(conversationId)
-	let safeLimit = limit
-	if (safeLimit <= 0) safeLimit = 8
-	if (safeLimit > 10) safeLimit = 10
-	const limitText = safeLimit + ''
-	const db = getDb()
-	const result = db.query(
-		'SELECT id, scope, category, content, priority, updated_at FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND content LIKE ? AND (scope = \'always\' OR scope = \'rule\' OR person_id = ? OR conversation_id = ?) ORDER BY pinned DESC, priority DESC, updated_at DESC LIMIT ' + limitText,
-		[aid, buildLikeQuery(query), pid, cid]
-	)
-	db.close()
-	const rows = rowsToObjects(result)
+	const filter: MemorySearchFilter = {
+		query: query,
+		searchMode: 'fuzzy',
+		scope: '',
+		category: '',
+		priorityMin: 0,
+		priorityMax: 0,
+		startTime: 0,
+		endTime: 0,
+		limit: limit,
+	}
+	const rows = searchCoreMemoryAdvanced(agentId, personId, conversationId, filter)
 	if (rows.length == 0) {
 		return '重要信息库：无匹配。'
 	}
@@ -661,20 +658,18 @@ export function searchCoreMemoryAdvanced(agentId: string, personId: string, conv
 }
 
 export function searchConversationHistory(agentId: string, query: string, limit: number): string {
-	initMemoryTables()
-	const aid = normalizeAgentId(agentId)
-	let safeLimit = limit
-	if (safeLimit <= 0) safeLimit = 8
-	if (safeLimit > 12) safeLimit = 12
-	const limitText = safeLimit + ''
-	const likeQuery = buildLikeQuery(query)
-	const db = getDb()
-	const result = db.query(
-		'SELECT m.role, m.content, m.timestamp, c.title FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.agent_id = ? AND (m.role = \'user\' OR m.role = \'assistant\') AND m.extra NOT LIKE \'%tool_calls%\' AND m.content LIKE ? ORDER BY m.timestamp DESC LIMIT ' + limitText,
-		[aid, likeQuery]
-	)
-	db.close()
-	const rows = rowsToObjects(result)
+	const filter: MemorySearchFilter = {
+		query: query,
+		searchMode: 'fuzzy',
+		scope: '',
+		category: '',
+		priorityMin: 0,
+		priorityMax: 0,
+		startTime: 0,
+		endTime: 0,
+		limit: limit,
+	}
+	const rows = searchConversationHistoryAdvanced(agentId, filter)
 	if (rows.length == 0) {
 		return '历史记录：无匹配。'
 	}

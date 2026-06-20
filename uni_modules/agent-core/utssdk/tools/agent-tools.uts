@@ -24,9 +24,8 @@ import {
     KnowledgeRenderBlock,
 } from '@/utils/markdown.uts'
 import {
-	searchCoreMemory,
 	searchCoreMemoryAdvanced,
-	searchConversationHistory,
+	searchConversationHistoryAdvanced,
 	searchConversationHistoryAdvanced,
 	updateMemoryBuffer,
 	saveCoreMemory,
@@ -634,7 +633,7 @@ class MemorySearchTool implements AgentTool {
 		this.personId = personId
 	}
 
-	execute(args: UTSJSONObject): Promise<ToolResult> {
+		execute(args: UTSJSONObject): Promise<ToolResult> {
 		return new Promise<ToolResult>((resolve) => {
 			const rawQuery = args['query'] as string | null
 			const rawLimit = args['limit'] as number | null
@@ -652,41 +651,27 @@ class MemorySearchTool implements AgentTool {
 			const limit = rawLimit != null ? rawLimit : 8
 			const targetPersonId = buildMemoryTargetPersonId(rawTargetType != null ? rawTargetType : 'user', rawTargetId != null ? rawTargetId : this.personId)
 
-			// 检查是否使用了高级筛选参数
-			const hasAdvancedFilter = rawSearchMode != null || rawScope != null || rawCategory != null ||
-				rawPriorityMin != null || rawPriorityMax != null || rawStartDate != null || rawEndDate != null
+			const searchMode = rawSearchMode != null ? rawSearchMode : 'fuzzy'
+			const startTime = this.parseDateToTimestamp(rawStartDate)
+			const endTime = this.parseEndDateToTimestamp(rawEndDate)
 
-			if (hasAdvancedFilter) {
-				// 使用高级搜索
-				const searchMode = rawSearchMode != null ? rawSearchMode : 'fuzzy'
-				const startTime = this.parseDateToTimestamp(rawStartDate)
-				const endTime = this.parseEndDateToTimestamp(rawEndDate)
+			const filter: MemorySearchFilter = {
+				query: query,
+				searchMode: searchMode,
+				scope: rawScope != null ? rawScope : '',
+				category: rawCategory != null ? rawCategory : '',
+				priorityMin: rawPriorityMin != null ? rawPriorityMin : 0,
+				priorityMax: rawPriorityMax != null ? rawPriorityMax : 0,
+				startTime: startTime,
+				endTime: endTime,
+				limit: limit,
+			} as MemorySearchFilter
 
-				const filter: MemorySearchFilter = {
-					query: query,
-					searchMode: searchMode,
-					scope: rawScope != null ? rawScope : '',
-					category: rawCategory != null ? rawCategory : '',
-					priorityMin: rawPriorityMin != null ? rawPriorityMin : 0,
-					priorityMax: rawPriorityMax != null ? rawPriorityMax : 0,
-					startTime: startTime,
-					endTime: endTime,
-					limit: limit,
-				} as MemorySearchFilter
-
-				const coreRows = searchCoreMemoryAdvanced(this.agentId, targetPersonId, this.conversationId, filter)
-				const historyRows = searchConversationHistoryAdvanced(this.agentId, filter)
-
-				const coreText = this.formatAdvancedCoreResult(coreRows)
-				const historyText = this.formatAdvancedHistoryResult(historyRows)
-				resolve({ content: coreText + '\n\n' + historyText, isError: false } as ToolResult)
-				return
-			}
-
-			// 向后兼容：使用原有简单搜索
-			const core = searchCoreMemory(this.agentId, targetPersonId, this.conversationId, query, limit)
-			const history = searchConversationHistory(this.agentId, query, limit)
-			resolve({ content: core + '\n\n' + history, isError: false } as ToolResult)
+			const coreRows = searchCoreMemoryAdvanced(this.agentId, targetPersonId, this.conversationId, filter)
+			const historyRows = searchConversationHistoryAdvanced(this.agentId, filter)
+			const coreText = this.formatAdvancedCoreResult(coreRows)
+			const historyText = this.formatAdvancedHistoryResult(historyRows)
+			resolve({ content: coreText + '\n\n' + historyText, isError: false } as ToolResult)
 		})
 	}
 
