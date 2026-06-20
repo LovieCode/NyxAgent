@@ -71,14 +71,15 @@ function makeFileItem(name: string, path: string, isDir: boolean, size: number, 
 /**
  * 规范化路径：统一分隔符，合并多余斜杠。
  *
- * 注意：
- * - 保留 `unifile://` 协议前缀的双斜杠（HBuilderX 4.71+ 使用该协议）
- * - 协议路径保留原始末尾斜杠状态（不强制添加或去除）
+ * 规则：
+ * - 保留 `unifile://` / `file://` 协议前缀的双斜杠
+ * - 协议根目录（如 unifile://usr/）保留末尾斜杠，readdirSync 要求
+ * - 协议子路径去除末尾斜杠
  * - 普通路径去除末尾斜杠
  */
 export function normalizePath(path: string): string {
 	let result = path.trim().replace(/\\/g, SEP)
-	// 保留协议前缀的双斜杠（如 unifile://usr/）
+	// 提取协议前缀
 	let protocol = ''
 	if (result.startsWith('unifile://')) {
 		protocol = 'unifile://'
@@ -91,13 +92,41 @@ export function normalizePath(path: string): string {
 	while (result.indexOf(SEP + SEP) >= 0) {
 		result = result.replace(/\/\/+/g, SEP)
 	}
-	// 普通路径去除末尾斜杠；协议路径保留原始末尾斜杠状态
-	if (protocol == '') {
+	// 协议路径处理末尾斜杠
+	if (protocol != '') {
+		// 协议根目录：路径为空或只有一级（如 usr、cache）时，确保带末尾斜杠
+		// 判断"根目录"：路径中不含斜杠，或只有一级目录
+		const trimmedResult = result.endsWith(SEP) ? result.substring(0, result.length - 1) : result
+		const slashCount = countChar(trimmedResult, SEP)
+		// unifile://usr/ 是根（一级），unifile://usr/exports 是子路径（二级）
+		if (slashCount <= 0 && trimmedResult != '') {
+			// 只有一级目录名，是根，加末尾斜杠
+			result = trimmedResult + SEP
+		} else if (trimmedResult == '') {
+			// 协议后为空，加斜杠
+			result = SEP
+		} else {
+			// 子路径，去除末尾斜杠
+			result = trimmedResult
+		}
+	} else {
+		// 普通路径去除末尾斜杠
 		if (result.length > 1 && result.endsWith(SEP)) {
 			result = result.substring(0, result.length - 1)
 		}
 	}
 	return protocol + result
+}
+
+/** 统计字符出现次数 */
+function countChar(s: string, c: string): number {
+	let count = 0
+	for (let i = 0; i < s.length; i++) {
+		if (s.charAt(i) == c) {
+			count++
+		}
+	}
+	return count
 }
 
 /**
@@ -133,26 +162,57 @@ export function joinPath(base: string, name: string): string {
 
 /**
  * 获取父目录路径。根目录返回空字符串。
+ * 协议根目录的父目录返回自身（无法再向上）。
  */
 export function parentPath(path: string): string {
-	const normalized = normalizePath(path)
-	const lastSep = normalized.lastIndexOf(SEP)
-	if (lastSep <= 0) {
+	// 提取协议前缀
+	let protocol = ''
+	let p = path
+	if (p.startsWith('unifile://')) {
+		protocol = 'unifile://'
+		p = p.substring(10)
+	} else if (p.startsWith('file://')) {
+		protocol = 'file://'
+		p = p.substring(7)
+	}
+	// 去除末尾斜杠
+	while (p.length > 0 && p.endsWith(SEP)) {
+		p = p.substring(0, p.length - 1)
+	}
+	const lastSep = p.lastIndexOf(SEP)
+	if (lastSep < 0) {
+		// 只有一级目录（如 usr），是协议根，返回空
 		return ''
 	}
-	return normalized.substring(0, lastSep)
+	const parent = p.substring(0, lastSep)
+	// 如果父目录是协议根（如 unifile://usr），加末尾斜杠
+	const parentSlashCount = countChar(parent, SEP)
+	if (protocol != '' && parentSlashCount == 0 && parent != '') {
+		return protocol + parent + SEP
+	}
+	return protocol + parent
 }
 
 /**
  * 获取路径末尾的文件/文件夹名。
  */
 export function basename(path: string): string {
-	const normalized = normalizePath(path)
-	const lastSep = normalized.lastIndexOf(SEP)
-	if (lastSep < 0) {
-		return normalized
+	// 提取协议前缀
+	let p = path
+	if (p.startsWith('unifile://')) {
+		p = p.substring(10)
+	} else if (p.startsWith('file://')) {
+		p = p.substring(7)
 	}
-	return normalized.substring(lastSep + 1)
+	// 去除末尾斜杠
+	while (p.length > 0 && p.endsWith(SEP)) {
+		p = p.substring(0, p.length - 1)
+	}
+	const lastSep = p.lastIndexOf(SEP)
+	if (lastSep < 0) {
+		return p
+	}
+	return p.substring(lastSep + 1)
 }
 
 /**
@@ -161,14 +221,10 @@ export function basename(path: string): string {
  */
 export function getDefaultRoot(): string {
 	const userDataPath = uni.env.USER_DATA_PATH
-	console.log('[file-manager] USER_DATA_PATH 原始值: ' + (userDataPath != null ? userDataPath : 'null'))
 	if (userDataPath != null && userDataPath != '') {
-		const normalized = normalizePath(userDataPath)
-		console.log('[file-manager] USER_DATA_PATH 规范化后: ' + normalized)
-		return normalized
+		return normalizePath(userDataPath)
 	}
 	const cachePath = uni.env.CACHE_PATH
-	console.log('[file-manager] CACHE_PATH 原始值: ' + (cachePath != null ? cachePath : 'null'))
 	if (cachePath != null && cachePath != '') {
 		return normalizePath(cachePath)
 	}
@@ -217,60 +273,13 @@ export function exists(path: string): boolean {
 export function listDir(dirPath: string): FileItem[] {
 	const normalized = normalizePath(dirPath)
 	if (normalized == '') {
-		console.log('[file-manager] listDir: 路径为空')
 		return []
 	}
-	console.log('[file-manager] listDir 输入路径: ' + dirPath)
-	console.log('[file-manager] listDir 规范化路径: ' + normalized)
-
 	const fm = uni.getFileSystemManager()
-
-	// 诊断：测试多种路径格式
-	// 测试1：直接用原始输入
-	try {
-		const test1 = fm.readdirSync(dirPath)
-		console.log('[file-manager] 诊断1 原始路径成功: ' + JSON.stringify(test1))
-	} catch (e: any) {
-		console.log('[file-manager] 诊断1 原始路径失败: ' + (e != null ? ('' + e) : 'null'))
-	}
-	// 测试2：用规范化后的路径
-	try {
-		const test2 = fm.readdirSync(normalized)
-		console.log('[file-manager] 诊断2 规范化路径成功: ' + JSON.stringify(test2))
-	} catch (e: any) {
-		console.log('[file-manager] 诊断2 规范化路径失败: ' + (e != null ? ('' + e) : 'null'))
-	}
-	// 测试3：去掉末尾斜杠
-	const noTrailingSlash = normalized.endsWith('/') ? normalized.substring(0, normalized.length - 1) : normalized
-	if (noTrailingSlash != normalized) {
-		try {
-			const test3 = fm.readdirSync(noTrailingSlash)
-			console.log('[file-manager] 诊断3 去末尾斜杠成功: ' + JSON.stringify(test3))
-		} catch (e: any) {
-			console.log('[file-manager] 诊断3 去末尾斜杠失败: ' + (e != null ? ('' + e) : 'null'))
-		}
-	}
-	// 测试4：Android 绝对路径转换
-	// #ifdef APP-ANDROID
-	try {
-		const absPath = UTSAndroid.convert2AbsFullPath(dirPath)
-		console.log('[file-manager] 诊断4 Android绝对路径: ' + absPath)
-		const test4 = fm.readdirSync(absPath)
-		console.log('[file-manager] 诊断4 Android绝对路径成功: ' + JSON.stringify(test4))
-	} catch (e: any) {
-		console.log('[file-manager] 诊断4 Android绝对路径失败: ' + (e != null ? ('' + e) : 'null'))
-	}
-	// #endif
-
 	let names: string[]
 	try {
-		const raw = fm.readdirSync(normalized)
-		console.log('[file-manager] listDir readdirSync 原始返回类型: ' + typeof raw)
-		console.log('[file-manager] listDir readdirSync 原始返回值: ' + JSON.stringify(raw))
-		names = raw as string[]
-		console.log('[file-manager] listDir 转换后 names 长度: ' + names.length)
-	} catch (e: any) {
-		console.log('[file-manager] listDir readdirSync 异常: ' + (e != null ? ('' + e) : 'null'))
+		names = fm.readdirSync(normalized) as string[]
+	} catch (_e: any) {
 		return []
 	}
 	const items: FileItem[] = []
