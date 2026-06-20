@@ -134,6 +134,29 @@ export function getInternalCacheDir(): string {
 }
 
 /**
+ * 获取外置沙盒 files 目录。
+ * - Android：/storage/emulated/0/Android/data/<pkg>/files/
+ * - 其他平台：uni.env.USER_DATA_PATH
+ */
+export function getExternalFilesDir(): string {
+	// #ifdef APP-ANDROID
+	const context = getAndroidContext()
+	const dir = context.getExternalFilesDir(null)
+	if (dir != null) {
+		return dir.absolutePath
+	}
+	return ''
+	// #endif
+	// #ifndef APP-ANDROID
+	const userDataPath = uni.env.USER_DATA_PATH
+	if (userDataPath != null && userDataPath != '') {
+		return normalizePath(userDataPath)
+	}
+	return ''
+	// #endif
+}
+
+/**
  * 获取 SQLite 数据库目录。
  * - Android：/data/data/<pkg>/databases/（系统管理，仅用于读取数据库文件信息）
  * - 其他平台：返回空字符串
@@ -331,10 +354,10 @@ export function getRootDirOptions(): RootDirOption[] {
  */
 export function listRootContents(): FileItem[] {
 	const items: FileItem[] = []
-	// 沙盒文件：优先用 USER_DATA_PATH
-	const userDataPath = uni.env.USER_DATA_PATH
-	if (userDataPath != null && userDataPath != '') {
-		const userItems = listDir(normalizePath(userDataPath))
+	// 沙盒文件：Android 用外置 filesDir，其他平台用 USER_DATA_PATH
+	const sandboxDir = getExternalFilesDir()
+	if (sandboxDir != '') {
+		const userItems = listDir(sandboxDir)
 		for (let i = 0; i < userItems.length; i++) {
 			items.push(userItems[i])
 		}
