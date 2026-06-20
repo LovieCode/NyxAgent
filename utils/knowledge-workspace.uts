@@ -670,12 +670,10 @@ function formatNoteListLine(note: UTSJSONObject): string {
 
 export function buildKnowledgeWorkspaceGuide(agentId: string): string {
 	return [
-		'知识文件夹访问范围：',
-		'- agents/' + agentId + '/notes/<id>.md：你的私有笔记（★优先使用）',
+		'知识文件夹（只能写你自己的 agents/' + agentId + '/ 私有空间）：',
+		'- agents/' + agentId + '/notes/<id>.md：你的私有笔记',
 		'- agents/' + agentId + '/todo.md：你的私有待办',
-		'- user/default/notes/<id>.md：用户共享笔记',
-		'- user/default/todo.md：用户共享待办',
-		'规则：新笔记默认写入 agents/' + agentId + '/notes/',
+		'（user/default/ 是共享空间，只读，不可写入）',
 		'渲染规则：',
 		'- #/##/### 渲染为标题',
 		'- - [ ] 文本 渲染为未完成待办',
@@ -787,6 +785,10 @@ export function writeKnowledgeWorkspaceFile(agentId: string, rawPath: string, co
 	}
 	const ownerType = readString(parsed, 'ownerType')
 	const ownerId = readString(parsed, 'ownerId')
+	// 写操作锁死在当前智能体私有目录
+	if (ownerType != OWNER_AGENT || ownerId != agentId) {
+		return false
+	}
 	const rest = readString(parsed, 'rest')
 	if (rest == 'todo.md') {
 		const todos = parseTodoMarkdown(ownerType, ownerId, content)

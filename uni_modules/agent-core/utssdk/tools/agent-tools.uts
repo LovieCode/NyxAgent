@@ -391,13 +391,13 @@ class KnowledgeFolderReadTool implements AgentTool {
  */
 class KnowledgeFolderWriteTool implements AgentTool {
 	name: string = 'knowledge_write'
-	description: string = '写入待办/笔记知识文件。优先写入你自己的 agents/<id>/notes/ 私有空间；user/default/ 是共享空间。todo.md 使用 - [ ] / - [x] 行解析；notes/<id>.md 保存为 Markdown 笔记。'
+	description: string = '写入待办/笔记到你自己的私有知识空间 agents/<id>/。只能写你自己的目录，不能写 user/ 共享空间。todo.md 使用 - [ ] / - [x] 行解析；notes/<id>.md 保存为 Markdown 笔记。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
 			'path': {
 				'type': 'string',
-				'description': '要写入的路径。自己的笔记用 agents/<id>/notes/xxx.md，共享内容用 user/default/xxx'
+				'description': '要写入的路径，必须是 agents/<id>/todo.md 或 agents/<id>/notes/xxx.md'
 			},
 			'content': {
 				'type': 'string',
