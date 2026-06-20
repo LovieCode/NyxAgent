@@ -347,22 +347,28 @@ export function getRootDirOptions(): RootDirOption[] {
 /**
  * 列出根目录内容：合并沙盒文件和 Agent 目录两个来源。
  *
- * - 沙盒文件（uni.env.USER_DATA_PATH）：原名显示
- * - Agent 目录（/data/data/<pkg>/files/agents/）：每个子目录加 "[Agent] " 前缀
+ * 按来源分三组排序：
+ *   1. 沙盒文件（外置 filesDir）— 原名显示
+ *   2. 内部精选目录（sessions/exports 等）
+ *   3. Agent 目录 — 每个子目录加 "[Agent] " 前缀
  *
  * 用于文件管理页面的根视图。
  */
 export function listRootContents(): FileItem[] {
-	const items: FileItem[] = []
-	// 沙盒文件：Android 用外置 filesDir，其他平台用 USER_DATA_PATH
+	const sandboxItems: FileItem[] = []
+	const internalItems: FileItem[] = []
+	const agentItems: FileItem[] = []
+
+	// 第 1 组：沙盒文件
 	const sandboxDir = getExternalFilesDir()
 	if (sandboxDir != '') {
 		const userItems = listDir(sandboxDir)
 		for (let i = 0; i < userItems.length; i++) {
-			items.push(userItems[i])
+			sandboxItems.push(userItems[i])
 		}
 	}
-	// 内部存储精选目录（避免显示编译产物等杂文件）
+
+	// 第 2 组：内部存储精选目录
 	const filesDir = getInternalFilesDir()
 	if (filesDir != '') {
 		const knownDirs = ['sessions', 'exports', 'imports', 'laoqianjunzi-sqlite-snapshots']
@@ -370,7 +376,7 @@ export function listRootContents(): FileItem[] {
 			const subPath = filesDir + '/' + knownDirs[k]
 			if (exists(subPath)) {
 				const stat = statItem(subPath)
-				items.push({
+				internalItems.push({
 					name: knownDirs[k],
 					path: subPath,
 					isDirectory: stat.isDirectory,
@@ -379,12 +385,13 @@ export function listRootContents(): FileItem[] {
 				})
 			}
 		}
-		// Agent 子目录单独列出来，加别名
-		const agentItems = listDir(filesDir + '/agents')
-		for (let i = 0; i < agentItems.length; i++) {
-			const agent = agentItems[i]
+
+		// 第 3 组：Agent 子目录
+		const agentList = listDir(filesDir + '/agents')
+		for (let i = 0; i < agentList.length; i++) {
+			const agent = agentList[i]
 			if (agent.isDirectory) {
-				items.push({
+				agentItems.push({
 					name: '[Agent] ' + agent.name,
 					path: agent.path,
 					isDirectory: true,
@@ -394,20 +401,38 @@ export function listRootContents(): FileItem[] {
 			}
 		}
 	}
-	// 排序：目录在前，文件在后；同类按名称升序
-	items.sort((a: FileItem, b: FileItem): number => {
-		if (a.isDirectory != b.isDirectory) {
-			return a.isDirectory ? -1 : 1
-		}
-		if (a.name < b.name) {
-			return -1
-		}
-		if (a.name > b.name) {
-			return 1
-		}
-		return 0
-	})
-	return items
+
+	// 各组内部排序：目录在前，文件在后，同类按名称升序
+	const sortGroup = (arr: FileItem[]): void => {
+		arr.sort((a: FileItem, b: FileItem): number => {
+			if (a.isDirectory != b.isDirectory) {
+				return a.isDirectory ? -1 : 1
+			}
+			if (a.name < b.name) {
+				return -1
+			}
+			if (a.name > b.name) {
+				return 1
+			}
+			return 0
+		})
+	}
+	sortGroup(sandboxItems)
+	sortGroup(internalItems)
+	sortGroup(agentItems)
+
+	// 按顺序拼接：沙盒 → 内部目录 → Agent
+	const result: FileItem[] = []
+	for (let i = 0; i < sandboxItems.length; i++) {
+		result.push(sandboxItems[i])
+	}
+	for (let i = 0; i < internalItems.length; i++) {
+		result.push(internalItems[i])
+	}
+	for (let i = 0; i < agentItems.length; i++) {
+		result.push(agentItems[i])
+	}
+	return result
 }
 
 /**

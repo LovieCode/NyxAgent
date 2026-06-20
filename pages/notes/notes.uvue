@@ -25,32 +25,38 @@
 					<text class="empty-hint">点击右下角按钮创建文件或文件夹</text>
 				</view>
 				<view v-else>
-					<view
-						v-for="item in items"
-						:key="item.path"
-						class="file-item"
-						@click="onItemClick(item)"
-						@longpress="onItemLongPress(item)"
-					>
-						<view class="file-icon">
-							<oui-icon-unix
-								:name="getFileIconName(item)"
-								size="44rpx"
-								:color="getFileIconColor(item)"
-							/>
+					<template v-for="(item, index) in items" :key="item.path">
+						<!-- 分组标题：名称包含 [Agent] 时视为 Agent 分组 -->
+						<view v-if="isGroupStart(index, item)" class="section-header">
+							<view class="section-divider" />
+							<text class="section-label">{{ getSectionLabel(item) }}</text>
+							<view class="section-divider" />
 						</view>
-						<view class="file-info">
-							<text class="file-name">{{ item.name }}</text>
-						<view class="file-meta">
-							<text v-if="item.isDirectory" class="file-meta-text">文件夹</text>
-							<text v-else class="file-meta-text">{{ fmtFileSize(item.size) }}</text>
-							<text class="file-meta-time">{{ fmtTime(item.lastModified) }}</text>
+						<view
+							class="file-item"
+							@click="onItemClick(item)"
+							@longpress="onItemLongPress(item)"
+						>
+							<view class="file-icon">
+								<oui-icon-unix
+									:name="getFileIconName(item)"
+									size="44rpx"
+									:color="getFileIconColor(item)"
+								/>
+							</view>
+							<view class="file-info">
+								<text class="file-name">{{ item.name }}</text>
+							<view class="file-meta">
+								<text v-if="item.isDirectory" class="file-meta-text">文件夹</text>
+								<text v-else class="file-meta-text">{{ fmtFileSize(item.size) }}</text>
+								<text class="file-meta-time">{{ fmtTime(item.lastModified) }}</text>
+							</view>
+							</view>
+							<view class="file-arrow" v-if="item.isDirectory == true">
+								<oui-icon-unix name="right" size="32rpx" color="#D1D5DB" />
+							</view>
 						</view>
-						</view>
-						<view class="file-arrow" v-if="item.isDirectory == true">
-							<oui-icon-unix name="right" size="32rpx" color="#D1D5DB" />
-						</view>
-					</view>
+					</template>
 				</view>
 			</scroll-view>
 
@@ -505,6 +511,29 @@
 				return '#9CA3AF'
 			},
 
+			/** 检测是否分组起始（名称含 [Agent] 时为 Agent 组） */
+			isGroupStart(index : number, item : FileItem) : boolean {
+				if (index == 0) {
+					return true
+				}
+				const prevItem = this.items[index - 1]
+				if (prevItem == null) {
+					return true
+				}
+				// 分组依据：名称是否以 [Agent] 开头
+				const curIsAgent = item.name.startsWith('[Agent]')
+				const prevIsAgent = prevItem.name.startsWith('[Agent]')
+				return curIsAgent != prevIsAgent
+			},
+
+			/** 获取分组标签 */
+			getSectionLabel(item : FileItem) : string {
+				if (item.name.startsWith('[Agent]')) {
+					return 'Agent 目录'
+				}
+				return '文件目录'
+			},
+
 			/** 格式化文件大小（模板调用包装） */
 			fmtFileSize(bytes : number) : string {
 				return formatFileSize(bytes)
@@ -587,6 +616,26 @@
 	.empty-hint {
 		font-size: 24rpx;
 		color: #D1D5DB;
+	}
+
+	/* 分组标题 */
+	.section-header {
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 0 8rpx 0;
+	}
+
+	.section-divider {
+		flex: 1;
+		height: 1rpx;
+		background-color: #E5E7EB;
+	}
+
+	.section-label {
+		font-size: 22rpx;
+		color: #9CA3AF;
+		margin: 0 16rpx;
+		flex-shrink: 0;
 	}
 
 	/* 文件项 */
