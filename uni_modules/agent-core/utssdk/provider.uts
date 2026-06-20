@@ -1,0 +1,544 @@
+/**
+ * 提供商管理（SDK 模块）
+ *
+ * 管理多个 LLM 提供商的注册信息，以及各任务类型的默认模型分配。
+ * 内置 11 个提供商预设（DeepSeek/OpenAI/Anthropic/豆包/xAI/零一万物/Kimi/MiniMax/小米/千问/硅基流动）。
+ */
+
+import {
+	getAllProviders as dbGetAllProviders,
+	getProviderById as dbGetProviderById,
+	saveProvider as dbSaveProvider,
+	deleteProvider as dbDeleteProvider,
+	toggleProvider as dbToggleProvider,
+	getAppSetting,
+	setAppSetting,
+} from '@/utils/database.uts'
+
+// ==================== 模型数据结构 ====================
+
+/**
+ * 单个模型信息
+ *
+ * ctxStr / maxTokensStr / expanded 是 UI 状态，序列化时忽略
+ */
+export type ModelInfo = {
+	id: string
+	name?: string
+	context?: number
+	maxTokens?: number
+	/** 自定义参数 JSON 字符串，用于传递 provider-specific 的参数 */
+	params?: string
+	// === UI state (不序列化) ===
+	ctxStr?: string
+	maxTokensStr?: string
+	expanded?: boolean
+}
+
+/** LLM 调用配置 */
+export type LLMConfig = {
+	providerId: string
+	apiKey: string
+	baseUrl: string
+	model: string
+}
+
+/**
+ * 规范化 baseUrl：去掉末尾的 /v1 或 /v1/
+ */
+export function normalizeBaseUrl(url: string): string {
+	let result = url
+	if (result.endsWith('/v1')) {
+		result = result.substring(0, result.length - 3)
+	} else if (result.endsWith('/v1/')) {
+		result = result.substring(0, result.length - 4)
+	}
+	if (result.endsWith('/')) {
+		result = result.substring(0, result.length - 1)
+	}
+	return result
+}
+
+/**
+ * 获取默认 URL（兜底）
+ */
+function getDefaultUrl(providerId: string): string {
+	if (providerId == 'anthropic') return 'https://api.anthropic.com'
+	if (providerId == 'openai') return 'https://api.openai.com'
+	if (providerId == 'deepseek') return 'https://api.deepseek.com'
+	if (providerId == 'zai') return 'https://api.z.ai/api/coding/paas/v4'
+	if (providerId == 'kimi-coding') return 'https://api.kimi.com/coding'
+	if (providerId == 'minimax-cn') return 'https://api.minimaxi.com/anthropic'
+	if (providerId == 'xiaomi') return 'https://api.xiaomimimo.com/v1'
+	if (providerId == 'ant-ling') return 'https://api.ant-ling.com/v1'
+	if (providerId == 'siliconflow') return 'https://api.siliconflow.cn/v1'
+	if (providerId == 'volcengine') return 'https://ark.cn-beijing.volces.com/api/v3'
+	if (providerId == 'xai') return 'https://api.x.ai'
+	return ''
+}
+
+// ==================== 提供商 CRUD ====================
+
+/**
+ * 获取所有提供商
+ */
+export function getAllProviders(): UTSJSONObject[] {
+	return dbGetAllProviders()
+}
+
+/**
+ * 根据 id 获取提供商
+ */
+export function getProviderById(id: string): UTSJSONObject | null {
+	return dbGetProviderById(id)
+}
+
+/**
+ * 将模型数组序列化为 JSON 字符串（存数据库用）
+ */
+export function serializeModels(models: ModelInfo[]): string {
+	const list: UTSJSONObject[] = []
+	for (let i = 0; i < models.length; i++) {
+		const m = models[i]
+		const obj: UTSJSONObject = { id: m.id } as UTSJSONObject
+		if (m.name != null && m.name != '') {
+			obj['name'] = m.name
+		}
+		if (m.context != null && m.context > 0) {
+			obj['context'] = m.context
+		}
+		if (m.maxTokens != null && m.maxTokens > 0) {
+			obj['maxTokens'] = m.maxTokens
+		}
+		if (m.params != null && m.params != '') {
+			obj['params'] = m.params
+		}
+		// UI state 不存
+		list.push(obj)
+	}
+	return JSON.stringify(list)
+}
+
+/**
+ * 从 JSON 字符串解析模型列表（兼容旧格式 ["id1","id2"]）
+ */
+export function parseModels(modelsStr: string): ModelInfo[] {
+	if (modelsStr == '' || modelsStr == '[]') {
+		return []
+	}
+	try {
+		const raw = JSON.parse(modelsStr) as any[]
+		const result: ModelInfo[] = []
+		for (let i = 0; i < raw.length; i++) {
+			const item = raw[i]
+			if (typeof item == 'string') {
+				// 旧格式 ["model-id"]
+				result.push({ id: item } as ModelInfo)
+			} else if (typeof item == 'object' && item != null) {
+				// 新格式 [{"id":"...","context":...}]
+				const obj = item as UTSJSONObject
+				const mid = obj['id'] as string | null
+				if (mid != null && mid != '') {
+					const mi: ModelInfo = { id: mid, ctxStr: '', maxTokensStr: '', expanded: false } as ModelInfo
+					// name
+					const nm = obj['name'] as string | null
+					if (nm != null && nm != '') {
+						mi.name = nm
+					}
+					// context
+					const ctx = obj['context'] as number | null
+					if (ctx != null && ctx > 0) {
+						mi.context = ctx
+						mi.ctxStr = ctx + ''
+					}
+					// maxTokens
+					const mt = obj['maxTokens'] as number | null
+					if (mt != null && mt > 0) {
+						mi.maxTokens = mt
+						mi.maxTokensStr = mt + ''
+					}
+					// custom params
+					const pms = obj['params'] as string | null
+					if (pms != null && pms != '') {
+						mi.params = pms
+					}
+					result.push(mi)
+				}
+			}
+		}
+		return result
+	} catch (_e: any) {
+		return []
+	}
+}
+
+/**
+ * 获取提供商的模型列表（返回 ModelInfo[]）
+ */
+export function getProviderModels(id: string): ModelInfo[] {
+	const p = dbGetProviderById(id)
+	if (p == null) {
+		return []
+	}
+	const modelsStr = p['models'] as string | null
+	if (modelsStr == null || modelsStr == '') {
+		return []
+	}
+	return parseModels(modelsStr)
+}
+
+/**
+ * 获取提供商的模型 ID 列表（向后兼容）
+ */
+export function getProviderModelIds(id: string): string[] {
+	const models = getProviderModels(id)
+	const ids: string[] = []
+	for (let i = 0; i < models.length; i++) {
+		ids.push(models[i].id)
+	}
+	return ids
+}
+
+/**
+ * 保存提供商（models 传 ModelInfo[]）
+ */
+export function saveProvider(
+	id: string,
+	name: string,
+	apiBase: string,
+	apiKey: string,
+	models: ModelInfo[],
+	enabled: boolean
+): void {
+	dbSaveProvider(id, name, apiBase, apiKey, serializeModels(models), enabled)
+}
+
+/**
+ * 删除提供商
+ */
+export function deleteProvider(id: string): void {
+	dbDeleteProvider(id)
+}
+
+/**
+ * 设置提供商启用状态
+ */
+export function setProviderEnabled(id: string, enabled: boolean): void {
+	dbToggleProvider(id, enabled)
+}
+
+/**
+ * 启用一个提供商（同时禁用其他）
+ */
+export function setActiveProvider(id: string): void {
+	const all = dbGetAllProviders()
+	for (let i = 0; i < all.length; i++) {
+		const p = all[i]
+		const pid = p['id'] as string
+		dbToggleProvider(pid, pid == id)
+	}
+}
+
+/**
+ * 获取提供商的有效 API 配置
+ */
+export function getProviderApiConfig(id: string): UTSJSONObject | null {
+	const p = dbGetProviderById(id)
+	if (p == null) {
+		return null
+	}
+	const apiBase = p['api_base'] as string | null
+	const apiKey = p['api_key'] as string | null
+	const models = p['models'] as string | null
+	const enabled = p['enabled'] as number | null
+	return {
+		api_base: apiBase != null ? apiBase : '',
+		api_key: apiKey != null ? apiKey : '',
+		models: models != null ? models : '[]',
+		enabled: enabled != null ? enabled : 0,
+	} as UTSJSONObject
+}
+
+// ==================== 获取模型列表 ====================
+
+/**
+ * 从提供商的 API 获取模型列表
+ * 调用 GET {baseUrl}/v1/models
+ */
+ export function fetchProviderModels(apiBase: string, apiKey: string): Promise<string[]> {
+	return new Promise<string[]>((resolve) => {
+		let baseUrl = apiBase
+		if (baseUrl == '') {
+			console.log('[Provider] 获取模型列表 ← 地址为空')
+			resolve([])
+			return
+		}
+		// 去掉末尾 /
+		if (baseUrl.endsWith('/')) {
+			baseUrl = baseUrl.substring(0, baseUrl.length - 1)
+		}
+		const url = baseUrl + '/v1/models'
+		// 火山引擎 / 豆包 使用非标准端点 /api/v3/models
+		let fetchUrl = url
+		if (baseUrl.indexOf('volces.com') >= 0 || baseUrl.indexOf('volcengine.com') >= 0) {
+			fetchUrl = baseUrl + '/models'
+		}
+		const hasKey = apiKey != null && apiKey != ''
+		const keyPreview = hasKey ? apiKey.substring(0, apiKey.length < 8 ? apiKey.length : 8) + '...' : '无'
+		console.log('[Provider] 获取模型列表 → ' + baseUrl + ' | Key=' + keyPreview)
+
+		uni.request({
+			url: fetchUrl,
+			method: 'GET',
+			header: {
+				'Authorization': 'Bearer ' + apiKey,
+			} as UTSJSONObject,
+			success: (res) => {
+				const statusCode = res.statusCode as number
+				if (statusCode == 200) {
+					try {
+						const data = res.data as UTSJSONObject
+						if (data == null) {
+							console.log('[Provider] 获取模型列表 ← 200 | 响应体为空')
+							resolve([])
+							return
+						}
+						const modelList = data['data'] as any[] | null
+						if (modelList == null || modelList.length == 0) {
+							console.log('[Provider] 获取模型列表 ← 200 | data 数组为空，完整响应: ' + JSON.stringify(data).substring(0, JSON.stringify(data).length < 300 ? JSON.stringify(data).length : 300))
+							resolve([])
+							return
+						}
+						const ids: string[] = []
+						for (let i = 0; i < modelList.length; i++) {
+							const item = modelList[i] as UTSJSONObject
+							const mid = item['id'] as string | null
+							if (mid != null && mid != '') {
+								ids.push(mid)
+							}
+						}
+						console.log('[Provider] 获取模型列表 ← 200 | ' + ids.length + ' 个模型: ' + ids.join(', '))
+						resolve(ids)
+					} catch (_e: any) {
+						console.log('[Provider] 获取模型列表 ← 200 | JSON 解析失败')
+						resolve([])
+					}
+				} else {
+					let errBody = ''
+					try {
+						const rawData = res.data as UTSJSONObject | null
+						if (rawData != null) {
+							errBody = JSON.stringify(rawData)
+						}
+					} catch (_e: any) {}
+					const preview = errBody != '' ? errBody.substring(0, errBody.length < 300 ? errBody.length : 300) : '(无)'
+					console.log('[Provider] 获取模型列表 ← ' + statusCode + ' | ' + preview)
+					resolve([])
+				}
+			},
+			fail: (_err: any) => {
+				console.log('[Provider] 获取模型列表 ← 网络失败 | ' + url)
+				resolve([])
+			}
+		})
+	})
+}
+
+// ==================== 默认模型分配 ====================
+
+/** 任务类型中文名 */
+const taskTypeNames: UTSJSONObject = {
+	chat: '对话',
+	vision: '识图',
+	stt: '语音识别',
+	tts: '语音合成',
+} as UTSJSONObject
+
+/** 任务类型 key 前缀 */
+const TASK_KEY_PREFIX = 'default_task_'
+
+/**
+ * 获取任务类型中文名
+ */
+export function getTaskTypeName(type: string): string {
+	const name = taskTypeNames[type] as string | null
+	return name != null ? name : type
+}
+
+/**
+ * 获取某个任务的默认提供商 + 模型
+ * 返回 { providerId, model }
+ */
+export function getDefaultTaskModel(type: string): UTSJSONObject | null {
+	const key = TASK_KEY_PREFIX + type
+	const val = getAppSetting(key)
+	if (val == null || val == '') {
+		// 回退到旧版存储（迁移）
+		if (type == 'chat') {
+			const oldModel = uni.getStorageSync('settings_model') as string
+			const oldProvider = uni.getStorageSync('settings_provider_id') as string
+			if (oldModel != null && oldModel != '') {
+				return {
+					providerId: (oldProvider != null && oldProvider != '') ? oldProvider : 'deepseek',
+					model: oldModel,
+				} as UTSJSONObject
+			}
+		}
+		return null
+	}
+	try {
+		const parsed = JSON.parse(val) as UTSJSONObject
+		// 校验解析结果，避免缺少 providerId / model 的脏数据
+		const rawPid = parsed['providerId']
+		const rawModel = parsed['model']
+		if (rawPid == null || rawModel == null) {
+			return null
+		}
+		return parsed
+	} catch (_e: any) {
+		return null
+	}
+}
+
+/**
+ * 设置某个任务的默认提供商 + 模型
+ */
+export function setDefaultTaskModel(type: string, providerId: string, model: string): void {
+	const key = TASK_KEY_PREFIX + type
+	const val = JSON.stringify({
+		providerId: providerId,
+		model: model,
+	})
+	setAppSetting(key, val)
+
+	// 兼容旧版：如果是 chat 类型，同步更新旧存储 key
+	if (type == 'chat') {
+		uni.setStorageSync('settings_model', model)
+		uni.setStorageSync('settings_provider_id', providerId)
+	}
+}
+
+
+/**
+ * 解析 LLM 配置（按优先级）
+ * 1. 显式 providerId + model
+ * 2. chat 默认模型配置
+ * 3. 旧版 storage 配置
+ */
+export function resolveLLMConfig(providerId: string, model: string): LLMConfig | null {
+	let pid = providerId
+	let mdl = model
+
+	// 支持 "providerId||modelId" 复合格式
+	if (mdl != '') {
+		const sep = '||'
+		const idx = mdl.indexOf(sep)
+		if (idx >= 0) {
+			const extractedPid = mdl.substring(0, idx)
+			const extractedMid = mdl.substring(idx + sep.length)
+			if (pid == '') {
+				pid = extractedPid
+			}
+			mdl = extractedMid
+		}
+	}
+
+	if (pid == '') {
+		const defaultConfig = getDefaultTaskModel('chat')
+		if (defaultConfig != null) {
+			const defaultProvider = defaultConfig['providerId'] as string | null
+			const defaultModel = defaultConfig['model'] as string | null
+			if (defaultProvider != null) {
+				pid = defaultProvider
+			}
+			if (mdl == '' && defaultModel != null) {
+				mdl = defaultModel
+			}
+		}
+	}
+
+	if (pid == '') {
+		const storageProvider = uni.getStorageSync('settings_provider_id') as string | null
+		if (storageProvider != null) {
+			pid = storageProvider
+		}
+	}
+	if (mdl == '') {
+		const storageModel = uni.getStorageSync('settings_model') as string | null
+		if (storageModel != null) {
+			mdl = storageModel
+		}
+	}
+
+	if (pid == '' || mdl == '') {
+		return null
+	}
+
+	const provider = getProviderById(pid)
+	if (provider != null) {
+		const apiKeyRaw = provider['api_key'] as string | null
+		const baseUrlRaw = provider['api_base'] as string | null
+		const apiKey = apiKeyRaw != null ? apiKeyRaw : ''
+		let baseUrl = baseUrlRaw != null ? baseUrlRaw : ''
+		if (baseUrl == '') {
+			baseUrl = getDefaultUrl(pid)
+		}
+		if (apiKey == '') {
+			return null
+		}
+		return {
+			providerId: pid,
+			apiKey: apiKey,
+			baseUrl: baseUrl,
+			model: mdl,
+		} as LLMConfig
+	}
+
+	const storageApiKey = uni.getStorageSync('settings_api_key') as string | null
+	const apiKey = storageApiKey != null ? storageApiKey : ''
+	if (apiKey == '') {
+		return null
+	}
+	const storageBaseUrl = uni.getStorageSync('settings_base_url') as string | null
+	let baseUrl = storageBaseUrl != null ? storageBaseUrl : ''
+	if (baseUrl == '') {
+		baseUrl = getDefaultUrl(pid)
+		if (baseUrl == '') {
+			return null
+		}
+	}
+	return {
+		providerId: pid,
+		apiKey: apiKey,
+		baseUrl: baseUrl,
+		model: mdl,
+	} as LLMConfig
+}
+
+
+/**
+ * 获取所有任务的默认配置
+ */
+export function getAllDefaultTaskModels(): UTSJSONObject[] {
+	const taskTypes: string[] = ['chat', 'vision', 'stt', 'tts']
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < taskTypes.length; i++) {
+		const t = taskTypes[i]
+		const config = getDefaultTaskModel(t)
+		let providerId = ''
+		let model = ''
+		if (config != null) {
+			const rawPid = config['providerId']
+			const rawModel = config['model']
+			providerId = rawPid != null ? (rawPid as string) : ''
+			model = rawModel != null ? (rawModel as string) : ''
+		}
+		result.push({
+			type: t,
+			typeName: getTaskTypeName(t),
+			providerId: providerId,
+			model: model,
+		} as UTSJSONObject)
+	}
+	return result
+}
