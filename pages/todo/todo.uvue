@@ -1,135 +1,196 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NavBar title="待办" />
+		<NavBar :title="activeView == 'todo' ? '待办' : '笔记'" />
 		<view class="container">
-			<!-- 筛选标签 -->
-			<view class="filter-bar">
-				<view :class="['filter-tab', filter == 'all' ? 'filter-active' : '']" @click="setFilter('all')">
-					<text :class="['filter-text', filter == 'all' ? 'filter-text-active' : '']">全部</text>
+			<!-- 顶部 Segment 切换 -->
+			<view class="segment-bar">
+				<view :class="['segment-tab', activeView == 'todo' ? 'segment-active' : '']" @click="switchView('todo')">
+					<text :class="['segment-text', activeView == 'todo' ? 'segment-text-active' : '']">待办</text>
 				</view>
-				<view :class="['filter-tab', filter == 'pending' ? 'filter-active' : '']" @click="setFilter('pending')">
-					<text :class="['filter-text', filter == 'pending' ? 'filter-text-active' : '']">待办</text>
-				</view>
-				<view :class="['filter-tab', filter == 'done' ? 'filter-active' : '']" @click="setFilter('done')">
-					<text :class="['filter-text', filter == 'done' ? 'filter-text-active' : '']">已完成</text>
+				<view :class="['segment-tab', activeView == 'note' ? 'segment-active' : '']" @click="switchView('note')">
+					<text :class="['segment-text', activeView == 'note' ? 'segment-text-active' : '']">笔记</text>
 				</view>
 			</view>
 
-			<!-- Todo 列表 -->
-			<scroll-view class="todo-list" :scroll-y="true">
-				<view v-if="filteredTodos.length == 0" class="empty-state">
-					<text class="empty-text">暂无待办事项</text>
+			<!-- ============ 待办视图 ============ -->
+			<view v-if="activeView == 'todo'" class="view-container">
+				<!-- 筛选标签 -->
+				<view class="filter-bar">
+					<view :class="['filter-tab', filter == 'all' ? 'filter-active' : '']" @click="setFilter('all')">
+						<text :class="['filter-text', filter == 'all' ? 'filter-text-active' : '']">全部</text>
+					</view>
+					<view :class="['filter-tab', filter == 'pending' ? 'filter-active' : '']" @click="setFilter('pending')">
+						<text :class="['filter-text', filter == 'pending' ? 'filter-text-active' : '']">待办</text>
+					</view>
+					<view :class="['filter-tab', filter == 'done' ? 'filter-active' : '']" @click="setFilter('done')">
+						<text :class="['filter-text', filter == 'done' ? 'filter-text-active' : '']">已完成</text>
+					</view>
 				</view>
-				<view v-else>
-					<view
-						v-for="todo in filteredTodos"
-						:key="todo['id'] as string"
-						class="todo-item"
-						@click="toggleTodo(todo['id'] as string)"
-					>
-						<view class="todo-left">
-							<rice-checkbox
-								:model-value="(todo['completed'] as boolean)"
-								shape="round"
-								checked-color="#FB8FAB"
-								icon-size="40rpx"
-								@change="toggleTodo(todo['id'] as string)"
-							/>
-						</view>
-						<view class="todo-content">
-							<text :class="['todo-title', (todo['completed'] as boolean) ? 'todo-title-done' : '']">
-								{{ todo['title'] }}
-							</text>
-							<view class="todo-meta">
-								<rice-tag
-									:type="getTagType(todo['priority'] as string)"
-									:text="getPriorityLabel(todo['priority'] as string)"
-									size="small"
-									round
+
+				<!-- Todo 列表 -->
+				<scroll-view class="todo-list" :scroll-y="true">
+					<view v-if="filteredTodos.length == 0" class="empty-state">
+						<text class="empty-text">暂无待办事项</text>
+					</view>
+					<view v-else>
+						<view
+							v-for="todo in filteredTodos"
+							:key="todo['id'] as string"
+							class="todo-item"
+							@click="toggleTodo(todo['id'] as string)"
+						>
+							<view class="todo-left">
+								<rice-checkbox
+									:model-value="(todo['completed'] as boolean)"
+									shape="round"
+									checked-color="#FB8FAB"
+									icon-size="40rpx"
+									@change="toggleTodo(todo['id'] as string)"
 								/>
-								<text class="todo-time">{{ todo['createdAt'] }}</text>
 							</view>
-						</view>
-						<view class="todo-right" @click.stop="deleteTodo(todo['id'] as string)">
-							<rice-icon name="delete" size="32rpx" color="#9CA3AF" />
-						</view>
-					</view>
-				</view>
-			</scroll-view>
-
-			<!-- FAB 悬浮按钮 -->
-			<rice-float-fab icon="plus" :gap-bottom="80" @click="showAddDialog" />
-
-			<!-- 添加弹窗 -->
-			<rice-dialog
-				v-model:show="showAdd"
-				title="新建待办"
-				:show-cancel-button="true"
-				:cancel-button-text="'取消'"
-				:confirm-button-text="'确认'"
-				@confirm="addTodo"
-				@cancel="cancelAdd"
-			>
-				<view class="dialog-content">
-					<rice-input v-model="newTitle" placeholder="输入待办标题" border="none" />
-					<view class="priority-selector">
-						<text class="form-label">优先级</text>
-						<view class="priority-options">
-							<view
-								:class="['priority-option', newPriority == 'high' ? 'priority-option-active-high' : '']"
-								@click="newPriority = 'high'"
-							>
-								<text class="priority-option-text">高</text>
+							<view class="todo-content">
+								<text :class="['todo-title', (todo['completed'] as boolean) ? 'todo-title-done' : '']">
+									{{ todo['title'] }}
+								</text>
+								<view class="todo-meta">
+									<rice-tag
+										:type="getTagType(todo['priority'] as string)"
+										:text="getPriorityLabel(todo['priority'] as string)"
+										size="small"
+										round
+									/>
+									<text class="todo-time">{{ todo['createdAt'] }}</text>
+								</view>
 							</view>
-							<view
-								:class="['priority-option', newPriority == 'medium' ? 'priority-option-active-medium' : '']"
-								@click="newPriority = 'medium'"
-							>
-								<text class="priority-option-text">中</text>
-							</view>
-							<view
-								:class="['priority-option', newPriority == 'low' ? 'priority-option-active-low' : '']"
-								@click="newPriority = 'low'"
-							>
-								<text class="priority-option-text">低</text>
+							<view class="todo-right" @click.stop="deleteTodo(todo['id'] as string)">
+								<rice-icon name="delete" size="32rpx" color="#9CA3AF" />
 							</view>
 						</view>
 					</view>
+				</scroll-view>
+
+				<!-- FAB 悬浮按钮 -->
+				<rice-float-fab icon="plus" :gap-bottom="80" @click="showAddTodoDialog" />
+
+				<!-- 添加待办弹窗 -->
+				<rice-dialog
+					v-model:show="showAddTodo"
+					title="新建待办"
+					:show-cancel-button="true"
+					:cancel-button-text="'取消'"
+					:confirm-button-text="'确认'"
+					@confirm="addTodo"
+					@cancel="cancelAddTodo"
+				>
+					<view class="dialog-content">
+						<rice-input v-model="newTodoTitle" placeholder="输入待办标题" border="none" />
+						<view class="priority-selector">
+							<text class="form-label">优先级</text>
+							<view class="priority-options">
+								<view
+									:class="['priority-option', newTodoPriority == 'high' ? 'priority-option-active-high' : '']"
+									@click="newTodoPriority = 'high'"
+								>
+									<text class="priority-option-text">高</text>
+								</view>
+								<view
+									:class="['priority-option', newTodoPriority == 'medium' ? 'priority-option-active-medium' : '']"
+									@click="newTodoPriority = 'medium'"
+								>
+									<text class="priority-option-text">中</text>
+								</view>
+								<view
+									:class="['priority-option', newTodoPriority == 'low' ? 'priority-option-active-low' : '']"
+									@click="newTodoPriority = 'low'"
+								>
+									<text class="priority-option-text">低</text>
+								</view>
+							</view>
+						</view>
+					</view>
+				</rice-dialog>
+			</view>
+
+			<!-- ============ 笔记视图 ============ -->
+			<view v-else class="view-container">
+				<!-- 搜索栏 -->
+				<view class="search-bar">
+					<rice-search v-model="searchQuery" placeholder="搜索笔记..." shape="round" :clearable="true" />
 				</view>
-			</rice-dialog>
+
+				<!-- 笔记列表 -->
+				<scroll-view class="notes-list" :scroll-y="true">
+					<view v-if="filteredNotes.length == 0" class="empty-state">
+						<text class="empty-text">{{ searchQuery != '' ? '未找到匹配笔记' : '暂无笔记' }}</text>
+					</view>
+					<view v-else>
+						<view
+							v-for="note in filteredNotes"
+							:key="note['id'] as string"
+							class="note-card"
+							@click="editNote(note)"
+							@longpress="confirmDeleteNote(note['id'] as string)"
+						>
+							<text class="note-title">{{ note['title'] }}</text>
+							<text class="note-preview">{{ getNotePreview(note) }}</text>
+							<view class="note-meta-row">
+								<text class="note-time">{{ note['updatedAt'] }}</text>
+								<text v-if="getInlineTodoCount(note) > 0" class="note-todo-count">Todo {{ getInlineTodoCount(note) }}</text>
+							</view>
+						</view>
+					</view>
+				</scroll-view>
+
+				<!-- 添加笔记 FAB -->
+				<rice-float-fab icon="plus" bg-color="#FB8FAB" :gap-bottom="80" @click="createNote" />
+
+				<!-- 编辑笔记弹窗 -->
+				<rice-dialog
+					v-model:show="isEditingNote"
+					:title="editingNoteId == '' ? '新建笔记' : '编辑笔记'"
+					confirm-button-text="保存"
+					@confirm="saveNote"
+					@cancel="cancelEditNote"
+				>
+					<rice-input v-model="editingNoteTitle" placeholder="笔记标题" border="none" />
+					<view style="height: 16rpx;"></view>
+					<rice-textarea v-model="editingNoteContent" placeholder="笔记内容，支持 - [ ] 待办 / - [x] 完成" :auto-height="true" />
+				</rice-dialog>
+			</view>
 		</view>
 		<TabBar current="pages/todo/todo" />
 	</view>
 </template>
 
 <script lang="uts">
-	import { getWorkspaceTodos, saveWorkspaceTodos } from '@/utils/knowledge-workspace.uts'
+	import { getWorkspaceTodos, saveWorkspaceTodos, getWorkspaceNotes, saveWorkspaceNotes, countInlineTodos, renderKnowledgeMarkdown, type KnowledgeRenderBlock } from '@/utils/knowledge-workspace.uts'
 
 	/**
-	 * Todo 页面 - 任务管理界面
-	 * 扁平化粉白主题，使用 rice-ui 组件
+	 * 待办 + 笔记 合并页面
+	 * 顶部 Segment 切换两个视图，复用 knowledge-workspace 数据层。
+	 * 扁平化粉白主题，使用 rice-ui 组件。
 	 */
-
-	type TabChangeEvent = {
-		index: number,
-		name: string,
-		value: string,
-		disabled: boolean
-	};
 
 	export default {
 		data() {
 			return {
+				// 视图切换
+				activeView: 'todo' as string,
+
+				// 待办数据
 				todos: [] as UTSJSONObject[],
 				filter: 'all' as string,
-				showAdd: false as boolean,
-				newTitle: '' as string,
-				newPriority: 'medium' as string,
-				tabList: [
-					{ name: '全部', value: 'all' },
-					{ name: '待办', value: 'pending' },
-					{ name: '已完成', value: 'done' }
-				] as any[]
+				showAddTodo: false as boolean,
+				newTodoTitle: '' as string,
+				newTodoPriority: 'medium' as string,
+
+				// 笔记数据
+				notes: [] as UTSJSONObject[],
+				searchQuery: '' as string,
+				isEditingNote: false as boolean,
+				editingNoteId: '' as string,
+				editingNoteTitle: '' as string,
+				editingNoteContent: '' as string
 			}
 		},
 		computed: {
@@ -145,19 +206,41 @@
 				}
 				return this.todos
 			},
-			filterIndex() : number {
-				if (this.filter == 'all') return 0
-				if (this.filter == 'pending') return 1
-				return 2
+			filteredNotes() : UTSJSONObject[] {
+				if (this.searchQuery == '') {
+					return this.notes
+				}
+				let query = this.searchQuery.toLowerCase()
+				return this.notes.filter((note : UTSJSONObject) : boolean => {
+					let title = (note['title'] as string).toLowerCase()
+					let content = (note['content'] as string).toLowerCase()
+					return title.indexOf(query) >= 0 || content.indexOf(query) >= 0
+				})
 			}
 		},
 		onLoad() {
 			this.loadTodos()
+			this.loadNotes()
 		},
 		onShow() {
 			this.loadTodos()
+			this.loadNotes()
 		},
 		methods: {
+			// ===== 视图切换 =====
+			switchView(view : string) {
+				if (this.activeView == view) {
+					return
+				}
+				this.activeView = view
+				if (view == 'todo') {
+					this.loadTodos()
+				} else {
+					this.loadNotes()
+				}
+			},
+
+			// ===== 待办相关 =====
 			loadTodos() {
 				this.todos = getWorkspaceTodos('user', 'default')
 			},
@@ -185,7 +268,7 @@
 					title: '确认删除',
 					content: '确定要删除这个待办事项吗？',
 					success: (res) => {
-						if (res.confirm) {
+						if (res.confirm == true) {
 							let newTodos = [] as UTSJSONObject[]
 							for (let i = 0; i < this.todos.length; i++) {
 								if ((this.todos[i]['id'] as string) != id) {
@@ -199,19 +282,19 @@
 				})
 			},
 
-			showAddDialog() {
-				this.newTitle = ''
-				this.newPriority = 'medium'
-				this.showAdd = true
+			showAddTodoDialog() {
+				this.newTodoTitle = ''
+				this.newTodoPriority = 'medium'
+				this.showAddTodo = true
 			},
 
-			cancelAdd() {
-				this.showAdd = false
+			cancelAddTodo() {
+				this.showAddTodo = false
 			},
 
 			addTodo() {
-				if (this.newTitle.trim() == '') {
-					uni.showToast({ position: 'bottom', 
+				if (this.newTodoTitle.trim() == '') {
+					uni.showToast({ position: 'bottom',
 						title: '请输入标题',
 						icon: 'none'
 					})
@@ -225,15 +308,15 @@
 					this.padZero(now.getMinutes())
 				let newTodo = {
 					id: '' + Date.now(),
-					title: this.newTitle.trim(),
-					priority: this.newPriority,
+					title: this.newTodoTitle.trim(),
+					priority: this.newTodoPriority,
 					completed: false,
 					createdAt: timeStr
 				} as UTSJSONObject
 				this.todos.unshift(newTodo)
 				this.saveTodos()
-				this.showAdd = false
-				uni.showToast({ position: 'bottom', 
+				this.showAddTodo = false
+				uni.showToast({ position: 'bottom',
 					title: '已添加',
 					icon: 'success'
 				})
@@ -257,12 +340,145 @@
 				return 'success'
 			},
 
-			onTabChange(e : TabChangeEvent) {
-				if (e.value != null) {
-					this.filter = e.value
-				}
+			// ===== 笔记相关 =====
+			loadNotes() {
+				this.notes = getWorkspaceNotes('user', 'default')
 			},
 
+			saveNotes() {
+				saveWorkspaceNotes('user', 'default', this.notes)
+			},
+
+			formatNow() : string {
+				let now = new Date()
+				return now.getFullYear() + '-' +
+					this.padZero(now.getMonth() + 1) + '-' +
+					this.padZero(now.getDate()) + ' ' +
+					this.padZero(now.getHours()) + ':' +
+					this.padZero(now.getMinutes())
+			},
+
+			getNotePreview(note : UTSJSONObject) : string {
+				const content = note['content'] as string | null
+				if (content == null || content == '') {
+					return ''
+				}
+				const blocks = renderKnowledgeMarkdown(content)
+				const parts: string[] = []
+				for (let i = 0; i < blocks.length && parts.length < 3; i++) {
+					const block = blocks[i] as KnowledgeRenderBlock
+					if (block.type == 'heading') {
+						continue
+					}
+					if (block.type == 'todo') {
+						parts.push((block.checked ? '☑ ' : '☐ ') + block.text)
+					} else if (block.type == 'bullet') {
+						parts.push('• ' + block.text)
+					} else {
+						parts.push(block.text)
+					}
+				}
+				if (parts.length == 0) {
+					return content
+				}
+				return parts.join(' · ')
+			},
+
+			getInlineTodoCount(note : UTSJSONObject) : number {
+				const content = note['content'] as string | null
+				if (content == null || content == '') {
+					return 0
+				}
+				return countInlineTodos(content)
+			},
+
+			createNote() {
+				this.editingNoteId = ''
+				this.editingNoteTitle = ''
+				this.editingNoteContent = ''
+				this.isEditingNote = true
+			},
+
+			editNote(note : UTSJSONObject) {
+				this.editingNoteId = note['id'] as string
+				this.editingNoteTitle = note['title'] as string
+				this.editingNoteContent = note['content'] as string
+				this.isEditingNote = true
+			},
+
+			cancelEditNote() {
+				this.isEditingNote = false
+			},
+
+			saveNote() {
+				let title = this.editingNoteTitle.trim()
+				if (title == '') {
+					title = '无标题'
+				}
+				let content = this.editingNoteContent.trim()
+				if (content == '') {
+					uni.showToast({ position: 'bottom',
+						title: '请输入内容',
+						icon: 'none'
+					})
+					return
+				}
+				let timeStr = this.formatNow()
+
+				if (this.editingNoteId == '') {
+					let newNote = {
+						id: '' + Date.now(),
+						title: title,
+						content: content,
+						updatedAt: timeStr
+					} as UTSJSONObject
+					this.notes.unshift(newNote)
+				} else {
+					for (let i = 0; i < this.notes.length; i++) {
+						if ((this.notes[i]['id'] as string) == this.editingNoteId) {
+							this.notes[i]['title'] = title
+							this.notes[i]['content'] = content
+							this.notes[i]['updatedAt'] = timeStr
+							break
+						}
+					}
+				}
+				this.saveNotes()
+				this.isEditingNote = false
+				uni.showToast({ position: 'bottom',
+					title: '已保存',
+					icon: 'success'
+				})
+			},
+
+			confirmDeleteNote(id : string) {
+				uni.showModal({
+					title: '确认删除',
+					content: '确定要删除这条笔记吗？',
+					success: (res) => {
+						if (res.confirm == true) {
+							this.deleteNote(id)
+						}
+					}
+				})
+			},
+
+			deleteNote(id : string) {
+				let newNotes = [] as UTSJSONObject[]
+				for (let i = 0; i < this.notes.length; i++) {
+					if ((this.notes[i]['id'] as string) != id) {
+						newNotes.push(this.notes[i])
+					}
+				}
+				this.notes = newNotes
+				this.saveNotes()
+				uni.showToast({ position: 'bottom',
+					title: '已删除',
+					icon: 'success'
+				})
+			},
+
+			// ===== 通用 =====
 			padZero(n : number) : string {
 				if (n < 10) {
 					return '0' + n
@@ -278,24 +494,48 @@
 		flex: 1;
 	}
 
+	/* Segment 切换栏 */
+	.segment-bar {
+		flex-direction: row;
+		padding: 16rpx 30rpx;
+		background-color: #FFFFFF;
+		border-bottom-width: 0.10rpx;
+		border-bottom-color: #F3F4F6;
+		border-bottom-style: solid;
+	}
+
+	.segment-tab {
+		padding: 12rpx 32rpx;
+		margin-right: 12rpx;
+		border-radius: 10rpx;
+		background-color: #F3F4F6;
+	}
+
+	.segment-active {
+		background-color: #FDE8EF;
+	}
+
+	.segment-text {
+		font-size: 28rpx;
+		color: #6B7280;
+	}
+
+	.segment-text-active {
+		color: #DB2777;
+		font-weight: bold;
+	}
+
+	/* 视图容器 */
+	.view-container {
+		flex: 1;
+	}
+
+	/* ===== 待办视图样式 ===== */
 	.todo-list {
 		flex: 1;
 		padding: 0 30rpx;
 	}
 
-	.empty-state {
-		flex: 1;
-		justify-content: center;
-		align-items: center;
-		padding-top: 200rpx;
-	}
-
-	.empty-text {
-		font-size: 28rpx;
-		color: #9CA3AF;
-	}
-
-	/* 筛选标签栏 */
 	.filter-bar {
 		flex-direction: row;
 		padding: 16rpx 30rpx;
@@ -326,7 +566,6 @@
 		font-weight: bold;
 	}
 
-	/* 待办项行布局 */
 	.todo-item {
 		flex-direction: row;
 		align-items: flex-start;
@@ -350,7 +589,6 @@
 		justify-content: center;
 	}
 
-	/* 待办标题 */
 	.todo-title {
 		font-size: 28rpx;
 		color: #111827;
@@ -360,7 +598,6 @@
 		color: #9CA3AF;
 	}
 
-	/* 待办元信息行：优先级标签 + 时间 */
 	.todo-meta {
 		flex-direction: row;
 		align-items: center;
@@ -373,7 +610,6 @@
 		margin-left: 12rpx;
 	}
 
-	/* 弹窗内优先级选择器 */
 	.dialog-content {
 		width: 100%;
 	}
@@ -421,5 +657,72 @@
 	.priority-option-text {
 		font-size: 26rpx;
 		color: #111827;
+	}
+
+	/* ===== 笔记视图样式 ===== */
+	.search-bar {
+		padding: 20rpx 30rpx;
+		background-color: #FFFFFF;
+	}
+
+	.notes-list {
+		flex: 1;
+		padding: 16rpx 30rpx;
+	}
+
+	.empty-state {
+		flex: 1;
+		justify-content: center;
+		align-items: center;
+		padding-top: 200rpx;
+	}
+
+	.empty-text {
+		font-size: 28rpx;
+		color: #9CA3AF;
+	}
+
+	.note-card {
+		background-color: #FFFFFF;
+		border-radius: 16rpx;
+		padding: 24rpx;
+		margin-bottom: 16rpx;
+		border-width: 0.10rpx;
+		border-color: #E5E7EB;
+		border-style: solid;
+	}
+
+	.note-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #111827;
+		margin-bottom: 10rpx;
+	}
+
+	.note-preview {
+		font-size: 26rpx;
+		color: #6B7280;
+		lines: 2;
+		text-overflow: ellipsis;
+		margin-bottom: 8rpx;
+	}
+
+	.note-time {
+		font-size: 22rpx;
+		color: #9CA3AF;
+	}
+
+	.note-meta-row {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.note-todo-count {
+		font-size: 22rpx;
+		color: #DB2777;
+		background-color: #FDE8EF;
+		border-radius: 999rpx;
+		padding: 4rpx 12rpx;
+		margin-left: 12rpx;
 	}
 </style>
