@@ -228,7 +228,7 @@
 	 * 智能体设置页面 - 编辑名称/描述/头像/删除智能体
 	 */
 	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentSkills } from '@/utils/agent.uts'
-	import { getAllProviders, getProviderModels, type ModelInfo } from '@/utils/provider.uts'
+	import { getAllProviders, getProviderModels, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { updateSystemPromptForAgent } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
 	import { getSkills, getAgentSkillIds, filterExistingSkillIds, skillIdListContains, readSkillId, readSkillName, readSkillDescription, readSkillEnabled, getSkillDocumentCount } from '@/utils/skills.uts'

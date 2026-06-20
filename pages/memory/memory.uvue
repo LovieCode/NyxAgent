@@ -269,7 +269,7 @@
 		listMemoryManagerLogs,
 		type MemoryCoreInput,
 		type MemorySearchFilter,
-	} from '@/utils/memory.uts'
+	} from '@/uni_modules/agent-core/utssdk/memory.uts'
 	import { getAgents } from '@/utils/agent.uts'
 
 	export default {

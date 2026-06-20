@@ -91,7 +91,7 @@
 	/**
 	 * 插件设置子页面 - GitHub 代理 / 网络搜索配置
 	 */
-	import { getAllProviders, getProviderModels, parseModels } from '@/utils/provider.uts'
+	import { getAllProviders, getProviderModels, parseModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
 
 	export default {
 		data() {

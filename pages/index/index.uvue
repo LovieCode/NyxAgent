@@ -132,10 +132,10 @@
 	 * 扁平化粉白主题
 	 */
 	import { saveConversation, getMessages, getConversationsByAgent } from '@/utils/database.uts'
-	import { agentChat, buildAgentContextPreview, organizeAgentMemory } from '@/utils/llm.uts'
+	import { agentChat, buildAgentContextPreview, organizeAgentMemory } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
 	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
 	import { getAgentById } from '@/utils/agent.uts'
-	import { getDefaultTaskModel } from '@/utils/provider.uts'
+	import { getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { Lunar, LunarInfoType } from '@/uni_modules/rice-ui/components/rice-calendar/lunar.uts'
 
 	export default {
