@@ -61,6 +61,9 @@ export { SessionManager } from './session-manager'
 // 导出记忆系统
 export * from './memory'
 
+// 导出 LLM 调用客户端
+export * from './llm-client'
+
 // 导出内置文件工具
 export {
 	FileReadTool,
