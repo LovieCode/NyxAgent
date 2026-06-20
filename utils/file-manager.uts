@@ -386,13 +386,33 @@ export function listRootContents(): FileItem[] {
 			}
 		}
 
-		// 第 3 组：Agent 子目录
+		// 第 3 组：Agent 子目录（用智能体显示名替代 ID 文件夹名）
+		// 直接读 storage 避免循环引用 agent.uts
+		const agentDisplayNames: Map<string, string> = new Map<string, string>()
+		const agentListJson = uni.getStorageSync('agent_list') as string
+		if (agentListJson != null && agentListJson != '') {
+			try {
+				const agentList = JSON.parse(agentListJson) as UTSJSONObject[]
+				for (let j = 0; j < (agentList as any[]).length; j++) {
+					const item = agentList[j] as UTSJSONObject
+					const aid = item['id'] as string
+					const aname = item['name'] as string
+					if (aid != null && aid != '' && aname != null && aname != '') {
+						agentDisplayNames.set(aid, aname)
+					}
+				}
+			} catch (_e: any) { /* 解析失败则用文件夹名 */ }
+		}
 		const agentList = listDir(filesDir + '/agents')
 		for (let i = 0; i < agentList.length; i++) {
 			const agent = agentList[i]
 			if (agent.isDirectory) {
+				// agent.name 是文件夹名 = 智能体 ID，查显示名
+				const agentId = agent.name
+				const displayName = agentDisplayNames.get(agentId)
+				const label = displayName != null ? displayName : agentId
 				agentItems.push({
-					name: '[Agent] ' + agent.name,
+					name: '[Agent] ' + label,
 					path: agent.path,
 					isDirectory: true,
 					size: 0,
