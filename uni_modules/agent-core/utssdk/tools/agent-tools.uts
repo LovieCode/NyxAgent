@@ -1,8 +1,4 @@
-/**
- * Agent 沙箱文件工具
- * 将 agent-fs 的沙箱操作包装为 AgentTool 实现
- * 每个工具绑定到特定 agentId，防止越权
- */
+// Agent 沙箱文件工具：将 agent-fs 包装为 AgentTool，每个工具绑定到特定 agentId 防止越权
 
 import {
 	readAgentFile,
@@ -15,18 +11,18 @@ import {
 } from '@/utils/agent-fs.uts'
 import {
 	searchCoreMemory,
-		searchCoreMemoryAdvanced,
-		searchConversationHistory,
-		searchConversationHistoryAdvanced,
-		updateMemoryBuffer,
-		saveCoreMemory,
-		listCoreMemory,
-		archiveCoreMemory,
-		formatCoreMemoryList,
-		buildMemoryTargetPersonId,
-		MemoryCoreInput,
-		MemorySearchFilter,
-	} from '@/utils/memory.uts'
+	searchCoreMemoryAdvanced,
+	searchConversationHistory,
+	searchConversationHistoryAdvanced,
+	updateMemoryBuffer,
+	saveCoreMemory,
+	listCoreMemory,
+	archiveCoreMemory,
+	formatCoreMemoryList,
+	buildMemoryTargetPersonId,
+	MemoryCoreInput,
+	MemorySearchFilter,
+} from '@/utils/memory.uts'
 import { getProviderApiConfig } from '@/utils/provider.uts'
 import { listKnowledgeWorkspacePaths, readKnowledgeWorkspaceFile, writeKnowledgeWorkspaceFile, buildKnowledgeWorkspaceGuide } from '@/utils/knowledge-workspace.uts'
 
@@ -317,6 +313,7 @@ class KnowledgeFolderListTool implements AgentTool {
 				'type': 'string',
 				'description': '要列出的路径。自己的文件夹用 agents/<id> 或 agents/<id>/notes，共享用 user/default'
 			},
+		},
 		'required': [] as string[]
 	} as UTSJSONObject
 
