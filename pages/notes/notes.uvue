@@ -150,13 +150,18 @@
 			}
 		},
 		computed: {
-			/** 面包屑路径分段：从叶子向上收集，再反转得到根→叶子顺序 */
+			/** 面包屑路径分段：从叶子向上收集，跳过系统技术前缀 */
 			pathSegments() : PathSegment[] {
 				if (this.currentPath == '' || this.currentPath == VIRTUAL_ROOT) {
 					return []
 				}
 				let p = this.currentPath
+				// 去除末尾斜杠，统一处理
+				while (p.length > 1 && p.endsWith('/')) {
+					p = p.substring(0, p.length - 1)
+				}
 				const stack: PathSegment[] = []
+				// 从叶子向上收集所有层级
 				while (p != '') {
 					const name = basename(p)
 					if (name == '') {
@@ -169,9 +174,28 @@
 					}
 					p = parent
 				}
+				// 向前裁剪技术前缀（/data/data/pkg/files/agents 等）
+				let startIndex = 0
+				if (stack.length >= 4 && stack[stack.length - 1].name == 'data') {
+					// 绝对路径如 /data/data/pkg/files/agents/xxx
+					for (let j = stack.length - 1; j >= 0; j--) {
+						if (stack[j].name == 'agents') {
+							startIndex = j
+							break
+						}
+					}
+				} else if (stack.length >= 2 && stack[stack.length - 1].name == 'usr') {
+					// unifile://usr/xxx
+					for (let j = stack.length - 1; j >= 0; j--) {
+						if (stack[j].name == 'usr') {
+							startIndex = j
+							break
+						}
+					}
+				}
 				// 反转得到根→叶子顺序
 				const segments: PathSegment[] = []
-				for (let i = stack.length - 1; i >= 0; i--) {
+				for (let i = stack.length - 1; i >= startIndex; i--) {
 					segments.push(stack[i])
 				}
 				return segments
