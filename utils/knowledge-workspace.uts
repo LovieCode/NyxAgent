@@ -622,15 +622,6 @@ function parseKnowledgePath(agentId: string, rawPath: string): UTSJSONObject {
 	if (path == '') {
 		return { ok: true, scope: 'root', ownerType: '', ownerId: '', rest: '', path: path } as UTSJSONObject
 	}
-	if (path == 'user') {
-		return { ok: true, scope: 'user-root', ownerType: '', ownerId: '', rest: '', path: path } as UTSJSONObject
-	}
-	if (path == 'user/default') {
-		return { ok: true, scope: 'owner', ownerType: OWNER_USER, ownerId: DEFAULT_USER_ID, rest: '', path: path } as UTSJSONObject
-	}
-	if (path.startsWith('user/default/')) {
-		return { ok: true, scope: 'owner', ownerType: OWNER_USER, ownerId: DEFAULT_USER_ID, rest: path.substring(13), path: path } as UTSJSONObject
-	}
 	if (path == 'agents') {
 		return { ok: true, scope: 'agents-root', ownerType: '', ownerId: '', rest: '', path: path } as UTSJSONObject
 	}
@@ -641,7 +632,7 @@ function parseKnowledgePath(agentId: string, rawPath: string): UTSJSONObject {
 	if (path.startsWith(ownRoot + '/')) {
 		return { ok: true, scope: 'owner', ownerType: OWNER_AGENT, ownerId: agentId, rest: path.substring(ownRoot.length + 1), path: path } as UTSJSONObject
 	}
-	return { ok: false, error: '无权限访问该路径。只能访问 user/default 或 agents/' + agentId } as UTSJSONObject
+	return { ok: false, error: '只能访问 agents/' + agentId + ' 目录' } as UTSJSONObject
 }
 
 function findNoteById(notes: UTSJSONObject[], id: string): UTSJSONObject | null {
@@ -670,10 +661,9 @@ function formatNoteListLine(note: UTSJSONObject): string {
 
 export function buildKnowledgeWorkspaceGuide(agentId: string): string {
 	return [
-		'知识文件夹（只能写你自己的 agents/' + agentId + '/ 私有空间）：',
-		'- agents/' + agentId + '/notes/<id>.md：你的私有笔记',
-		'- agents/' + agentId + '/todo.md：你的私有待办',
-		'（user/default/ 是共享空间，只读，不可写入）',
+		'知识文件夹（你的私有空间 agents/' + agentId + '/）：',
+		'- agents/' + agentId + '/notes/<id>.md：私有笔记',
+		'- agents/' + agentId + '/todo.md：私有待办',
 		'渲染规则：',
 		'- #/##/### 渲染为标题',
 		'- - [ ] 文本 渲染为未完成待办',
@@ -691,10 +681,7 @@ export function listKnowledgeWorkspacePaths(agentId: string, rawPath: string): s
 	}
 	const scope = readString(parsed, 'scope')
 	if (scope == 'root') {
-		return '[DIR] user/\n[DIR] agents/\n\n' + buildKnowledgeWorkspaceGuide(agentId)
-	}
-	if (scope == 'user-root') {
-		return '[DIR] default/'
+		return '[DIR] agents/\n\n' + buildKnowledgeWorkspaceGuide(agentId)
 	}
 	if (scope == 'agents-root') {
 		return '[DIR] ' + agentId + '/'

@@ -305,13 +305,13 @@ class SandboxFileListTool implements AgentTool {
  */
 class KnowledgeFolderListTool implements AgentTool {
 	name: string = 'knowledge_list'
-	description: string = '列出待办/笔记知识文件夹。你的私有空间在 agents/<id>/，共享空间在 user/default/。路径为空时返回根目录结构和使用说明。'
+	description: string = '列出你的私有知识文件夹 agents/<id>/，含待办和笔记。路径为空时返回根目录结构和使用说明。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
 			'path': {
 				'type': 'string',
-				'description': '要列出的路径。自己的文件夹用 agents/<id> 或 agents/<id>/notes，共享用 user/default'
+				'description': '要列出的路径，如 agents/<id>、agents/<id>/notes'
 			},
 		},
 		'required': [] as string[]
@@ -338,7 +338,7 @@ class KnowledgeFolderListTool implements AgentTool {
  */
 class KnowledgeFolderReadTool implements AgentTool {
 	name: string = 'knowledge_read'
-	description: string = '读取待办/笔记知识文件。优先读取 agents/<id>/ 私有空间，user/default/ 为共享空间。路径格式：agents/<id>/todo.md、agents/<id>/notes/<id>.md、user/default/todo.md、user/default/notes/<id>.md'
+	description: string = '读取你的私有待办/笔记。路径格式：agents/<id>/todo.md、agents/<id>/notes/<id>.md。返回 Markdown，笔记中可包含 - [ ] / - [x] 待办。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
