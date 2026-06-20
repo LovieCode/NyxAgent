@@ -32,12 +32,12 @@ export type PreparedAgentContext = {
 	droppedMessages: UTSJSONObject[]
 }
 
-import { resolveLLMConfig, normalizeBaseUrl } from '@/utils/provider.uts'
+import { resolveLLMConfig, normalizeBaseUrl } from './provider'
 import { getAgentById } from '@/utils/agent.uts'
 import { getGlobalGenerationSettings, getEffectiveGenerationSettings, GenerationSettings } from '@/utils/generation-settings.uts'
-import { createAgentTools, AgentTool, ToolResult } from '@/utils/agent-tools.uts'
+import { createAgentTools, AgentTool, ToolResult } from './tools/agent-tools'
 import { AgentEventStream, AgentEvent } from '@/utils/event.uts'
-import { buildImportantMemoryInjection, buildBufferInjection, getMemoryEnabled, saveMemoryManagerLog, MemoryManagerLog } from '@/utils/memory.uts'
+import { buildImportantMemoryInjection, buildBufferInjection, getMemoryEnabled, saveMemoryManagerLog, MemoryManagerLog } from './memory'
 import { buildAgentSkillsPrompt } from '@/utils/skills.uts'
 
 const MEMORY_MANAGER_LAST_KEY_PREFIX = 'memory_manager_last_compaction_'

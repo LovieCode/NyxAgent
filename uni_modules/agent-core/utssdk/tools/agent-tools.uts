@@ -26,7 +26,6 @@ import {
 import {
 	searchCoreMemoryAdvanced,
 	searchConversationHistoryAdvanced,
-	searchConversationHistoryAdvanced,
 	updateMemoryBuffer,
 	saveCoreMemory,
 	listCoreMemory,
@@ -35,8 +34,8 @@ import {
 	buildMemoryTargetPersonId,
 	MemoryCoreInput,
 	MemorySearchFilter,
-} from '@/utils/memory.uts'
-import { getProviderApiConfig } from '@/utils/provider.uts'
+} from '../memory'
+import { getProviderApiConfig } from '../provider'
 
 /** ToolResult 匹配 agent-core types */
 export type ToolResult = {
