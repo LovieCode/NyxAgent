@@ -1,72 +1,26 @@
 /**
  * 事件系统 - Agent 循环事件流
- * 参考 Pi 的 EventStream 设计，适配 UTS/UniApp-X
+ *
+ * 类型定义已迁入 SDK（uni_modules/agent-core/utssdk/types.uts），
+ * 本文件仅保留 AgentEventStream 运行时实现，并重导出 SDK 类型以保持向后兼容。
  */
 
-// ====== Agent 事件类型定义 ======
+import {
+	AgentEvent,
+	AgentEventType,
+	AgentEventConsumer,
+	ToolCallInfo,
+	ToolResultInfo,
+} from '@/uni_modules/agent-core/utssdk/types.uts'
 
-/** 工具调用信息 */
-export type ToolCallInfo = {
-	id: string
-	name: string
-	arguments: string
+// 重导出 SDK 类型，业务代码无需改 import 路径
+export {
+	AgentEvent,
+	AgentEventType,
+	AgentEventConsumer,
+	ToolCallInfo,
+	ToolResultInfo,
 }
-
-/** 工具执行结果 */
-export type ToolResultInfo = {
-	toolCallId: string
-	toolName: string
-	content: string
-	isError: boolean
-}
-
-/** Agent 事件类型 */
-export type AgentEventType =
-	| 'agent_start'
-	| 'agent_end'
-	| 'turn_start'
-	| 'turn_end'
-	| 'text_delta'
-	| 'text_end'
-	| 'thinking_delta'
-	| 'thinking_end'
-	| 'tool_call'
-	| 'tool_execution_start'
-	| 'tool_execution_end'
-	| 'memory_organize_start'
-	| 'error'
-
-/** Agent 事件 */
-export type AgentEvent = {
-	type: AgentEventType
-	/** 文本增量（text_delta 时） */
-	text?: string
-	/** 完整文本（text_end 时） */
-	fullText?: string
-	/** 思考增量（thinking_delta 时） */
-	thinkingText?: string
-	/** 完整思考（thinking_end 时） */
-	fullThinking?: string
-	/** assistant 工具调用消息（tool_call 时，用于持久化上下文） */
-	toolCalls?: UTSJSONObject[]
-	/** 工具调用 ID */
-	toolCallId?: string
-	/** 工具名称 */
-	toolName?: string
-	/** 工具参数 */
-	toolArgs?: string
-	/** 工具结果 */
-	toolResult?: string
-	/** 工具是否出错 */
-	isError?: boolean
-	/** 错误信息 */
-	error?: string
-	/** 轻提示文本 */
-	message?: string
-}
-
-/** 事件消费者回调 */
-export type AgentEventConsumer = (event: AgentEvent) => void
 
 /**
  * Agent 事件流
@@ -82,14 +36,14 @@ export class AgentEventStream {
 
 	/** 推送事件 */
 	push(event: AgentEvent): void {
-		if (this._ended) return
+		if (this._ended == true) return
 		this.queue.push(event)
 		this.notifyConsumers()
 	}
 
 	/** 结束流 */
 	end(): void {
-		if (this._ended) return
+		if (this._ended == true) return
 		this.abortHandler = null
 		this.push({ type: 'agent_end' })
 		this._ended = true
@@ -102,7 +56,7 @@ export class AgentEventStream {
 
 	/** 中止流：通知消费者结束，然后丢弃后续事件 */
 	abort(): void {
-		if (this._ended) return
+		if (this._ended == true) return
 		this._aborted = true
 		const handler = this.abortHandler
 		this.abortHandler = null
@@ -118,7 +72,7 @@ export class AgentEventStream {
 
 	/** 以错误结束 */
 	error(message: string): void {
-		if (this._ended) return
+		if (this._ended == true) return
 		this.abortHandler = null
 		this._error = message
 		this.push({ type: 'error', error: message })
