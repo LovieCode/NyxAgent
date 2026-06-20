@@ -339,37 +339,35 @@ export function listRootContents(): FileItem[] {
 			items.push(userItems[i])
 		}
 	}
-	// 容错：如果沙盒文件为空，尝试用内部 filesDir（排除 agents 子目录避免重复）
-	if (items.length == 0) {
-		const filesDir = getInternalFilesDir()
-		if (filesDir != '') {
-			const fallbackItems = listDir(filesDir)
-			for (let i = 0; i < fallbackItems.length; i++) {
-				const fi = fallbackItems[i]
-				// 排除 agents 子目录（下面单独列出）
-				if (fi.name != 'agents') {
-					items.push(fi)
-				}
-			}
-		}
-	}
-	// Agent 目录：列出 agents 子目录，加前缀别名
+	// 内部存储精选目录（避免显示编译产物等杂文件）
 	const filesDir = getInternalFilesDir()
 	if (filesDir != '') {
-		const agentsDir = filesDir + '/agents'
-		const agentItems = listDir(agentsDir)
+		const knownDirs = ['sessions', 'exports', 'imports', 'laoqianjunzi-sqlite-snapshots']
+		for (let k = 0; k < knownDirs.length; k++) {
+			const subPath = filesDir + '/' + knownDirs[k]
+			if (exists(subPath)) {
+				const stat = statItem(subPath)
+				items.push({
+					name: knownDirs[k],
+					path: subPath,
+					isDirectory: stat.isDirectory,
+					size: stat.size,
+					lastModified: stat.lastModified,
+				})
+			}
+		}
+		// Agent 子目录单独列出来，加别名
+		const agentItems = listDir(filesDir + '/agents')
 		for (let i = 0; i < agentItems.length; i++) {
 			const agent = agentItems[i]
 			if (agent.isDirectory) {
-				const aliasName = '[Agent] ' + agent.name
-				const aliasItem: FileItem = {
-					name: aliasName,
+				items.push({
+					name: '[Agent] ' + agent.name,
 					path: agent.path,
 					isDirectory: true,
 					size: 0,
 					lastModified: agent.lastModified,
-				}
-				items.push(aliasItem)
+				})
 			}
 		}
 	}
