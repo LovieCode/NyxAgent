@@ -70,16 +70,28 @@ function makeFileItem(name: string, path: string, isDir: boolean, size: number, 
 
 /**
  * 规范化路径：统一分隔符，去除末尾斜杠，合并多余斜杠。
+ *
+ * 注意：保留 `unifile://` 协议前缀的双斜杠（HBuilderX 4.71+ 使用该协议）。
  */
 export function normalizePath(path: string): string {
 	let result = path.trim().replace(/\\/g, SEP)
+	// 保留协议前缀的双斜杠（如 unifile://usr/）
+	let protocol = ''
+	if (result.startsWith('unifile://')) {
+		protocol = 'unifile://'
+		result = result.substring(10)
+	} else if (result.startsWith('file://')) {
+		protocol = 'file://'
+		result = result.substring(7)
+	}
+	// 合并多余斜杠
 	while (result.indexOf(SEP + SEP) >= 0) {
 		result = result.replace(/\/\/+/g, SEP)
 	}
 	if (result.length > 1 && result.endsWith(SEP)) {
 		result = result.substring(0, result.length - 1)
 	}
-	return result
+	return protocol + result
 }
 
 /**
