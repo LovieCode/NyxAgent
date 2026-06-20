@@ -125,54 +125,70 @@ export type ChatEventDone = {
 /** LLM 流式事件 */
 export type ChatEvent = ChatEventTextDelta | ChatEventThinkingDelta | ChatEventToolCall | ChatEventDone
 
-/** Agent 事件 - 开始 */
-export type AgentEventStart = {
-	type : "agent_start"
+// ====== Agent 运行时事件类型（业务层定义，4.75+） ======
+
+/** 工具调用信息 */
+export type ToolCallInfo = {
+	id : string
+	name : string
+	arguments : string
 }
-/** Agent 事件 - 结束 */
-export type AgentEventEnd = {
-	type : "agent_end"
-}
-/** Agent 事件 - 轮次开始 */
-export type AgentEventTurnStart = {
-	type : "turn_start"
-}
-/** Agent 事件 - 轮次结束 */
-export type AgentEventTurnEnd = {
-	type : "turn_end"
-}
-/** Agent 事件 - 消息开始 */
-export type AgentEventMessageStart = {
-	type : "message_start"
-	message : Message
-}
-/** Agent 事件 - 消息更新 */
-export type AgentEventMessageUpdate = {
-	type : "message_update"
-	message : AssistantMessage
-}
-/** Agent 事件 - 消息结束 */
-export type AgentEventMessageEnd = {
-	type : "message_end"
-	message : Message
-}
-/** Agent 事件 - 工具执行开始 */
-export type AgentEventToolStart = {
-	type : "tool_execution_start"
+
+/** 工具执行结果 */
+export type ToolResultInfo = {
 	toolCallId : string
 	toolName : string
-	args : UTSJSONObject
-}
-/** Agent 事件 - 工具执行结束 */
-export type AgentEventToolEnd = {
-	type : "tool_execution_end"
-	toolCallId : string
-	toolName : string
-	result : string
+	content : string
 	isError : boolean
 }
-/** Agent 事件 */
-export type AgentEvent = AgentEventStart | AgentEventEnd | AgentEventTurnStart | AgentEventTurnEnd | AgentEventMessageStart | AgentEventMessageUpdate | AgentEventMessageEnd | AgentEventToolStart | AgentEventToolEnd
+
+/** Agent 事件类型 */
+export type AgentEventType =
+	| 'agent_start'
+	| 'agent_end'
+	| 'turn_start'
+	| 'turn_end'
+	| 'text_delta'
+	| 'text_end'
+	| 'thinking_delta'
+	| 'thinking_end'
+	| 'tool_call'
+	| 'tool_execution_start'
+	| 'tool_execution_end'
+	| 'memory_organize_start'
+	| 'error'
+
+/** Agent 运行时事件（单一 type + 可选字段，UI 层消费） */
+export type AgentEvent = {
+	type : AgentEventType
+	/** 文本增量（text_delta 时） */
+	text? : string
+	/** 完整文本（text_end 时） */
+	fullText? : string
+	/** 思考增量（thinking_delta 时） */
+	thinkingText? : string
+	/** 完整思考（thinking_end 时） */
+	fullThinking? : string
+	/** assistant 工具调用消息（tool_call 时，用于持久化上下文） */
+	toolCalls? : UTSJSONObject[]
+	/** 工具调用 ID */
+	toolCallId? : string
+	/** 工具名称 */
+	toolName? : string
+	/** 工具参数 */
+	toolArgs? : string
+	/** 工具结果 */
+	toolResult? : string
+	/** 工具是否出错 */
+	isError? : boolean
+	/** 错误信息 */
+	error? : string
+	/** 轻提示文本 */
+	message? : string
+}
+
+/** 事件消费者回调 */
+export type AgentEventConsumer = (event : AgentEvent) => void
 
 /** 工具执行结果 */
 export type ToolResult = {
