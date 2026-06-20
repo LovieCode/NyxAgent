@@ -586,7 +586,7 @@ export function searchCoreMemoryAdvanced(agentId: string, personId: string, conv
 
 	// 构建 SQL —— 基础条件
 	let sql = 'SELECT * FROM agent_memory_core WHERE archived = 0 AND agent_id = ?'
-	const params: string[] = []
+	const params: any[] = []
 	params.push(aid)
 
 	// 可见范围：总是包含 always/rule + 当前 person_id/conversation_id
@@ -712,7 +712,7 @@ export function searchConversationHistoryAdvanced(agentId: string, filter: Memor
 	const db = getDb()
 
 	let sql = 'SELECT m.role, m.content, m.timestamp, c.title FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.agent_id = ? AND (m.role = \'user\' OR m.role = \'assistant\') AND m.extra NOT LIKE \'%tool_calls%\''
-	const params: string[] = []
+	const params: any[] = []
 	params.push(aid)
 
 	// 搜索关键词
