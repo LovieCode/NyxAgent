@@ -7,8 +7,8 @@ import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport,
 import { getAllDefaultTaskModels } from '@/utils/provider.uts'
 import { getAgents } from '@/utils/agent.uts'
 import { getSkills } from '@/utils/skills.uts'
-import { getKnowledgeWorkspaceRecords, getWorkspaceTodos, getWorkspaceNotes, buildTodoMarkdown, buildNoteMarkdown, KNOWLEDGE_WORKSPACE_KEY, KNOWLEDGE_MIGRATED_KEY } from '@/utils/knowledge-workspace.uts'
-import { getAgentStoragePath, listAgentFiles } from '@/utils/agent-fs.uts'
+import { getAgentDir, getAgentsRoot, getInternalFilesDir, listDir, joinPath, exists, readContent, formatFileSize, formatTime } from '@/utils/file-manager.uts'
+import { buildTodoMarkdown, buildNoteMarkdown } from '@/utils/markdown.uts'
 import { writeExportZipFile, shareExportFile, getLastShareExportError } from '@/utssdk/app-data-export/index.uts'
 
 const EXPORT_SCHEMA_VERSION = 1
@@ -43,9 +43,6 @@ function appendUniqueKey(keys: string[], key: string): void {
 	if (key == '') {
 		return
 	}
-	if (key == KNOWLEDGE_WORKSPACE_KEY) {
-		return
-	}
 	for (let i = 0; i < keys.length; i++) {
 		if (keys[i] == key) {
 			return
@@ -75,7 +72,6 @@ function buildKnownStorageKeys(): string[] {
 		'settings_generation_max_iterations',
 		'settings_generation_stream_enabled',
 		'skills_list',
-		KNOWLEDGE_MIGRATED_KEY,
 		'settings_memory_enabled',
 		'memory_agent_id',
 		'memory_conversation_id',
@@ -325,7 +321,12 @@ function appendAgentFileEntries(agentId: string, dirPath: string, result: UTSJSO
 	if (depth > 8) {
 		return
 	}
-	const files = listAgentFiles(agentId, dirPath)
+	const agentDir = getAgentDir(agentId)
+	if (agentDir == '') {
+		return
+	}
+	const fullDirPath = dirPath == '' ? agentDir : joinPath(agentDir, dirPath)
+	const files = listDir(fullDirPath)
 	for (let i = 0; i < files.length; i++) {
 		const item = files[i]
 		const name = item.name
@@ -347,7 +348,7 @@ function appendAgentFileEntries(agentId: string, dirPath: string, result: UTSJSO
 			} as UTSJSONObject)
 			appendAgentFileEntries(agentId, relPath, result, specs, depth + 1)
 		} else {
-			const sourceRoot = getAgentStoragePath(agentId)
+			const sourceRoot = agentDir
 			const zipPath = 'agent-workspaces/' + sanitizeZipSegment(agentId) + '/' + safeRelPath
 			const entry: UTSJSONObject = {
 				agentId: agentId,
@@ -381,23 +382,38 @@ function collectAgentFiles(agents: UTSJSONObject[], specs: UTSJSONObject[]): UTS
 }
 
 function appendKnowledgeOwnerFiles(specs: UTSJSONObject[], ownerType: string, ownerId: string, rootZipPath: string): void {
+	// 仅处理 agent 知识文件 — user/default 的 notes/todos 由 storage keys 覆盖
+	if (ownerType != 'agent') {
+		return
+	}
+	const agentDir = getAgentDir(ownerId)
+	if (agentDir == '') {
+		return
+	}
 	appendDirectorySpec(specs, rootZipPath + '/')
-	appendDirectorySpec(specs, rootZipPath + '/notes/')
-	const todos = getWorkspaceTodos(ownerType, ownerId)
-	appendTextSpec(specs, rootZipPath + '/todo.md', buildTodoMarkdown(ownerType, ownerId, todos))
-	const notes = getWorkspaceNotes(ownerType, ownerId)
-	for (let i = 0; i < notes.length; i++) {
-		const note = notes[i]
-		const noteId = note['id'] as string | null
-		if (noteId != null && noteId != '') {
-			appendTextSpec(specs, rootZipPath + '/notes/' + sanitizeZipSegment(noteId) + '.md', buildNoteMarkdown(ownerType, ownerId, note))
+
+	// todo.md
+	const todoPath = joinPath(agentDir, 'todo.md')
+	if (exists(todoPath)) {
+		appendFileSpec(specs, todoPath, rootZipPath + '/todo.md')
+	}
+
+	// notes/*.md
+	const notesDir = joinPath(agentDir, 'notes')
+	if (exists(notesDir)) {
+		appendDirectorySpec(specs, rootZipPath + '/notes/')
+		const noteFiles = listDir(notesDir)
+		for (let i = 0; i < noteFiles.length; i++) {
+			const nf = noteFiles[i]
+			if (!nf.isDirectory && nf.name.endsWith('.md')) {
+				appendFileSpec(specs, nf.path, rootZipPath + '/notes/' + nf.name)
+			}
 		}
 	}
 }
 
 function appendKnowledgeWorkspaceFiles(agents: UTSJSONObject[], specs: UTSJSONObject[]): void {
 	appendDirectorySpec(specs, 'knowledge-workspace/')
-	appendKnowledgeOwnerFiles(specs, 'user', 'default', 'knowledge-workspace/user/default')
 	for (let i = 0; i < agents.length; i++) {
 		const rawId = agents[i]['id'] as string | null
 		if (rawId != null && rawId != '') {
@@ -440,7 +456,6 @@ export function buildAllDataExport(): UTSJSONObject {
 	const messages = getAllMessagesForExport()
 	const memoryBuffers = getAllMemoryBuffersForExport()
 	const memoryCore = getAllMemoryCoreForExport()
-	const knowledgeWorkspace = getKnowledgeWorkspaceRecords()
 	const storageKeys = collectStorageKeys()
 	const storage = collectKnownStorageByKeys(storageKeys)
 	const agents = getAgents()
@@ -469,7 +484,6 @@ export function buildAllDataExport(): UTSJSONObject {
 			defaultTaskModels: getAllDefaultTaskModels(),
 			agents: agents,
 			skills: skills,
-			knowledgeWorkspace: knowledgeWorkspace,
 			agentFiles: agentFiles,
 			assets: assets,
 			conversations: conversations,

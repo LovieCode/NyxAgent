@@ -1,0 +1,210 @@
+/**
+ * Markdown 解析 / 渲染工具
+ *
+ * 从 knowledge-workspace.uts 移植，去掉 JSON record 层。
+ * 笔记和待办以真实 .md 文件存储在 agents/<id>/notes/ 下。
+ */
+
+export type KnowledgeRenderBlock = {
+	type: string
+	text: string
+	checked: boolean
+	level: number
+}
+
+function padZero(n: number): string {
+	if (n < 10) return '0' + n
+	return '' + n
+}
+
+function nowText(): string {
+	const now = new Date()
+	return now.getFullYear() + '-' +
+		padZero(now.getMonth() + 1) + '-' +
+		padZero(now.getDate()) + ' ' +
+		padZero(now.getHours()) + ':' +
+		padZero(now.getMinutes())
+}
+
+function normalizeLineEndings(text: string): string {
+	let result = text.replace(/\r\n/g, '\n')
+	result = result.replace(/\r/g, '\n')
+	return result
+}
+
+function cleanLine(text: string): string {
+	let result = normalizeLineEndings(text)
+	result = result.replace(/\n/g, ' ')
+	return result.trim()
+}
+
+function readStringField(obj: UTSJSONObject, key: string): string {
+	const raw = obj[key] as string | null
+	return raw != null ? raw : ''
+}
+
+function readBoolField(obj: UTSJSONObject, key: string, fallback: boolean): boolean {
+	const raw = obj[key] as boolean | null
+	return raw != null ? raw : fallback
+}
+
+// ---------- 渲染 ----------
+
+/** 渲染 Markdown 为渲染块（供 UI 使用） */
+export function renderKnowledgeMarkdown(markdown: string): KnowledgeRenderBlock[] {
+	const normalized = normalizeLineEndings(markdown)
+	const lines = normalized.split('\n')
+	const blocks: KnowledgeRenderBlock[] = []
+	for (let i = 0; i < lines.length; i++) {
+		const rawLine = lines[i]
+		const line = rawLine.trim()
+		if (line == '') continue
+		if (line.startsWith('### ')) {
+			blocks.push({ type: 'heading', text: line.substring(4).trim(), checked: false, level: 3 } as KnowledgeRenderBlock)
+		} else if (line.startsWith('## ')) {
+			blocks.push({ type: 'heading', text: line.substring(3).trim(), checked: false, level: 2 } as KnowledgeRenderBlock)
+		} else if (line.startsWith('# ')) {
+			blocks.push({ type: 'heading', text: line.substring(2).trim(), checked: false, level: 1 } as KnowledgeRenderBlock)
+		} else if (line.startsWith('- [ ]') || line.startsWith('- [x]') || line.startsWith('- [X]')) {
+			const checked = line.startsWith('- [x]') || line.startsWith('- [X]')
+			blocks.push({ type: 'todo', text: stripHtmlComment(line.substring(5).trim()), checked: checked, level: 0 } as KnowledgeRenderBlock)
+		} else if (line.startsWith('- ')) {
+			blocks.push({ type: 'bullet', text: line.substring(2).trim(), checked: false, level: 0 } as KnowledgeRenderBlock)
+		} else {
+			blocks.push({ type: 'paragraph', text: line, checked: false, level: 0 } as KnowledgeRenderBlock)
+		}
+	}
+	return blocks
+}
+
+/** 统计 Markdown 内嵌 todo 数量 */
+export function countInlineTodos(markdown: string): number {
+	const blocks = renderKnowledgeMarkdown(markdown)
+	let count = 0
+	for (let i = 0; i < blocks.length; i++) {
+		if (blocks[i].type == 'todo') count++
+	}
+	return count
+}
+
+// ---------- 构建（序列化） ----------
+
+/** 将 todo 列表序列化为 todo.md 内容 */
+export function buildTodoMarkdown(todos: UTSJSONObject[]): string {
+	const lines: string[] = []
+	lines.push('# Todo')
+	lines.push('')
+	for (let i = 0; i < todos.length; i++) {
+		const item = todos[i]
+		const completed = readBoolField(item, 'completed', false)
+		const box = completed ? '[x]' : '[ ]'
+		const priority = readStringField(item, 'priority')
+		const title = cleanLine(readStringField(item, 'title'))
+		const id = readStringField(item, 'id')
+		const createdAt = readStringField(item, 'createdAt')
+		const updatedAt = readStringField(item, 'updatedAt')
+		let meta = ''
+		if (priority != '' && priority != 'medium') {
+			meta = ' (' + priority + ')'
+		}
+		lines.push('- ' + box + meta + ' ' + title + ' <!-- id:' + id + ' createdAt:' + createdAt + ' updatedAt:' + updatedAt + ' -->')
+	}
+	return lines.join('\n')
+}
+
+/** 将笔记序列化为 .md 文件内容 */
+export function buildNoteMarkdown(title: string, content: string, id: string = ''): string {
+	const lines: string[] = []
+	lines.push('# ' + title)
+	lines.push('')
+	if (id != '') {
+		lines.push('<!-- id:' + id + ' updatedAt:' + nowText() + ' -->')
+		lines.push('')
+	}
+	lines.push(normalizeLineEndings(content))
+	return lines.join('\n')
+}
+
+// ---------- 解析 ----------
+
+function stripHtmlComment(line: string): string {
+	const start = line.indexOf('<!--')
+	if (start < 0) return line
+	return line.substring(0, start).trim()
+}
+
+function readCommentField(line: string, field: string): string {
+	const marker = field + ':'
+	const index = line.indexOf(marker)
+	if (index < 0) return ''
+	let end = line.indexOf(' ', index + marker.length)
+	const commentEnd = line.indexOf('-->', index + marker.length)
+	if (commentEnd >= 0 && (end < 0 || commentEnd < end)) end = commentEnd
+	if (end < 0) end = line.length
+	return line.substring(index + marker.length, end).trim()
+}
+
+function removeFirstHeading(body: string): UTSJSONObject {
+	const lines = normalizeLineEndings(body).split('\n')
+	const remain: string[] = []
+	let title = ''
+	let removed = false
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]
+		if (removed == false && line.trim().startsWith('# ')) {
+			title = line.trim().substring(2).trim()
+			removed = true
+			continue
+		}
+		remain.push(line)
+	}
+	return {
+		title: title,
+		content: remain.join('\n').trim(),
+	} as UTSJSONObject
+}
+
+/** 从 todo.md 内容解析为 todo 列表 */
+export function parseTodoMarkdown(markdown: string): UTSJSONObject[] {
+	const lines = normalizeLineEndings(markdown).split('\n')
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < lines.length && result.length < 300; i++) {
+		const line = lines[i].trim()
+		if (!(line.startsWith('- [ ]') || line.startsWith('- [x]') || line.startsWith('- [X]'))) continue
+		const completed = line.startsWith('- [x]') || line.startsWith('- [X]')
+		let rest = stripHtmlComment(line.substring(5).trim())
+		let priority = 'medium'
+		if (rest.startsWith('(high)')) { priority = 'high'; rest = rest.substring(6).trim() }
+		else if (rest.startsWith('(medium)')) { priority = 'medium'; rest = rest.substring(8).trim() }
+		else if (rest.startsWith('(low)')) { priority = 'low'; rest = rest.substring(5).trim() }
+		if (rest == '') continue
+		const id = readCommentField(line, 'id')
+		const createdAt = readCommentField(line, 'createdAt')
+		const updatedAt = readCommentField(line, 'updatedAt')
+		const now = nowText()
+		result.push({
+			id: id != '' ? id : 'todo_' + Date.now() + '_' + (i as number),
+			title: rest,
+			content: '',
+			priority: priority,
+			completed: completed,
+			createdAt: createdAt != '' ? createdAt : now,
+			updatedAt: updatedAt != '' ? updatedAt : now,
+		} as UTSJSONObject)
+	}
+	return result
+}
+
+/** 从 .md 文件内容解析为笔记对象 */
+export function parseNoteMarkdown(markdown: string, noteId: string = ''): UTSJSONObject {
+	const withoutHeading = removeFirstHeading(markdown)
+	let title = readStringField(withoutHeading, 'title')
+	if (title == '') title = noteId != '' ? noteId : '无标题'
+	const content = readStringField(withoutHeading, 'content')
+	return {
+		id: noteId != '' ? noteId : 'note_' + Date.now(),
+		title: title,
+		content: content,
+		updatedAt: nowText(),
+	} as UTSJSONObject
+}

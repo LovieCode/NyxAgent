@@ -144,7 +144,7 @@
 	 * 扁平化粉白主题
 	 */
 	import { getAgents, saveAgents } from '@/utils/agent.uts'
-	import { initAgentStorage } from '@/utils/agent-fs.uts'
+	import { getAgentDir, deleteItem } from '@/utils/file-manager.uts'
 	import { getConversationsByAgent } from '@/utils/database.uts'
 
 	/** 可用图标列表 */
@@ -482,7 +482,7 @@
 				}
 
 				// 初始化 agent 文件目录
-				initAgentStorage(id)
+				getAgentDir(id)
 
 				// 添加到列表并保存
 				const agents = getAgents()

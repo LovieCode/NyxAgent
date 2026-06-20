@@ -1,16 +1,29 @@
-// Agent 沙箱文件工具：将 agent-fs 包装为 AgentTool，每个工具绑定到特定 agentId 防止越权
+// Agent 沙箱 + 知识工具，统一走 file-manager.uts 文件 IO
 
 import {
-	readAgentFile,
-	writeAgentFile,
-	deleteAgentFile,
-	listAgentFiles,
-	createAgentDirectory,
-	getAgentFileInfo,
-	AgentFileInfo,
-} from '@/utils/agent-fs.uts'
+	readContent,
+	writeContent,
+	deleteItem,
+	listDir,
+	createDir,
+	statItem,
+	exists,
+	joinPath,
+	getAgentDir,
+	formatFileSize,
+	formatTime,
+	FileItem,
+} from '@/utils/file-manager.uts'
 import {
-	searchCoreMemory,
+    renderKnowledgeMarkdown,
+    countInlineTodos,
+    parseTodoMarkdown,
+    parseNoteMarkdown,
+    buildTodoMarkdown,
+    buildNoteMarkdown,
+    KnowledgeRenderBlock,
+} from '@/utils/markdown.uts'
+import {
 	searchCoreMemoryAdvanced,
 	searchConversationHistory,
 	searchConversationHistoryAdvanced,
@@ -24,7 +37,6 @@ import {
 	MemorySearchFilter,
 } from '@/utils/memory.uts'
 import { getProviderApiConfig } from '@/utils/provider.uts'
-import { listKnowledgeWorkspacePaths, readKnowledgeWorkspaceFile, writeKnowledgeWorkspaceFile, buildKnowledgeWorkspaceGuide } from '@/utils/knowledge-workspace.uts'
 
 /** ToolResult 匹配 agent-core types */
 export type ToolResult = {
@@ -76,6 +88,14 @@ export function createAgentTools(agentId: string, conversationId: string = '', p
 
 // ========== 工具定义 ==========
 
+/** 拼接 agent 沙箱绝对路径 */
+function resolveAgentPath(agentId: string, relPath: string): string {
+	const dir = getAgentDir(agentId)
+	if (dir == '') return ''
+	if (relPath == '') return dir
+	return joinPath(dir, relPath)
+}
+
 /**
  * 文件读取工具
  */
@@ -106,12 +126,17 @@ class SandboxFileReadTool implements AgentTool {
 				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
 				return
 			}
-			const content = readAgentFile(this.agentId, path!)
-			if (content == null) {
+			const absPath = resolveAgentPath(this.agentId, path!)
+			if (!exists(absPath)) {
 				resolve({ content: '文件不存在或读取失败: ' + path!, isError: true } as ToolResult)
 				return
 			}
-			resolve({ content: content!, isError: false } as ToolResult)
+			const content = readContent(absPath)
+			if (content == null) {
+				resolve({ content: '文件读取失败: ' + path!, isError: true } as ToolResult)
+				return
+			}
+			resolve({ content: content, isError: false } as ToolResult)
 		})
 	}
 }
@@ -157,11 +182,12 @@ class SandboxFileWriteTool implements AgentTool {
 				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
 				return
 			}
+			const absPath = resolveAgentPath(this.agentId, path!)
 			if (isDirectory == true) {
-				const ok = createAgentDirectory(this.agentId, path!)
+				const result = createDir(absPath)
 				resolve({
-					content: ok ? '目录创建成功: ' + path! : '目录创建失败（可能已存在同名文件）: ' + path!,
-					isError: !ok
+					content: result.ok ? '目录创建成功: ' + path! : '目录创建失败（可能已存在同名文件）: ' + path!,
+					isError: !result.ok
 				} as ToolResult)
 				return
 			}
@@ -169,10 +195,10 @@ class SandboxFileWriteTool implements AgentTool {
 				resolve({ content: '缺少必要参数: content', isError: true } as ToolResult)
 				return
 			}
-			const ok = writeAgentFile(this.agentId, path!, content!)
+			const result = writeContent(absPath, content!)
 			resolve({
-				content: ok ? '文件写入成功: ' + path! : '文件写入失败: ' + path!,
-				isError: !ok
+				content: result.ok ? '文件写入成功: ' + path! : '文件写入失败: ' + path!,
+				isError: !result.ok
 			} as ToolResult)
 		})
 	}
@@ -208,39 +234,13 @@ class SandboxFileDeleteTool implements AgentTool {
 				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
 				return
 			}
-			const ok = deleteAgentFile(this.agentId, path!)
+			const result = deleteItem(resolveAgentPath(this.agentId, path!))
 			resolve({
-				content: ok ? '文件删除成功: ' + path! : '文件删除失败: ' + path!,
-				isError: !ok
+				content: result.ok ? '文件删除成功: ' + path! : '文件删除失败: ' + path!,
+				isError: !result.ok
 			} as ToolResult)
 		})
 	}
-}
-
-/**
- * 目录列表工具
- */
-function formatAgentFileTime(lastModified: number): string {
-	const date = new Date(lastModified)
-	return date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate() + ' ' + date.getHours() + ':' + date.getMinutes()
-}
-
-function formatAgentFileInfo(path: string, info: AgentFileInfo): string {
-	const typeStr = info.isDirectory ? '目录' : '文件'
-	const finalPath = path != '' ? path : info.name
-	return '路径: ' + finalPath + '\n名称: ' + info.name + '\n类型: ' + typeStr + '\n大小: ' + info.size + ' bytes\n修改时间: ' + formatAgentFileTime(info.lastModified)
-}
-
-function formatAgentFileListLine(info: AgentFileInfo, detail: boolean): string {
-	const prefix = info.isDirectory ? '[DIR]  ' : '[FILE] '
-	if (detail == true) {
-		const typeStr = info.isDirectory ? '目录' : '文件'
-		return prefix + info.name + ' | 类型: ' + typeStr + ' | 大小: ' + info.size + ' bytes | 修改时间: ' + formatAgentFileTime(info.lastModified)
-	}
-	if (info.isDirectory) {
-		return prefix + info.name
-	}
-	return prefix + info.name + ' (' + info.size + ' bytes)'
 }
 
 class SandboxFileListTool implements AgentTool {
@@ -272,26 +272,40 @@ class SandboxFileListTool implements AgentTool {
 			const path = args['path'] as string | null
 			const rawDetail = args['detail'] as boolean | null
 			const dirPath = (path != null && path!.length > 0) ? path! : ''
+			const absPath = resolveAgentPath(this.agentId, dirPath)
 			if (dirPath != '') {
-				const info = getAgentFileInfo(this.agentId, dirPath)
-				if (info == null) {
+				if (!exists(absPath)) {
 					resolve({ content: '路径不存在: ' + dirPath, isError: true } as ToolResult)
 					return
 				}
-				if (info!.isDirectory == false) {
-					resolve({ content: formatAgentFileInfo(dirPath, info!), isError: false } as ToolResult)
+				const info = statItem(absPath)
+				if (info.isDirectory == false) {
+					const typeStr = '文件'
+					const result = '路径: ' + dirPath + '\n名称: ' + info.name + '\n类型: ' + typeStr + '\n大小: ' + formatFileSize(info.size) + '\n修改时间: ' + formatTime(info.lastModified)
+					resolve({ content: result, isError: false } as ToolResult)
 					return
 				}
 			}
 			const detail = rawDetail == true
-			const files = listAgentFiles(this.agentId, dirPath)
+			const files = listDir(absPath)
 			if (files.length == 0) {
 				resolve({ content: '(目录为空)', isError: false } as ToolResult)
 				return
 			}
 			const lines: string[] = []
 			for (let i = 0; i < files.length; i++) {
-				lines.push(formatAgentFileListLine(files[i], detail))
+				const info = files[i]
+				const prefix = info.isDirectory ? '[DIR]  ' : '[FILE] '
+				if (detail == true) {
+					const typeStr = info.isDirectory ? '目录' : '文件'
+					lines.push(prefix + info.name + ' | 类型: ' + typeStr + ' | 大小: ' + formatFileSize(info.size) + ' | 修改时间: ' + formatTime(info.lastModified))
+				} else {
+					if (info.isDirectory == true) {
+						lines.push(prefix + info.name)
+					} else {
+						lines.push(prefix + info.name + ' (' + formatFileSize(info.size) + ')')
+					}
+				}
 			}
 			resolve({ content: lines.join('\n'), isError: false } as ToolResult)
 		})
@@ -326,9 +340,27 @@ class KnowledgeFolderListTool implements AgentTool {
 	execute(args: UTSJSONObject): Promise<ToolResult> {
 		return new Promise<ToolResult>((resolve) => {
 			const rawPath = args['path'] as string | null
-			const path = rawPath != null ? rawPath : ''
-			const result = listKnowledgeWorkspacePaths(this.agentId, path)
-			resolve({ content: result, isError: false } as ToolResult)
+			const relPath = rawPath != null ? rawPath : ''
+			const absPath = resolveAgentPath(this.agentId, relPath == '' ? 'notes' : relPath)
+			const files = listDir(absPath)
+			const lines: string[] = ['📂 agents/' + this.agentId + '/ 知识空间']
+			lines.push('')
+			lines.push('用法：')
+			lines.push('- 待办: agents/<id>/todo.md（- [ ] / - [x] 格式）')
+			lines.push('- 笔记: agents/<id>/notes/<id>.md（Markdown 笔记）')
+			lines.push('')
+			lines.push('文件/目录：')
+			if (files.length == 0) {
+				lines.push('  (空)')
+			} else {
+				for (let i = 0; i < files.length; i++) {
+					const info = files[i]
+					const icon = info.isDirectory ? '[DIR]' : '[FILE]'
+					const sizeStr = info.isDirectory ? '' : ' (' + formatFileSize(info.size) + ')'
+					lines.push('  ' + icon + ' ' + info.name + sizeStr)
+				}
+			}
+			resolve({ content: lines.join('\n'), isError: false } as ToolResult)
 		})
 	}
 }
@@ -338,7 +370,7 @@ class KnowledgeFolderListTool implements AgentTool {
  */
 class KnowledgeFolderReadTool implements AgentTool {
 	name: string = 'knowledge_read'
-	description: string = '读取你的私有待办/笔记。路径格式：agents/<id>/todo.md、agents/<id>/notes/<id>.md。返回 Markdown，笔记中可包含 - [ ] / - [x] 待办。'
+	description: string = '读取你的私有待办/笔记。路径格式：agents/<id>/todo.md、agents/<id>/notes/<id>.md。返回渲染后的文本，笔记中可包含 - [ ] / - [x] 待办。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
@@ -369,14 +401,39 @@ class KnowledgeFolderReadTool implements AgentTool {
 				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
 				return
 			}
-			const content = readKnowledgeWorkspaceFile(this.agentId, path)
-			if (content == null) {
+			const absPath = resolveAgentPath(this.agentId, path)
+			if (!exists(absPath)) {
 				resolve({ content: '知识文件不存在或无权限访问: ' + path, isError: true } as ToolResult)
 				return
 			}
-			let finalContent = content
+			const content = readContent(absPath)
+			if (content == null) {
+				resolve({ content: '知识文件读取失败: ' + path, isError: true } as ToolResult)
+				return
+			}
+			const rendered = renderKnowledgeMarkdown(content)
+			// 将渲染块拼接为文本
+			let finalContent = ''
+			for (let i = 0; i < rendered.length; i++) {
+				const block = rendered[i]
+				if (block.type == 'heading') {
+					const prefix = block.level == 1 ? '# ' : block.level == 2 ? '## ' : '### '
+					finalContent = finalContent + prefix + block.text + '\n'
+				} else if (block.type == 'todo') {
+					const box = block.checked ? '- [x]' : '- [ ]'
+					finalContent = finalContent + box + ' ' + block.text + '\n'
+				} else if (block.type == 'bullet') {
+					finalContent = finalContent + '- ' + block.text + '\n'
+				} else {
+					finalContent = finalContent + block.text + '\n'
+				}
+			}
 			if (includeGuide == true) {
-				finalContent = finalContent + '\n\n---\n' + buildKnowledgeWorkspaceGuide(this.agentId)
+				finalContent = finalContent + '\n\n---\n' +
+					'📖 知识文件格式说明：\n' +
+					'- 待办: 使用 - [ ] 未完成 / - [x] 已完成 格式\n' +
+					'- 笔记: 标准 Markdown，首行 # 标题\n' +
+					'- 文件路径: agents/<id>/todo.md 或 agents/<id>/notes/<name>.md'
 			}
 			resolve({ content: finalContent, isError: false } as ToolResult)
 		})
@@ -424,10 +481,22 @@ class KnowledgeFolderWriteTool implements AgentTool {
 				resolve({ content: '缺少必要参数: content', isError: true } as ToolResult)
 				return
 			}
-			const ok = writeKnowledgeWorkspaceFile(this.agentId, path, content)
+			// 对 todo.md 使用 todo 解析/构建确保格式统一
+			let finalContent = content
+			if (path == 'todo.md') {
+				const parsed = parseTodoMarkdown(content)
+				finalContent = buildTodoMarkdown(parsed)
+			} else if (path.indexOf('notes/') == 0) {
+				const parsed = parseNoteMarkdown(content)
+				const noteTitle = parsed['title'] as string
+				const noteContent = parsed['content'] as string
+				finalContent = buildNoteMarkdown(noteTitle, noteContent)
+			}
+			const absPath = resolveAgentPath(this.agentId, path)
+			const result = writeContent(absPath, finalContent)
 			resolve({
-				content: ok ? '知识文件已写入: ' + path : '知识文件写入失败或无权限: ' + path,
-				isError: !ok
+				content: result.ok ? '知识文件已写入: ' + path : '知识文件写入失败或无权限: ' + path,
+				isError: !result.ok
 			} as ToolResult)
 		})
 	}
@@ -463,13 +532,16 @@ class SandboxFileInfoTool implements AgentTool {
 				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
 				return
 			}
-			const info = getAgentFileInfo(this.agentId, path!)
-			if (info == null) {
+			const absPath = resolveAgentPath(this.agentId, path!)
+			if (!exists(absPath)) {
 				resolve({ content: '文件不存在: ' + path!, isError: true } as ToolResult)
 				return
 			}
+			const info = statItem(absPath)
+			const typeStr = info.isDirectory ? '目录' : '文件'
+			const result = '路径: ' + path! + '\n名称: ' + info.name + '\n类型: ' + typeStr + '\n大小: ' + formatFileSize(info.size) + '\n修改时间: ' + formatTime(info.lastModified)
 			resolve({
-				content: formatAgentFileInfo(path!, info!),
+				content: result,
 				isError: false
 			} as ToolResult)
 		})
