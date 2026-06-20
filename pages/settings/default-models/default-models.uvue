@@ -60,7 +60,7 @@
 </template>
 
 <script lang="uts">
-	import { getAllProviders, setDefaultTaskModel, getAllDefaultTaskModels, getProviderModels, parseModels } from '@/utils/provider.uts'
+	import { getAllProviders, setDefaultTaskModel, getAllDefaultTaskModels, getProviderModels, parseModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
 
 	export default {
 		data() {

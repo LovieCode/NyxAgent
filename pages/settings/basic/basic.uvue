@@ -53,7 +53,7 @@
 </template>
 
 <script lang="uts">
-	import { getAllProviders, deleteProvider, setProviderEnabled, parseModels } from '@/utils/provider.uts'
+	import { getAllProviders, deleteProvider, setProviderEnabled, parseModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
 
 	export default {
 		data() {
