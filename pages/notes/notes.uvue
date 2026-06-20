@@ -189,7 +189,7 @@
 						break
 					}
 				}
-				// 从叶子向根收集（跳过 agents 容器目录，替换 agent ID 为显示名）
+				// 从叶子向根收集时本身是根→叶子顺序，无需反转
 				const parts: PathSegment[] = []
 				for (let i = startIndex - 1; i >= 0; i--) {
 					let displayName = stack[i].name
@@ -206,8 +206,6 @@
 					}
 					parts.push({ name: displayName, path: stack[i].path })
 				}
-				// 反转得到根→叶子顺序
-				parts.reverse()
 				return parts
 			}
 		},
