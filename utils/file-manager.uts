@@ -69,9 +69,12 @@ function makeFileItem(name: string, path: string, isDir: boolean, size: number, 
 }
 
 /**
- * 规范化路径：统一分隔符，去除末尾斜杠，合并多余斜杠。
+ * 规范化路径：统一分隔符，合并多余斜杠。
  *
- * 注意：保留 `unifile://` 协议前缀的双斜杠（HBuilderX 4.71+ 使用该协议）。
+ * 注意：
+ * - 保留 `unifile://` 协议前缀的双斜杠（HBuilderX 4.71+ 使用该协议）
+ * - 协议路径保留原始末尾斜杠状态（不强制添加或去除）
+ * - 普通路径去除末尾斜杠
  */
 export function normalizePath(path: string): string {
 	let result = path.trim().replace(/\\/g, SEP)
@@ -88,25 +91,44 @@ export function normalizePath(path: string): string {
 	while (result.indexOf(SEP + SEP) >= 0) {
 		result = result.replace(/\/\/+/g, SEP)
 	}
-	if (result.length > 1 && result.endsWith(SEP)) {
-		result = result.substring(0, result.length - 1)
+	// 普通路径去除末尾斜杠；协议路径保留原始末尾斜杠状态
+	if (protocol == '') {
+		if (result.length > 1 && result.endsWith(SEP)) {
+			result = result.substring(0, result.length - 1)
+		}
 	}
 	return protocol + result
 }
 
 /**
  * 拼接路径，自动处理分隔符。
+ * 协议路径（如 unifile://usr/）的末尾斜杠会被正确处理。
  */
 export function joinPath(base: string, name: string): string {
-	const b = normalizePath(base)
-	const n = name.trim()
-	if (b == '') {
-		return normalizePath(n)
+	let n = name.trim()
+	if (n == '') {
+		return normalizePath(base)
 	}
-	if (b.endsWith(SEP)) {
-		return normalizePath(b + n)
+	// 提取协议前缀
+	let protocol = ''
+	let b = base
+	if (b.startsWith('unifile://')) {
+		protocol = 'unifile://'
+		b = b.substring(10)
+	} else if (b.startsWith('file://')) {
+		protocol = 'file://'
+		b = b.substring(7)
 	}
-	return normalizePath(b + SEP + n)
+	// 去除 b 末尾斜杠
+	while (b.length > 0 && b.endsWith(SEP)) {
+		b = b.substring(0, b.length - 1)
+	}
+	// 去除 n 开头斜杠
+	while (n.startsWith(SEP)) {
+		n = n.substring(1)
+	}
+	const joined = b + SEP + n
+	return protocol + joined
 }
 
 /**
@@ -198,7 +220,48 @@ export function listDir(dirPath: string): FileItem[] {
 		console.log('[file-manager] listDir: 路径为空')
 		return []
 	}
+	console.log('[file-manager] listDir 输入路径: ' + dirPath)
+	console.log('[file-manager] listDir 规范化路径: ' + normalized)
+
 	const fm = uni.getFileSystemManager()
+
+	// 诊断：测试多种路径格式
+	// 测试1：直接用原始输入
+	try {
+		const test1 = fm.readdirSync(dirPath)
+		console.log('[file-manager] 诊断1 原始路径成功: ' + JSON.stringify(test1))
+	} catch (e: any) {
+		console.log('[file-manager] 诊断1 原始路径失败: ' + (e != null ? ('' + e) : 'null'))
+	}
+	// 测试2：用规范化后的路径
+	try {
+		const test2 = fm.readdirSync(normalized)
+		console.log('[file-manager] 诊断2 规范化路径成功: ' + JSON.stringify(test2))
+	} catch (e: any) {
+		console.log('[file-manager] 诊断2 规范化路径失败: ' + (e != null ? ('' + e) : 'null'))
+	}
+	// 测试3：去掉末尾斜杠
+	const noTrailingSlash = normalized.endsWith('/') ? normalized.substring(0, normalized.length - 1) : normalized
+	if (noTrailingSlash != normalized) {
+		try {
+			const test3 = fm.readdirSync(noTrailingSlash)
+			console.log('[file-manager] 诊断3 去末尾斜杠成功: ' + JSON.stringify(test3))
+		} catch (e: any) {
+			console.log('[file-manager] 诊断3 去末尾斜杠失败: ' + (e != null ? ('' + e) : 'null'))
+		}
+	}
+	// 测试4：Android 绝对路径转换
+	// #ifdef APP-ANDROID
+	try {
+		const absPath = UTSAndroid.convert2AbsFullPath(dirPath)
+		console.log('[file-manager] 诊断4 Android绝对路径: ' + absPath)
+		const test4 = fm.readdirSync(absPath)
+		console.log('[file-manager] 诊断4 Android绝对路径成功: ' + JSON.stringify(test4))
+	} catch (e: any) {
+		console.log('[file-manager] 诊断4 Android绝对路径失败: ' + (e != null ? ('' + e) : 'null'))
+	}
+	// #endif
+
 	let names: string[]
 	try {
 		const raw = fm.readdirSync(normalized)
