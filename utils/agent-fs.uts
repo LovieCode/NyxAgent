@@ -1,24 +1,25 @@
 /**
  * Agent 文件系统沙箱
- * 桥接到 utssdk/agent-files 原生插件
- * 每个 Agent 拥有独立子目录，文件操作不能越界
+ *
+ * 每个 Agent 拥有独立子目录 /data/data/<pkg>/files/agents/<agentId>/，
+ * 文件操作不能越界。底层委托统一的 file-manager.uts 执行实际 IO。
+ *
+ * 平台兼容：
+ * - Android：file-manager.uts 调用 java.io.File 原生 API
+ * - 其他平台：file-manager.uts 调用 FileSystemManager（仅支持外部沙盒）
  */
 
-// #ifdef APP-ANDROID
 import {
-	initAgentStorage as nativeInit,
-	removeAgentStorage as nativeRemove,
-	readAgentFile as nativeRead,
-	writeAgentFile as nativeWrite,
-	deleteAgentFile as nativeDelete,
-	listAgentFiles as nativeList,
-	agentFileExists as nativeExists,
-	getAgentFileInfo as nativeInfo,
-	createAgentDirectory as nativeMkdir,
-	getAgentStoragePath as nativeGetPath,
-	getAgentStorageSize as nativeGetSize,
-} from '@/utssdk/agent-files/index.uts'
-// #endif
+	exists,
+	listDir,
+	statItem,
+	createDir,
+	deleteItem,
+	readContent,
+	writeContent,
+	getInternalFilesDir,
+	FileItem,
+} from '@/utils/file-manager.uts'
 
 /** 文件信息 */
 export type AgentFileInfo = {
@@ -28,129 +29,174 @@ export type AgentFileInfo = {
 	lastModified: number
 }
 
-/** 获取 agent 存储目录路径 */
+/**
+ * 校验 agentId，避免拼进路径时越权。
+ */
+function validateAgentId(agentId: string): boolean {
+	if (agentId == '') return false
+	if (agentId.indexOf('/') >= 0) return false
+	if (agentId.indexOf('\\') >= 0) return false
+	if (agentId.indexOf('..') >= 0) return false
+	return true
+}
+
+/**
+ * 校验相对路径安全性
+ */
+function validatePath(relativePath: string): string | null {
+	if (relativePath == '' || relativePath == '.') return null
+	if (relativePath.startsWith('/')) return '不允许使用绝对路径'
+	if (relativePath.indexOf('\\') >= 0) return '路径不允许包含反斜杠'
+	const segments = relativePath.split('/')
+	for (let i = 0; i < segments.length; i++) {
+		if (segments[i] == '..') return '路径不允许包含 ".."'
+	}
+	return null
+}
+
+/**
+ * 获取所有 Agent 存储的根目录
+ */
+function getAgentsRoot(): string {
+	const filesDir = getInternalFilesDir()
+	if (filesDir == '') {
+		return ''
+	}
+	return filesDir + '/agents'
+}
+
+/**
+ * 获取 agent 存储目录路径
+ */
 export function getAgentStoragePath(agentId: string): string {
-	// #ifdef APP-ANDROID
-	return nativeGetPath(agentId)
-	// #endif
-	return ''
+	if (!validateAgentId(agentId)) return ''
+	const root = getAgentsRoot()
+	if (root == '') return ''
+	return root + '/' + agentId
+}
+
+/**
+ * 解析安全的完整路径
+ */
+function resolvePath(agentId: string, relativePath: string): string {
+	if (!validateAgentId(agentId)) return ''
+	const err = validatePath(relativePath)
+	if (err != null) return ''
+	const base = getAgentStoragePath(agentId)
+	if (base == '') return ''
+	if (relativePath == '' || relativePath == '.') return base
+	return base + '/' + relativePath
+}
+
+/** FileItem → AgentFileInfo 转换 */
+function toAgentFileInfo(item: FileItem): AgentFileInfo {
+	return {
+		name: item.name,
+		isDirectory: item.isDirectory,
+		size: item.size,
+		lastModified: item.lastModified,
+	} as AgentFileInfo
 }
 
 /** 初始化 agent 存储目录 */
 export function initAgentStorage(agentId: string): boolean {
-	// #ifdef APP-ANDROID
-	return nativeInit(agentId)
-	// #endif
-	return false
+	const dirPath = getAgentStoragePath(agentId)
+	if (dirPath == '') return false
+	if (exists(dirPath)) return true
+	const result = createDir(dirPath, true)
+	return result.ok
 }
 
 /** 删除 agent 整个存储目录 */
 export function removeAgentStorage(agentId: string): boolean {
-	// #ifdef APP-ANDROID
-	return nativeRemove(agentId)
-	// #endif
-	return false
+	const dirPath = getAgentStoragePath(agentId)
+	if (dirPath == '') return false
+	if (!exists(dirPath)) return true
+	const result = deleteItem(dirPath, true)
+	return result.ok
 }
 
-/** 读取 agent 文件 */
+/** 读取 agent 文件内容 */
 export function readAgentFile(agentId: string, filePath: string): string | null {
-	// #ifdef APP-ANDROID
-	return nativeRead(agentId, filePath)
-	// #endif
-	return null
+	const fullPath = resolvePath(agentId, filePath)
+	if (fullPath == '') return null
+	return readContent(fullPath)
 }
 
 /** 写入 agent 文件 */
 export function writeAgentFile(agentId: string, filePath: string, content: string): boolean {
-	// #ifdef APP-ANDROID
-	return nativeWrite(agentId, filePath, content)
-	// #endif
-	return false
+	const fullPath = resolvePath(agentId, filePath)
+	if (fullPath == '') return false
+	const result = writeContent(fullPath, content)
+	return result.ok
 }
 
 /** 删除 agent 文件 */
 export function deleteAgentFile(agentId: string, filePath: string): boolean {
-	// #ifdef APP-ANDROID
-	return nativeDelete(agentId, filePath)
-	// #endif
-	return false
+	const fullPath = resolvePath(agentId, filePath)
+	if (fullPath == '') return false
+	if (!exists(fullPath)) return true
+	const result = deleteItem(fullPath, false)
+	return result.ok
 }
 
 /** 列出 agent 目录内容 */
 export function listAgentFiles(agentId: string, dirPath: string = ''): AgentFileInfo[] {
-	// #ifdef APP-ANDROID
-	const json = nativeList(agentId, dirPath)
-	if (json == '[]') return []
-	try {
-		const arr = JSON.parse(json) as UTSJSONObject[]
-		if (arr == null) return []
-		const result: AgentFileInfo[] = []
-		for (let i = 0; i < arr.length; i++) {
-			const rawName = arr[i]['name'] as string | null
-			const rawIsDirectory = arr[i]['isDirectory'] as boolean | null
-			const rawSize = arr[i]['size'] as number | null
-			const rawLastModified = arr[i]['lastModified'] as number | null
-			result.push({
-				name: rawName != null ? rawName : '',
-				isDirectory: rawIsDirectory != null ? rawIsDirectory : false,
-				size: rawSize != null ? rawSize : 0,
-				lastModified: rawLastModified != null ? rawLastModified : 0,
-			} as AgentFileInfo)
-		}
-		return result
-	} catch (_) {
-		return []
+	const fullPath = resolvePath(agentId, dirPath)
+	if (fullPath == '') return []
+	const items = listDir(fullPath)
+	const result: AgentFileInfo[] = []
+	for (let i = 0; i < items.length; i++) {
+		result.push(toAgentFileInfo(items[i]))
 	}
-	// #endif
-	return []
+	return result
 }
 
 /** 检查文件/目录是否存在 */
 export function agentFileExists(agentId: string, path: string): boolean {
-	// #ifdef APP-ANDROID
-	return nativeExists(agentId, path)
-	// #endif
-	return false
+	const fullPath = resolvePath(agentId, path)
+	if (fullPath == '') return false
+	return exists(fullPath)
 }
 
 /** 获取文件信息 */
 export function getAgentFileInfo(agentId: string, path: string): AgentFileInfo | null {
-	// #ifdef APP-ANDROID
-	const json = nativeInfo(agentId, path)
-	if (json == null) return null
-	try {
-		const jsonText = json as string
-		const obj = JSON.parse(jsonText) as UTSJSONObject
-		if (obj == null) return null
-		const rawName = obj['name'] as string | null
-		const rawIsDirectory = obj['isDirectory'] as boolean | null
-		const rawSize = obj['size'] as number | null
-		const rawLastModified = obj['lastModified'] as number | null
-		return {
-			name: rawName != null ? rawName : '',
-			isDirectory: rawIsDirectory != null ? rawIsDirectory : false,
-			size: rawSize != null ? rawSize : 0,
-			lastModified: rawLastModified != null ? rawLastModified : 0,
-		} as AgentFileInfo
-	} catch (_) {
-		return null
-	}
-	// #endif
-	return null
+	const fullPath = resolvePath(agentId, path)
+	if (fullPath == '') return null
+	if (!exists(fullPath)) return null
+	const item = statItem(fullPath)
+	return toAgentFileInfo(item)
 }
 
 /** 创建子目录 */
 export function createAgentDirectory(agentId: string, dirPath: string): boolean {
-	// #ifdef APP-ANDROID
-	return nativeMkdir(agentId, dirPath)
-	// #endif
-	return false
+	const fullPath = resolvePath(agentId, dirPath)
+	if (fullPath == '') return false
+	const result = createDir(fullPath, true)
+	return result.ok
 }
 
-/** 获取 agent 目录总大小 */
+/**
+ * 获取 agent 目录总大小（递归计算字节数）。
+ */
 export function getAgentStorageSize(agentId: string): number {
-	// #ifdef APP-ANDROID
-	return nativeGetSize(agentId)
-	// #endif
-	return 0
+	const dirPath = getAgentStoragePath(agentId)
+	if (dirPath == '') return 0
+	if (!exists(dirPath)) return 0
+	return calculateDirSize(dirPath)
+}
+
+/** 递归计算目录总大小 */
+function calculateDirSize(dirPath: string): number {
+	let total: number = 0
+	const items = listDir(dirPath)
+	for (let i = 0; i < items.length; i++) {
+		const child = items[i]
+		if (child.isDirectory) {
+			total = total + calculateDirSize(child.path)
+		} else {
+			total = total + child.size
+		}
+	}
+	return total
 }

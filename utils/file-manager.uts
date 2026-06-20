@@ -1,17 +1,19 @@
 /**
  * 文件管理工具层
  *
- * 封装 uni.getFileSystemManager() API，提供沙盒内文件的增删改查能力。
- * 默认操作目录为 uni.env.USER_DATA_PATH（用户数据目录，持久保存）。
+ * Android 平台使用 java.io.File 原生 API，可访问 app 私有目录（/data/data/<pkg>/），
+ * 包括 files/（agents/sessions/快照）、databases/（SQLite）、cache/ 等所有子目录。
  *
- * 平台兼容性：
- * - Android 3.9.0+（readdir/stat/mkdir/readFile/access）
- * - Android 4.13+（rmdir/rename/unlink/copyFile/writeFile）
- * - iOS 4.11+（基础API）
- * - iOS 4.61+（完整API）
+ * 其他平台回退到 uni.getFileSystemManager()，仅支持外置沙盒目录。
  *
- * 注意：FileSystemManager 只能访问应用沙盒内目录，不能访问沙盒外。
+ * 默认根目录：
+ * - Android：context.applicationInfo.dataDir（/data/data/<pkg>/）
+ * - 其他平台：uni.env.USER_DATA_PATH
  */
+
+// #ifdef APP-ANDROID
+import File from 'java.io.File'
+// #endif
 
 /** 文件项信息 */
 export type FileItem = {
@@ -68,14 +70,84 @@ function makeFileItem(name: string, path: string, isDir: boolean, size: number, 
 	return item
 }
 
+// #ifdef APP-ANDROID
 /**
- * 规范化路径：统一分隔符，合并多余斜杠。
- *
- * 规则：
- * - 保留 `unifile://` / `file://` 协议前缀的双斜杠
- * - 协议根目录（如 unifile://usr/）保留末尾斜杠，readdirSync 要求
- * - 协议子路径去除末尾斜杠
- * - 普通路径去除末尾斜杠
+ * 获取 Android Application Context
+ */
+function getAndroidContext(): android.content.Context {
+	return UTSAndroid.getAppContext()!
+}
+
+/**
+ * 获取 app 私有数据根目录（/data/data/<pkg>/）
+ */
+function getAppDataDir(): string {
+	const context = getAndroidContext()
+	return context.applicationInfo.dataDir
+}
+// #endif
+
+/**
+ * 获取内部存储 files 目录。
+ * - Android：/data/data/<pkg>/files/（Agent 文件、会话、SQLite 快照等业务数据存放于此）
+ * - 其他平台：uni.env.USER_DATA_PATH
+ */
+export function getInternalFilesDir(): string {
+	// #ifdef APP-ANDROID
+	const context = getAndroidContext()
+	const dir = context.filesDir as File
+	return dir.absolutePath
+	// #endif
+	// #ifndef APP-ANDROID
+	const userDataPath = uni.env.USER_DATA_PATH
+	if (userDataPath != null && userDataPath != '') {
+		return normalizePath(userDataPath)
+	}
+	return ''
+	// #endif
+}
+
+/**
+ * 获取内部存储 cache 目录。
+ * - Android：/data/data/<pkg>/cache/（临时文件、下载缓存等）
+ * - 其他平台：uni.env.CACHE_PATH
+ */
+export function getInternalCacheDir(): string {
+	// #ifdef APP-ANDROID
+	const context = getAndroidContext()
+	const dir = context.cacheDir as File
+	return dir.absolutePath
+	// #endif
+	// #ifndef APP-ANDROID
+	const cachePath = uni.env.CACHE_PATH
+	if (cachePath != null && cachePath != '') {
+		return normalizePath(cachePath)
+	}
+	return ''
+	// #endif
+}
+
+/**
+ * 获取 SQLite 数据库目录。
+ * - Android：/data/data/<pkg>/databases/（系统管理，仅用于读取数据库文件信息）
+ * - 其他平台：返回空字符串
+ */
+export function getDatabaseDir(): string {
+	// #ifdef APP-ANDROID
+	const dataDir = getAppDataDir()
+	if (dataDir == '') {
+		return ''
+	}
+	return normalizePath(dataDir + SEP + 'databases')
+	// #endif
+	// #ifndef APP-ANDROID
+	return ''
+	// #endif
+}
+
+/**
+ * 规范化路径：统一分隔符，合并多余斜杠，去除末尾斜杠。
+ * 支持 unifile://、file:// 协议路径和绝对路径。
  */
 export function normalizePath(path: string): string {
 	let result = path.trim().replace(/\\/g, SEP)
@@ -92,28 +164,9 @@ export function normalizePath(path: string): string {
 	while (result.indexOf(SEP + SEP) >= 0) {
 		result = result.replace(/\/\/+/g, SEP)
 	}
-	// 协议路径处理末尾斜杠
-	if (protocol != '') {
-		// 协议根目录：路径为空或只有一级（如 usr、cache）时，确保带末尾斜杠
-		// 判断"根目录"：路径中不含斜杠，或只有一级目录
-		const trimmedResult = result.endsWith(SEP) ? result.substring(0, result.length - 1) : result
-		const slashCount = countChar(trimmedResult, SEP)
-		// unifile://usr/ 是根（一级），unifile://usr/exports 是子路径（二级）
-		if (slashCount <= 0 && trimmedResult != '') {
-			// 只有一级目录名，是根，加末尾斜杠
-			result = trimmedResult + SEP
-		} else if (trimmedResult == '') {
-			// 协议后为空，加斜杠
-			result = SEP
-		} else {
-			// 子路径，去除末尾斜杠
-			result = trimmedResult
-		}
-	} else {
-		// 普通路径去除末尾斜杠
-		if (result.length > 1 && result.endsWith(SEP)) {
-			result = result.substring(0, result.length - 1)
-		}
+	// 去除末尾斜杠（根目录 "/" 除外）
+	if (result.length > 1 && result.endsWith(SEP)) {
+		result = result.substring(0, result.length - 1)
 	}
 	return protocol + result
 }
@@ -131,16 +184,15 @@ function countChar(s: string, c: string): number {
 
 /**
  * 拼接路径，自动处理分隔符。
- * 协议路径（如 unifile://usr/）的末尾斜杠会被正确处理。
  */
 export function joinPath(base: string, name: string): string {
 	let n = name.trim()
 	if (n == '') {
 		return normalizePath(base)
 	}
+	let b = normalizePath(base)
 	// 提取协议前缀
 	let protocol = ''
-	let b = base
 	if (b.startsWith('unifile://')) {
 		protocol = 'unifile://'
 		b = b.substring(10)
@@ -156,18 +208,16 @@ export function joinPath(base: string, name: string): string {
 	while (n.startsWith(SEP)) {
 		n = n.substring(1)
 	}
-	const joined = b + SEP + n
-	return protocol + joined
+	return protocol + b + SEP + n
 }
 
 /**
  * 获取父目录路径。根目录返回空字符串。
- * 协议根目录的父目录返回自身（无法再向上）。
  */
 export function parentPath(path: string): string {
+	let p = normalizePath(path)
 	// 提取协议前缀
 	let protocol = ''
-	let p = path
 	if (p.startsWith('unifile://')) {
 		protocol = 'unifile://'
 		p = p.substring(10)
@@ -175,38 +225,23 @@ export function parentPath(path: string): string {
 		protocol = 'file://'
 		p = p.substring(7)
 	}
-	// 去除末尾斜杠
-	while (p.length > 0 && p.endsWith(SEP)) {
-		p = p.substring(0, p.length - 1)
-	}
 	const lastSep = p.lastIndexOf(SEP)
-	if (lastSep < 0) {
-		// 只有一级目录（如 usr），是协议根，返回空
+	if (lastSep <= 0) {
 		return ''
 	}
-	const parent = p.substring(0, lastSep)
-	// 如果父目录是协议根（如 unifile://usr），加末尾斜杠
-	const parentSlashCount = countChar(parent, SEP)
-	if (protocol != '' && parentSlashCount == 0 && parent != '') {
-		return protocol + parent + SEP
-	}
-	return protocol + parent
+	return protocol + p.substring(0, lastSep)
 }
 
 /**
  * 获取路径末尾的文件/文件夹名。
  */
 export function basename(path: string): string {
+	let p = normalizePath(path)
 	// 提取协议前缀
-	let p = path
 	if (p.startsWith('unifile://')) {
 		p = p.substring(10)
 	} else if (p.startsWith('file://')) {
 		p = p.substring(7)
-	}
-	// 去除末尾斜杠
-	while (p.length > 0 && p.endsWith(SEP)) {
-		p = p.substring(0, p.length - 1)
 	}
 	const lastSep = p.lastIndexOf(SEP)
 	if (lastSep < 0) {
@@ -216,10 +251,17 @@ export function basename(path: string): string {
 }
 
 /**
- * 获取默认根目录（用户数据目录）。
- * 失败时回退到缓存目录。
+ * 获取默认根目录。
+ * - Android：app 私有数据根目录 /data/data/<pkg>/（含 files/databases/cache 等子目录）
+ * - 其他平台：uni.env.USER_DATA_PATH
  */
 export function getDefaultRoot(): string {
+	// #ifdef APP-ANDROID
+	const dataDir = getAppDataDir()
+	if (dataDir != null && dataDir != '') {
+		return dataDir
+	}
+	// #endif
 	const userDataPath = uni.env.USER_DATA_PATH
 	if (userDataPath != null && userDataPath != '') {
 		return normalizePath(userDataPath)
@@ -236,6 +278,12 @@ export function getDefaultRoot(): string {
  */
 export function listRootDirs(): string[] {
 	const roots: string[] = []
+	// #ifdef APP-ANDROID
+	const dataDir = getAppDataDir()
+	if (dataDir != null && dataDir != '') {
+		roots.push(dataDir)
+	}
+	// #endif
 	const userDataPath = uni.env.USER_DATA_PATH
 	if (userDataPath != null && userDataPath != '') {
 		roots.push(normalizePath(userDataPath))
@@ -255,6 +303,19 @@ export function exists(path: string): boolean {
 	if (normalized == '') {
 		return false
 	}
+	// #ifdef APP-ANDROID
+	const absPath = toAndroidAbsPath(normalized)
+	if (absPath == '') {
+		return false
+	}
+	try {
+		const file = new File(absPath)
+		return file.exists()
+	} catch (_e: any) {
+		return false
+	}
+	// #endif
+	// #ifndef APP-ANDROID
 	const fm = uni.getFileSystemManager()
 	try {
 		fm.accessSync(normalized)
@@ -262,7 +323,32 @@ export function exists(path: string): boolean {
 	} catch (_e: any) {
 		return false
 	}
+	// #endif
 }
+
+// #ifdef APP-ANDROID
+/**
+ * 将路径转换为 Android 绝对路径。
+ * unifile:// 路径通过 UTSAndroid.convert2AbsFullPath 转换，
+ * file:// 路径去掉协议前缀，其他路径原样返回。
+ */
+function toAndroidAbsPath(path: string): string {
+	if (path == '') {
+		return ''
+	}
+	if (path.startsWith('unifile://')) {
+		try {
+			return UTSAndroid.convert2AbsFullPath(path)
+		} catch (_e: any) {
+			return ''
+		}
+	}
+	if (path.startsWith('file://')) {
+		return path.substring(7)
+	}
+	return path
+}
+// #endif
 
 /**
  * 列出指定目录下的文件和文件夹。
@@ -275,6 +361,37 @@ export function listDir(dirPath: string): FileItem[] {
 	if (normalized == '') {
 		return []
 	}
+	const items: FileItem[] = []
+	// #ifdef APP-ANDROID
+	const absPath = toAndroidAbsPath(normalized)
+	if (absPath == '') {
+		return []
+	}
+	try {
+		const dir = new File(absPath)
+		if (!dir.exists() || !dir.isDirectory()) {
+			return []
+		}
+		const names = dir.list()
+		if (names == null) {
+			return []
+		}
+		let idx = 0 as Int
+		while (idx < names.size) {
+			const name = names[idx]
+			if (name != '.' && name != '..') {
+				const childPath = joinPath(normalized, name)
+				const childAbsPath = absPath + SEP + name
+				const stat = statItemByAbsPath(childAbsPath, childPath)
+				items.push(stat)
+			}
+			idx++
+		}
+	} catch (_e: any) {
+		return []
+	}
+	// #endif
+	// #ifndef APP-ANDROID
 	const fm = uni.getFileSystemManager()
 	let names: string[]
 	try {
@@ -282,7 +399,6 @@ export function listDir(dirPath: string): FileItem[] {
 	} catch (_e: any) {
 		return []
 	}
-	const items: FileItem[] = []
 	for (let i = 0; i < names.length; i++) {
 		const name = names[i]
 		if (name == '.' || name == '..') {
@@ -292,6 +408,7 @@ export function listDir(dirPath: string): FileItem[] {
 		const stat = statItem(fullPath)
 		items.push(stat)
 	}
+	// #endif
 	// 排序：目录在前，文件在后；同类按名称升序
 	items.sort((a: FileItem, b: FileItem): number => {
 		if (a.isDirectory != b.isDirectory) {
@@ -308,18 +425,45 @@ export function listDir(dirPath: string): FileItem[] {
 	return items
 }
 
+// #ifdef APP-ANDROID
+/**
+ * 通过 Android 绝对路径获取文件信息（内部使用）。
+ * @param absPath Android 文件系统绝对路径
+ * @param displayPath 显示用路径（可能是 unifile:// 或绝对路径）
+ */
+function statItemByAbsPath(absPath: string, displayPath: string): FileItem {
+	try {
+		const file = new File(absPath)
+		if (!file.exists()) {
+			return makeFileItem(basename(displayPath), displayPath, false, 0, 0)
+		}
+		const isDir = file.isDirectory()
+		const size = isDir ? 0 : file.length()
+		const mtime = file.lastModified()
+		return makeFileItem(file.name, displayPath, isDir, size, mtime)
+	} catch (_e: any) {
+		return makeFileItem(basename(displayPath), displayPath, false, 0, 0)
+	}
+}
+// #endif
+
 /**
  * 获取单个文件/目录的统计信息。
  * 失败返回默认值（isDirectory=false, size=0）。
- *
- * statSync 返回 FileStats[]，每个 FileStats 包含 { path: string, stats: Stats }。
- * Stats 有 isDirectory() 方法、size、lastModifiedTime 属性。
  */
 export function statItem(path: string): FileItem {
 	const normalized = normalizePath(path)
 	if (normalized == '') {
 		return makeFileItem('', normalized, false, 0, 0)
 	}
+	// #ifdef APP-ANDROID
+	const absPath = toAndroidAbsPath(normalized)
+	if (absPath == '') {
+		return makeFileItem(basename(normalized), normalized, false, 0, 0)
+	}
+	return statItemByAbsPath(absPath, normalized)
+	// #endif
+	// #ifndef APP-ANDROID
 	const fm = uni.getFileSystemManager()
 	try {
 		const statsArray = fm.statSync(normalized, false)
@@ -327,8 +471,6 @@ export function statItem(path: string): FileItem {
 			return makeFileItem(basename(normalized), normalized, false, 0, 0)
 		}
 		const fileStat = statsArray[0]
-		// FileStats 包含 path 和 stats 属性
-		// stats 是 Stats 类型，有 isDirectory() 方法、size、lastModifiedTime 属性
 		const stat = fileStat.stats
 		let isDir = false
 		let size = 0
@@ -346,6 +488,7 @@ export function statItem(path: string): FileItem {
 	} catch (_e: any) {
 		return makeFileItem(basename(normalized), normalized, false, 0, 0)
 	}
+	// #endif
 }
 
 /**
@@ -362,6 +505,24 @@ export function createDir(dirPath: string, recursive: boolean = true): FileOpRes
 	if (exists(normalized)) {
 		return failResult('目录已存在')
 	}
+	// #ifdef APP-ANDROID
+	const absPath = toAndroidAbsPath(normalized)
+	if (absPath == '') {
+		return failResult('路径转换失败')
+	}
+	try {
+		const dir = new File(absPath)
+		const ok = recursive ? dir.mkdirs() : dir.mkdir()
+		if (ok) {
+			return okResult()
+		}
+		return failResult('创建目录失败')
+	} catch (e: any) {
+		const msg = e != null ? ('' + e) : '创建目录失败'
+		return failResult(msg)
+	}
+	// #endif
+	// #ifndef APP-ANDROID
 	const fm = uni.getFileSystemManager()
 	try {
 		fm.mkdirSync(normalized, recursive)
@@ -370,6 +531,7 @@ export function createDir(dirPath: string, recursive: boolean = true): FileOpRes
 		const msg = e != null ? ('' + e) : '创建目录失败'
 		return failResult(msg)
 	}
+	// #endif
 }
 
 /**
@@ -383,6 +545,25 @@ export function createFile(filePath: string): FileOpResult {
 	if (exists(normalized)) {
 		return failResult('文件已存在')
 	}
+	// #ifdef APP-ANDROID
+	const absPath = toAndroidAbsPath(normalized)
+	if (absPath == '') {
+		return failResult('路径转换失败')
+	}
+	try {
+		const file = new File(absPath)
+		const parent = file.parentFile
+		if (parent != null && !parent!.exists()) {
+			parent!.mkdirs()
+		}
+		file.writeText('')
+		return okResult()
+	} catch (e: any) {
+		const msg = e != null ? ('' + e) : '创建文件失败'
+		return failResult(msg)
+	}
+	// #endif
+	// #ifndef APP-ANDROID
 	const fm = uni.getFileSystemManager()
 	try {
 		fm.writeFileSync(normalized, '', 'utf-8')
@@ -391,6 +572,7 @@ export function createFile(filePath: string): FileOpResult {
 		const msg = e != null ? ('' + e) : '创建文件失败'
 		return failResult(msg)
 	}
+	// #endif
 }
 
 /**
@@ -401,6 +583,25 @@ export function writeContent(filePath: string, content: string): FileOpResult {
 	if (normalized == '') {
 		return failResult('路径不能为空')
 	}
+	// #ifdef APP-ANDROID
+	const absPath = toAndroidAbsPath(normalized)
+	if (absPath == '') {
+		return failResult('路径转换失败')
+	}
+	try {
+		const file = new File(absPath)
+		const parent = file.parentFile
+		if (parent != null && !parent!.exists()) {
+			parent!.mkdirs()
+		}
+		file.writeText(content)
+		return okResult()
+	} catch (e: any) {
+		const msg = e != null ? ('' + e) : '写入文件失败'
+		return failResult(msg)
+	}
+	// #endif
+	// #ifndef APP-ANDROID
 	const fm = uni.getFileSystemManager()
 	try {
 		fm.writeFileSync(normalized, content, 'utf-8')
@@ -409,6 +610,7 @@ export function writeContent(filePath: string, content: string): FileOpResult {
 		const msg = e != null ? ('' + e) : '写入文件失败'
 		return failResult(msg)
 	}
+	// #endif
 }
 
 /**
@@ -422,17 +624,33 @@ export function readContent(filePath: string): string | null {
 	if (normalized == '') {
 		return null
 	}
+	// #ifdef APP-ANDROID
+	const absPath = toAndroidAbsPath(normalized)
+	if (absPath == '') {
+		return null
+	}
+	try {
+		const file = new File(absPath)
+		if (!file.exists() || file.isDirectory()) {
+			return null
+		}
+		return file.readText()
+	} catch (_e: any) {
+		return null
+	}
+	// #endif
+	// #ifndef APP-ANDROID
 	const fm = uni.getFileSystemManager()
 	try {
 		const data = fm.readFileSync(normalized, 'utf-8')
 		if (data == null) {
 			return null
 		}
-		// readFileSync with encoding 返回 string；无 encoding 返回 ArrayBuffer
 		return '' + data
 	} catch (_e: any) {
 		return null
 	}
+	// #endif
 }
 
 /**
@@ -449,6 +667,31 @@ export function deleteItem(path: string, recursive: boolean = true): FileOpResul
 	if (!exists(normalized)) {
 		return failResult('路径不存在')
 	}
+	// #ifdef APP-ANDROID
+	const absPath = toAndroidAbsPath(normalized)
+	if (absPath == '') {
+		return failResult('路径转换失败')
+	}
+	try {
+		const file = new File(absPath)
+		if (file.isDirectory() && recursive) {
+			const ok = deleteRecursiveAndroid(file)
+			if (ok) {
+				return okResult()
+			}
+			return failResult('递归删除目录失败')
+		}
+		const ok = file.delete()
+		if (ok) {
+			return okResult()
+		}
+		return failResult('删除失败')
+	} catch (e: any) {
+		const msg = e != null ? ('' + e) : '删除失败'
+		return failResult(msg)
+	}
+	// #endif
+	// #ifndef APP-ANDROID
 	const fm = uni.getFileSystemManager()
 	const stat = statItem(normalized)
 	if (stat.isDirectory) {
@@ -468,7 +711,27 @@ export function deleteItem(path: string, recursive: boolean = true): FileOpResul
 			return failResult(msg)
 		}
 	}
+	// #endif
 }
+
+// #ifdef APP-ANDROID
+/**
+ * 递归删除目录（Android 原生）。
+ */
+function deleteRecursiveAndroid(file: File): boolean {
+	if (file.isDirectory()) {
+		const children = file.listFiles()
+		if (children != null) {
+			let idx = 0 as Int
+			while (idx < children.size) {
+				deleteRecursiveAndroid(children[idx])
+				idx++
+			}
+		}
+	}
+	return file.delete()
+}
+// #endif
 
 /**
  * 重命名或移动文件/目录。
@@ -488,6 +751,30 @@ export function renameItem(oldPath: string, newPath: string): FileOpResult {
 	if (exists(normalizedNew)) {
 		return failResult('目标路径已存在')
 	}
+	// #ifdef APP-ANDROID
+	const absOld = toAndroidAbsPath(normalizedOld)
+	const absNew = toAndroidAbsPath(normalizedNew)
+	if (absOld == '' || absNew == '') {
+		return failResult('路径转换失败')
+	}
+	try {
+		const oldFile = new File(absOld)
+		const newFile = new File(absNew)
+		const parent = newFile.parentFile
+		if (parent != null && !parent!.exists()) {
+			parent!.mkdirs()
+		}
+		const ok = oldFile.renameTo(newFile)
+		if (ok) {
+			return okResult()
+		}
+		return failResult('重命名失败')
+	} catch (e: any) {
+		const msg = e != null ? ('' + e) : '重命名失败'
+		return failResult(msg)
+	}
+	// #endif
+	// #ifndef APP-ANDROID
 	const fm = uni.getFileSystemManager()
 	try {
 		fm.renameSync(normalizedOld, normalizedNew)
@@ -496,6 +783,7 @@ export function renameItem(oldPath: string, newPath: string): FileOpResult {
 		const msg = e != null ? ('' + e) : '重命名失败'
 		return failResult(msg)
 	}
+	// #endif
 }
 
 /**
@@ -518,9 +806,29 @@ export function copyItem(srcPath: string, destPath: string): FileOpResult {
 	}
 	const stat = statItem(normalizedSrc)
 	if (stat.isDirectory) {
-		// copyFile 不支持目录，需要递归复制
 		return copyDirRecursive(normalizedSrc, normalizedDest)
 	}
+	// #ifdef APP-ANDROID
+	const absSrc = toAndroidAbsPath(normalizedSrc)
+	const absDest = toAndroidAbsPath(normalizedDest)
+	if (absSrc == '' || absDest == '') {
+		return failResult('路径转换失败')
+	}
+	try {
+		const srcFile = new File(absSrc)
+		const destFile = new File(absDest)
+		const parent = destFile.parentFile
+		if (parent != null && !parent!.exists()) {
+			parent!.mkdirs()
+		}
+		srcFile.copyTo(destFile)
+		return okResult()
+	} catch (e: any) {
+		const msg = e != null ? ('' + e) : '复制文件失败'
+		return failResult(msg)
+	}
+	// #endif
+	// #ifndef APP-ANDROID
 	const fm = uni.getFileSystemManager()
 	try {
 		fm.copyFileSync(normalizedSrc, normalizedDest)
@@ -529,6 +837,7 @@ export function copyItem(srcPath: string, destPath: string): FileOpResult {
 		const msg = e != null ? ('' + e) : '复制文件失败'
 		return failResult(msg)
 	}
+	// #endif
 }
 
 /**
@@ -550,12 +859,9 @@ function copyDirRecursive(srcPath: string, destPath: string): FileOpResult {
 				return subResult
 			}
 		} else {
-			const fm = uni.getFileSystemManager()
-			try {
-				fm.copyFileSync(childSrc, childDest)
-			} catch (e: any) {
-				const msg = e != null ? ('' + e) : '复制文件失败: ' + item.name
-				return failResult(msg)
+			const copyResult = copyItem(childSrc, childDest)
+			if (!copyResult.ok) {
+				return copyResult
 			}
 		}
 	}
