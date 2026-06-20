@@ -64,6 +64,24 @@ export * from './memory'
 // 导出 LLM 调用客户端
 export * from './llm-client'
 
+// 导出提供商管理
+export * from './provider'
+
+// 导出 Agent 工具
+export * from './tools/agent-tools'
+
+// 导出 Agent CRUD（索引 utils/，待实际迁移）
+export * from '@/utils/agent.uts'
+
+// 导出数据库访问层（索引 utils/，待实际迁移）
+export * from '@/utils/database.uts'
+
+// 导出技能系统（索引 utils/，待实际迁移）
+export * from '@/utils/skills.uts'
+
+// 导出生成参数设置（索引 utils/，待实际迁移）
+export * from '@/utils/generation-settings.uts'
+
 // 导出内置文件工具
 export {
 	FileReadTool,
