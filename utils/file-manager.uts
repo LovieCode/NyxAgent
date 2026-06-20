@@ -331,12 +331,26 @@ export function getRootDirOptions(): RootDirOption[] {
  */
 export function listRootContents(): FileItem[] {
 	const items: FileItem[] = []
-	// 沙盒文件：列出 USER_DATA_PATH 下的内容
+	// 沙盒文件：优先用 USER_DATA_PATH
 	const userDataPath = uni.env.USER_DATA_PATH
 	if (userDataPath != null && userDataPath != '') {
 		const userItems = listDir(normalizePath(userDataPath))
 		for (let i = 0; i < userItems.length; i++) {
 			items.push(userItems[i])
+		}
+	}
+	// 容错：如果沙盒文件为空，尝试用内部 filesDir（排除 agents 子目录避免重复）
+	if (items.length == 0) {
+		const filesDir = getInternalFilesDir()
+		if (filesDir != '') {
+			const fallbackItems = listDir(filesDir)
+			for (let i = 0; i < fallbackItems.length; i++) {
+				const fi = fallbackItems[i]
+				// 排除 agents 子目录（下面单独列出）
+				if (fi.name != 'agents') {
+					items.push(fi)
+				}
+			}
 		}
 	}
 	// Agent 目录：列出 agents 子目录，加前缀别名
