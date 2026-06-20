@@ -127,10 +127,14 @@ export function basename(path: string): string {
  */
 export function getDefaultRoot(): string {
 	const userDataPath = uni.env.USER_DATA_PATH
+	console.log('[file-manager] USER_DATA_PATH 原始值: ' + (userDataPath != null ? userDataPath : 'null'))
 	if (userDataPath != null && userDataPath != '') {
-		return normalizePath(userDataPath)
+		const normalized = normalizePath(userDataPath)
+		console.log('[file-manager] USER_DATA_PATH 规范化后: ' + normalized)
+		return normalized
 	}
 	const cachePath = uni.env.CACHE_PATH
+	console.log('[file-manager] CACHE_PATH 原始值: ' + (cachePath != null ? cachePath : 'null'))
 	if (cachePath != null && cachePath != '') {
 		return normalizePath(cachePath)
 	}
@@ -179,13 +183,19 @@ export function exists(path: string): boolean {
 export function listDir(dirPath: string): FileItem[] {
 	const normalized = normalizePath(dirPath)
 	if (normalized == '') {
+		console.log('[file-manager] listDir: 路径为空')
 		return []
 	}
 	const fm = uni.getFileSystemManager()
 	let names: string[]
 	try {
-		names = fm.readdirSync(normalized) as string[]
-	} catch (_e: any) {
+		const raw = fm.readdirSync(normalized)
+		console.log('[file-manager] listDir readdirSync 原始返回类型: ' + typeof raw)
+		console.log('[file-manager] listDir readdirSync 原始返回值: ' + JSON.stringify(raw))
+		names = raw as string[]
+		console.log('[file-manager] listDir 转换后 names 长度: ' + names.length)
+	} catch (e: any) {
+		console.log('[file-manager] listDir readdirSync 异常: ' + (e != null ? ('' + e) : 'null'))
 		return []
 	}
 	const items: FileItem[] = []
