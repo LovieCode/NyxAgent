@@ -670,11 +670,12 @@ function formatNoteListLine(note: UTSJSONObject): string {
 
 export function buildKnowledgeWorkspaceGuide(agentId: string): string {
 	return [
-		'知识文件夹可访问范围：',
-		'- user/default/todo.md：用户默认待办',
-		'- user/default/notes/<noteId>.md：用户默认笔记',
-		'- agents/' + agentId + '/todo.md：当前 Agent 自己的待办',
-		'- agents/' + agentId + '/notes/<noteId>.md：当前 Agent 自己的笔记',
+		'知识文件夹访问范围：',
+		'- agents/' + agentId + '/notes/<id>.md：你的私有笔记（★优先使用）',
+		'- agents/' + agentId + '/todo.md：你的私有待办',
+		'- user/default/notes/<id>.md：用户共享笔记',
+		'- user/default/todo.md：用户共享待办',
+		'规则：新笔记默认写入 agents/' + agentId + '/notes/',
 		'渲染规则：',
 		'- #/##/### 渲染为标题',
 		'- - [ ] 文本 渲染为未完成待办',
