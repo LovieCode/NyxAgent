@@ -113,18 +113,18 @@
 </template>
 
 <script lang="uts">
-	import { listDir, createDir, createFile, deleteItem, renameItem, readContent, writeContent, getDefaultRoot, parentPath, basename, joinPath, normalizePath, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
+	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, readContent, writeContent, parentPath, basename, joinPath, normalizePath, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
+
+	/** 虚拟根路径标记（合并视图用） */
+	const VIRTUAL_ROOT = '__FILE_ROOT__'
 
 	/**
 	 * 文件管理页面
-	 * 浏览应用沙盒目录，支持文件/文件夹的增删改查。
-	 * 基于 uni.getFileSystemManager() API。
+	 * 根视图合并沙盒文件 + Agent 目录两个来源。
 	 */
-
 	export default {
 		data() {
 			return {
-				rootPath: '' as string,
 				currentPath: '' as string,
 				items: [] as FileItem[],
 
@@ -150,45 +150,35 @@
 			}
 		},
 		computed: {
-			/** 面包屑路径分段（不含根目录，根目录单独渲染） */
+			/** 面包屑路径分段：从叶子向上收集，再反转得到根→叶子顺序 */
 			pathSegments() : PathSegment[] {
-				if (this.currentPath == '' || this.rootPath == '') {
+				if (this.currentPath == '' || this.currentPath == VIRTUAL_ROOT) {
 					return []
 				}
-				// 从根目录开始截取相对路径
-				let relative = this.currentPath
-				if (this.currentPath.startsWith(this.rootPath)) {
-					relative = this.currentPath.substring(this.rootPath.length)
-					// 去掉开头的斜杠
-					while (relative.startsWith('/')) {
-						relative = relative.substring(1)
+				let p = this.currentPath
+				const stack: PathSegment[] = []
+				while (p != '') {
+					const name = basename(p)
+					if (name == '') {
+						break
 					}
+					stack.push({ name: name, path: p })
+					const parent = parentPath(p)
+					if (parent == '' || parent == p) {
+						break
+					}
+					p = parent
 				}
-				if (relative == '') {
-					return []
-				}
-				const parts = relative.split('/')
+				// 反转得到根→叶子顺序
 				const segments: PathSegment[] = []
-				let accPath = this.rootPath
-				for (let i = 0; i < parts.length; i++) {
-					const part = parts[i]
-					if (part == '') {
-						continue
-					}
-					accPath = joinPath(accPath, part)
-					const seg: PathSegment = { name: part, path: accPath }
-					segments.push(seg)
+				for (let i = stack.length - 1; i >= 0; i--) {
+					segments.push(stack[i])
 				}
 				return segments
 			}
 		},
 		onLoad() {
-			this.rootPath = getDefaultRoot()
-			if (this.rootPath == '') {
-				uni.showToast({ position: 'bottom', title: '无法获取沙盒目录', icon: 'none' })
-				return
-			}
-			this.currentPath = this.rootPath
+			this.currentPath = VIRTUAL_ROOT
 			this.refreshList()
 		},
 		onShow() {
@@ -199,6 +189,10 @@
 		methods: {
 			/** 刷新当前目录文件列表 */
 			refreshList() {
+				if (this.currentPath == VIRTUAL_ROOT) {
+					this.items = listRootContents()
+					return
+				}
 				if (this.currentPath == '') {
 					this.items = []
 					return
@@ -206,12 +200,12 @@
 				this.items = listDir(this.currentPath)
 			},
 
-			/** 跳转到根目录 */
+			/** 跳转到根目录（合并视图） */
 			goToRoot() {
-				if (this.currentPath == this.rootPath) {
+				if (this.currentPath == VIRTUAL_ROOT) {
 					return
 				}
-				this.currentPath = this.rootPath
+				this.currentPath = VIRTUAL_ROOT
 				this.refreshList()
 			},
 

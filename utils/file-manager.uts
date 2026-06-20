@@ -43,6 +43,12 @@ export type FileOpResult = {
 	error: string
 }
 
+/** 根目录选项（带中文标签） */
+export type RootDirOption = {
+	name: string
+	path: string
+}
+
 /** 路径分隔符（跨平台统一用 /） */
 const SEP = '/'
 
@@ -293,6 +299,80 @@ export function listRootDirs(): string[] {
 		roots.push(normalizePath(cachePath))
 	}
 	return roots
+}
+
+/**
+ * 获取带标签的根目录选项（供 UI 切换使用）。
+ * - 沙盒文件：uni.env.USER_DATA_PATH（外部沙盒，可被系统文件管理器看到）
+ * - Agent 目录：/data/data/<pkg>/files/agents/（内部存储，Agent 文件沙箱）
+ */
+export function getRootDirOptions(): RootDirOption[] {
+	const options: RootDirOption[] = []
+	// 沙盒文件
+	const userDataPath = uni.env.USER_DATA_PATH
+	if (userDataPath != null && userDataPath != '') {
+		options.push({ name: '沙盒文件', path: normalizePath(userDataPath) })
+	}
+	// Agent 目录
+	const filesDir = getInternalFilesDir()
+	if (filesDir != '') {
+		options.push({ name: 'Agent 目录', path: filesDir + '/agents' })
+	}
+	return options
+}
+
+/**
+ * 列出根目录内容：合并沙盒文件和 Agent 目录两个来源。
+ *
+ * - 沙盒文件（uni.env.USER_DATA_PATH）：原名显示
+ * - Agent 目录（/data/data/<pkg>/files/agents/）：每个子目录加 "[Agent] " 前缀
+ *
+ * 用于文件管理页面的根视图。
+ */
+export function listRootContents(): FileItem[] {
+	const items: FileItem[] = []
+	// 沙盒文件：列出 USER_DATA_PATH 下的内容
+	const userDataPath = uni.env.USER_DATA_PATH
+	if (userDataPath != null && userDataPath != '') {
+		const userItems = listDir(normalizePath(userDataPath))
+		for (let i = 0; i < userItems.length; i++) {
+			items.push(userItems[i])
+		}
+	}
+	// Agent 目录：列出 agents 子目录，加前缀别名
+	const filesDir = getInternalFilesDir()
+	if (filesDir != '') {
+		const agentsDir = filesDir + '/agents'
+		const agentItems = listDir(agentsDir)
+		for (let i = 0; i < agentItems.length; i++) {
+			const agent = agentItems[i]
+			if (agent.isDirectory) {
+				const aliasName = '[Agent] ' + agent.name
+				const aliasItem: FileItem = {
+					name: aliasName,
+					path: agent.path,
+					isDirectory: true,
+					size: 0,
+					lastModified: agent.lastModified,
+				}
+				items.push(aliasItem)
+			}
+		}
+	}
+	// 排序：目录在前，文件在后；同类按名称升序
+	items.sort((a: FileItem, b: FileItem): number => {
+		if (a.isDirectory != b.isDirectory) {
+			return a.isDirectory ? -1 : 1
+		}
+		if (a.name < b.name) {
+			return -1
+		}
+		if (a.name > b.name) {
+			return 1
+		}
+		return 0
+	})
+	return items
 }
 
 /**
