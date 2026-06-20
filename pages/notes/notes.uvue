@@ -180,31 +180,35 @@
 					}
 					p = parent
 				}
-				// 向前裁剪技术前缀（/data/data/pkg/files/agents 等）
-				let startIndex = 0
-				if (stack.length >= 4 && stack[stack.length - 1].name == 'data') {
-					// 绝对路径如 /data/data/pkg/files/agents/xxx
-					for (let j = stack.length - 1; j >= 0; j--) {
-						if (stack[j].name == 'agents') {
-							startIndex = j
-							break
+				// 找到 files/usr 作为技术前缀边界
+				let startIndex = stack.length // 默认全部裁剪
+				for (let j = stack.length - 1; j >= 0; j--) {
+					const segName = stack[j].name
+					if (segName == 'files' || segName == 'usr') {
+						startIndex = j
+						break
+					}
+				}
+				// 从叶子向根收集（跳过 agents 容器目录，替换 agent ID 为显示名）
+				const parts: PathSegment[] = []
+				for (let i = startIndex - 1; i >= 0; i--) {
+					let displayName = stack[i].name
+					// 跳过 agents 容器目录本身
+					if (displayName == 'agents') {
+						continue
+					}
+					// 父级是 agents → 当前段是 agent ID，替换为显示名
+					if (i + 1 < stack.length && stack[i + 1].name == 'agents') {
+						const agentName = this.lookupAgentName(displayName)
+						if (agentName != '') {
+							displayName = agentName
 						}
 					}
-				} else if (stack.length >= 2 && stack[stack.length - 1].name == 'usr') {
-					// unifile://usr/xxx
-					for (let j = stack.length - 1; j >= 0; j--) {
-						if (stack[j].name == 'usr') {
-							startIndex = j
-							break
-						}
-					}
+					parts.push({ name: displayName, path: stack[i].path })
 				}
 				// 反转得到根→叶子顺序
-				const segments: PathSegment[] = []
-				for (let i = stack.length - 1; i >= startIndex; i--) {
-					segments.push(stack[i])
-				}
-				return segments
+				parts.reverse()
+				return parts
 			}
 		},
 		onLoad() {
@@ -532,6 +536,28 @@
 					return 'Agent 目录'
 				}
 				return '文件目录'
+			},
+
+			/** 查智能体显示名（agentId → name），无匹配返回空 */
+			lookupAgentName(agentId : string) : string {
+				const stored = uni.getStorageSync('agent_list') as string
+				if (stored == null || stored == '') {
+					return ''
+				}
+				try {
+					const list = JSON.parse(stored) as UTSJSONObject[]
+					for (let i = 0; i < (list as any[]).length; i++) {
+						const item = list[i] as UTSJSONObject
+						if ((item['id'] as string) == agentId) {
+							const name = item['name'] as string
+							if (name != null && name != '') {
+								return name
+							}
+							break
+						}
+					}
+				} catch (_e: any) { /* 解析失败则返回空 */ }
+				return ''
 			},
 
 			/** 格式化文件大小（模板调用包装） */
