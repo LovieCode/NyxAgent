@@ -309,15 +309,14 @@ class SandboxFileListTool implements AgentTool {
  */
 class KnowledgeFolderListTool implements AgentTool {
 	name: string = 'knowledge_list'
-	description: string = '列出待办/笔记知识文件夹。只允许访问 user/default 与当前 Agent 自己的 agents/<agentId>。路径为空时返回根目录和格式规则。'
+	description: string = '列出待办/笔记知识文件夹。你的私有空间在 agents/<id>/，共享空间在 user/default/。路径为空时返回根目录结构和使用说明。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
 			'path': {
 				'type': 'string',
-				'description': '要列出的路径，例如 user/default、user/default/notes、agents/<agentId>、agents/<agentId>/notes；为空则列出根目录'
-			}
-		},
+				'description': '要列出的路径。自己的文件夹用 agents/<id> 或 agents/<id>/notes，共享用 user/default'
+			},
 		'required': [] as string[]
 	} as UTSJSONObject
 
@@ -342,7 +341,7 @@ class KnowledgeFolderListTool implements AgentTool {
  */
 class KnowledgeFolderReadTool implements AgentTool {
 	name: string = 'knowledge_read'
-	description: string = '读取待办/笔记知识文件。支持 user/default/todo.md、user/default/notes/<id>.md、agents/<agentId>/todo.md、agents/<agentId>/notes/<id>.md。返回 Markdown，笔记中可包含 - [ ] / - [x] 待办。'
+	description: string = '读取待办/笔记知识文件。优先读取 agents/<id>/ 私有空间，user/default/ 为共享空间。路径格式：agents/<id>/todo.md、agents/<id>/notes/<id>.md、user/default/todo.md、user/default/notes/<id>.md'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
@@ -392,13 +391,13 @@ class KnowledgeFolderReadTool implements AgentTool {
  */
 class KnowledgeFolderWriteTool implements AgentTool {
 	name: string = 'knowledge_write'
-	description: string = '写入待办/笔记知识文件。只能写 user/default 或当前 Agent 自己的知识文件夹。todo.md 使用 - [ ] / - [x] 行解析；notes/<id>.md 保存为 Markdown 笔记。'
+	description: string = '写入待办/笔记知识文件。优先写入你自己的 agents/<id>/notes/ 私有空间；user/default/ 是共享空间。todo.md 使用 - [ ] / - [x] 行解析；notes/<id>.md 保存为 Markdown 笔记。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
 			'path': {
 				'type': 'string',
-				'description': '要写入的路径，例如 user/default/todo.md 或 agents/<agentId>/notes/plan.md'
+				'description': '要写入的路径。自己的笔记用 agents/<id>/notes/xxx.md，共享内容用 user/default/xxx'
 			},
 			'content': {
 				'type': 'string',
