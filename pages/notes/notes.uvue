@@ -41,11 +41,11 @@
 						</view>
 						<view class="file-info">
 							<text class="file-name">{{ item.name }}</text>
-							<view class="file-meta">
-								<text v-if="item.isDirectory" class="file-meta-text">文件夹</text>
-								<text v-else class="file-meta-text">{{ formatFileSize(item.size) }}</text>
-								<text class="file-meta-time">{{ formatTime(item.lastModified) }}</text>
-							</view>
+						<view class="file-meta">
+							<text v-if="item.isDirectory" class="file-meta-text">文件夹</text>
+							<text v-else class="file-meta-text">{{ fmtFileSize(item.size) }}</text>
+							<text class="file-meta-time">{{ fmtTime(item.lastModified) }}</text>
+						</view>
 						</view>
 						<view class="file-arrow" v-if="item.isDirectory == true">
 							<oui-icon-unix name="right" size="32rpx" color="#D1D5DB" />
@@ -113,7 +113,7 @@
 </template>
 
 <script lang="uts">
-	import { listDir, createDir, createFile, deleteItem, renameItem, readContent, writeContent, getDefaultRoot, parentPath, basename, joinPath, normalizePath, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type PathSegment } from '@/utils/file-manager.uts'
+	import { listDir, createDir, createFile, deleteItem, renameItem, readContent, writeContent, getDefaultRoot, parentPath, basename, joinPath, normalizePath, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
 
 	/**
 	 * 文件管理页面
@@ -360,7 +360,7 @@
 					return
 				}
 				const fullPath = joinPath(this.currentPath, name)
-				let result
+				let result: FileOpResult
 				if (this.createMode == 'dir') {
 					result = createDir(fullPath, true)
 				} else {
@@ -485,6 +485,16 @@
 					return '#6B7280'
 				}
 				return '#9CA3AF'
+			},
+
+			/** 格式化文件大小（模板调用包装） */
+			fmtFileSize(bytes : number) : string {
+				return formatFileSize(bytes)
+			},
+
+			/** 格式化时间（模板调用包装） */
+			fmtTime(timestamp : number) : string {
+				return formatTime(timestamp)
 			}
 		}
 	}
