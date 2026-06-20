@@ -171,64 +171,6 @@ export function exists(path: string): boolean {
 }
 
 /**
- * 判断 Stats 是否为目录。
- * statSync 返回的对象可能携带 isDirectory 方法或属性，这里统一处理。
- */
-function isStatDirectory(rawStat: any): boolean {
-	if (rawStat == null) {
-		return false
-	}
-	// 尝试读取 isDirectory
-	const isDir = rawStat['isDirectory']
-	if (isDir != null) {
-		// 如果是函数则调用
-		if (typeof isDir == 'function') {
-			try {
-				return isDir() as boolean
-			} catch (_e: any) {
-				// 降级到 size 判断
-			}
-		} else {
-			return isDir as boolean
-		}
-	}
-	// 降级：通过 size 判断（目录 size 通常为 0，不完全可靠但作兜底）
-	const size = rawStat['size']
-	if (size != null) {
-		return (size as number) == 0
-	}
-	return false
-}
-
-/**
- * 从 statSync 返回值中提取 size。
- */
-function extractStatSize(rawStat: any): number {
-	if (rawStat == null) {
-		return 0
-	}
-	const size = rawStat['size']
-	if (size != null) {
-		return size as number
-	}
-	return 0
-}
-
-/**
- * 从 statSync 返回值中提取 lastModifiedTime。
- */
-function extractStatMtime(rawStat: any): number {
-	if (rawStat == null) {
-		return 0
-	}
-	const mtime = rawStat['lastModifiedTime']
-	if (mtime != null) {
-		return mtime as number
-	}
-	return 0
-}
-
-/**
  * 列出指定目录下的文件和文件夹。
  *
  * @param dirPath 目录路径
@@ -269,6 +211,9 @@ export function listDir(dirPath: string): FileItem[] {
 /**
  * 获取单个文件/目录的统计信息。
  * 失败返回默认值（isDirectory=false, size=0）。
+ *
+ * statSync 返回 FileStats[]，每个 FileStats 包含 { path: string, stats: Stats }。
+ * Stats 有 isDirectory() 方法、size、lastModifiedTime 属性。
  */
 export function statItem(path: string): FileItem {
 	const normalized = normalizePath(path)
@@ -277,36 +222,27 @@ export function statItem(path: string): FileItem {
 	}
 	const fm = uni.getFileSystemManager()
 	try {
-		const raw = fm.statSync(normalized, false) as any
-		if (raw == null) {
+		const statsArray = fm.statSync(normalized, false)
+		if (statsArray == null || statsArray.length == 0) {
 			return makeFileItem(basename(normalized), normalized, false, 0, 0)
 		}
-		// statSync 可能返回数组（每个元素含 stats）或单个对象
-		let statObj: any = raw
-		if (raw instanceof Array) {
-			const arr = raw as any[]
-			if (arr.length > 0) {
-				// 数组元素可能是 { stats: FileStats } 或直接是 FileStats
-				const first = arr[0]
-				const statsField = first['stats']
-				statObj = statsField != null ? statsField : first
-			} else {
-				statObj = null
+		const fileStat = statsArray[0]
+		// FileStats 包含 path 和 stats 属性
+		// stats 是 Stats 类型，有 isDirectory() 方法、size、lastModifiedTime 属性
+		const stat = fileStat.stats
+		let isDir = false
+		let size = 0
+		let mtime = 0
+		if (stat != null) {
+			try {
+				isDir = stat.isDirectory()
+			} catch (_e: any) {
+				isDir = false
 			}
-		} else {
-			// 非数组，可能直接是 FileStats 或 { stats: FileStats }
-			const statsField = raw['stats']
-			if (statsField != null) {
-				statObj = statsField
-			}
+			size = stat.size
+			mtime = stat.lastModifiedTime
 		}
-		return makeFileItem(
-			basename(normalized),
-			normalized,
-			isStatDirectory(statObj),
-			extractStatSize(statObj),
-			extractStatMtime(statObj)
-		)
+		return makeFileItem(basename(normalized), normalized, isDir, size, mtime)
 	} catch (_e: any) {
 		return makeFileItem(basename(normalized), normalized, false, 0, 0)
 	}
