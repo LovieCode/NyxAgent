@@ -38,7 +38,7 @@
 				tabs: [
 					{ pagePath: 'pages/agents/agents', text: '智能体', icon: 'robot' },
 					{ pagePath: 'pages/todo/todo', text: '待办', icon: 'check-circle' },
-					{ pagePath: 'pages/notes/notes', text: '笔记', icon: 'file-text' },
+					{ pagePath: 'pages/notes/notes', text: '文件', icon: 'folder' },
 					{ pagePath: 'pages/settings/settings', text: '设置', icon: 'setting' },
 				],
 			};

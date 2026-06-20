@@ -1,237 +1,490 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NavBar title="笔记" />
+		<NavBar title="文件管理" />
 		<view class="container">
-		<!-- 搜索栏 -->
-		<view class="search-bar">
-			<rice-search v-model="searchQuery" placeholder="搜索笔记..." shape="round" :clearable="true" />
-		</view>
-
-		<!-- 笔记列表 -->
-		<scroll-view class="notes-list" :scroll-y="true">
-			<view v-if="filteredNotes.length == 0" class="empty-state">
-				<text class="empty-text">{{ searchQuery != '' ? '未找到匹配笔记' : '暂无笔记' }}</text>
-			</view>
-			<view v-else>
-				<view
-					v-for="note in filteredNotes"
-					:key="note['id'] as string"
-					class="note-card"
-					@click="editNote(note)"
-					@longpress="confirmDeleteNote(note['id'] as string)"
-				>
-					<text class="note-title">{{ note['title'] }}</text>
-					<text class="note-preview">{{ getNotePreview(note) }}</text>
-					<view class="note-meta-row">
-						<text class="note-time">{{ note['updatedAt'] }}</text>
-						<text v-if="getInlineTodoCount(note) > 0" class="note-todo-count">Todo {{ getInlineTodoCount(note) }}</text>
+			<!-- 面包屑导航 -->
+			<scroll-view class="breadcrumb-bar" :scroll-x="true" :show-scrollbar="false">
+				<view class="breadcrumb-row">
+					<view class="breadcrumb-item" @click="goToRoot">
+						<oui-icon-unix name="folder" size="28rpx" color="#FB8FAB" />
+						<text class="breadcrumb-text breadcrumb-text-active">根目录</text>
+					</view>
+					<view v-for="(seg, index) in pathSegments" :key="index" class="breadcrumb-segment">
+						<text class="breadcrumb-separator">/</text>
+						<view class="breadcrumb-item" @click="goToSegment(index)">
+							<text :class="['breadcrumb-text', index == pathSegments.length - 1 ? 'breadcrumb-text-active' : '']">{{ seg.name }}</text>
+						</view>
 					</view>
 				</view>
-			</view>
-		</scroll-view>
+			</scroll-view>
 
-		<!-- 添加按钮 - FAB -->
-		<rice-float-fab icon="plus" bg-color="#FB8FAB" :gap-bottom="80" @click="createNote" />
+			<!-- 文件列表 -->
+			<scroll-view class="file-list" :scroll-y="true">
+				<view v-if="items.length == 0" class="empty-state">
+					<text class="empty-text">空目录</text>
+					<text class="empty-hint">点击右下角按钮创建文件或文件夹</text>
+				</view>
+				<view v-else>
+					<view
+						v-for="item in items"
+						:key="item.path"
+						class="file-item"
+						@click="onItemClick(item)"
+						@longpress="onItemLongPress(item)"
+					>
+						<view class="file-icon">
+							<oui-icon-unix
+								:name="getFileIconName(item)"
+								size="44rpx"
+								:color="getFileIconColor(item)"
+							/>
+						</view>
+						<view class="file-info">
+							<text class="file-name">{{ item.name }}</text>
+							<view class="file-meta">
+								<text v-if="item.isDirectory" class="file-meta-text">文件夹</text>
+								<text v-else class="file-meta-text">{{ formatFileSize(item.size) }}</text>
+								<text class="file-meta-time">{{ formatTime(item.lastModified) }}</text>
+							</view>
+						</view>
+						<view class="file-arrow" v-if="item.isDirectory == true">
+							<oui-icon-unix name="right" size="32rpx" color="#D1D5DB" />
+						</view>
+					</view>
+				</view>
+			</scroll-view>
 
-		<!-- 编辑弹窗 -->
-		<rice-dialog
-			v-model:show="isEditing"
-			:title="editingId == '' ? '新建笔记' : '编辑笔记'"
-			confirm-button-text="保存"
-			@confirm="saveNote"
-			@cancel="cancelEdit"
-		>
-			<rice-input v-model="editingTitle" placeholder="笔记标题" border="none" />
-			<view style="height: 16rpx;"></view>
-			<rice-textarea v-model="editingContent" placeholder="笔记内容，支持 - [ ] 待办 / - [x] 完成" :auto-height="true" />
-		</rice-dialog>
+			<!-- FAB 新建按钮 -->
+			<rice-float-fab icon="plus" bg-color="#FB8FAB" :gap-bottom="80" @click="showCreateMenu" />
+
+			<!-- 新建弹窗 -->
+			<rice-dialog
+				v-model:show="showCreateDialog"
+				:title="createMode == 'dir' ? '新建文件夹' : '新建文件'"
+				:show-cancel-button="true"
+				cancel-button-text="取消"
+				confirm-button-text="创建"
+				@confirm="doCreate"
+				@cancel="cancelCreate"
+			>
+				<view class="dialog-content">
+					<rice-input v-model="createName" :placeholder="createMode == 'dir' ? '输入文件夹名称' : '输入文件名（如 note.txt）'" border="none" />
+				</view>
+			</rice-dialog>
+
+			<!-- 重命名弹窗 -->
+			<rice-dialog
+				v-model:show="showRenameDialog"
+				title="重命名"
+				:show-cancel-button="true"
+				cancel-button-text="取消"
+				confirm-button-text="确认"
+				@confirm="doRename"
+				@cancel="cancelRename"
+			>
+				<view class="dialog-content">
+					<rice-input v-model="renameNewName" placeholder="输入新名称" border="none" />
+				</view>
+			</rice-dialog>
+
+			<!-- 文本编辑弹窗 -->
+			<rice-dialog
+				v-model:show="showEditor"
+				:title="editingFileName"
+				:show-cancel-button="true"
+				cancel-button-text="关闭"
+				confirm-button-text="保存"
+				@confirm="saveFileContent"
+				@cancel="closeEditor"
+			>
+				<view class="editor-content">
+					<textarea
+						class="editor-textarea"
+						v-model="editingContent"
+						:disabled="editingReadOnly"
+						placeholder="文件内容为空"
+						placeholder-style="color:#9CA3AF"
+					/>
+				</view>
+			</rice-dialog>
+		</view>
+		<TabBar current="pages/notes/notes" />
 	</view>
-	<TabBar current="pages/notes/notes" />
-</view>
 </template>
 
 <script lang="uts">
-	import { getWorkspaceNotes, saveWorkspaceNotes, countInlineTodos, renderKnowledgeMarkdown, type KnowledgeRenderBlock } from '@/utils/knowledge-workspace.uts'
+	import { listDir, createDir, createFile, deleteItem, renameItem, readContent, writeContent, getDefaultRoot, parentPath, basename, joinPath, normalizePath, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type PathSegment } from '@/utils/file-manager.uts'
 
 	/**
-	 * 笔记页面 - 笔记管理界面
-	 * 扁平化粉白主题
+	 * 文件管理页面
+	 * 浏览应用沙盒目录，支持文件/文件夹的增删改查。
+	 * 基于 uni.getFileSystemManager() API。
 	 */
 
 	export default {
 		data() {
 			return {
-				notes: [] as UTSJSONObject[],
-				searchQuery: '' as string,
-				isEditing: false as boolean,
-				editingId: '' as string,
-				editingTitle: '' as string,
-				editingContent: '' as string
+				rootPath: '' as string,
+				currentPath: '' as string,
+				items: [] as FileItem[],
+
+				// 新建弹窗
+				showCreateDialog: false as boolean,
+				createMode: 'file' as string,
+				createName: '' as string,
+
+				// 重命名弹窗
+				showRenameDialog: false as boolean,
+				renameTargetPath: '' as string,
+				renameNewName: '' as string,
+
+				// 文本编辑弹窗
+				showEditor: false as boolean,
+				editingFilePath: '' as string,
+				editingFileName: '' as string,
+				editingContent: '' as string,
+				editingReadOnly: false as boolean,
+
+				// 长按操作菜单锁
+				actionSheetOpen: false as boolean
 			}
 		},
 		computed: {
-			filteredNotes() : UTSJSONObject[] {
-				if (this.searchQuery == '') {
-					return this.notes
+			/** 面包屑路径分段（不含根目录，根目录单独渲染） */
+			pathSegments() : PathSegment[] {
+				if (this.currentPath == '' || this.rootPath == '') {
+					return []
 				}
-				let query = this.searchQuery.toLowerCase()
-				return this.notes.filter((note : UTSJSONObject) : boolean => {
-					let title = (note['title'] as string).toLowerCase()
-					let content = (note['content'] as string).toLowerCase()
-					return title.indexOf(query) >= 0 || content.indexOf(query) >= 0
-				})
+				// 从根目录开始截取相对路径
+				let relative = this.currentPath
+				if (this.currentPath.startsWith(this.rootPath)) {
+					relative = this.currentPath.substring(this.rootPath.length)
+					// 去掉开头的斜杠
+					while (relative.startsWith('/')) {
+						relative = relative.substring(1)
+					}
+				}
+				if (relative == '') {
+					return []
+				}
+				const parts = relative.split('/')
+				const segments: PathSegment[] = []
+				let accPath = this.rootPath
+				for (let i = 0; i < parts.length; i++) {
+					const part = parts[i]
+					if (part == '') {
+						continue
+					}
+					accPath = joinPath(accPath, part)
+					const seg: PathSegment = { name: part, path: accPath }
+					segments.push(seg)
+				}
+				return segments
 			}
 		},
 		onLoad() {
-			this.loadNotes()
+			this.rootPath = getDefaultRoot()
+			if (this.rootPath == '') {
+				uni.showToast({ position: 'bottom', title: '无法获取沙盒目录', icon: 'none' })
+				return
+			}
+			this.currentPath = this.rootPath
+			this.refreshList()
 		},
 		onShow() {
-			this.loadNotes()
+			if (this.currentPath != '') {
+				this.refreshList()
+			}
 		},
 		methods: {
-			loadNotes() {
-				this.notes = getWorkspaceNotes('user', 'default')
-			},
-
-			saveNotes() {
-				saveWorkspaceNotes('user', 'default', this.notes)
-			},
-
-			formatNow() : string {
-				let now = new Date()
-				return now.getFullYear() + '-' +
-					this.padZero(now.getMonth() + 1) + '-' +
-					this.padZero(now.getDate()) + ' ' +
-					this.padZero(now.getHours()) + ':' +
-					this.padZero(now.getMinutes())
-			},
-
-			padZero(n : number) : string {
-				if (n < 10) {
-					return '0' + n
-				}
-				return '' + n
-			},
-
-
-			getNotePreview(note : UTSJSONObject) : string {
-				const content = note['content'] as string | null
-				if (content == null || content == '') {
-					return ''
-				}
-				const blocks = renderKnowledgeMarkdown(content)
-				const parts: string[] = []
-				for (let i = 0; i < blocks.length && parts.length < 3; i++) {
-					const block = blocks[i] as KnowledgeRenderBlock
-					if (block.type == 'heading') {
-						continue
-					}
-					if (block.type == 'todo') {
-						parts.push((block.checked ? '☑ ' : '☐ ') + block.text)
-					} else if (block.type == 'bullet') {
-						parts.push('• ' + block.text)
-					} else {
-						parts.push(block.text)
-					}
-				}
-				if (parts.length == 0) {
-					return content
-				}
-				return parts.join(' · ')
-			},
-
-			getInlineTodoCount(note : UTSJSONObject) : number {
-				const content = note['content'] as string | null
-				if (content == null || content == '') {
-					return 0
-				}
-				return countInlineTodos(content)
-			},
-
-			createNote() {
-				this.editingId = ''
-				this.editingTitle = ''
-				this.editingContent = ''
-				this.isEditing = true
-			},
-
-			editNote(note : UTSJSONObject) {
-				this.editingId = note['id'] as string
-				this.editingTitle = note['title'] as string
-				this.editingContent = note['content'] as string
-				this.isEditing = true
-			},
-
-			cancelEdit() {
-				this.isEditing = false
-			},
-
-			saveNote() {
-				let title = this.editingTitle.trim()
-				if (title == '') {
-					title = '无标题'
-				}
-				let content = this.editingContent.trim()
-				if (content == '') {
-					uni.showToast({ position: 'bottom', 
-						title: '请输入内容',
-						icon: 'none'
-					})
+			/** 刷新当前目录文件列表 */
+			refreshList() {
+				if (this.currentPath == '') {
+					this.items = []
 					return
 				}
-				let timeStr = this.formatNow()
+				this.items = listDir(this.currentPath)
+			},
 
-				if (this.editingId == '') {
-					let newNote = {
-						id: '' + Date.now(),
-						title: title,
-						content: content,
-						updatedAt: timeStr
-					} as UTSJSONObject
-					this.notes.unshift(newNote)
-				} else {
-					for (let i = 0; i < this.notes.length; i++) {
-						if ((this.notes[i]['id'] as string) == this.editingId) {
-							this.notes[i]['title'] = title
-							this.notes[i]['content'] = content
-							this.notes[i]['updatedAt'] = timeStr
-							break
-						}
-					}
+			/** 跳转到根目录 */
+			goToRoot() {
+				if (this.currentPath == this.rootPath) {
+					return
 				}
-				this.saveNotes()
-				this.isEditing = false
-				uni.showToast({ position: 'bottom', 
-					title: '已保存',
-					icon: 'success'
+				this.currentPath = this.rootPath
+				this.refreshList()
+			},
+
+			/** 跳转到面包屑某个层级 */
+			goToSegment(index : number) {
+				if (index < 0 || index >= this.pathSegments.length) {
+					return
+				}
+				const target = this.pathSegments[index]
+				if (target.path == this.currentPath) {
+					return
+				}
+				this.currentPath = target.path
+				this.refreshList()
+			},
+
+			/** 点击文件项 */
+			onItemClick(item : FileItem) {
+				if (item.isDirectory == true) {
+					// 进入子目录
+					this.currentPath = item.path
+					this.refreshList()
+					return
+				}
+				// 文件：根据类型打开
+				if (isTextFile(item.name)) {
+					this.openTextEditor(item)
+				} else if (isImageFile(item.name)) {
+					// 图片预览
+					uni.previewImage({
+						urls: [item.path],
+						current: item.path
+					})
+				} else {
+					// 其他文件：显示信息
+					uni.showModal({
+						title: item.name,
+						content: '大小：' + formatFileSize(item.size) + '\n修改时间：' + formatTime(item.lastModified) + '\n路径：' + item.path,
+						showCancel: false,
+						confirmText: '关闭'
+					})
+				}
+			},
+
+			/** 长按文件项 - 弹出操作菜单 */
+			onItemLongPress(item : FileItem) {
+				if (this.actionSheetOpen == true) {
+					return
+				}
+				this.actionSheetOpen = true
+				const itemName = item.name
+				const itemList = ['重命名', '删除']
+				uni.showActionSheet({
+					itemList: itemList,
+					success: (res) => {
+						const tapIdx = res.tapIndex
+						if (tapIdx == 0) {
+							this.startRename(item)
+						} else if (tapIdx == 1) {
+							this.confirmDelete(item)
+						}
+					},
+					complete: () => {
+						this.actionSheetOpen = false
+					}
 				})
 			},
 
-			confirmDeleteNote(id : string) {
+			/** 打开文本编辑器 */
+			openTextEditor(item : FileItem) {
+				this.editingFilePath = item.path
+				this.editingFileName = item.name
+				const content = readContent(item.path)
+				this.editingContent = content != null ? content : ''
+				this.editingReadOnly = false
+				this.showEditor = true
+			},
+
+			/** 保存文本文件 */
+			saveFileContent() {
+				if (this.editingFilePath == '') {
+					return
+				}
+				const result = writeContent(this.editingFilePath, this.editingContent)
+				if (result.ok) {
+					uni.showToast({ position: 'bottom', title: '已保存', icon: 'success' })
+					this.showEditor = false
+					this.refreshList()
+				} else {
+					uni.showToast({ position: 'bottom', title: '保存失败: ' + result.error, icon: 'none' })
+				}
+			},
+
+			/** 关闭编辑器 */
+			closeEditor() {
+				this.showEditor = false
+				this.editingFilePath = ''
+				this.editingContent = ''
+			},
+
+			/** 显示新建菜单 */
+			showCreateMenu() {
+				if (this.actionSheetOpen == true) {
+					return
+				}
+				this.actionSheetOpen = true
+				uni.showActionSheet({
+					itemList: ['新建文件', '新建文件夹'],
+					success: (res) => {
+						const tapIdx = res.tapIndex
+						if (tapIdx == 0) {
+							this.startCreate('file')
+						} else if (tapIdx == 1) {
+							this.startCreate('dir')
+						}
+					},
+					complete: () => {
+						this.actionSheetOpen = false
+					}
+				})
+			},
+
+			/** 开始新建 */
+			startCreate(mode : string) {
+				this.createMode = mode
+				this.createName = ''
+				this.showCreateDialog = true
+			},
+
+			/** 取消新建 */
+			cancelCreate() {
+				this.showCreateDialog = false
+				this.createName = ''
+			},
+
+			/** 执行新建 */
+			doCreate() {
+				const name = this.createName.trim()
+				if (name == '') {
+					uni.showToast({ position: 'bottom', title: '请输入名称', icon: 'none' })
+					return
+				}
+				// 简单校验：不允许包含路径分隔符
+				if (name.indexOf('/') >= 0 || name.indexOf('\\') >= 0) {
+					uni.showToast({ position: 'bottom', title: '名称不能包含斜杠', icon: 'none' })
+					return
+				}
+				const fullPath = joinPath(this.currentPath, name)
+				let result
+				if (this.createMode == 'dir') {
+					result = createDir(fullPath, true)
+				} else {
+					result = createFile(fullPath)
+				}
+				if (result.ok) {
+					uni.showToast({ position: 'bottom', title: '已创建', icon: 'success' })
+					this.showCreateDialog = false
+					this.createName = ''
+					this.refreshList()
+				} else {
+					uni.showToast({ position: 'bottom', title: '创建失败: ' + result.error, icon: 'none' })
+				}
+			},
+
+			/** 开始重命名 */
+			startRename(item : FileItem) {
+				this.renameTargetPath = item.path
+				this.renameNewName = item.name
+				this.showRenameDialog = true
+			},
+
+			/** 取消重命名 */
+			cancelRename() {
+				this.showRenameDialog = false
+				this.renameTargetPath = ''
+				this.renameNewName = ''
+			},
+
+			/** 执行重命名 */
+			doRename() {
+				const newName = this.renameNewName.trim()
+				if (newName == '') {
+					uni.showToast({ position: 'bottom', title: '请输入新名称', icon: 'none' })
+					return
+				}
+				if (newName.indexOf('/') >= 0 || newName.indexOf('\\') >= 0) {
+					uni.showToast({ position: 'bottom', title: '名称不能包含斜杠', icon: 'none' })
+					return
+				}
+				const parent = parentPath(this.renameTargetPath)
+				if (parent == '') {
+					uni.showToast({ position: 'bottom', title: '无法重命名根目录', icon: 'none' })
+					return
+				}
+				const newPath = joinPath(parent, newName)
+				if (newPath == this.renameTargetPath) {
+					// 名称没变
+					this.showRenameDialog = false
+					return
+				}
+				const result = renameItem(this.renameTargetPath, newPath)
+				if (result.ok) {
+					uni.showToast({ position: 'bottom', title: '已重命名', icon: 'success' })
+					this.showRenameDialog = false
+					this.renameTargetPath = ''
+					this.renameNewName = ''
+					this.refreshList()
+				} else {
+					uni.showToast({ position: 'bottom', title: '重命名失败: ' + result.error, icon: 'none' })
+				}
+			},
+
+			/** 确认删除 */
+			confirmDelete(item : FileItem) {
+				const hint = item.isDirectory ? '文件夹及其所有内容' : '文件'
 				uni.showModal({
 					title: '确认删除',
-					content: '确定要删除这条笔记吗？',
+					content: '确定要删除' + hint + '「' + item.name + '」吗？此操作不可恢复。',
+					confirmText: '删除',
+					confirmColor: '#EF4444',
 					success: (res) => {
-						if (res.confirm) {
-							this.deleteNote(id)
+						if (res.confirm == true) {
+							this.doDelete(item)
 						}
 					}
 				})
 			},
 
-			deleteNote(id : string) {
-				let newNotes = [] as UTSJSONObject[]
-				for (let i = 0; i < this.notes.length; i++) {
-					if ((this.notes[i]['id'] as string) != id) {
-						newNotes.push(this.notes[i])
-					}
+			/** 执行删除 */
+			doDelete(item : FileItem) {
+				const result = deleteItem(item.path, true)
+				if (result.ok) {
+					uni.showToast({ position: 'bottom', title: '已删除', icon: 'success' })
+					this.refreshList()
+				} else {
+					uni.showToast({ position: 'bottom', title: '删除失败: ' + result.error, icon: 'none' })
 				}
-				this.notes = newNotes
-				this.saveNotes()
-				uni.showToast({ position: 'bottom', 
-					title: '已删除',
-					icon: 'success'
-				})
+			},
+
+			/** 获取文件图标名称 */
+			getFileIconName(item : FileItem) : string {
+				if (item.isDirectory == true) {
+					return 'folder'
+				}
+				const ext = getExtension(item.name)
+				if (isImageFile(item.name)) {
+					return 'image'
+				}
+				if (ext == 'txt' || ext == 'md' || ext == 'log') {
+					return 'file-text'
+				}
+				if (ext == 'json' || ext == 'xml' || ext == 'yaml' || ext == 'yml') {
+					return 'file-text'
+				}
+				if (ext == 'zip' || ext == 'rar' || ext == '7z' || ext == 'tar' || ext == 'gz') {
+					return 'file'
+				}
+				return 'file'
+			},
+
+			/** 获取文件图标颜色 */
+			getFileIconColor(item : FileItem) : string {
+				if (item.isDirectory == true) {
+					return '#FB8FAB'
+				}
+				if (isImageFile(item.name)) {
+					return '#10B981'
+				}
+				const ext = getExtension(item.name)
+				if (ext == 'txt' || ext == 'md' || ext == 'log') {
+					return '#6B7280'
+				}
+				return '#9CA3AF'
 			}
 		}
 	}
@@ -242,15 +495,52 @@
 		flex: 1;
 	}
 
-	/* 搜索栏 */
-	.search-bar {
-		padding: 20rpx 30rpx;
+	/* 面包屑导航 */
+	.breadcrumb-bar {
 		background-color: #FFFFFF;
+		border-bottom-width: 0.10rpx;
+		border-bottom-color: #F3F4F6;
+		border-bottom-style: solid;
 	}
 
-	.notes-list {
-		flex: 1;
+	.breadcrumb-row {
+		flex-direction: row;
+		align-items: center;
 		padding: 16rpx 30rpx;
+	}
+
+	.breadcrumb-item {
+		flex-direction: row;
+		align-items: center;
+		padding: 4rpx 8rpx;
+	}
+
+	.breadcrumb-text {
+		font-size: 26rpx;
+		color: #6B7280;
+		margin-left: 6rpx;
+	}
+
+	.breadcrumb-text-active {
+		color: #DB2777;
+		font-weight: bold;
+	}
+
+	.breadcrumb-segment {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.breadcrumb-separator {
+		font-size: 26rpx;
+		color: #D1D5DB;
+		margin: 0 4rpx;
+	}
+
+	/* 文件列表 */
+	.file-list {
+		flex: 1;
+		padding: 8rpx 30rpx;
 	}
 
 	.empty-state {
@@ -261,53 +551,84 @@
 	}
 
 	.empty-text {
+		font-size: 32rpx;
+		color: #9CA3AF;
+		margin-bottom: 12rpx;
+	}
+
+	.empty-hint {
+		font-size: 24rpx;
+		color: #D1D5DB;
+	}
+
+	/* 文件项 */
+	.file-item {
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 0;
+		border-bottom-width: 0.10rpx;
+		border-bottom-color: #F3F4F6;
+		border-bottom-style: solid;
+	}
+
+	.file-icon {
+		width: 64rpx;
+		height: 64rpx;
+		justify-content: center;
+		align-items: center;
+		margin-right: 16rpx;
+	}
+
+	.file-info {
+		flex: 1;
+	}
+
+	.file-name {
 		font-size: 28rpx;
-		color: #9CA3AF;
-	}
-
-	/* 笔记卡片 */
-	.note-card {
-		background-color: #FFFFFF;
-		border-radius: 16rpx;
-		padding: 24rpx;
-		margin-bottom: 16rpx;
-		border-width: 0.10rpx;
-		border-color: #E5E7EB;
-		border-style: solid;
-	}
-
-	.note-title {
-		font-size: 30rpx;
-		font-weight: bold;
 		color: #111827;
-		margin-bottom: 10rpx;
+		margin-bottom: 4rpx;
 	}
 
-	.note-preview {
-		font-size: 26rpx;
-		color: #6B7280;
-		lines: 2;
-		text-overflow: ellipsis;
-		margin-bottom: 8rpx;
-	}
-
-	.note-time {
-		font-size: 22rpx;
-		color: #9CA3AF;
-	}
-
-	.note-meta-row {
+	.file-meta {
 		flex-direction: row;
 		align-items: center;
 	}
 
-	.note-todo-count {
+	.file-meta-text {
 		font-size: 22rpx;
-		color: #DB2777;
-		background-color: #FDE8EF;
-		border-radius: 999rpx;
-		padding: 4rpx 12rpx;
-		margin-left: 12rpx;
+		color: #9CA3AF;
 	}
 
+	.file-meta-time {
+		font-size: 22rpx;
+		color: #D1D5DB;
+		margin-left: 16rpx;
+	}
+
+	.file-arrow {
+		padding-left: 12rpx;
+		justify-content: center;
+	}
+
+	/* 弹窗内容 */
+	.dialog-content {
+		width: 100%;
+	}
+
+	/* 文本编辑器 */
+	.editor-content {
+		width: 100%;
+	}
+
+	.editor-textarea {
+		width: 100%;
+		min-height: 400rpx;
+		max-height: 600rpx;
+		font-size: 28rpx;
+		color: #111827;
+		line-height: 44rpx;
+		padding: 16rpx;
+		background-color: #F9FAFB;
+		border-radius: 12rpx;
+	}
 </style>

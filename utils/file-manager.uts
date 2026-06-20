@@ -1,0 +1,615 @@
+/**
+ * 文件管理工具层
+ *
+ * 封装 uni.getFileSystemManager() API，提供沙盒内文件的增删改查能力。
+ * 默认操作目录为 uni.env.USER_DATA_PATH（用户数据目录，持久保存）。
+ *
+ * 平台兼容性：
+ * - Android 3.9.0+（readdir/stat/mkdir/readFile/access）
+ * - Android 4.13+（rmdir/rename/unlink/copyFile/writeFile）
+ * - iOS 4.11+（基础API）
+ * - iOS 4.61+（完整API）
+ *
+ * 注意：FileSystemManager 只能访问应用沙盒内目录，不能访问沙盒外。
+ */
+
+/** 文件项信息 */
+export type FileItem = {
+	/** 文件/文件夹名 */
+	name: string
+	/** 完整路径 */
+	path: string
+	/** 是否为目录 */
+	isDirectory: boolean
+	/** 文件大小（字节），目录固定为 0 */
+	size: number
+	/** 最后修改时间戳（毫秒） */
+	lastModified: number
+}
+
+/** 路径分段（面包屑导航用） */
+export type PathSegment = {
+	name: string
+	path: string
+}
+
+/** 文件操作结果 */
+export type FileOpResult = {
+	/** 是否成功 */
+	ok: boolean
+	/** 错误信息，失败时填充 */
+	error: string
+}
+
+/** 路径分隔符（跨平台统一用 /） */
+const SEP = '/'
+
+/** 构造成功结果 */
+function okResult(): FileOpResult {
+	const r: FileOpResult = { ok: true, error: '' }
+	return r
+}
+
+/** 构造失败结果 */
+function failResult(msg: string): FileOpResult {
+	const r: FileOpResult = { ok: false, error: msg }
+	return r
+}
+
+/** 构造文件项 */
+function makeFileItem(name: string, path: string, isDir: boolean, size: number, mtime: number): FileItem {
+	const item: FileItem = {
+		name: name,
+		path: path,
+		isDirectory: isDir,
+		size: size,
+		lastModified: mtime,
+	}
+	return item
+}
+
+/**
+ * 规范化路径：统一分隔符，去除末尾斜杠，合并多余斜杠。
+ */
+export function normalizePath(path: string): string {
+	let result = path.trim().replace(/\\/g, SEP)
+	while (result.indexOf(SEP + SEP) >= 0) {
+		result = result.replace(/\/\/+/g, SEP)
+	}
+	if (result.length > 1 && result.endsWith(SEP)) {
+		result = result.substring(0, result.length - 1)
+	}
+	return result
+}
+
+/**
+ * 拼接路径，自动处理分隔符。
+ */
+export function joinPath(base: string, name: string): string {
+	const b = normalizePath(base)
+	const n = name.trim()
+	if (b == '') {
+		return normalizePath(n)
+	}
+	if (b.endsWith(SEP)) {
+		return normalizePath(b + n)
+	}
+	return normalizePath(b + SEP + n)
+}
+
+/**
+ * 获取父目录路径。根目录返回空字符串。
+ */
+export function parentPath(path: string): string {
+	const normalized = normalizePath(path)
+	const lastSep = normalized.lastIndexOf(SEP)
+	if (lastSep <= 0) {
+		return ''
+	}
+	return normalized.substring(0, lastSep)
+}
+
+/**
+ * 获取路径末尾的文件/文件夹名。
+ */
+export function basename(path: string): string {
+	const normalized = normalizePath(path)
+	const lastSep = normalized.lastIndexOf(SEP)
+	if (lastSep < 0) {
+		return normalized
+	}
+	return normalized.substring(lastSep + 1)
+}
+
+/**
+ * 获取默认根目录（用户数据目录）。
+ * 失败时回退到缓存目录。
+ */
+export function getDefaultRoot(): string {
+	const userDataPath = uni.env.USER_DATA_PATH
+	if (userDataPath != null && userDataPath != '') {
+		return normalizePath(userDataPath)
+	}
+	const cachePath = uni.env.CACHE_PATH
+	if (cachePath != null && cachePath != '') {
+		return normalizePath(cachePath)
+	}
+	return ''
+}
+
+/**
+ * 获取所有可访问的根目录列表（供侧边/快速跳转使用）。
+ */
+export function listRootDirs(): string[] {
+	const roots: string[] = []
+	const userDataPath = uni.env.USER_DATA_PATH
+	if (userDataPath != null && userDataPath != '') {
+		roots.push(normalizePath(userDataPath))
+	}
+	const cachePath = uni.env.CACHE_PATH
+	if (cachePath != null && cachePath != '') {
+		roots.push(normalizePath(cachePath))
+	}
+	return roots
+}
+
+/**
+ * 判断路径是否存在。
+ */
+export function exists(path: string): boolean {
+	const normalized = normalizePath(path)
+	if (normalized == '') {
+		return false
+	}
+	const fm = uni.getFileSystemManager()
+	try {
+		fm.accessSync(normalized)
+		return true
+	} catch (_e: any) {
+		return false
+	}
+}
+
+/**
+ * 判断 Stats 是否为目录。
+ * statSync 返回的对象可能携带 isDirectory 方法或属性，这里统一处理。
+ */
+function isStatDirectory(rawStat: any): boolean {
+	if (rawStat == null) {
+		return false
+	}
+	// 尝试读取 isDirectory
+	const isDir = rawStat['isDirectory']
+	if (isDir != null) {
+		// 如果是函数则调用
+		if (typeof isDir == 'function') {
+			try {
+				return isDir() as boolean
+			} catch (_e: any) {
+				// 降级到 size 判断
+			}
+		} else {
+			return isDir as boolean
+		}
+	}
+	// 降级：通过 size 判断（目录 size 通常为 0，不完全可靠但作兜底）
+	const size = rawStat['size']
+	if (size != null) {
+		return (size as number) == 0
+	}
+	return false
+}
+
+/**
+ * 从 statSync 返回值中提取 size。
+ */
+function extractStatSize(rawStat: any): number {
+	if (rawStat == null) {
+		return 0
+	}
+	const size = rawStat['size']
+	if (size != null) {
+		return size as number
+	}
+	return 0
+}
+
+/**
+ * 从 statSync 返回值中提取 lastModifiedTime。
+ */
+function extractStatMtime(rawStat: any): number {
+	if (rawStat == null) {
+		return 0
+	}
+	const mtime = rawStat['lastModifiedTime']
+	if (mtime != null) {
+		return mtime as number
+	}
+	return 0
+}
+
+/**
+ * 列出指定目录下的文件和文件夹。
+ *
+ * @param dirPath 目录路径
+ * @returns 文件项数组，目录不存在或为空返回空数组。文件夹排前，文件排后，各自按名称排序。
+ */
+export function listDir(dirPath: string): FileItem[] {
+	const normalized = normalizePath(dirPath)
+	if (normalized == '') {
+		return []
+	}
+	const fm = uni.getFileSystemManager()
+	let names: string[]
+	try {
+		names = fm.readdirSync(normalized) as string[]
+	} catch (_e: any) {
+		return []
+	}
+	const items: FileItem[] = []
+	for (let i = 0; i < names.length; i++) {
+		const name = names[i]
+		if (name == '.' || name == '..') {
+			continue
+		}
+		const fullPath = joinPath(normalized, name)
+		const stat = statItem(fullPath)
+		items.push(stat)
+	}
+	// 排序：目录在前，文件在后；同类按名称升序
+	items.sort((a: FileItem, b: FileItem): number => {
+		if (a.isDirectory != b.isDirectory) {
+			return a.isDirectory ? -1 : 1
+		}
+		return a.name.localeCompare(b.name)
+	})
+	return items
+}
+
+/**
+ * 获取单个文件/目录的统计信息。
+ * 失败返回默认值（isDirectory=false, size=0）。
+ */
+export function statItem(path: string): FileItem {
+	const normalized = normalizePath(path)
+	if (normalized == '') {
+		return makeFileItem('', normalized, false, 0, 0)
+	}
+	const fm = uni.getFileSystemManager()
+	try {
+		const raw = fm.statSync(normalized, false) as any
+		if (raw == null) {
+			return makeFileItem(basename(normalized), normalized, false, 0, 0)
+		}
+		// statSync 可能返回数组（每个元素含 stats）或单个对象
+		let statObj: any = raw
+		if (raw instanceof Array) {
+			const arr = raw as any[]
+			if (arr.length > 0) {
+				// 数组元素可能是 { stats: FileStats } 或直接是 FileStats
+				const first = arr[0]
+				const statsField = first['stats']
+				statObj = statsField != null ? statsField : first
+			} else {
+				statObj = null
+			}
+		} else {
+			// 非数组，可能直接是 FileStats 或 { stats: FileStats }
+			const statsField = raw['stats']
+			if (statsField != null) {
+				statObj = statsField
+			}
+		}
+		return makeFileItem(
+			basename(normalized),
+			normalized,
+			isStatDirectory(statObj),
+			extractStatSize(statObj),
+			extractStatMtime(statObj)
+		)
+	} catch (_e: any) {
+		return makeFileItem(basename(normalized), normalized, false, 0, 0)
+	}
+}
+
+/**
+ * 创建目录。
+ *
+ * @param dirPath 目录路径
+ * @param recursive 是否递归创建父目录
+ */
+export function createDir(dirPath: string, recursive: boolean = true): FileOpResult {
+	const normalized = normalizePath(dirPath)
+	if (normalized == '') {
+		return failResult('路径不能为空')
+	}
+	if (exists(normalized)) {
+		return failResult('目录已存在')
+	}
+	const fm = uni.getFileSystemManager()
+	try {
+		fm.mkdirSync(normalized, recursive)
+		return okResult()
+	} catch (e: any) {
+		const msg = e != null ? ('' + e) : '创建目录失败'
+		return failResult(msg)
+	}
+}
+
+/**
+ * 创建文件（空内容）。
+ */
+export function createFile(filePath: string): FileOpResult {
+	const normalized = normalizePath(filePath)
+	if (normalized == '') {
+		return failResult('路径不能为空')
+	}
+	if (exists(normalized)) {
+		return failResult('文件已存在')
+	}
+	const fm = uni.getFileSystemManager()
+	try {
+		fm.writeFileSync(normalized, '', 'utf-8')
+		return okResult()
+	} catch (e: any) {
+		const msg = e != null ? ('' + e) : '创建文件失败'
+		return failResult(msg)
+	}
+}
+
+/**
+ * 写入文件内容（覆盖写入）。
+ */
+export function writeContent(filePath: string, content: string): FileOpResult {
+	const normalized = normalizePath(filePath)
+	if (normalized == '') {
+		return failResult('路径不能为空')
+	}
+	const fm = uni.getFileSystemManager()
+	try {
+		fm.writeFileSync(normalized, content, 'utf-8')
+		return okResult()
+	} catch (e: any) {
+		const msg = e != null ? ('' + e) : '写入文件失败'
+		return failResult(msg)
+	}
+}
+
+/**
+ * 读取文件内容（文本）。
+ *
+ * @param filePath 文件路径
+ * @returns 成功返回文件内容字符串，失败返回 null
+ */
+export function readContent(filePath: string): string | null {
+	const normalized = normalizePath(filePath)
+	if (normalized == '') {
+		return null
+	}
+	const fm = uni.getFileSystemManager()
+	try {
+		const data = fm.readFileSync(normalized, 'utf-8')
+		if (data == null) {
+			return null
+		}
+		// readFileSync with encoding 返回 string；无 encoding 返回 ArrayBuffer
+		return '' + data
+	} catch (_e: any) {
+		return null
+	}
+}
+
+/**
+ * 删除文件或目录。
+ *
+ * @param path 路径
+ * @param recursive 目录是否递归删除
+ */
+export function deleteItem(path: string, recursive: boolean = true): FileOpResult {
+	const normalized = normalizePath(path)
+	if (normalized == '') {
+		return failResult('路径不能为空')
+	}
+	if (!exists(normalized)) {
+		return failResult('路径不存在')
+	}
+	const fm = uni.getFileSystemManager()
+	const stat = statItem(normalized)
+	if (stat.isDirectory) {
+		try {
+			fm.rmdirSync(normalized, recursive)
+			return okResult()
+		} catch (e: any) {
+			const msg = e != null ? ('' + e) : '删除目录失败'
+			return failResult(msg)
+		}
+	} else {
+		try {
+			fm.unlinkSync(normalized)
+			return okResult()
+		} catch (e: any) {
+			const msg = e != null ? ('' + e) : '删除文件失败'
+			return failResult(msg)
+		}
+	}
+}
+
+/**
+ * 重命名或移动文件/目录。
+ *
+ * @param oldPath 原路径
+ * @param newPath 新路径（含文件名）
+ */
+export function renameItem(oldPath: string, newPath: string): FileOpResult {
+	const normalizedOld = normalizePath(oldPath)
+	const normalizedNew = normalizePath(newPath)
+	if (normalizedOld == '' || normalizedNew == '') {
+		return failResult('路径不能为空')
+	}
+	if (!exists(normalizedOld)) {
+		return failResult('原路径不存在')
+	}
+	if (exists(normalizedNew)) {
+		return failResult('目标路径已存在')
+	}
+	const fm = uni.getFileSystemManager()
+	try {
+		fm.renameSync(normalizedOld, normalizedNew)
+		return okResult()
+	} catch (e: any) {
+		const msg = e != null ? ('' + e) : '重命名失败'
+		return failResult(msg)
+	}
+}
+
+/**
+ * 复制文件。
+ *
+ * @param srcPath 源文件路径
+ * @param destPath 目标路径
+ */
+export function copyItem(srcPath: string, destPath: string): FileOpResult {
+	const normalizedSrc = normalizePath(srcPath)
+	const normalizedDest = normalizePath(destPath)
+	if (normalizedSrc == '' || normalizedDest == '') {
+		return failResult('路径不能为空')
+	}
+	if (!exists(normalizedSrc)) {
+		return failResult('源路径不存在')
+	}
+	if (exists(normalizedDest)) {
+		return failResult('目标路径已存在')
+	}
+	const stat = statItem(normalizedSrc)
+	if (stat.isDirectory) {
+		// copyFile 不支持目录，需要递归复制
+		return copyDirRecursive(normalizedSrc, normalizedDest)
+	}
+	const fm = uni.getFileSystemManager()
+	try {
+		fm.copyFileSync(normalizedSrc, normalizedDest)
+		return okResult()
+	} catch (e: any) {
+		const msg = e != null ? ('' + e) : '复制文件失败'
+		return failResult(msg)
+	}
+}
+
+/**
+ * 递归复制目录。
+ */
+function copyDirRecursive(srcPath: string, destPath: string): FileOpResult {
+	const createResult = createDir(destPath, true)
+	if (!createResult.ok) {
+		return createResult
+	}
+	const items = listDir(srcPath)
+	for (let i = 0; i < items.length; i++) {
+		const item = items[i]
+		const childSrc = item.path
+		const childDest = joinPath(destPath, item.name)
+		if (item.isDirectory) {
+			const subResult = copyDirRecursive(childSrc, childDest)
+			if (!subResult.ok) {
+				return subResult
+			}
+		} else {
+			const fm = uni.getFileSystemManager()
+			try {
+				fm.copyFileSync(childSrc, childDest)
+			} catch (e: any) {
+				const msg = e != null ? ('' + e) : '复制文件失败: ' + item.name
+				return failResult(msg)
+			}
+		}
+	}
+	return okResult()
+}
+
+/**
+ * 格式化文件大小为可读字符串。
+ *
+ * @param bytes 字节数
+ * @returns 如 "1.2 KB"、"3.4 MB"
+ */
+export function formatFileSize(bytes: number): string {
+	if (bytes <= 0) {
+		return '0 B'
+	}
+	const units = ['B', 'KB', 'MB', 'GB', 'TB']
+	let value = bytes
+	let unitIndex = 0
+	while (value >= 1024 && unitIndex < units.length - 1) {
+		value = value / 1024
+		unitIndex++
+	}
+	// 保留 1 位小数，整数时不显示小数
+	const rounded = Math.round(value * 10) / 10
+	const str = rounded % 1 == 0 ? ('' + Math.floor(rounded)) : ('' + rounded)
+	return str + ' ' + units[unitIndex]
+}
+
+/**
+ * 格式化时间戳为可读日期字符串。
+ *
+ * @param timestamp 毫秒时间戳
+ * @returns 如 "2025-06-20 14:30"
+ */
+export function formatTime(timestamp: number): string {
+	if (timestamp <= 0) {
+		return '-'
+	}
+	const date = new Date(timestamp)
+	const year = date.getFullYear()
+	const month = date.getMonth() + 1
+	const day = date.getDate()
+	const hour = date.getHours()
+	const minute = date.getMinutes()
+	return year + '-' + padZero(month) + '-' + padZero(day) + ' ' + padZero(hour) + ':' + padZero(minute)
+}
+
+function padZero(n: number): string {
+	if (n < 10) {
+		return '0' + n
+	}
+	return '' + n
+}
+
+/**
+ * 判断文件是否为常见文本文件（根据扩展名）。
+ */
+export function isTextFile(fileName: string): boolean {
+	const lowerName = fileName.toLowerCase()
+	const textExtensions = ['.txt', '.md', '.json', '.log', '.csv', '.xml', '.yaml', '.yml', '.ini', '.conf', '.properties', '.html', '.css', '.js', '.ts', '.uts', '.uvue', '.vue', '.java', '.kt', '.swift', '.py', '.go', '.rs', '.c', '.cpp', '.h', '.sh']
+	for (let i = 0; i < textExtensions.length; i++) {
+		if (lowerName.endsWith(textExtensions[i])) {
+			return true
+		}
+	}
+	return false
+}
+
+/**
+ * 判断文件是否为图片文件（根据扩展名）。
+ */
+export function isImageFile(fileName: string): boolean {
+	const lowerName = fileName.toLowerCase()
+	const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg']
+	for (let i = 0; i < imageExtensions.length; i++) {
+		if (lowerName.endsWith(imageExtensions[i])) {
+			return true
+		}
+	}
+	return false
+}
+
+/**
+ * 获取文件扩展名（不含点，小写）。无扩展名返回空字符串。
+ */
+export function getExtension(fileName: string): string {
+	const lastDot = fileName.lastIndexOf('.')
+	if (lastDot < 0 || lastDot == fileName.length - 1) {
+		return ''
+	}
+	return fileName.substring(lastDot + 1).toLowerCase()
+}
