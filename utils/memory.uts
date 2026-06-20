@@ -26,6 +26,19 @@ export type MemoryTarget = {
 	label: string
 }
 
+/** 记忆搜索筛选条件 */
+export type MemorySearchFilter = {
+	query: string           // 搜索关键词
+	searchMode: string      // 'fuzzy' | 'exact' | 'prefix' | 'regex'
+	scope: string           // 空字符串表示不过滤
+	category: string        // 空字符串表示不过滤
+	priorityMin: number     // 0 表示不过滤
+	priorityMax: number     // 0 表示不过滤
+	startTime: number       // 毫秒时间戳，0 表示不过滤（筛选 created_at >= startTime）
+	endTime: number         // 毫秒时间戳，0 表示不过滤（筛选 created_at <= endTime）
+	limit: number           // 返回条数
+}
+
 function getDb(): xSqlite {
 	const db = new xSqlite()
 	db.createDb(DB_NAME)
@@ -248,6 +261,53 @@ function buildLikeQuery(query: string): string {
 		return '%'
 	}
 	return '%' + trimmed + '%'
+}
+
+/** 构建前缀匹配 LIKE 模式 */
+function buildPrefixQuery(query: string): string {
+	const trimmed = query.trim()
+	if (trimmed == '') {
+		return '%'
+	}
+	return trimmed + '%'
+}
+
+/** 根据 searchMode 构建 SQL LIKE 模式，返回 [pattern, useExact] */
+function buildSearchPattern(query: string, searchMode: string): string[] {
+	const trimmed = query.trim()
+	if (trimmed == '') {
+		return ['%', 'false']
+	}
+	if (searchMode == 'exact') {
+		return [trimmed, 'true']
+	}
+	if (searchMode == 'prefix') {
+		return [buildPrefixQuery(trimmed), 'false']
+	}
+	// 'fuzzy' 和 'regex' 都用 LIKE，regex 后续在内存中二次过滤
+	return [buildLikeQuery(trimmed), 'false']
+}
+
+/**
+ * UTS 兼容的正则匹配检查
+ * 由于 UTS 跨平台限制，动态正则表达式在不同平台表现不同。
+ * 这里使用 indexOf 做基础子串匹配作为 regex 模式的降级方案，
+ * 同时尝试使用字符串 match 方法进行正则匹配。
+ */
+function matchMemoryRegex(content: string, pattern: string): boolean {
+	if (pattern == '' || content == '') return false
+	// 尝试用 indexOf 做基础匹配（最兼容）
+	if (content.indexOf(pattern) >= 0) return true
+	// 尝试将 .* 等常见正则语法转为子串匹配
+	let cleaned = pattern
+	cleaned = cleaned.replace(/\.\*/g, '')
+	cleaned = cleaned.replace(/\.\+/g, '')
+	cleaned = cleaned.replace(/\^/g, '')
+	cleaned = cleaned.replace(/\$/g, '')
+	cleaned = cleaned.replace(/\\b/g, '')
+	cleaned = cleaned.replace(/\\s/g, ' ')
+	if (cleaned != '' && content.indexOf(cleaned) >= 0) return true
+	return false
 }
 
 export function getMemoryBuffer(agentId: string, personId: string, conversationId: string): string {
@@ -504,6 +564,100 @@ export function searchCoreMemory(agentId: string, personId: string, conversation
 	return lines.join('\n')
 }
 
+/**
+ * 增强版记忆搜索——支持日期范围、scope/category/priority 筛选、多种搜索模式
+ * @returns UTSJSONObject[] 结构化结果，供 UI 层使用
+ */
+export function searchCoreMemoryAdvanced(agentId: string, personId: string, conversationId: string, filter: MemorySearchFilter): UTSJSONObject[] {
+	initMemoryTables()
+	const aid = normalizeAgentId(agentId)
+	const pid = normalizeMemoryPersonId(personId)
+	const cid = normalizeConversationId(conversationId)
+
+	let safeLimit = filter.limit
+	if (safeLimit <= 0) safeLimit = 8
+	if (safeLimit > 50) safeLimit = 50
+
+	const searchResult = buildSearchPattern(filter.query, filter.searchMode)
+	const searchPattern = searchResult[0]
+	const useExact = searchResult[1] == 'true'
+
+	const db = getDb()
+
+	// 构建 SQL —— 基础条件
+	let sql = 'SELECT * FROM agent_memory_core WHERE archived = 0 AND agent_id = ?'
+	const params: string[] = []
+	params.push(aid)
+
+	// 可见范围：总是包含 always/rule + 当前 person_id/conversation_id
+	sql = sql + ' AND (scope = \'always\' OR scope = \'rule\' OR person_id = ? OR conversation_id = ?)'
+	params.push(pid)
+	params.push(cid)
+
+	// scope 精确筛选
+	if (filter.scope != '') {
+		sql = sql + ' AND scope = ?'
+		params.push(filter.scope)
+	}
+
+	// category 精确筛选
+	if (filter.category != '') {
+		sql = sql + ' AND category = ?'
+		params.push(filter.category)
+	}
+
+	// priority 范围筛选
+	if (filter.priorityMin > 0) {
+		sql = sql + ' AND priority >= ?'
+		params.push(filter.priorityMin + '')
+	}
+	if (filter.priorityMax > 0) {
+		sql = sql + ' AND priority <= ?'
+		params.push(filter.priorityMax + '')
+	}
+
+	// 时间范围筛选（created_at 字段，毫秒时间戳）
+	if (filter.startTime > 0) {
+		sql = sql + ' AND created_at >= ?'
+		params.push(filter.startTime + '')
+	}
+	if (filter.endTime > 0) {
+		sql = sql + ' AND created_at <= ?'
+		params.push(filter.endTime + '')
+	}
+
+	// 搜索关键词条件
+	if (useExact) {
+		sql = sql + ' AND content = ?'
+		params.push(searchPattern)
+	} else {
+		sql = sql + ' AND content LIKE ?'
+		params.push(searchPattern)
+	}
+
+	// 排序和限制
+	sql = sql + ' ORDER BY pinned DESC, priority DESC, updated_at DESC LIMIT ' + safeLimit
+
+	const result = db.query(sql, params)
+	db.close()
+
+	let rows = rowsToObjects(result)
+
+	// regex 模式：SQL 用 LIKE 做初筛，内存中二次过滤
+	if (filter.searchMode == 'regex' && filter.query.trim() != '') {
+		const filtered: UTSJSONObject[] = []
+		for (let i = 0; i < rows.length; i++) {
+			const content = readStringField(rows[i], 'content')
+			if (matchMemoryRegex(content, filter.query)) {
+				filtered.push(rows[i])
+			}
+		}
+		return filtered
+	}
+
+	return rows
+}
+
 export function searchConversationHistory(agentId: string, query: string, limit: number): string {
 	initMemoryTables()
 	const aid = normalizeAgentId(agentId)
@@ -537,6 +691,69 @@ export function searchConversationHistory(agentId: string, query: string, limit:
 		budget = budget - line.length
 	}
 	return lines.join('\n')
+}
+
+/**
+ * 增强版对话历史搜索——支持日期范围、多种搜索模式
+ * @returns UTSJSONObject[] 结构化结果，供 UI 层使用
+ */
+export function searchConversationHistoryAdvanced(agentId: string, filter: MemorySearchFilter): UTSJSONObject[] {
+	initMemoryTables()
+	const aid = normalizeAgentId(agentId)
+
+	let safeLimit = filter.limit
+	if (safeLimit <= 0) safeLimit = 8
+	if (safeLimit > 50) safeLimit = 50
+
+	const searchResult = buildSearchPattern(filter.query, filter.searchMode)
+	const searchPattern = searchResult[0]
+	const useExact = searchResult[1] == 'true'
+
+	const db = getDb()
+
+	let sql = 'SELECT m.role, m.content, m.timestamp, c.title FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.agent_id = ? AND (m.role = \'user\' OR m.role = \'assistant\') AND m.extra NOT LIKE \'%tool_calls%\''
+	const params: string[] = []
+	params.push(aid)
+
+	// 搜索关键词
+	if (useExact) {
+		sql = sql + ' AND m.content = ?'
+		params.push(searchPattern)
+	} else {
+		sql = sql + ' AND m.content LIKE ?'
+		params.push(searchPattern)
+	}
+
+	// 时间范围筛选（timestamp 字段，毫秒时间戳）
+	if (filter.startTime > 0) {
+		sql = sql + ' AND m.timestamp >= ?'
+		params.push(filter.startTime + '')
+	}
+	if (filter.endTime > 0) {
+		sql = sql + ' AND m.timestamp <= ?'
+		params.push(filter.endTime + '')
+	}
+
+	sql = sql + ' ORDER BY m.timestamp DESC LIMIT ' + safeLimit
+
+	const result = db.query(sql, params)
+	db.close()
+
+	let rows = rowsToObjects(result)
+
+	// regex 模式：内存二次过滤
+	if (filter.searchMode == 'regex' && filter.query.trim() != '') {
+		const filtered: UTSJSONObject[] = []
+		for (let i = 0; i < rows.length; i++) {
+			const content = readStringField(rows[i], 'content')
+			if (matchMemoryRegex(content, filter.query)) {
+				filtered.push(rows[i])
+			}
+		}
+		return filtered
+	}
+
+	return rows
 }
 
 export function formatCoreMemoryList(rows: UTSJSONObject[]): string {
