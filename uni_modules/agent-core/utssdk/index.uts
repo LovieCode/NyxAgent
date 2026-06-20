@@ -58,6 +58,9 @@ export { AgentLoopConfig } from './agent-loop'
 // 导出会话管理器
 export { SessionManager } from './session-manager'
 
+// 导出记忆系统
+export * from './memory'
+
 // 导出内置文件工具
 export {
 	FileReadTool,
