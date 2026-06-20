@@ -3,7 +3,7 @@
  * 使用 uni.storage 持久化智能体列表
  */
 
-import { initAgentStorage, removeAgentStorage } from './agent-fs'
+import { getAgentDir, deleteItem } from '@/utils/file-manager.uts'
 
 /** 默认智能体数据，首次使用时写入 */
 const defaultAgents: UTSJSONObject[] = [
@@ -65,10 +65,10 @@ export function getAgents(): UTSJSONObject[] {
 	}
 	// 首次使用，写入默认数据并初始化文件沙箱
 	saveAgents(defaultAgents)
-	for (let i = 0; i < defaultAgents.length; i++) {
+		for (let i = 0; i < defaultAgents.length; i++) {
 		const id = defaultAgents[i]['id'] as string
 		if (id != null && id != '') {
-			initAgentStorage(id)
+			getAgentDir(id)
 		}
 	}
 	return defaultAgents
@@ -162,8 +162,8 @@ export function updateAgentAvatar(id: string, avatarPath: string): void {
 /** 删除智能体（同时清理文件目录） */
 export function deleteAgent(id: string): void {
 	// 清理文件沙箱
-	initAgentStorage(id) // 确保目录存在
-	removeAgentStorage(id)
+	getAgentDir(id) // 确保目录存在
+	deleteItem(getAgentDir(id))
 	// 移除列表
 	const agents = getAgents()
 	const newAgents = [] as UTSJSONObject[]

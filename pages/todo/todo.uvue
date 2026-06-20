@@ -163,7 +163,8 @@
 </template>
 
 <script lang="uts">
-	import { getWorkspaceTodos, saveWorkspaceTodos, getWorkspaceNotes, saveWorkspaceNotes, countInlineTodos, renderKnowledgeMarkdown, type KnowledgeRenderBlock } from '@/utils/knowledge-workspace.uts'
+	import { getAgentDir, readContent, writeContent, listDir, deleteItem, joinPath, type FileItem } from '@/utils/file-manager.uts'
+	import { renderKnowledgeMarkdown, countInlineTodos, parseTodoMarkdown, parseNoteMarkdown, buildTodoMarkdown, buildNoteMarkdown, type KnowledgeRenderBlock } from '@/utils/markdown.uts'
 
 	/**
 	 * 待办 + 笔记 合并页面
@@ -174,6 +175,9 @@
 	export default {
 		data() {
 			return {
+				// 选中的智能体 ID
+				selectedAgentId: 'default' as string,
+
 				// 视图切换
 				activeView: 'todo' as string,
 
@@ -242,11 +246,26 @@
 
 			// ===== 待办相关 =====
 			loadTodos() {
-				this.todos = getWorkspaceTodos('user', 'default')
+				const agentDir = getAgentDir(this.selectedAgentId)
+				if (agentDir == '') {
+					this.todos = []
+					return
+				}
+				const mdPath = joinPath(agentDir, 'todo.md')
+				const content = readContent(mdPath)
+				if (content == null || content == '') {
+					this.todos = []
+					return
+				}
+				this.todos = parseTodoMarkdown(content)
 			},
 
 			saveTodos() {
-				saveWorkspaceTodos('user', 'default', this.todos)
+				const agentDir = getAgentDir(this.selectedAgentId)
+				if (agentDir == '') return
+				const mdPath = joinPath(agentDir, 'todo.md')
+				const markdown = buildTodoMarkdown(this.todos)
+				writeContent(mdPath, markdown)
 			},
 
 			setFilter(f : string) {
@@ -342,11 +361,73 @@
 
 			// ===== 笔记相关 =====
 			loadNotes() {
-				this.notes = getWorkspaceNotes('user', 'default')
+				const agentDir = getAgentDir(this.selectedAgentId)
+				if (agentDir == '') {
+					this.notes = []
+					return
+				}
+				const notesDir = joinPath(agentDir, 'notes')
+				const files = listDir(notesDir)
+				const result: UTSJSONObject[] = []
+				for (let i = 0; i < files.length; i++) {
+					const file = files[i] as FileItem
+					if (file.isDirectory) continue
+					if (!file.name.endsWith('.md')) continue
+					const content = readContent(file.path)
+					if (content == null) continue
+					const noteId = file.name.substring(0, file.name.length - 3)
+					const note = parseNoteMarkdown(content, noteId)
+					result.push(note)
+				}
+				// 按 updatedAt 降序排列（最新的在前）
+				result.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
+					const aTime = a['updatedAt'] as string
+					const bTime = b['updatedAt'] as string
+					if (aTime > bTime) return -1
+					if (aTime < bTime) return 1
+					return 0
+				})
+				this.notes = result
 			},
 
 			saveNotes() {
-				saveWorkspaceNotes('user', 'default', this.notes)
+				const agentDir = getAgentDir(this.selectedAgentId)
+				if (agentDir == '') return
+				const notesDir = joinPath(agentDir, 'notes')
+
+				// 读取现有文件，清理已删除的笔记
+				const existingFiles = listDir(notesDir)
+				const currentIds: string[] = []
+				for (let i = 0; i < this.notes.length; i++) {
+					currentIds.push(this.notes[i]['id'] as string)
+				}
+				for (let i = 0; i < existingFiles.length; i++) {
+					const file = existingFiles[i] as FileItem
+					if (file.isDirectory) continue
+					if (!file.name.endsWith('.md')) continue
+					const noteId = file.name.substring(0, file.name.length - 3)
+					let found = false
+					for (let j = 0; j < currentIds.length; j++) {
+						if (currentIds[j] == noteId) {
+							found = true
+							break
+						}
+					}
+					if (!found) {
+						deleteItem(file.path, false)
+					}
+				}
+
+				// 写入所有笔记
+				for (let i = 0; i < this.notes.length; i++) {
+					const note = this.notes[i]
+					const noteId = note['id'] as string
+					const title = note['title'] as string
+					const content = note['content'] as string
+					const md = buildNoteMarkdown(title, content, noteId)
+					const filePath = joinPath(notesDir, noteId + '.md')
+					writeContent(filePath, md)
+				}
 			},
 
 			formatNow() : string {

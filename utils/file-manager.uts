@@ -114,6 +114,32 @@ export function getInternalFilesDir(): string {
 }
 
 /**
+ * 获取 Agent 沙箱根目录。
+ */
+export function getAgentsRoot(): string {
+	const filesDir = getInternalFilesDir()
+	if (filesDir == '') return ''
+	return filesDir + '/agents'
+}
+
+/**
+ * 获取指定 Agent 的沙箱子目录（不存在则创建）。
+ * agentId 经过路径穿越校验，防止越权。
+ */
+export function getAgentDir(agentId: string): string {
+	if (agentId == '' || agentId.indexOf('/') >= 0 || agentId.indexOf('\\') >= 0 || agentId.indexOf('..') >= 0) {
+		return ''
+	}
+	const root = getAgentsRoot()
+	if (root == '') return ''
+	const dir = root + '/' + agentId
+	if (!exists(dir)) {
+		createDir(dir)
+	}
+	return dir
+}
+
+/**
  * 获取内部存储 cache 目录。
  * - Android：/data/data/<pkg>/cache/（临时文件、下载缓存等）
  * - 其他平台：uni.env.CACHE_PATH
