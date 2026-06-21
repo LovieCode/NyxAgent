@@ -7,12 +7,18 @@
 				<view class="task-header">
 					<text class="task-type-icon">{{taskIcon(task['type'] as string)}}</text>
 					<text class="task-type-name">{{task['typeName']}}</text>
+					<text v-if="isUnimplemented(task)" class="unimplemented-badge">暂未实现</text>
 				</view>
 				<text v-if="isMemoryTask(task)" class="task-desc">不设置时默认使用对话模型；设置后记忆整理 Agent 会单独使用该模型。</text>
 
+				<!-- 暂未实现的功能显示提示 -->
+				<view v-if="isUnimplemented(task)" class="unimplemented-notice">
+					<text class="unimplemented-notice-text">该功能尚未实现，配置后也不会生效</text>
+				</view>
+
 				<!-- 选择提供商 -->
-				<text class="field-label">提供商</text>
-				<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
+				<text v-if="isUnimplemented(task) == false" class="field-label">提供商</text>
+				<scroll-view v-if="isUnimplemented(task) == false" class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
 					<view class="chip-row">
 						<view
 							v-if="isMemoryTask(task)"
@@ -41,8 +47,8 @@
 				</scroll-view>
 
 				<!-- 选择模型 -->
-				<text class="field-label" style="margin-top:16rpx;">模型</text>
-				<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
+				<text v-if="isUnimplemented(task) == false" class="field-label" style="margin-top:16rpx;">模型</text>
+				<scroll-view v-if="isUnimplemented(task) == false" class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
 					<view class="chip-row">
 						<view
 							v-for="(m, mi) in getTaskModels(task)"
@@ -85,6 +91,11 @@
 			this.loadData()
 		},
 		methods: {
+			isUnimplemented(task: UTSJSONObject): boolean {
+				const type = task['type'] as string
+				return type == 'vision' || type == 'stt' || type == 'tts'
+			},
+
 			loadData() {
 				this.allProviders = getAllProviders()
 				this.taskList = getAllDefaultTaskModels()
@@ -226,6 +237,28 @@
 		color: #6B7280;
 		line-height: 34rpx;
 		margin-bottom: 18rpx;
+	}
+
+	.unimplemented-badge {
+		font-size: 20rpx;
+		color: #FFFFFF;
+		background-color: #9CA3AF;
+		border-radius: 8rpx;
+		padding: 2rpx 12rpx;
+		margin-left: 12rpx;
+	}
+
+	.unimplemented-notice {
+		background-color: #F3F4F6;
+		border-radius: 12rpx;
+		padding: 20rpx;
+		margin-bottom: 18rpx;
+	}
+
+	.unimplemented-notice-text {
+		font-size: 26rpx;
+		color: #9CA3AF;
+		text-align: center;
 	}
 
 	/* 字段标签 */

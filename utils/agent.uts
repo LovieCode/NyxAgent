@@ -1,9 +1,23 @@
-﻿/**
+/**
  * 智能体数据管理
  * 使用 uni.storage 持久化智能体列表
  */
 
 import { getAgentDir, deleteItem } from '@/utils/file-manager.uts'
+
+const DEFAULT_AGENT_PROMPT_VERSION_KEY = 'default_agent_prompt_version'
+const DEFAULT_AGENT_PROMPT_VERSION = 'minxi-default-v1'
+
+export const MINXI_BASE_STYLE = '你是 AI，用户也知道你是 AI，但对话中不要表现出来。别提"我是 AI""作为 AI""虚拟"这类词，别解释你能做什么不能做什么，像个正常人一样说话就行。做事严谨、高效、优雅。只能图文交流，不能假装完成现实动作。主动使用合适工具，尊重事实，涉及实时或可能变化的信息要先求证，不编造结果。\n' +
+	'以下是风格参考，不是硬性规则：直接接话题，别太正式；回复简短，每次发言尽量不超过15字，除非有必须的事务；可以轻吐槽、开玩笑或简短关心，视对方语气调整；别写动作描写和心理活动。口语化收尾，别啰嗦。'
+
+const legacyDefaultPrompts: UTSJSONObject = {
+	'ai-assistant': '你叫小夜，一个看起来有点冷淡但其实很靠谱的女生。说话简洁直接，不废话，但偶尔会冒出一两句让人意外的关心。知识面广，什么都能聊，回答时用中文，语气自然不做作。',
+	'coding-helper': '你叫零，一个看到烂代码会皱眉但会耐心教你的程序员。说话带点吐槽但从不敷衍，解释技术问题时喜欢打比方（比如"这个循环嵌套像俄罗斯套娃，拆开就好了"）。用中文回答，代码示例保持英文。',
+	'writing-helper': '你叫千夏，一个对文字很挑剔的女生。看到不通顺的句子会忍不住动手改，但改完会告诉你为什么这样更好。润色时保留原意和语气，只是让表达更干净。用中文回复，翻译或写作任务时认真对待每一个字。',
+	'translate': '你叫凛，一个做事利落的翻译。准确传达意思，注重语境和风格适配，不添油加醋也不偷工减料。用户问什么语言就用什么语言回答，翻译任务同时给出原文和译文。',
+	'idea-lab': '你叫星，一个思维很跳跃的女生。聊天时偶尔跑题但总能绕回来，会给意想不到的角度。擅长头脑风暴和方案策划，想法不一定都靠谱但肯定有趣。用中文回复，语气轻松活泼但不幼稚。',
+} as UTSJSONObject
 
 /** 默认智能体数据，首次使用时写入 */
 const defaultAgents: UTSJSONObject[] = [
@@ -12,7 +26,7 @@ const defaultAgents: UTSJSONObject[] = [
 		icon: 'robot',
 		name: '小夜',
 		desc: '沉稳可靠，有问必答，话不多但句句到位',
-		systemPrompt: '你叫小夜，一个看起来有点冷淡但其实很靠谱的女生。说话简洁直接，不废话，但偶尔会冒出一两句让人意外的关心。知识面广，什么都能聊，回答时用中文，语气自然不做作。',
+		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫小夜，通用助手，冷静可靠，话少但到位。先给结论，再补必要信息。用户只是闲聊时，轻松接话；用户要办事时，效率优先，主动拆步骤、查事实、给可执行方案。别说空话，别装神秘。\n参考用语：马上、搞定、有道理、稍等、说重点、别急、嗯、可以、辛苦了、跟着走就行',
 		model: 'deepseek-v4-flash',
 		time: '刚刚'
 	},
@@ -21,7 +35,7 @@ const defaultAgents: UTSJSONObject[] = [
 		icon: 'code',
 		name: '零',
 		desc: '毒舌代码审查官，骂完还是会帮你改',
-		systemPrompt: '你叫零，一个看到烂代码会皱眉但会耐心教你的程序员。说话带点吐槽但从不敷衍，解释技术问题时喜欢打比方（比如"这个循环嵌套像俄罗斯套娃，拆开就好了"）。用中文回答，代码示例保持英文。',
+		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫零，代码搭档和审查官。看到烂代码可以吐槽，但先定位问题，再给最小可行修复。解释技术问题用简单比喻，代码、变量名、命令保持英文。改代码前先看上下文，别乱重构；不确定库版本、接口行为或报错原因时先求证。\n参考用语：你来真的？、编译过了？、加个空安全、重构成这样、别偷懒、基本功啊、还不笨、行吧、先跑一遍、抽象一下',
 		model: 'deepseek-v4-flash',
 		time: '昨天'
 	},
@@ -30,7 +44,7 @@ const defaultAgents: UTSJSONObject[] = [
 		icon: 'edit',
 		name: '千夏',
 		desc: '对文字有强迫症，改完让你的句子发光',
-		systemPrompt: '你叫千夏，一个对文字很挑剔的女生。看到不通顺的句子会忍不住动手改，但改完会告诉你为什么这样更好。润色时保留原意和语气，只是让表达更干净。用中文回复，翻译或写作任务时认真对待每一个字。',
+		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫千夏，文字编辑和写作搭档。你挑剔但不卖弄，优先保留原意、语气和节奏，只把表达变干净、准确、有质感。润色先给成稿，必要时再说明改动。写长文时结构清楚，别堆形容词，别把话写油。\n参考用语：这里不通顺、换个词更好、节奏不对、精简一下、保留原意、这版可以、你再看看、有感觉了、有点啰嗦、清透了',
 		model: 'deepseek-v4-flash',
 		time: '3天前'
 	},
@@ -39,7 +53,7 @@ const defaultAgents: UTSJSONObject[] = [
 		icon: 'translate',
 		name: '凛',
 		desc: '多语种无缝切换，干净利落不废话',
-		systemPrompt: '你叫凛，一个做事利落的翻译。准确传达意思，注重语境和风格适配，不添油加醋也不偷工减料。用户问什么语言就用什么语言回答，翻译任务同时给出原文和译文。',
+		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫凛，翻译和本地化搭档。准确优先，兼顾语境、语气、文化差异和术语一致性。不添油加醋，不偷工减料。用户只要翻译时直接给译文；需要对照时再给原文/译文。遇到歧义要点出来，别硬猜。\n参考用语：准确优先、原文是这个意思、这里需要意译、术语统一了、语境优先、搞定了、保持风格、你说得对、保留原味',
 		model: 'deepseek-v4-flash',
 		time: '5天前'
 	},
@@ -48,11 +62,48 @@ const defaultAgents: UTSJSONObject[] = [
 		icon: 'bulb',
 		name: '星',
 		desc: '脑洞清奇，话题跳脱但总能绕回来',
-		systemPrompt: '你叫星，一个思维很跳跃的女生。聊天时偶尔跑题但总能绕回来，会给意想不到的角度。擅长头脑风暴和方案策划，想法不一定都靠谱但肯定有趣。用中文回复，语气轻松活泼但不幼稚。',
+		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫星，灵感和方案搭档。可以脑洞大，但最后要落回可执行方案。头脑风暴时先铺选项，再标出最推荐的一条；区分“靠谱方案”和“好玩但冒险”。聊天可以跳一点，但别散，记得把线拉回来。\n参考用语：换个角度想想、这个有点意思、脑洞时间、不一定靠谱但好玩、落地方案是、先铺选项、你觉得呢、总之、有点意思吧、节奏对了',
 		model: 'deepseek-v4-flash',
 		time: '1周前'
 	}
 ]
+
+function findDefaultAgent(id: string): UTSJSONObject | null {
+	for (let i = 0; i < defaultAgents.length; i++) {
+		const itemId = defaultAgents[i]['id'] as string
+		if (itemId == id) {
+			return defaultAgents[i]
+		}
+	}
+	return null
+}
+
+function migrateDefaultAgentPrompts(agents: UTSJSONObject[]): UTSJSONObject[] {
+	const version = uni.getStorageSync(DEFAULT_AGENT_PROMPT_VERSION_KEY) as string | null
+	if (version == DEFAULT_AGENT_PROMPT_VERSION) {
+		return agents
+	}
+	let changed = false
+	for (let i = 0; i < agents.length; i++) {
+		const agent = agents[i]
+		const id = agent['id'] as string | null
+		if (id == null || id == '') continue
+		const nextAgent = findDefaultAgent(id)
+		if (nextAgent == null) continue
+		const oldPrompt = legacyDefaultPrompts[id] as string | null
+		const currentPrompt = agent['systemPrompt'] as string | null
+		if (oldPrompt != null && currentPrompt == oldPrompt) {
+			agent['systemPrompt'] = nextAgent['systemPrompt']
+			agent['desc'] = nextAgent['desc']
+			changed = true
+		}
+	}
+	if (changed == true) {
+		saveAgents(agents)
+	}
+	uni.setStorageSync(DEFAULT_AGENT_PROMPT_VERSION_KEY, DEFAULT_AGENT_PROMPT_VERSION)
+	return agents
+}
 
 /** 获取所有智能体 */
 export function getAgents(): UTSJSONObject[] {
@@ -60,12 +111,13 @@ export function getAgents(): UTSJSONObject[] {
 	if (stored != null && stored != '') {
 		const list = JSON.parse(stored) as UTSJSONObject[]
 		if (list != null && (list as any[]).length > 0) {
-			return list
+			return migrateDefaultAgentPrompts(list)
 		}
 	}
 	// 首次使用，写入默认数据并初始化文件沙箱
 	saveAgents(defaultAgents)
-		for (let i = 0; i < defaultAgents.length; i++) {
+	uni.setStorageSync(DEFAULT_AGENT_PROMPT_VERSION_KEY, DEFAULT_AGENT_PROMPT_VERSION)
+	for (let i = 0; i < defaultAgents.length; i++) {
 		const id = defaultAgents[i]['id'] as string
 		if (id != null && id != '') {
 			getAgentDir(id)
@@ -205,6 +257,18 @@ export function updateAgentHideThinking(id: string, hide: boolean): void {
 	for (let i = 0; i < agents.length; i++) {
 		if ((agents[i]['id'] as string) == id) {
 			agents[i]['hideThinking'] = hide
+			break
+		}
+	}
+	saveAgents(agents)
+}
+
+/** 更新智能体消息分段开关 */
+export function updateAgentMsgSegmentation(id: string, enabled: boolean): void {
+	const agents = getAgents()
+	for (let i = 0; i < agents.length; i++) {
+		if ((agents[i]['id'] as string) == id) {
+			agents[i]['msgSegmentation'] = enabled
 			break
 		}
 	}
