@@ -346,7 +346,7 @@ export function getProviderApiConfig(id: string): UTSJSONObject | null {
 				}
 			},
 			fail: (_err: any) => {
-				console.log('[Provider] 获取模型列表 ← 网络失败 | ' + url)
+				console.log('[Provider] 获取模型列表 ← 网络失败 | ' + fetchUrl)
 				resolve([])
 			}
 		})
