@@ -12,16 +12,13 @@ import {
 	getAgentDir,
 	formatFileSize,
 	formatTime,
-	FileItem,
 } from '@/utils/file-manager.uts'
 import {
-    renderKnowledgeMarkdown,
-    countInlineTodos,
-    parseTodoMarkdown,
-    parseNoteMarkdown,
-    buildTodoMarkdown,
-    buildNoteMarkdown,
-    KnowledgeRenderBlock,
+	renderKnowledgeMarkdown,
+	parseTodoMarkdown,
+	parseNoteMarkdown,
+	buildTodoMarkdown,
+	buildNoteMarkdown,
 } from '@/utils/markdown.uts'
 import {
 	searchCoreMemoryAdvanced,
@@ -65,13 +62,7 @@ export interface AgentTool {
  */
 export function createAgentTools(agentId: string, conversationId: string = '', personId: string = '', allowCoreMemoryWrite: boolean = false): AgentTool[] {
 	const tools: AgentTool[] = [
-		new SandboxFileReadTool(agentId) as AgentTool,
-		new SandboxFileWriteTool(agentId) as AgentTool,
-		new SandboxFileDeleteTool(agentId) as AgentTool,
-		new SandboxFileListTool(agentId) as AgentTool,
-		new KnowledgeFolderListTool(agentId) as AgentTool,
-		new KnowledgeFolderReadTool(agentId) as AgentTool,
-		new KnowledgeFolderWriteTool(agentId) as AgentTool,
+		new WorkspaceFileTool(agentId) as AgentTool,
 		new MemorySearchTool(agentId, conversationId, personId) as AgentTool,
 		new MemoryBufferWriteTool(agentId, conversationId, personId) as AgentTool,
 		new WebSearchTool() as AgentTool,
@@ -103,75 +94,125 @@ function resolveAgentPath(agentId: string, relPath: string): string {
 	return joinPath(dir, relPath)
 }
 
-/**
- * 文件读取工具
- */
-class SandboxFileReadTool implements AgentTool {
-	name: string = 'file_read'
-	description: string = '读取指定文件的内容。path 相对于智能体的私有存储目录，不允许使用绝对路径或 ".." 穿越。'
-	parameters: UTSJSONObject = {
-		'type': 'object',
-		'properties': {
-			'path': {
-				'type': 'string',
-				'description': '要读取的文件路径（相对于智能体私有目录）'
-			}
-		},
-		'required': ['path']
-	} as UTSJSONObject
-
-	private agentId: string
-
-	constructor(agentId: string) {
-		this.agentId = agentId
+function normalizeWorkspacePath(agentId: string, rawPath: string): string {
+	let path = rawPath.trim().replace(/\\/g, '/')
+	const prefix = 'agents/' + agentId + '/'
+	if (path.startsWith(prefix)) {
+		path = path.substring(prefix.length)
+	} else if (path == 'agents/' + agentId) {
+		path = ''
 	}
-
-	execute(args: UTSJSONObject): Promise<ToolResult> {
-		return new Promise<ToolResult>((resolve) => {
-			const path = args['path'] as string | null
-			if (path == null || path!.length == 0) {
-				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
-				return
-			}
-			const absPath = resolveAgentPath(this.agentId, path!)
-			if (!exists(absPath)) {
-				resolve({ content: '文件不存在或读取失败: ' + path!, isError: true } as ToolResult)
-				return
-			}
-			const content = readContent(absPath)
-			if (content == null) {
-				resolve({ content: '文件读取失败: ' + path!, isError: true } as ToolResult)
-				return
-			}
-			resolve({ content: content, isError: false } as ToolResult)
-		})
+	while (path.startsWith('/')) {
+		path = path.substring(1)
 	}
+	while (path.endsWith('/') && path.length > 1) {
+		path = path.substring(0, path.length - 1)
+	}
+	return path
 }
 
-/**
- * 文件/目录写入工具
- * 合并创建文件和创建目录的能力
- */
-class SandboxFileWriteTool implements AgentTool {
-	name: string = 'file_write'
-	description: string = '创建文件或目录。如果 is_directory 为 true，则创建目录；否则将 content 写入文件（父目录不存在自动创建）。'
+function isUnsafeWorkspacePath(path: string): boolean {
+	if (path.startsWith('/') || path.startsWith('file://') || path.startsWith('unifile://')) return true
+	if (path.indexOf(':') >= 0) return true
+	if (path == '..' || path.indexOf('../') >= 0 || path.indexOf('/..') >= 0) return true
+	if (path.indexOf('..\\') >= 0 || path.indexOf('\\..') >= 0) return true
+	return false
+}
+
+function isTodoPath(path: string): boolean {
+	return path == 'todo.md'
+}
+
+function isNotePath(path: string): boolean {
+	return path.startsWith('notes/') && path.endsWith('.md')
+}
+
+function renderKnowledgeContent(content: string): string {
+	const rendered = renderKnowledgeMarkdown(content)
+	let finalContent = ''
+	for (let i = 0; i < rendered.length; i++) {
+		const block = rendered[i]
+		if (block.type == 'heading') {
+			const prefix = block.level == 1 ? '# ' : block.level == 2 ? '## ' : '### '
+			finalContent = finalContent + prefix + block.text + '\n'
+		} else if (block.type == 'todo') {
+			const box = block.checked ? '- [x]' : '- [ ]'
+			finalContent = finalContent + box + ' ' + block.text + '\n'
+		} else if (block.type == 'bullet') {
+			finalContent = finalContent + '- ' + block.text + '\n'
+		} else {
+			finalContent = finalContent + block.text + '\n'
+		}
+	}
+	return finalContent
+}
+
+function formatWorkspaceInfo(path: string, absPath: string): string {
+	const info = statItem(absPath)
+	const typeStr = info.isDirectory ? '目录' : '文件'
+	return '路径: ' + path + '\n名称: ' + info.name + '\n类型: ' + typeStr + '\n大小: ' + formatFileSize(info.size) + '\n修改时间: ' + formatTime(info.lastModified)
+}
+
+function formatWorkspaceList(path: string, absPath: string, detail: boolean): string {
+	const files = listDir(absPath)
+	const lines: string[] = []
+	if (path == '' || path == 'notes') {
+		lines.push('路径规则：todo.md 是待办；notes/<名称>.md 是笔记；其他路径是普通文件。')
+		lines.push('')
+	}
+	if (files.length == 0) {
+		lines.push('(目录为空)')
+		return lines.join('\n')
+	}
+	for (let i = 0; i < files.length; i++) {
+		const info = files[i]
+		const prefix = info.isDirectory ? '[DIR]  ' : '[FILE] '
+		if (detail == true) {
+			const typeStr = info.isDirectory ? '目录' : '文件'
+			lines.push(prefix + info.name + ' | 类型: ' + typeStr + ' | 大小: ' + formatFileSize(info.size) + ' | 修改时间: ' + formatTime(info.lastModified))
+		} else {
+			if (info.isDirectory == true) {
+				lines.push(prefix + info.name)
+			} else {
+				lines.push(prefix + info.name + ' (' + formatFileSize(info.size) + ')')
+			}
+		}
+	}
+	return lines.join('\n')
+}
+
+class WorkspaceFileTool implements AgentTool {
+	name: string = 'workspace_file'
+	description: string = '统一操作当前 Agent 私有工作区文件。所有 path 都相对于当前 Agent 私有目录，禁止绝对路径和 ".."。action=list/read/write/delete/info。路径语义：todo.md 是待办文件，write 时会规范为 - [ ] / - [x]；notes/<名称>.md 是笔记，write 时会规范为带标题/元信息的 Markdown；其他路径是普通文件，按原文读写。write + is_directory=true 创建目录。read 时 render=true 会把 todo/notes Markdown 转为可读文本；普通文件 render 无效果。list 空路径列根目录，path=notes 列笔记目录。delete 可删除文件或目录，谨慎使用。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
+			'action': {
+				'type': 'string',
+				'description': '操作类型：list/read/write/delete/info'
+			},
 			'path': {
 				'type': 'string',
-				'description': '要创建的文件或目录路径（相对于智能体私有目录）'
-			},
-			'is_directory': {
-				'type': 'boolean',
-				'description': 'true 表示创建目录，false 表示写入文件（默认 false）'
+				'description': '相对路径。todo.md=待办；notes/<名称>.md=笔记；其他路径=普通文件；空路径仅用于 list 根目录。不要传绝对路径或包含 ..'
 			},
 			'content': {
 				'type': 'string',
-				'description': '要写入的文件内容（is_directory 为 false 时必填）'
+				'description': 'write 时要写入的内容。todo.md 使用 - [ ] / - [x]；notes/*.md 可用标准 Markdown；普通文件原样写入'
+			},
+			'detail': {
+				'type': 'boolean',
+				'description': 'list 时是否显示类型、大小、修改时间，默认 false'
+			},
+			'is_directory': {
+				'type': 'boolean',
+				'description': 'write 时为 true 表示创建目录；默认 false 表示写入文件'
+			},
+			'render': {
+				'type': 'boolean',
+				'description': 'read todo.md 或 notes/*.md 时是否返回渲染后的可读文本，默认 true；false 返回原始 Markdown'
 			}
 		},
-		'required': ['path']
+		'required': ['action']
 	} as UTSJSONObject
 
 	private agentId: string
@@ -182,375 +223,113 @@ class SandboxFileWriteTool implements AgentTool {
 
 	execute(args: UTSJSONObject): Promise<ToolResult> {
 		return new Promise<ToolResult>((resolve) => {
-			const path = args['path'] as string | null
-			const isDirectory = args['is_directory'] as boolean | null
-			const content = args['content'] as string | null
-			if (path == null || path!.length == 0) {
+			const rawAction = args['action'] as string | null
+			const rawPath = args['path'] as string | null
+			const rawContent = args['content'] as string | null
+			const rawDetail = args['detail'] as boolean | null
+			const rawIsDirectory = args['is_directory'] as boolean | null
+			const rawRender = args['render'] as boolean | null
+			const action = rawAction != null ? rawAction.trim().toLowerCase() : ''
+			const rawPathText = rawPath != null ? rawPath : ''
+			if (isUnsafeWorkspacePath(rawPathText.trim().replace(/\\/g, '/')) == true) {
+				resolve({ content: '非法路径：只能使用当前 Agent 工作区内的相对路径，不能使用绝对路径或 ".."', isError: true } as ToolResult)
+				return
+			}
+			const path = normalizeWorkspacePath(this.agentId, rawPathText)
+			if (action == '') {
+				resolve({ content: '缺少必要参数: action，可用 list/read/write/delete/info', isError: true } as ToolResult)
+				return
+			}
+			if (isUnsafeWorkspacePath(path) == true) {
+				resolve({ content: '非法路径：只能使用当前 Agent 工作区内的相对路径，不能使用绝对路径或 ".."', isError: true } as ToolResult)
+				return
+			}
+			const absPath = resolveAgentPath(this.agentId, path)
+			if (action == 'list') {
+				const listPath = path == '' ? '' : path
+				const finalAbsPath = resolveAgentPath(this.agentId, listPath)
+				if (listPath != '' && !exists(finalAbsPath)) {
+					resolve({ content: '路径不存在: ' + listPath, isError: true } as ToolResult)
+					return
+				}
+				if (listPath != '') {
+					const info = statItem(finalAbsPath)
+					if (info.isDirectory == false) {
+						resolve({ content: formatWorkspaceInfo(listPath, finalAbsPath), isError: false } as ToolResult)
+						return
+					}
+				}
+				resolve({ content: formatWorkspaceList(listPath, finalAbsPath, rawDetail == true), isError: false } as ToolResult)
+				return
+			}
+			if (path == '') {
 				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
 				return
 			}
-			const absPath = resolveAgentPath(this.agentId, path!)
-			if (isDirectory == true) {
-				const result = createDir(absPath)
+			if (action == 'info') {
+				if (!exists(absPath)) {
+					resolve({ content: '路径不存在: ' + path, isError: true } as ToolResult)
+					return
+				}
+				resolve({ content: formatWorkspaceInfo(path, absPath), isError: false } as ToolResult)
+				return
+			}
+			if (action == 'read') {
+				if (!exists(absPath)) {
+					resolve({ content: '文件不存在或无权限访问: ' + path, isError: true } as ToolResult)
+					return
+				}
+				const content = readContent(absPath)
+				if (content == null) {
+					resolve({ content: '文件读取失败: ' + path, isError: true } as ToolResult)
+					return
+				}
+				const shouldRender = rawRender != false
+				if (shouldRender == true && (isTodoPath(path) == true || isNotePath(path) == true)) {
+					resolve({ content: renderKnowledgeContent(content), isError: false } as ToolResult)
+					return
+				}
+				resolve({ content: content, isError: false } as ToolResult)
+				return
+			}
+			if (action == 'write') {
+				if (rawIsDirectory == true) {
+					const result = createDir(absPath)
+					resolve({
+						content: result.ok ? '目录创建成功: ' + path : '目录创建失败: ' + path,
+						isError: !result.ok
+					} as ToolResult)
+					return
+				}
+				if (rawContent == null) {
+					resolve({ content: '缺少必要参数: content', isError: true } as ToolResult)
+					return
+				}
+				let finalContent = rawContent != null ? rawContent : ''
+				if (isTodoPath(path) == true) {
+					finalContent = buildTodoMarkdown(parseTodoMarkdown(finalContent))
+				} else if (isNotePath(path) == true) {
+					const parsed = parseNoteMarkdown(finalContent)
+					const noteTitle = parsed['title'] as string
+					const noteContent = parsed['content'] as string
+					finalContent = buildNoteMarkdown(noteTitle, noteContent)
+				}
+				const result = writeContent(absPath, finalContent)
 				resolve({
-					content: result.ok ? '目录创建成功: ' + path! : '目录创建失败（可能已存在同名文件）: ' + path!,
+					content: result.ok ? '写入成功: ' + path : '写入失败: ' + path,
 					isError: !result.ok
 				} as ToolResult)
 				return
 			}
-			if (content == null) {
-				resolve({ content: '缺少必要参数: content', isError: true } as ToolResult)
+			if (action == 'delete') {
+				const result = deleteItem(absPath)
+				resolve({
+					content: result.ok ? '删除成功: ' + path : '删除失败: ' + path,
+					isError: !result.ok
+				} as ToolResult)
 				return
 			}
-			const result = writeContent(absPath, content!)
-			resolve({
-				content: result.ok ? '文件写入成功: ' + path! : '文件写入失败: ' + path!,
-				isError: !result.ok
-			} as ToolResult)
-		})
-	}
-}
-
-/**
- * 文件删除工具
- */
-class SandboxFileDeleteTool implements AgentTool {
-	name: string = 'file_delete'
-	description: string = '删除指定文件。'
-	parameters: UTSJSONObject = {
-		'type': 'object',
-		'properties': {
-			'path': {
-				'type': 'string',
-				'description': '要删除的文件路径（相对于智能体私有目录）'
-			}
-		},
-		'required': ['path']
-	} as UTSJSONObject
-
-	private agentId: string
-
-	constructor(agentId: string) {
-		this.agentId = agentId
-	}
-
-	execute(args: UTSJSONObject): Promise<ToolResult> {
-		return new Promise<ToolResult>((resolve) => {
-			const path = args['path'] as string | null
-			if (path == null || path!.length == 0) {
-				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
-				return
-			}
-			const result = deleteItem(resolveAgentPath(this.agentId, path!))
-			resolve({
-				content: result.ok ? '文件删除成功: ' + path! : '文件删除失败: ' + path!,
-				isError: !result.ok
-			} as ToolResult)
-		})
-	}
-}
-
-class SandboxFileListTool implements AgentTool {
-	name: string = 'file_list'
-	description: string = '列出指定目录下的文件和子目录；当 path 指向文件时返回该文件信息。path 为空则列出根目录，detail 为 true 时显示详细信息。'
-	parameters: UTSJSONObject = {
-		'type': 'object',
-		'properties': {
-			'path': {
-				'type': 'string',
-				'description': '要列出的目录或文件路径（相对于智能体私有目录，为空则列出根目录）'
-			},
-			'detail': {
-				'type': 'boolean',
-				'description': '是否显示详细信息（类型、大小、修改时间），默认 false'
-			}
-		},
-		'required': [] as string[]
-	} as UTSJSONObject
-
-	private agentId: string
-
-	constructor(agentId: string) {
-		this.agentId = agentId
-	}
-
-	execute(args: UTSJSONObject): Promise<ToolResult> {
-		return new Promise<ToolResult>((resolve) => {
-			const path = args['path'] as string | null
-			const rawDetail = args['detail'] as boolean | null
-			const dirPath = (path != null && path!.length > 0) ? path! : ''
-			const absPath = resolveAgentPath(this.agentId, dirPath)
-			if (dirPath != '') {
-				if (!exists(absPath)) {
-					resolve({ content: '路径不存在: ' + dirPath, isError: true } as ToolResult)
-					return
-				}
-				const info = statItem(absPath)
-				if (info.isDirectory == false) {
-					const typeStr = '文件'
-					const result = '路径: ' + dirPath + '\n名称: ' + info.name + '\n类型: ' + typeStr + '\n大小: ' + formatFileSize(info.size) + '\n修改时间: ' + formatTime(info.lastModified)
-					resolve({ content: result, isError: false } as ToolResult)
-					return
-				}
-			}
-			const detail = rawDetail == true
-			const files = listDir(absPath)
-			if (files.length == 0) {
-				resolve({ content: '(目录为空)', isError: false } as ToolResult)
-				return
-			}
-			const lines: string[] = []
-			for (let i = 0; i < files.length; i++) {
-				const info = files[i]
-				const prefix = info.isDirectory ? '[DIR]  ' : '[FILE] '
-				if (detail == true) {
-					const typeStr = info.isDirectory ? '目录' : '文件'
-					lines.push(prefix + info.name + ' | 类型: ' + typeStr + ' | 大小: ' + formatFileSize(info.size) + ' | 修改时间: ' + formatTime(info.lastModified))
-				} else {
-					if (info.isDirectory == true) {
-						lines.push(prefix + info.name)
-					} else {
-						lines.push(prefix + info.name + ' (' + formatFileSize(info.size) + ')')
-					}
-				}
-			}
-			resolve({ content: lines.join('\n'), isError: false } as ToolResult)
-		})
-	}
-}
-
-
-/**
- * 知识文件夹列表工具
- * 只能访问 user/default 与当前 Agent 自己的 agents/<agentId>。
- */
-class KnowledgeFolderListTool implements AgentTool {
-	name: string = 'knowledge_list'
-	description: string = '列出你的私有知识空间（agents/<id>/notes/ 和 todo.md）。路径为空时列 notes 目录。'
-	parameters: UTSJSONObject = {
-		'type': 'object',
-		'properties': {
-			'path': {
-				'type': 'string',
-				'description': '要列出的子路径，如 notes、空字符串。可省略 agents/<id>/ 前缀'
-			},
-		},
-		'required': [] as string[]
-	} as UTSJSONObject
-
-	private agentId: string
-
-	constructor(agentId: string) {
-		this.agentId = agentId
-	}
-
-	execute(args: UTSJSONObject): Promise<ToolResult> {
-		return new Promise<ToolResult>((resolve) => {
-			const rawPath = args['path'] as string | null
-			const relPath = rawPath != null ? rawPath : ''
-			const absPath = resolveAgentPath(this.agentId, relPath == '' ? 'notes' : relPath)
-			const files = listDir(absPath)
-			const lines: string[] = ['📂 你的知识空间']
-			lines.push('')
-			lines.push('用法：')
-			lines.push('- 待办: todo.md（- [ ] / - [x] 格式）')
-			lines.push('- 笔记: notes/<名称>.md（Markdown 笔记）')
-			lines.push('')
-			lines.push('文件/目录：')
-			if (files.length == 0) {
-				lines.push('  (空)')
-			} else {
-				for (let i = 0; i < files.length; i++) {
-					const info = files[i]
-					const icon = info.isDirectory ? '[DIR]' : '[FILE]'
-					const sizeStr = info.isDirectory ? '' : ' (' + formatFileSize(info.size) + ')'
-					lines.push('  ' + icon + ' ' + info.name + sizeStr)
-				}
-			}
-			resolve({ content: lines.join('\n'), isError: false } as ToolResult)
-		})
-	}
-}
-
-/**
- * 知识文件夹读取工具
- */
-class KnowledgeFolderReadTool implements AgentTool {
-	name: string = 'knowledge_read'
-	description: string = '读取你的私有待办/笔记。路径用 todo.md 或 notes/<name>.md，可省略 agents/<id>/ 前缀。返回渲染文本。'
-	parameters: UTSJSONObject = {
-		'type': 'object',
-		'properties': {
-			'path': {
-				'type': 'string',
-				'description': '文件路径，如 todo.md、notes/plan.md'
-			},
-			'include_guide': {
-				'type': 'boolean',
-				'description': '是否在结果后追加渲染/格式规则，默认 false'
-			}
-		},
-		'required': ['path']
-	} as UTSJSONObject
-
-	private agentId: string
-
-	constructor(agentId: string) {
-		this.agentId = agentId
-	}
-
-	execute(args: UTSJSONObject): Promise<ToolResult> {
-		return new Promise<ToolResult>((resolve) => {
-			const rawPath = args['path'] as string | null
-			const includeGuide = args['include_guide'] as boolean | null
-			const path = rawPath != null ? rawPath : ''
-			if (path == '') {
-				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
-				return
-			}
-			const absPath = resolveAgentPath(this.agentId, path)
-			if (!exists(absPath)) {
-				resolve({ content: '知识文件不存在或无权限访问: ' + path, isError: true } as ToolResult)
-				return
-			}
-			const content = readContent(absPath)
-			if (content == null) {
-				resolve({ content: '知识文件读取失败: ' + path, isError: true } as ToolResult)
-				return
-			}
-			const rendered = renderKnowledgeMarkdown(content)
-			// 将渲染块拼接为文本
-			let finalContent = ''
-			for (let i = 0; i < rendered.length; i++) {
-				const block = rendered[i]
-				if (block.type == 'heading') {
-					const prefix = block.level == 1 ? '# ' : block.level == 2 ? '## ' : '### '
-					finalContent = finalContent + prefix + block.text + '\n'
-				} else if (block.type == 'todo') {
-					const box = block.checked ? '- [x]' : '- [ ]'
-					finalContent = finalContent + box + ' ' + block.text + '\n'
-				} else if (block.type == 'bullet') {
-					finalContent = finalContent + '- ' + block.text + '\n'
-				} else {
-					finalContent = finalContent + block.text + '\n'
-				}
-			}
-			if (includeGuide == true) {
-				finalContent = finalContent + '\n\n---\n' +
-					'📖 知识文件格式说明：\n' +
-					'- 待办: 使用 - [ ] 未完成 / - [x] 已完成 格式\n' +
-					'- 笔记: 标准 Markdown，首行 # 标题\n' +
-					'- 文件路径: todo.md 或 notes/<name>.md'
-			}
-			resolve({ content: finalContent, isError: false } as ToolResult)
-		})
-	}
-}
-
-/**
- * 知识文件夹写入工具
- */
-class KnowledgeFolderWriteTool implements AgentTool {
-	name: string = 'knowledge_write'
-	description: string = '写入待办/笔记到你的私有知识空间。路径用 todo.md 或 notes/<name>.md，可省略 agents/<id>/ 前缀。todo.md 用 - [ ] / - [x] 格式。'
-	parameters: UTSJSONObject = {
-		'type': 'object',
-		'properties': {
-			'path': {
-				'type': 'string',
-				'description': '文件路径，如 todo.md、notes/plan.md'
-			},
-			'content': {
-				'type': 'string',
-				'description': 'Markdown 内容'
-			}
-		},
-		'required': ['path', 'content']
-	} as UTSJSONObject
-
-	private agentId: string
-
-	constructor(agentId: string) {
-		this.agentId = agentId
-	}
-
-	execute(args: UTSJSONObject): Promise<ToolResult> {
-		return new Promise<ToolResult>((resolve) => {
-			const rawPath = args['path'] as string | null
-			const rawContent = args['content'] as string | null
-			const path = rawPath != null ? rawPath : ''
-			const content = rawContent != null ? rawContent : ''
-			if (path == '') {
-				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
-				return
-			}
-			if (rawContent == null) {
-				resolve({ content: '缺少必要参数: content', isError: true } as ToolResult)
-				return
-			}
-			// 对 todo.md 使用 todo 解析/构建确保格式统一
-			let finalContent = content
-			if (path == 'todo.md') {
-				const parsed = parseTodoMarkdown(content)
-				finalContent = buildTodoMarkdown(parsed)
-			} else if (path.indexOf('notes/') == 0) {
-				const parsed = parseNoteMarkdown(content)
-				const noteTitle = parsed['title'] as string
-				const noteContent = parsed['content'] as string
-				finalContent = buildNoteMarkdown(noteTitle, noteContent)
-			}
-			const absPath = resolveAgentPath(this.agentId, path)
-			const result = writeContent(absPath, finalContent)
-			resolve({
-				content: result.ok ? '知识文件已写入: ' + path : '知识文件写入失败或无权限: ' + path,
-				isError: !result.ok
-			} as ToolResult)
-		})
-	}
-}
-
-/**
- * 文件信息工具
- */
-class SandboxFileInfoTool implements AgentTool {
-	name: string = 'file_info'
-	description: string = '获取文件或目录的信息（大小、修改时间、类型）。'
-	parameters: UTSJSONObject = {
-		'type': 'object',
-		'properties': {
-			'path': {
-				'type': 'string',
-				'description': '文件或目录路径（相对于智能体私有目录）'
-			}
-		},
-		'required': ['path']
-	} as UTSJSONObject
-
-	private agentId: string
-
-	constructor(agentId: string) {
-		this.agentId = agentId
-	}
-
-	execute(args: UTSJSONObject): Promise<ToolResult> {
-		return new Promise<ToolResult>((resolve) => {
-			const path = args['path'] as string | null
-			if (path == null || path!.length == 0) {
-				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
-				return
-			}
-			const absPath = resolveAgentPath(this.agentId, path!)
-			if (!exists(absPath)) {
-				resolve({ content: '文件不存在: ' + path!, isError: true } as ToolResult)
-				return
-			}
-			const info = statItem(absPath)
-			const typeStr = info.isDirectory ? '目录' : '文件'
-			const result = '路径: ' + path! + '\n名称: ' + info.name + '\n类型: ' + typeStr + '\n大小: ' + formatFileSize(info.size) + '\n修改时间: ' + formatTime(info.lastModified)
-			resolve({
-				content: result,
-				isError: false
-			} as ToolResult)
+			resolve({ content: '未知 action: ' + action + '，可用 list/read/write/delete/info', isError: true } as ToolResult)
 		})
 	}
 }
