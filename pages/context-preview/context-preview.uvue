@@ -29,32 +29,36 @@
 						<text class="summary-label">Base URL</text>
 						<text class="summary-value summary-url">{{baseUrl != '' ? baseUrl : '未解析'}}</text>
 					</view>
+					<view class="summary-row">
+						<text class="summary-label">工具定义</text>
+						<text class="summary-value">{{toolCount}} 个</text>
+					</view>
 				</view>
 
 				<view class="summary-section">
 					<text class="summary-section-title">生成参数</text>
-					<view class="summary-pill-row">
-						<view class="summary-pill">
-							<text class="summary-label">temperature</text>
-							<text class="summary-value">{{settingsTemperature}}</text>
+					<view class="summary-param-row">
+						<view class="summary-param-pill">
+							<text class="summary-param-label">temperature</text>
+							<text class="summary-param-value">{{settingsTemperature}}</text>
 						</view>
-						<view class="summary-pill">
-							<text class="summary-label">max_tokens</text>
-							<text class="summary-value">{{settingsMaxTokens}}</text>
+						<view class="summary-param-pill">
+							<text class="summary-param-label">max_tokens</text>
+							<text class="summary-param-value">{{settingsMaxTokens}}</text>
 						</view>
-						<view class="summary-pill">
-							<text class="summary-label">max_iter</text>
-							<text class="summary-value">{{settingsMaxIterations}}</text>
+						<view class="summary-param-pill">
+							<text class="summary-param-label">max_iter</text>
+							<text class="summary-param-value">{{settingsMaxIterations}}</text>
 						</view>
-						<view class="summary-pill">
-							<text class="summary-label">stream</text>
-							<text class="summary-value">{{settingsStreamEnabled ? '开' : '关'}}</text>
+						<view class="summary-param-pill summary-param-pill-last">
+							<text class="summary-param-label">stream</text>
+							<text class="summary-param-value">{{settingsStreamEnabled ? '开' : '关'}}</text>
 						</view>
 					</view>
 				</view>
 
 				<view class="summary-section">
-					<text class="summary-section-title">上下文规模</text>
+					<text class="summary-section-title">上下文规模（Token 估算）</text>
 					<view class="summary-main-metrics">
 						<view class="summary-metric">
 							<text class="summary-metric-value">{{messageCount}}</text>
@@ -62,11 +66,7 @@
 						</view>
 						<view class="summary-metric">
 							<text class="summary-metric-value">≈ {{totalTokens}}</text>
-							<text class="summary-metric-label">估算上下文 Token</text>
-						</view>
-						<view class="summary-metric">
-							<text class="summary-metric-value">{{toolCount}}</text>
-							<text class="summary-metric-label">工具定义</text>
+							<text class="summary-metric-label">上下文 Token（估算）</text>
 						</view>
 					</view>
 					<view class="summary-role-list">
@@ -78,21 +78,10 @@
 				</view>
 
 				<view class="summary-section summary-section-last">
-					<text class="summary-section-title">动态注入与用量</text>
-					<view class="summary-pill-row">
-						<view class="summary-pill" :class="importantMemory != '' ? 'summary-pill-on' : ''">
-							<text class="summary-label">重要记忆</text>
-							<text class="summary-value">{{importantMemory != '' ? '已注入' : '无'}}</text>
-						</view>
-						<view class="summary-pill" :class="bufferInjection != '' ? 'summary-pill-on' : ''">
-							<text class="summary-label">短缓存</text>
-							<text class="summary-value">{{bufferInjection != '' ? '已注入' : '无'}}</text>
-						</view>
-					</view>
-
+					<text class="summary-section-title">上次调用</text>
 					<view class="last-call-panel">
 						<view class="last-call-head">
-							<text class="last-call-title">上次调用</text>
+							<text class="last-call-title">调用结果</text>
 							<text class="last-call-badge" :class="lastCallBadgeClass">{{lastCallStatus}}</text>
 						</view>
 						<view class="summary-row">
@@ -140,16 +129,6 @@
 				</view>
 			</view>
 
-			<view id="section-important-memory" class="card" v-if="importantMemory != ''">
-				<text class="section-title">重要记忆注入</text>
-				<text class="block-text">{{importantMemory}}</text>
-			</view>
-
-			<view id="section-buffer-memory" class="card" v-if="bufferInjection != ''">
-				<text class="section-title">短缓存注入</text>
-				<text class="block-text">{{bufferInjection}}</text>
-			</view>
-
 			<view id="section-full-json" class="card">
 				<view class="section-row">
 					<text class="section-title">完整 JSON</text>
@@ -178,8 +157,6 @@
 				providerId: '' as string,
 				baseUrl: '' as string,
 				model: '' as string,
-				importantMemory: '' as string,
-				bufferInjection: '' as string,
 				messageCount: 0 as number,
 				totalMessages: 0 as number,
 				userMsgCount: 0 as number,
@@ -266,8 +243,6 @@
 				const providerId = parsed['providerId'] as string | null
 				const baseUrl = parsed['baseUrl'] as string | null
 				const model = parsed['model'] as string | null
-				const importantMemory = parsed['importantMemory'] as string | null
-				const bufferInjection = parsed['bufferInjection'] as string | null
 				const settings = parsed['settings'] as UTSJSONObject | null
 				const openaiMessages = parsed['openaiMessages'] as UTSJSONObject[] | null
 				const openaiTools = parsed['openaiTools'] as UTSJSONObject[] | null
@@ -276,8 +251,6 @@
 				this.providerId = providerId != null ? providerId : ''
 				this.baseUrl = baseUrl != null ? baseUrl : ''
 				this.model = model != null ? model : ''
-				this.importantMemory = importantMemory != null ? importantMemory : ''
-				this.bufferInjection = bufferInjection != null ? bufferInjection : ''
 				this.messageCount = openaiMessages != null ? openaiMessages.length : 0
 				const rawTotal = parsed['totalMessages'] as number | null
 				this.totalMessages = rawTotal != null ? rawTotal : this.messageCount
@@ -405,14 +378,7 @@
 			},
 
 			cacheLayoutMetrics(): void {
-				const ids: string[] = ['context-scroll', 'anchor-top', 'anchor-bottom', 'section-summary']
-				if (this.importantMemory != '') {
-					ids.push('section-important-memory')
-				}
-				if (this.bufferInjection != '') {
-					ids.push('section-buffer-memory')
-				}
-				ids.push('section-full-json')
+				const ids: string[] = ['context-scroll', 'anchor-top', 'anchor-bottom', 'section-summary', 'section-full-json']
 				const query = uni.createSelectorQuery().in(this)
 				for (let i = 0; i < ids.length; i++) {
 					const id = ids[i]
@@ -780,22 +746,35 @@
 		flex: 1;
 	}
 
-	.summary-pill-row {
+	.summary-param-row {
 		flex-direction: row;
-		flex-wrap: wrap;
 	}
 
-	.summary-pill {
+	.summary-param-pill {
+		flex: 1;
 		background-color: #FFFFFF;
-		border-radius: 18rpx;
-		padding: 14rpx 18rpx;
-		margin-right: 12rpx;
-		margin-bottom: 12rpx;
-		min-width: 150rpx;
+		border-radius: 16rpx;
+		padding: 14rpx 8rpx;
+		margin-right: 8rpx;
+		align-items: center;
 	}
 
-	.summary-pill-on {
-		background-color: #FFF1F2;
+	.summary-param-pill-last {
+		margin-right: 0;
+	}
+
+	.summary-param-label {
+		font-size: 20rpx;
+		line-height: 28rpx;
+		color: #9CA3AF;
+	}
+
+	.summary-param-value {
+		font-size: 25rpx;
+		line-height: 34rpx;
+		font-weight: bold;
+		color: var(--rice-text-color);
+		margin-top: 4rpx;
 	}
 
 	.summary-main-metrics {
@@ -899,13 +878,6 @@
 		font-size: 23rpx;
 		line-height: 34rpx;
 		color: #B91C1C;
-	}
-
-	.block-text {
-		font-size: 26rpx;
-		line-height: 42rpx;
-		color: var(--rice-text-color);
-		white-space: normal;
 	}
 
 	.code-text {
