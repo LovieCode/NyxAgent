@@ -29,6 +29,7 @@ export type PreparedAgentContext = {
 	importantMemory: string
 	bufferInjection: string
 	lastUserIndex: number
+	droppedCount: number
 	droppedMessages: UTSJSONObject[]
 }
 
@@ -154,25 +155,10 @@ function buildDroppedMessagesPreview(messages: UTSJSONObject[]): UTSJSONObject[]
 	return list
 }
 
-function buildMemoryManagerRunSignature(droppedMessages: UTSJSONObject[], sourceMessages: UTSJSONObject[]): string {
+function buildMemoryManagerRunSignature(droppedMessages: UTSJSONObject[]): string {
 	const droppedSignature = buildDroppedMessagesSignature(droppedMessages)
 	if (droppedSignature == '') return ''
-	let candidateCount = 0
-	let total = 0
-	let lastText = ''
-	for (let i = 0; i < sourceMessages.length; i++) {
-		const msg = sourceMessages[i]
-		const role = msg['role'] as string | null
-		if (role != 'user' && role != 'assistant') continue
-		if (role == 'assistant' && msg['tool_calls'] != null) continue
-		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true) continue
-		const content = msg['content'] as string | null
-		if (content == null || content.trim() == '') continue
-		candidateCount++
-		total = total + content.length
-		lastText = content.substring(0, content.length > 48 ? 48 : content.length)
-	}
-	return droppedSignature + '|source=' + sourceMessages.length + '|candidate=' + candidateCount + '|' + total + '|' + lastText
+	return droppedSignature
 }
 
 function shouldRunMemoryManager(agentId: string, conversationId: string, signature: string): boolean {
@@ -221,7 +207,7 @@ function buildMemoryManagerMessages(allMessages: UTSJSONObject[]): UTSJSONObject
 	return messages
 }
 
-let startMemoryManagerLoop: ((allMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string, markSignature: string) => boolean) | null = null
+let startMemoryManagerLoop: ((allMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string, markSignature: string, droppedCount: number) => boolean) | null = null
 
 function collectMemoryCandidateMessages(messages: UTSJSONObject[]): UTSJSONObject[] {
 	const list: UTSJSONObject[] = []
@@ -255,7 +241,7 @@ export function organizeAgentMemory(
 	if (candidates.length == 0) return false
 	const starter = startMemoryManagerLoop
 	if (starter == null) return false
-	return starter.invoke(candidates, providerId, model, agentId, conversationId, '')
+	return starter.invoke(candidates, providerId, model, agentId, conversationId, '', 0)
 }
 
 // ====== 内部函数 ======
@@ -428,6 +414,7 @@ function prepareAgentContext(
 		}
 	}
 	let remainingSkip = 0
+	let droppedCount = 0
 	if (enableContextTruncation == true) {
 		const systemCount = workingMessages.length
 		// 截断权重：user 1，普通 assistant 0.3，工具调用/结果 0.1
@@ -449,17 +436,13 @@ function prepareAgentContext(
 				}
 				if (score > threshold) {
 					let trimScore = score
-					let batchLimit = dropCount
 					for (let i = 0; i < messages.length; i++) {
 						const msgScore = getContextMessageScore(messages[i])
 						if (msgScore <= 0) continue
 						remainingSkip++
 						trimScore = trimScore - msgScore
-						if (remainingSkip >= batchLimit && (trimScore <= threshold || remainingSkip >= totalDialog)) {
+						if (remainingSkip >= dropCount && (trimScore <= threshold || remainingSkip >= totalDialog)) {
 							break
-						}
-						if (remainingSkip >= batchLimit && trimScore > threshold) {
-							batchLimit = batchLimit + dropCount
 						}
 					}
 				}
@@ -473,6 +456,7 @@ function prepareAgentContext(
 		// 跳过早的对话消息（含工具调用/结果）
 		if (remainingSkip > 0 && getContextMessageScore(msg) > 0) {
 			remainingSkip--
+			droppedCount++
 			if (i == lastUserIndex) { lastUserIndex = -1 }
 			const rawContent = msg['content'] as string | null
 			if (rawContent != null && rawContent.trim() != '') {
@@ -505,6 +489,7 @@ function prepareAgentContext(
 		importantMemory,
 		bufferInjection,
 		lastUserIndex,
+		droppedCount,
 		droppedMessages,
 	} as PreparedAgentContext
 }
@@ -1090,10 +1075,11 @@ function runAgentLoop(
 	const tools = createAgentTools(agentId, conversationId, personId, allowCoreMemoryWrite)
 	const toolDefs = prepared.toolDefs
 
-	const memoryRunSignature = buildMemoryManagerRunSignature(prepared.droppedMessages, messages)
+	const memoryRunSignature = buildMemoryManagerRunSignature(prepared.droppedMessages)
 	if (enableMemoryManager == true && shouldRunMemoryManager(agentId, conversationId, memoryRunSignature) == true) {
-		const started = startMemoryManagerLoop?.invoke(collectMemoryCandidateMessages(messages), providerId, model, agentId, conversationId, memoryRunSignature)
+		const started = startMemoryManagerLoop?.invoke(collectMemoryCandidateMessages(messages), providerId, model, agentId, conversationId, memoryRunSignature, prepared.droppedCount)
 		if (started == true) {
+			markMemoryManagerRun(agentId, conversationId, memoryRunSignature)
 			stream.push({ type: 'memory_organize_start', message: '记忆整理已开始' })
 		}
 	}
@@ -1309,7 +1295,7 @@ function runAgentLoop(
 	continueLoop()
 }
 
-startMemoryManagerLoop = (allMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string, markSignature: string): boolean => {
+startMemoryManagerLoop = (allMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string, markSignature: string, droppedCount: number): boolean => {
 	const managerMessages = buildMemoryManagerMessages(allMessages)
 	if (managerMessages.length == 0) return false
 	const settings = getMemoryOrganizerGenerationSettings()
@@ -1363,7 +1349,7 @@ startMemoryManagerLoop = (allMessages: UTSJSONObject[], providerId: string, mode
 				agentId: agentId,
 				conversationId: conversationId,
 				executedAt: now,
-				messageCount: allMessages.length,
+				messageCount: droppedCount,
 				savedCount: savedCount,
 				forgottenCount: forgottenCount,
 				summary: summaryText,
@@ -1439,7 +1425,7 @@ export function buildAgentContextPreview(
 		bufferInjection: prepared.bufferInjection,
 		lastUserIndex: prepared.lastUserIndex,
 		totalMessages: messages.length,
-		droppedCount: prepared.droppedMessages.length,
+		droppedCount: prepared.droppedCount,
 		droppedPreview: buildDroppedMessagesPreview(prepared.droppedMessages),
 		lastTokenUsage: lastTokenUsage,
 		lastCallInfo: lastCallInfo,

@@ -182,7 +182,7 @@
 				<view class="setting-row">
 					<view class="setting-text">
 						<text class="setting-title">丢弃条数</text>
-						<text class="setting-desc">触发截断时每批移除的早期消息数</text>
+						<text class="setting-desc">触发截断时至少移除的早期消息数，仍超阈值时会继续移除到达标</text>
 					</view>
 					<input class="param-input short-input" type="text" v-model="truncateDropCountStr" placeholder="20" />
 				</view>
