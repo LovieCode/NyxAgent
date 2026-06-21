@@ -18,11 +18,11 @@ const MEMORY_TEMPERATURE_KEY = 'settings_memory_generation_temperature'
 const MEMORY_MAX_TOKENS_KEY = 'settings_memory_generation_max_tokens'
 const MEMORY_MAX_ITERATIONS_KEY = 'settings_memory_generation_max_iterations'
 
-export const DEFAULT_TEMPERATURE = 0.7
+export const DEFAULT_TEMPERATURE = 1
 export const DEFAULT_MAX_TOKENS = 4096
 export const DEFAULT_MAX_ITERATIONS = 20
 export const DEFAULT_STREAM_ENABLED = true
-export const DEFAULT_MEMORY_TEMPERATURE = 0.2
+export const DEFAULT_MEMORY_TEMPERATURE = 0.7
 export const DEFAULT_MEMORY_MAX_TOKENS = 2048
 export const DEFAULT_MEMORY_MAX_ITERATIONS = 20
 

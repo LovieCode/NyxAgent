@@ -10,25 +10,19 @@
 			<view class="card">
 				<view class="card-header">
 					<oui-icon-unix name="experiment" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
-					<text class="card-title">普通 Agent · 模型采样</text>
+					<text class="card-title">普通 Agent 参数</text>
 				</view>
 				<text class="field-label">温度 temperature</text>
 				<input
 					class="flat-input"
 					type="text"
 					v-model="temperatureStr"
-					placeholder="0 - 2，默认 0.7"
+					placeholder="0 - 2，默认 1"
 					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
 				/>
-				<text class="field-tip">越低越稳，越高越发散。写代码建议 0.2 - 0.8，脑洞任务可以高一点。</text>
-			</view>
+				<text class="field-tip">越低越稳，越高越发散。默认 1 更通用，写代码可手动调低。</text>
 
-			<view class="card">
-				<view class="card-header">
-					<oui-icon-unix name="file-text" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
-					<text class="card-title">普通 Agent · 输出与循环</text>
-				</view>
-				<text class="field-label">输出上限 max_tokens</text>
+				<text class="field-label" style="margin-top:24rpx;">输出上限 max_tokens</text>
 				<input
 					class="flat-input"
 					type="text"
@@ -59,10 +53,10 @@
 					class="flat-input"
 					type="text"
 					v-model="memoryTemperatureStr"
-					placeholder="0 - 2，默认 0.2"
+					placeholder="0 - 2，默认 0.7"
 					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
 				/>
-				<text class="field-tip">建议保持低温，优先稳定整理和去重，不要脑洞。</text>
+				<text class="field-tip">默认保持通用温度，避免部分模型温度过低时异常；需要更稳再手动调低。</text>
 
 				<text class="field-label" style="margin-top:24rpx;">输出上限 max_tokens</text>
 				<input
