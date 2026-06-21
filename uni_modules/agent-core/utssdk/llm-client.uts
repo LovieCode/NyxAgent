@@ -662,8 +662,9 @@ function callChatAPI(
 	const apiMessages = buildOpenAIMessages(systemPrompt, messages)
 	clearLastTokenUsage()
 
-	// 构建请求体
-	const url = baseUrl + '/v1/chat/completions'
+	// 构建请求体：检测 baseUrl 是否已包含 API 版本路径，避免重复
+	const hasApiVersion = baseUrl.indexOf('/v1') >= 0 || baseUrl.indexOf('/api/v') >= 0
+	const url = hasApiVersion ? baseUrl + '/chat/completions' : baseUrl + '/v1/chat/completions'
 	const headers: UTSJSONObject = {
 		'Content-Type': 'application/json',
 		'Authorization': 'Bearer ' + apiKey,
@@ -1050,7 +1051,8 @@ function callChatAPIStream(
 	const apiMessages = buildOpenAIMessages(systemPrompt, messages)
 	clearLastTokenUsage()
 
-	const url = baseUrl + '/v1/chat/completions'
+	const hasApiVersion = baseUrl.indexOf('/v1') >= 0 || baseUrl.indexOf('/api/v') >= 0
+	const url = hasApiVersion ? baseUrl + '/chat/completions' : baseUrl + '/v1/chat/completions'
 	const headers: UTSJSONObject = {
 		'Content-Type': 'application/json',
 		'Authorization': 'Bearer ' + apiKey,
