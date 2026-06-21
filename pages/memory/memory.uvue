@@ -192,7 +192,7 @@
 					<view class="log-head">
 						<text class="log-time">{{formatLogTime(log)}}</text>
 						<view class="log-badges">
-							<text class="log-badge" v-if="parseLogNumber(log, 'dropped_count') > 0">消息 {{parseLogNumber(log, 'dropped_count')}} 条</text>
+							<text class="log-badge" v-if="parseLogNumber(log, 'dropped_count') > 0">截断 {{parseLogNumber(log, 'dropped_count')}} 条</text>
 							<text class="log-badge log-badge-save" v-if="parseLogNumber(log, 'saved_count') > 0">保存 {{parseLogNumber(log, 'saved_count')}}</text>
 							<text class="log-badge log-badge-forget" v-if="parseLogNumber(log, 'forgotten_count') > 0">遗忘 {{parseLogNumber(log, 'forgotten_count')}}</text>
 						</view>
