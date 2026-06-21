@@ -268,11 +268,11 @@
 				/** 触发截断时按积分回落的分数 */
 				truncateDropCountStr: '20' as string,
 				/** 启用缓存 ID */
-				cacheEnabled: false as boolean,
+				cacheEnabled: true as boolean,
 				/** 隐藏思考过程 */
 				hideThinking: false as boolean,
 				/** 注入日期时间 */
-				injectDatetime: false as boolean,
+				injectDatetime: true as boolean,
 				/** AI 消息分段 */
 				msgSegmentation: true as boolean,
 				globalGenerationHint: '' as string,
