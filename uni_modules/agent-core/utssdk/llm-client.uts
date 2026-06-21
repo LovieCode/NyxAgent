@@ -292,7 +292,10 @@ function readImageAsBase64(imagePath: string): ImageBase64Result | null {
 	try {
 		const fm = uni.getFileSystemManager()
 		const base64 = fm.readFileSync(imagePath, 'base64')
-		if (base64 == null) return null
+		if (base64 == null) {
+			console.log('[LLM] 读取图片失败: readFileSync 返回 null | path=' + imagePath)
+			return null
+		}
 		let raw = base64 as string
 		// 移除可能有的换行符（某些平台的 base64 输出会插入 \n）
 		raw = raw.split('\n').join('').split('\r').join('')
@@ -302,8 +305,10 @@ function readImageAsBase64(imagePath: string): ImageBase64Result | null {
 		else if (lower.endsWith('.gif')) mimeType = 'image/gif'
 		else if (lower.endsWith('.webp')) mimeType = 'image/webp'
 		else if (lower.endsWith('.bmp')) mimeType = 'image/bmp'
+		console.log('[LLM] 读取图片成功: type=' + mimeType + ' size=' + raw.length + ' path=' + imagePath)
 		return { data: raw, mimeType: mimeType }
 	} catch (_e: any) {
+		console.log('[LLM] 读取图片异常: ' + _e + ' | path=' + imagePath)
 		return null
 	}
 }
@@ -352,7 +357,7 @@ function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[]): U
 				if (imageResult != null) {
 					// 用 JSON 字符串构造多段 content，避免 UTSJSONObject 数组序列化问题
 					const dataUrl = 'data:' + imageResult.mimeType + ';base64,' + imageResult.data
-					const contentJsonStr = '[{"type":"text","text":' + JSON.stringify(textContent) + '},{"type":"image_url","image_url":{"url":' + JSON.stringify(dataUrl) + '}}]'
+					const contentJsonStr = '[{"type":"text","text":""},{"type":"image_url","image_url":{"url":' + JSON.stringify(dataUrl) + ',"detail":"auto"}}]'
 					try {
 						const contentJson = JSON.parse(contentJsonStr)
 						apiMessages.push({
@@ -360,13 +365,14 @@ function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[]): U
 							content: contentJson,
 						} as UTSJSONObject)
 					} catch (_e: any) {
-						// JSON 构造失败，回退纯文本
+						console.log('[LLM] 图片 content JSON 构造失败，回退纯文本: ' + _e)
 						apiMessages.push({
 							role: 'user',
 							content: textContent,
 						} as UTSJSONObject)
 					}
 				} else {
+					console.log('[LLM] 图片 base64 读取失败，回退纯文本 | path=' + imageUrl)
 					apiMessages.push({
 						role: 'user',
 						content: textContent,

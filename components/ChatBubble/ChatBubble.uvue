@@ -14,7 +14,7 @@
 				<!-- 图片消息 -->
 				<image v-if="msgType == 'image' && imageUrl != ''" :src="imageUrl" class="bubble-image" mode="widthFix" />
 				<!-- 文本消息（保留换行） -->
-				<text v-if="msgType != 'image' || content != ''" class="text-user">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
+				<text v-if="msgType != 'image' && content != ''" class="text-user">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
 			</view>
 			<image v-if="userAvatar != ''" :src="userAvatar" class="chat-avatar user-avatar-image" mode="aspectFill" />
 			<view v-else class="chat-avatar user-avatar">
