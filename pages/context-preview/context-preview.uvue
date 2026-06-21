@@ -116,37 +116,20 @@
 							<text class="summary-label">输出</text>
 							<text class="summary-value">{{lastCallTextLength}} 字 · 工具调用 {{lastCallHasToolCalls}}</text>
 						</view>
-						<view class="last-call-token-row">
-							<view class="last-call-token">
-								<text class="summary-label">输入</text>
-								<text class="summary-value">{{lastPromptTokensText}}</text>
+						<view class="last-usage-panel">
+							<text class="last-usage-title">用量</text>
+							<view class="last-usage-line">
+								<text class="last-usage-label">Token</text>
+								<text class="last-usage-value">输入 {{lastPromptTokensText}} · 输出 {{lastCompletionTokensText}} · 合计 {{lastTotalTokensText}}</text>
 							</view>
-							<view class="last-call-token">
-								<text class="summary-label">输出</text>
-								<text class="summary-value">{{lastCompletionTokensText}}</text>
+							<view class="last-usage-line">
+								<text class="last-usage-label">缓存</text>
+								<text class="last-usage-value">命中 {{lastPromptCacheHitTokensText}} · 上次 {{lastPromptCacheHitRateText}} · 会话 {{conversationPromptCacheHitRateText}}</text>
 							</view>
-							<view class="last-call-token">
-								<text class="summary-label">合计</text>
-								<text class="summary-value">{{lastTotalTokensText}}</text>
+							<view class="last-usage-line last-usage-line-last">
+								<text class="last-usage-label">累计</text>
+								<text class="last-usage-value">{{conversationPromptCacheHitTokensText}} / {{conversationPromptTokensText}} · {{conversationUsageCallCountText}} 次</text>
 							</view>
-						</view>
-						<view class="last-call-token-row">
-							<view class="last-call-token">
-								<text class="summary-label">缓存命中</text>
-								<text class="summary-value">{{lastPromptCacheHitTokensText}}</text>
-							</view>
-							<view class="last-call-token">
-								<text class="summary-label">上次命中率</text>
-								<text class="summary-value">{{lastPromptCacheHitRateText}}</text>
-							</view>
-							<view class="last-call-token">
-								<text class="summary-label">会话命中率</text>
-								<text class="summary-value">{{conversationPromptCacheHitRateText}}</text>
-							</view>
-						</view>
-						<view class="summary-row">
-							<text class="summary-label">会话累计</text>
-							<text class="summary-value">{{conversationPromptCacheHitTokensText}} / {{conversationPromptTokensText}} · {{conversationUsageCallCountText}} 次</text>
 						</view>
 						<view v-if="lastCallError != ''" class="last-call-error">
 							<text class="last-call-error-text">{{lastCallError}}</text>
@@ -933,19 +916,6 @@
 		background-color: #F3F4F6;
 	}
 
-	.last-call-token-row {
-		flex-direction: row;
-		margin-top: 12rpx;
-	}
-
-	.last-call-token {
-		flex: 1;
-		background-color: #F8FAFC;
-		border-radius: 16rpx;
-		padding: 14rpx;
-		margin-right: 10rpx;
-	}
-
 	.last-call-error {
 		background-color: #FEF2F2;
 		border-radius: 16rpx;
@@ -957,6 +927,44 @@
 		font-size: 23rpx;
 		line-height: 34rpx;
 		color: #B91C1C;
+	}
+
+	.last-usage-panel {
+		padding: 12rpx 0 0;
+		margin-top: 10rpx;
+	}
+
+	.last-usage-title {
+		font-size: 24rpx;
+		font-weight: bold;
+		color: #6B7280;
+		margin-bottom: 6rpx;
+	}
+
+	.last-usage-line {
+		flex-direction: row;
+		align-items: flex-start;
+		padding: 8rpx 0;
+	}
+
+	.last-usage-line-last {
+		padding-bottom: 0;
+	}
+
+	.last-usage-label {
+		width: 78rpx;
+		font-size: 22rpx;
+		line-height: 34rpx;
+		color: #9CA3AF;
+		flex-shrink: 0;
+	}
+
+	.last-usage-value {
+		flex: 1;
+		font-size: 24rpx;
+		line-height: 34rpx;
+		color: #374151;
+		text-align: right;
 	}
 
 	.code-text {
