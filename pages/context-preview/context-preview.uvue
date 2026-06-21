@@ -110,15 +110,15 @@
 						</view>
 						<view class="last-call-token-row">
 							<view class="last-call-token">
-								<text class="summary-label">Prompt</text>
+								<text class="summary-label">输入</text>
 								<text class="summary-value">{{lastPromptTokensText}}</text>
 							</view>
 							<view class="last-call-token">
-								<text class="summary-label">Completion</text>
+								<text class="summary-label">输出</text>
 								<text class="summary-value">{{lastCompletionTokensText}}</text>
 							</view>
 							<view class="last-call-token">
-								<text class="summary-label">Total</text>
+								<text class="summary-label">合计</text>
 								<text class="summary-value">{{lastTotalTokensText}}</text>
 							</view>
 						</view>
