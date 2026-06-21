@@ -27,10 +27,10 @@
 	export default {
 		name: 'TabBar',
 		props: {
-			// 当前选中页面的路径，例如 "pages/index/index"
+			// 当前选中页面的路径，例如 "pages/chat/chat"
 			current: {
 				type: String,
-				default: 'pages/index/index',
+				default: 'pages/chat/chat',
 			},
 		},
 		data() {
@@ -38,7 +38,7 @@
 				tabs: [
 					{ pagePath: 'pages/agents/agents', text: '智能体', icon: 'robot' },
 					{ pagePath: 'pages/todo/todo', text: '待办', icon: 'check-circle' },
-					{ pagePath: 'pages/notes/notes', text: '文件', icon: 'folder' },
+					{ pagePath: 'pages/files/files', text: '文件', icon: 'folder' },
 					{ pagePath: 'pages/settings/settings', text: '设置', icon: 'setting' },
 				],
 			};

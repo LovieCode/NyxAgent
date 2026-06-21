@@ -87,10 +87,18 @@ export function createAgentTools(agentId: string, conversationId: string = '', p
 
 // ========== 工具定义 ==========
 
-/** 拼接 agent 沙箱绝对路径 */
+/** 拼接 agent 沙箱绝对路径，自动裁剪 LLM 可能带的 agents/<id>/ 前缀 */
 function resolveAgentPath(agentId: string, relPath: string): string {
 	const dir = getAgentDir(agentId)
 	if (dir == '') return ''
+	if (relPath == '') return dir
+	// 裁剪 agents/<agentId>/ 前缀（LLM 可能沿用旧习惯传完整路径）
+	const prefix = 'agents/' + agentId + '/'
+	if (relPath.startsWith(prefix)) {
+		relPath = relPath.substring(prefix.length)
+	} else if (relPath == 'agents/' + agentId) {
+		return dir
+	}
 	if (relPath == '') return dir
 	return joinPath(dir, relPath)
 }
@@ -318,13 +326,13 @@ class SandboxFileListTool implements AgentTool {
  */
 class KnowledgeFolderListTool implements AgentTool {
 	name: string = 'knowledge_list'
-	description: string = '列出你的私有知识文件夹 agents/<id>/，含待办和笔记。路径为空时返回根目录结构和使用说明。'
+	description: string = '列出你的私有知识空间（agents/<id>/notes/ 和 todo.md）。路径为空时列 notes 目录。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
 			'path': {
 				'type': 'string',
-				'description': '要列出的路径，如 agents/<id>、agents/<id>/notes'
+				'description': '要列出的子路径，如 notes、空字符串。可省略 agents/<id>/ 前缀'
 			},
 		},
 		'required': [] as string[]
@@ -342,11 +350,11 @@ class KnowledgeFolderListTool implements AgentTool {
 			const relPath = rawPath != null ? rawPath : ''
 			const absPath = resolveAgentPath(this.agentId, relPath == '' ? 'notes' : relPath)
 			const files = listDir(absPath)
-			const lines: string[] = ['📂 agents/' + this.agentId + '/ 知识空间']
+			const lines: string[] = ['📂 你的知识空间']
 			lines.push('')
 			lines.push('用法：')
-			lines.push('- 待办: agents/<id>/todo.md（- [ ] / - [x] 格式）')
-			lines.push('- 笔记: agents/<id>/notes/<id>.md（Markdown 笔记）')
+			lines.push('- 待办: todo.md（- [ ] / - [x] 格式）')
+			lines.push('- 笔记: notes/<名称>.md（Markdown 笔记）')
 			lines.push('')
 			lines.push('文件/目录：')
 			if (files.length == 0) {
@@ -369,13 +377,13 @@ class KnowledgeFolderListTool implements AgentTool {
  */
 class KnowledgeFolderReadTool implements AgentTool {
 	name: string = 'knowledge_read'
-	description: string = '读取你的私有待办/笔记。路径格式：agents/<id>/todo.md、agents/<id>/notes/<id>.md。返回渲染后的文本，笔记中可包含 - [ ] / - [x] 待办。'
+	description: string = '读取你的私有待办/笔记。路径用 todo.md 或 notes/<name>.md，可省略 agents/<id>/ 前缀。返回渲染文本。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
 			'path': {
 				'type': 'string',
-				'description': '要读取的知识文件路径'
+				'description': '文件路径，如 todo.md、notes/plan.md'
 			},
 			'include_guide': {
 				'type': 'boolean',
@@ -432,7 +440,7 @@ class KnowledgeFolderReadTool implements AgentTool {
 					'📖 知识文件格式说明：\n' +
 					'- 待办: 使用 - [ ] 未完成 / - [x] 已完成 格式\n' +
 					'- 笔记: 标准 Markdown，首行 # 标题\n' +
-					'- 文件路径: agents/<id>/todo.md 或 agents/<id>/notes/<name>.md'
+					'- 文件路径: todo.md 或 notes/<name>.md'
 			}
 			resolve({ content: finalContent, isError: false } as ToolResult)
 		})
@@ -444,13 +452,13 @@ class KnowledgeFolderReadTool implements AgentTool {
  */
 class KnowledgeFolderWriteTool implements AgentTool {
 	name: string = 'knowledge_write'
-	description: string = '写入待办/笔记到你自己的私有知识空间 agents/<id>/。只能写你自己的目录，不能写 user/ 共享空间。todo.md 使用 - [ ] / - [x] 行解析；notes/<id>.md 保存为 Markdown 笔记。'
+	description: string = '写入待办/笔记到你的私有知识空间。路径用 todo.md 或 notes/<name>.md，可省略 agents/<id>/ 前缀。todo.md 用 - [ ] / - [x] 格式。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
 			'path': {
 				'type': 'string',
-				'description': '要写入的路径，必须是 agents/<id>/todo.md 或 agents/<id>/notes/xxx.md'
+				'description': '文件路径，如 todo.md、notes/plan.md'
 			},
 			'content': {
 				'type': 'string',

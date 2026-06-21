@@ -8,7 +8,7 @@
 			}
 		},
 		{
-			"path": "pages/index/index",
+			"path": "pages/chat/chat",
 			"style": {
 				"navigationStyle": "custom",
 				"navigationBarTextStyle": "white",
@@ -22,7 +22,7 @@
 			}
 		},
 		{
-			"path": "pages/notes/notes",
+			"path": "pages/files/files",
 			"style": {
 				"navigationStyle": "custom"
 			}

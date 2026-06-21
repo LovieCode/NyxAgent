@@ -4,10 +4,10 @@
  */
 
 import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings, getDatabaseFilePathForExport, getAllMemoryBuffersForExport, getAllMemoryCoreForExport } from '@/utils/database.uts'
-import { getAllDefaultTaskModels } from '@/utils/provider.uts'
+import { getAllDefaultTaskModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
 import { getAgents } from '@/utils/agent.uts'
 import { getSkills } from '@/utils/skills.uts'
-import { getAgentDir, getAgentsRoot, getInternalFilesDir, listDir, joinPath, exists, readContent, formatFileSize, formatTime } from '@/utils/file-manager.uts'
+import { getAgentDir, getAgentsRoot, getInternalFilesDir, getUserDir, listDir, joinPath, exists, readContent, formatFileSize, formatTime } from '@/utils/file-manager.uts'
 import { buildTodoMarkdown, buildNoteMarkdown } from '@/utils/markdown.uts'
 import { writeExportZipFile, shareExportFile, getLastShareExportError } from '@/utssdk/app-data-export/index.uts'
 
@@ -381,6 +381,58 @@ function collectAgentFiles(agents: UTSJSONObject[], specs: UTSJSONObject[]): UTS
 	return result
 }
 
+function appendUserFileEntries(dirPath: string, result: UTSJSONObject[], specs: UTSJSONObject[], depth: number): void {
+	if (depth > 8) {
+		return
+	}
+	const userDir = getUserDir()
+	if (userDir == '') {
+		return
+	}
+	const fullDirPath = dirPath == '' ? userDir : joinPath(userDir, dirPath)
+	const files = listDir(fullDirPath)
+	for (let i = 0; i < files.length; i++) {
+		const item = files[i]
+		const name = item.name
+		if (name == '') {
+			continue
+		}
+		const relPath = dirPath == '' ? name : dirPath + '/' + name
+		const safeRelPath = sanitizeRelativeZipPath(relPath)
+		if (item.isDirectory == true) {
+			const directoryZipPath = 'user-files/' + safeRelPath + '/'
+			appendDirectorySpec(specs, directoryZipPath)
+			result.push({
+				path: relPath,
+				zipPath: directoryZipPath,
+				isDirectory: true,
+				size: item.size,
+				lastModified: item.lastModified,
+			} as UTSJSONObject)
+			appendUserFileEntries(relPath, result, specs, depth + 1)
+		} else {
+			const zipPath = 'user-files/' + safeRelPath
+			const entry: UTSJSONObject = {
+				path: relPath,
+				zipPath: zipPath,
+				isDirectory: false,
+				size: item.size,
+				lastModified: item.lastModified,
+			} as UTSJSONObject
+			appendFileSpec(specs, userDir + '/' + relPath, zipPath)
+			entry['includedInZip'] = true
+			result.push(entry)
+		}
+	}
+}
+
+function collectUserFiles(specs: UTSJSONObject[]): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	appendDirectorySpec(specs, 'user-files/')
+	appendUserFileEntries('', result, specs, 0)
+	return result
+}
+
 function appendKnowledgeOwnerFiles(specs: UTSJSONObject[], ownerType: string, ownerId: string, rootZipPath: string): void {
 	// 仅处理 agent 知识文件 — user/default 的 notes/todos 由 storage keys 覆盖
 	if (ownerType != 'agent') {
@@ -462,6 +514,7 @@ export function buildAllDataExport(): UTSJSONObject {
 	const skills = getSkills()
 	const fileSpecs: UTSJSONObject[] = []
 	const databaseFile = appendDatabaseFile(fileSpecs)
+	const userFiles = collectUserFiles(fileSpecs)
 	const agentFiles = collectAgentFiles(agents, fileSpecs)
 	appendKnowledgeWorkspaceFiles(agents, fileSpecs)
 	const notes = parseStorageArray('notes_list')
@@ -484,6 +537,7 @@ export function buildAllDataExport(): UTSJSONObject {
 			defaultTaskModels: getAllDefaultTaskModels(),
 			agents: agents,
 			skills: skills,
+			userFiles: userFiles,
 			agentFiles: agentFiles,
 			assets: assets,
 			conversations: conversations,

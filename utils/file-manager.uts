@@ -123,6 +123,46 @@ export function getAgentsRoot(): string {
 }
 
 /**
+ * 获取用户文件目录（不存在则创建）。
+ * 用户自己的待办、笔记和手动文件都放这里，避免混进 Agent 沙箱。
+ */
+export function getUserDir(): string {
+	const filesDir = getInternalFilesDir()
+	if (filesDir == '') return ''
+	const dirPath = filesDir + '/user'
+	// #ifdef APP-ANDROID
+	try {
+		const dir = new File(dirPath)
+		if (!dir.exists()) {
+			dir.mkdirs()
+		}
+	} catch (_e: any) {
+	}
+	// #endif
+	// #ifndef APP-ANDROID
+	try {
+		const fm = uni.getFileSystemManager()
+		try {
+			fm.accessSync(dirPath)
+		} catch (_e: any) {
+			fm.mkdirSync(dirPath, true)
+		}
+	} catch (_e2: any) {
+	}
+	// #endif
+	return dirPath
+}
+
+/**
+ * 获取旧版用户伪 Agent 目录。只用于无损迁移，不再写入新数据。
+ */
+export function getLegacyUserAgentDir(): string {
+	const root = getAgentsRoot()
+	if (root == '') return ''
+	return root + '/__user__'
+}
+
+/**
  * 获取指定 Agent 的沙箱子目录（不存在则创建）。
  * agentId 经过路径穿越校验，防止越权。
  */
@@ -362,6 +402,11 @@ export function getRootDirOptions(): RootDirOption[] {
 	if (userDataPath != null && userDataPath != '') {
 		options.push({ name: '沙盒文件', path: normalizePath(userDataPath) })
 	}
+	// 用户目录
+	const userDir = getUserDir()
+	if (userDir != '') {
+		options.push({ name: '用户目录', path: userDir })
+	}
 	// Agent 目录
 	const filesDir = getInternalFilesDir()
 	if (filesDir != '') {
@@ -381,16 +426,34 @@ export function getRootDirOptions(): RootDirOption[] {
  * 用于文件管理页面的根视图。
  */
 export function listRootContents(): FileItem[] {
+	const userRootItems: FileItem[] = []
 	const sandboxItems: FileItem[] = []
 	const internalItems: FileItem[] = []
 	const agentItems: FileItem[] = []
+	const userDir = getUserDir()
+
+	// 第 0 组：用户文件目录
+	if (userDir != '') {
+		const userStat = statItem(userDir)
+		userRootItems.push({
+			name: '[User] 用户目录',
+			path: userDir,
+			isDirectory: true,
+			size: 0,
+			lastModified: userStat.lastModified,
+		})
+	}
 
 	// 第 1 组：沙盒文件
 	const sandboxDir = getExternalFilesDir()
 	if (sandboxDir != '') {
 		const userItems = listDir(sandboxDir)
 		for (let i = 0; i < userItems.length; i++) {
-			sandboxItems.push(userItems[i])
+			const item = userItems[i]
+			if (userDir != '' && normalizePath(item.path) == normalizePath(userDir)) {
+				continue
+			}
+			sandboxItems.push(item)
 		}
 	}
 
@@ -435,6 +498,9 @@ export function listRootContents(): FileItem[] {
 			if (agent.isDirectory) {
 				// agent.name 是文件夹名 = 智能体 ID，查显示名
 				const agentId = agent.name
+				if (agentId == '__user__') {
+					continue
+				}
 				const displayName = agentDisplayNames.get(agentId)
 				const label = displayName != null ? displayName : agentId
 				agentItems.push({
@@ -463,12 +529,16 @@ export function listRootContents(): FileItem[] {
 			return 0
 		})
 	}
+	sortGroup(userRootItems)
 	sortGroup(sandboxItems)
 	sortGroup(internalItems)
 	sortGroup(agentItems)
 
-	// 按顺序拼接：沙盒 → 内部目录 → Agent
+	// 按顺序拼接：用户目录 → 沙盒 → 内部目录 → Agent
 	const result: FileItem[] = []
+	for (let i = 0; i < userRootItems.length; i++) {
+		result.push(userRootItems[i])
+	}
 	for (let i = 0; i < sandboxItems.length; i++) {
 		result.push(sandboxItems[i])
 	}
@@ -1052,6 +1122,46 @@ function copyDirRecursive(srcPath: string, destPath: string): FileOpResult {
 		}
 	}
 	return okResult()
+}
+
+/**
+ * 递归合并源目录中目标目录缺失的文件，目标已有内容不覆盖。
+ */
+function mergeMissingItems(srcDir: string, destDir: string, depth: number): void {
+	if (depth > 8) {
+		return
+	}
+	const items = listDir(srcDir)
+	for (let i = 0; i < items.length; i++) {
+		const item = items[i]
+		const targetPath = joinPath(destDir, item.name)
+		if (exists(targetPath)) {
+			if (item.isDirectory) {
+				const targetStat = statItem(targetPath)
+				if (targetStat.isDirectory) {
+					mergeMissingItems(item.path, targetPath, depth + 1)
+				}
+			}
+			continue
+		}
+		copyItem(item.path, targetPath)
+	}
+}
+
+/**
+ * 无损迁移旧版 `agents/__user__` 目录到新的用户目录。
+ * 已存在的同名文件不会覆盖，避免误伤用户手动整理过的数据。
+ */
+export function migrateLegacyUserDir(): void {
+	const legacyDir = getLegacyUserAgentDir()
+	const userDir = getUserDir()
+	if (legacyDir == '' || userDir == '' || legacyDir == userDir) {
+		return
+	}
+	if (!exists(legacyDir)) {
+		return
+	}
+	mergeMissingItems(legacyDir, userDir, 0)
 }
 
 /**

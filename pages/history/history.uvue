@@ -240,7 +240,7 @@
 			openConversation(item: UTSJSONObject) {
 				uni.setStorageSync('active_conversation_id', item['id'] as string)
 				uni.redirectTo({
-					url: '/pages/index/index'
+					url: '/pages/chat/chat'
 				})
 			},
 

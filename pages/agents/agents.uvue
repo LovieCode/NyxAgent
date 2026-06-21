@@ -375,7 +375,7 @@
 			openAgent(agent: UTSJSONObject) {
 				uni.setStorageSync('active_agent_id', agent['id'] as string)
 				uni.navigateTo({
-					url: '/pages/index/index'
+					url: '/pages/chat/chat'
 				})
 			},
 
@@ -502,7 +502,7 @@
 				})
 				uni.setStorageSync('active_agent_id', id)
 				uni.navigateTo({
-					url: '/pages/index/index'
+					url: '/pages/chat/chat'
 				})
 			}
 		}
