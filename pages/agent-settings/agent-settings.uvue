@@ -188,8 +188,8 @@
 				</view>
 				<view class="setting-row">
 					<view class="setting-text">
-						<text class="setting-title">缓存启用</text>
-						<text class="setting-desc">开启后重复请求使用缓存加速</text>
+						<text class="setting-title">启用缓存ID</text>
+						<text class="setting-desc">开启后请求会携带 cache_key（智能体ID:对话ID）</text>
 					</view>
 					<rice-switch v-model="cacheEnabled" />
 				</view>
@@ -260,7 +260,7 @@
 				truncateThresholdStr: '40' as string,
 				/** 触发截断时每批丢弃的早期消息数 */
 				truncateDropCountStr: '20' as string,
-				/** 缓存启用 */
+				/** 启用缓存 ID */
 				cacheEnabled: false as boolean,
 				/** 隐藏思考过程 */
 				hideThinking: false as boolean,
@@ -419,7 +419,7 @@
 				this.maxIterationsStr = (rawMaxIterations != null ? rawMaxIterations : global.maxIterations) + ''
 				this.streamEnabled = rawStreamEnabled != null ? rawStreamEnabled : global.streamEnabled
 
-				// 截断/缓存/隐藏思考/注入日期
+				// 截断/缓存 ID/隐藏思考/注入日期
 				const rawThreshold = agent['truncateThreshold'] as number | null
 				const rawDropCount = agent['truncateDropCount'] as number | null
 				const rawCacheEnabled = agent['cacheEnabled'] as boolean | null
@@ -611,7 +611,7 @@
 					this.maxIterationsStr = parsedMaxIterations + ''
 				}
 				updateAgentGenerationSettings(this.agentId, temperature, maxTokens, maxIterations, streamEnabled)
-				// 保存截断/缓存/隐藏思考
+				// 保存截断/缓存 ID/隐藏思考
 				const threshold = parseFloat(this.truncateThresholdStr)
 				const dropCount = parseInt(this.truncateDropCountStr)
 				updateAgentTruncation(this.agentId, isNaN(threshold) ? 40 : threshold, isNaN(dropCount) ? 20 : dropCount)
