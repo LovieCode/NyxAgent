@@ -58,6 +58,17 @@ function rowsToObjects(result: SQLiteResult): UTSJSONObject[] {
 	return list
 }
 
+function ensureConversationTokenUsageStatsTable(db: xSqlite): void {
+	db.run(
+		'CREATE TABLE IF NOT EXISTS conversation_token_usage_stats (' +
+		'conversation_id TEXT PRIMARY KEY,' +
+		'prompt_tokens INTEGER NOT NULL DEFAULT 0,' +
+		'prompt_cache_hit_tokens INTEGER NOT NULL DEFAULT 0,' +
+		'call_count INTEGER NOT NULL DEFAULT 0,' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+}
+
 /**
  * 初始化数据库（建表）
  * 在 App 启动时调用
@@ -126,6 +137,8 @@ export function initDatabase(): void {
 		'extra TEXT NOT NULL DEFAULT \'{}\')'
 	)
 
+	ensureConversationTokenUsageStatsTable(db)
+
 	db.run(
 		'CREATE TABLE IF NOT EXISTS memory_buffer (' +
 		'id TEXT PRIMARY KEY,' +
@@ -181,7 +194,8 @@ export function importDatabaseTables(
 	messages: UTSJSONObject[],
 	appSettings: UTSJSONObject[],
 	memoryBuffers: UTSJSONObject[],
-	memoryCore: UTSJSONObject[]
+	memoryCore: UTSJSONObject[],
+	conversationTokenUsageStats: UTSJSONObject[]
 ): void {
 	initDatabase()
 	const db = getDb()
@@ -191,6 +205,7 @@ export function importDatabaseTables(
 	db.run('DELETE FROM app_settings')
 	db.run('DELETE FROM memory_buffer')
 	db.run('DELETE FROM agent_memory_core')
+	db.run('DELETE FROM conversation_token_usage_stats')
 
 	for (let i = 0; i < providers.length; i++) {
 		const item = providers[i]
@@ -287,7 +302,85 @@ export function importDatabaseTables(
 			]
 		)
 	}
+	for (let i = 0; i < conversationTokenUsageStats.length; i++) {
+		const item = conversationTokenUsageStats[i]
+		db.run(
+			'INSERT OR REPLACE INTO conversation_token_usage_stats (conversation_id, prompt_tokens, prompt_cache_hit_tokens, call_count, updated_at) VALUES (?, ?, ?, ?, ?)',
+			[
+				readStringField(item, 'conversation_id'),
+				readNumberField(item, 'prompt_tokens'),
+				readNumberField(item, 'prompt_cache_hit_tokens'),
+				readNumberField(item, 'call_count'),
+				readNumberField(item, 'updated_at'),
+			]
+		)
+	}
 	db.close()
+}
+
+export function addConversationTokenUsage(conversationId: string, promptTokens: number, promptCacheHitTokens: number): void {
+	const cid = conversationId.trim()
+	if (cid == '') {
+		return
+	}
+	if (promptTokens <= 0 && promptCacheHitTokens <= 0) {
+		return
+	}
+	const db = getDb()
+	ensureConversationTokenUsageStatsTable(db)
+	const result = db.query(
+		'SELECT prompt_tokens, prompt_cache_hit_tokens, call_count FROM conversation_token_usage_stats WHERE conversation_id = ? AND ? = ? LIMIT 1',
+		[cid, 1, 1]
+	)
+	const rows = rowsToObjects(result)
+	let oldPrompt = 0
+	let oldCacheHit = 0
+	let oldCallCount = 0
+	if (rows.length > 0) {
+		const row = rows[0]
+		const rawPrompt = row['prompt_tokens'] as number | null
+		const rawCacheHit = row['prompt_cache_hit_tokens'] as number | null
+		const rawCallCount = row['call_count'] as number | null
+		oldPrompt = rawPrompt != null ? rawPrompt : 0
+		oldCacheHit = rawCacheHit != null ? rawCacheHit : 0
+		oldCallCount = rawCallCount != null ? rawCallCount : 0
+	}
+	db.run(
+		'INSERT OR REPLACE INTO conversation_token_usage_stats (conversation_id, prompt_tokens, prompt_cache_hit_tokens, call_count, updated_at) VALUES (?, ?, ?, ?, ?)',
+		[cid, oldPrompt + promptTokens, oldCacheHit + promptCacheHitTokens, oldCallCount + 1, Date.now()]
+	)
+	db.close()
+}
+
+export function getConversationTokenUsageStats(conversationId: string): UTSJSONObject {
+	const cid = conversationId.trim()
+	if (cid == '') {
+		return {
+			conversation_id: '',
+			prompt_tokens: 0,
+			prompt_cache_hit_tokens: 0,
+			call_count: 0,
+			updated_at: 0,
+		} as UTSJSONObject
+	}
+	const db = getDb()
+	ensureConversationTokenUsageStatsTable(db)
+	const result = db.query(
+		'SELECT conversation_id, prompt_tokens, prompt_cache_hit_tokens, call_count, updated_at FROM conversation_token_usage_stats WHERE conversation_id = ? AND ? = ? LIMIT 1',
+		[cid, 1, 1]
+	)
+	db.close()
+	const rows = rowsToObjects(result)
+	if (rows.length > 0) {
+		return rows[0]
+	}
+	return {
+		conversation_id: cid,
+		prompt_tokens: 0,
+		prompt_cache_hit_tokens: 0,
+		call_count: 0,
+		updated_at: 0,
+	} as UTSJSONObject
 }
 
 /**
@@ -515,14 +608,25 @@ export function getAllMemoryCoreForExport(): UTSJSONObject[] {
 	return rowsToObjects(result)
 }
 
+/** 导出会话 Token/缓存命中累计统计。 */
+export function getAllConversationTokenUsageStatsForExport(): UTSJSONObject[] {
+	const db = getDb()
+	ensureConversationTokenUsageStatsTable(db)
+	const result = db.query('SELECT * FROM conversation_token_usage_stats ORDER BY updated_at DESC')
+	db.close()
+	return rowsToObjects(result)
+}
+
 /**
  * 删除某条对话及其消息
  */
 export function deleteConversation(id: string): void {
 	const db = getDb()
+	ensureConversationTokenUsageStatsTable(db)
 	db.run('DELETE FROM messages WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
 	db.run('DELETE FROM conversations WHERE id = ? AND ? = ?', [id, 1, 1])
 	db.run('DELETE FROM memory_buffer WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
+	db.run('DELETE FROM conversation_token_usage_stats WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
 	db.run('UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE conversation_id = ?', [Date.now(), id])
 	db.close()
 }
@@ -532,11 +636,13 @@ export function deleteConversation(id: string): void {
  */
 export function clearAll(): void {
 	const db = getDb()
+	ensureConversationTokenUsageStatsTable(db)
 	db.run('DELETE FROM messages')
 	db.run('DELETE FROM conversations')
 	db.run('DELETE FROM providers')
 	db.run('DELETE FROM memory_buffer')
 	db.run('DELETE FROM agent_memory_core')
+	db.run('DELETE FROM conversation_token_usage_stats')
 	db.close()
 }
 

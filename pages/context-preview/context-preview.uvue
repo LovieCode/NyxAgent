@@ -130,6 +130,24 @@
 								<text class="summary-value">{{lastTotalTokensText}}</text>
 							</view>
 						</view>
+						<view class="last-call-token-row">
+							<view class="last-call-token">
+								<text class="summary-label">缓存命中</text>
+								<text class="summary-value">{{lastPromptCacheHitTokensText}}</text>
+							</view>
+							<view class="last-call-token">
+								<text class="summary-label">上次命中率</text>
+								<text class="summary-value">{{lastPromptCacheHitRateText}}</text>
+							</view>
+							<view class="last-call-token">
+								<text class="summary-label">会话命中率</text>
+								<text class="summary-value">{{conversationPromptCacheHitRateText}}</text>
+							</view>
+						</view>
+						<view class="summary-row">
+							<text class="summary-label">会话累计</text>
+							<text class="summary-value">{{conversationPromptCacheHitTokensText}} / {{conversationPromptTokensText}} · {{conversationUsageCallCountText}} 次</text>
+						</view>
 						<view v-if="lastCallError != ''" class="last-call-error">
 							<text class="last-call-error-text">{{lastCallError}}</text>
 						</view>
@@ -184,6 +202,12 @@
 				lastPromptTokensText: '—' as string,
 				lastCompletionTokensText: '—' as string,
 				lastTotalTokensText: '—' as string,
+				lastPromptCacheHitTokensText: '—' as string,
+				lastPromptCacheHitRateText: '—' as string,
+				conversationPromptCacheHitRateText: '—' as string,
+				conversationPromptCacheHitTokensText: '—' as string,
+				conversationPromptTokensText: '—' as string,
+				conversationUsageCallCountText: '—' as string,
 				lastCallStatus: '未知' as string,
 				lastCallTime: '—' as string,
 				lastCallMode: '—' as string,
@@ -257,6 +281,7 @@
 				const openaiTools = parsed['openaiTools'] as UTSJSONObject[] | null
 				const requestBody = parsed['requestBody'] as UTSJSONObject | null
 				const lastCallInfo = parsed['lastCallInfo'] as UTSJSONObject | null
+				const conversationTokenUsageStats = parsed['conversationTokenUsageStats'] as UTSJSONObject | null
 				this.providerId = providerId != null ? providerId : ''
 				this.baseUrl = baseUrl != null ? baseUrl : ''
 				this.model = model != null ? model : ''
@@ -297,6 +322,9 @@
 				if (lastCallInfo != null) {
 					this.applyLastCallInfo(lastCallInfo)
 				}
+				if (conversationTokenUsageStats != null) {
+					this.applyConversationTokenUsageStats(conversationTokenUsageStats)
+				}
 				if (settings != null) {
 					const temp = settings['temperature'] as number | null
 					const mt = settings['maxTokens'] as number | null
@@ -314,10 +342,31 @@
 			setTimeout(() => { this.measureScrollSize() }, 800)
 		},
 		methods: {
+			formatPercentText(hitTokens: number, promptTokens: number): string {
+				if (promptTokens <= 0) {
+					return '—'
+				}
+				const basis = Math.round(hitTokens * 10000 / promptTokens)
+				const whole = Math.floor(basis / 100)
+				const fraction = basis - whole * 100
+				if (fraction <= 0) {
+					return '' + whole + '%'
+				}
+				if (fraction < 10) {
+					return '' + whole + '.0' + fraction + '%'
+				}
+				if (fraction % 10 == 0) {
+					return '' + whole + '.' + (fraction / 10) + '%'
+				}
+				return '' + whole + '.' + fraction + '%'
+			},
+
 			applyLastTokenUsage(usage: UTSJSONObject): void {
 				const pt = usage['prompt_tokens'] as number | null
 				const ct = usage['completion_tokens'] as number | null
 				const tt = usage['total_tokens'] as number | null
+				const cacheHit = usage['prompt_cache_hit_tokens'] as number | null
+				const cacheReported = usage['prompt_cache_hit_tokens_reported'] as boolean | null
 				if (pt != null) {
 					this.lastPromptTokens = pt
 					this.lastPromptTokensText = '' + pt
@@ -330,6 +379,23 @@
 					this.lastTotalTokens = tt
 					this.lastTotalTokensText = '' + tt
 				}
+				if (cacheReported == true && cacheHit != null) {
+					this.lastPromptCacheHitTokensText = '' + cacheHit
+					this.lastPromptCacheHitRateText = this.formatPercentText(cacheHit, pt != null ? pt : 0)
+				}
+			},
+
+			applyConversationTokenUsageStats(stats: UTSJSONObject): void {
+				const promptTokens = stats['prompt_tokens'] as number | null
+				const cacheHitTokens = stats['prompt_cache_hit_tokens'] as number | null
+				const callCount = stats['call_count'] as number | null
+				const pt = promptTokens != null ? promptTokens : 0
+				const hit = cacheHitTokens != null ? cacheHitTokens : 0
+				this.conversationPromptTokensText = pt > 0 ? ('' + pt) : '—'
+				this.conversationPromptCacheHitTokensText = pt > 0 ? ('' + hit) : '—'
+				const calls = callCount != null ? callCount : 0
+				this.conversationUsageCallCountText = calls > 0 ? ('' + calls) : '—'
+				this.conversationPromptCacheHitRateText = this.formatPercentText(hit, pt)
 			},
 
 			applyLastCallInfo(info: UTSJSONObject): void {
