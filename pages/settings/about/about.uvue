@@ -39,7 +39,7 @@
 				<view class="detail-divider"></view>
 				<view class="detail-row">
 					<text class="detail-label">开发者</text>
-					<text class="detail-value">洛薇</text>
+					<text class="detail-value link-value" @click="openGitHub">洛薇</text>
 				</view>
 			</view>
 
@@ -55,6 +55,7 @@
 	/**
 	 * 关于页面 - 显示应用版本和版权信息
 	 */
+	import { openSchema } from '@/uni_modules/uts-openSchema'
 
 	export default {
 		data() {
@@ -82,6 +83,9 @@
 		methods: {
 			goBack() {
 				uni.navigateBack()
+			},
+			openGitHub() {
+				openSchema('https://github.com/LovieCode')
 			}
 		}
 	}
@@ -171,6 +175,10 @@
 		font-size: 26rpx;
 		color: #111827;
 		font-weight: bold;
+	}
+	.link-value {
+		color: #DB2777;
+		text-decoration-line: underline;
 	}
 
 	.detail-divider {
