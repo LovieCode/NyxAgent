@@ -2,8 +2,8 @@
 	"name": "眠汐AI",
 	"appid": "__UNI__0F19B13",
 	"description": "NyxAI 眠汐AI - 智能体助手",
-	"versionName": "1.1.0",
-	"versionCode": "110",
+	"versionName": "1.1.1",
+	"versionCode": "111",
 	"uni-app-x": {
 		"vapor": true
 	},
@@ -97,6 +97,11 @@
 			"modules": {},
 			"icons": {},
 			"splashScreens": {}
+		}
+	},
+	"web": {
+		"router": {
+			"mode": ""
 		}
 	}
 }

@@ -296,22 +296,28 @@
 				if (this.selectedProviderId == '') return []
 				return getProviderModels(this.selectedProviderId)
 			},
-			/** 显示文本：提供商 / 模型 或纯模型名（向后兼容） */
+			/** 显示文本：提供商 / 模型（向后兼容纯模型名） */
 			currentModelLabel(): string {
 				const sep = '||'
 				const idx = this.currentModel.indexOf(sep)
 				if (idx >= 0) {
 					const providerId = this.currentModel.substring(0, idx)
 					const modelId = this.currentModel.substring(idx + sep.length)
-					// 查找提供商名称
 					for (let i = 0; i < this.allProviders.length; i++) {
 						if ((this.allProviders[i]['id'] as string) == providerId) {
 							return (this.allProviders[i]['name'] as string) + ' / ' + modelId
 						}
 					}
+					if (providerId == '') {
+						return '（默认提供商） / ' + modelId
+					}
 					return providerId + ' / ' + modelId
 				}
-				return this.currentModel
+				// 旧格式：纯模型名 → 提示去重选
+				if (this.currentModel != '') {
+					return this.currentModel + '（未关联提供商）'
+				}
+				return '未选择模型'
 			}
 		},
 		onLoad() {
