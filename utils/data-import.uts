@@ -58,6 +58,13 @@ function buildFallbackStorageKeys(): string[] {
 		'editor_draft',
 		'editor_target',
 		'editor_result',
+		'editor_mode',
+		'editor_file_path',
+		'editor_saved',
+		'editor_saved_path',
+		'editor_result_ready',
+		'editor_readonly',
+		'editor_placeholder',
 		'crop_image_path',
 		'crop_result',
 	]

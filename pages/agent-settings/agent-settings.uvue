@@ -309,18 +309,28 @@
 			// 先从数据库加载（避免后续被覆盖）
 			this.loadAgent()
 			// 检查全屏编辑器是否有返回结果
-			const result = uni.getStorageSync('editor_result') as string
-			if (result != null && result != '') {
-				const target = uni.getStorageSync('editor_target') as string
-				if (target == 'systemPrompt') {
-					this.agentSystemPrompt = result
-				} else {
-					this.agentDesc = result
+			const ready = uni.getStorageSync('editor_result_ready') as string | null
+			const result = uni.getStorageSync('editor_result') as string | null
+			if (ready == 'true' || (result != null && result != '')) {
+				const target = uni.getStorageSync('editor_target') as string | null
+				if (target == 'systemPrompt' || target == 'desc' || target == null || target == '') {
+					const safeResult = result != null ? result : ''
+					if (target == 'systemPrompt') {
+						this.agentSystemPrompt = safeResult
+					} else {
+						this.agentDesc = safeResult
+					}
+					uni.removeStorageSync('editor_result')
+					uni.removeStorageSync('editor_result_ready')
+					uni.removeStorageSync('editor_target')
+					uni.removeStorageSync('editor_mode')
+					uni.removeStorageSync('editor_content')
+					uni.removeStorageSync('editor_title')
+					uni.removeStorageSync('editor_placeholder')
+					uni.removeStorageSync('editor_readonly')
+					// 标记有未保存的更改
+					this.hasUnsaved = true
 				}
-				uni.removeStorageSync('editor_result')
-				uni.removeStorageSync('editor_target')
-				// 标记有未保存的更改
-				this.hasUnsaved = true
 			}
 			// 检查裁剪页面是否有返回结果
 			const cropTarget = uni.getStorageSync('crop_target') as string
@@ -520,9 +530,16 @@
 			/** 打开全屏编辑器编辑智能体描述 */
 			openDescEditor() {
 				uni.removeStorageSync('editor_draft')
+				uni.removeStorageSync('editor_result')
+				uni.removeStorageSync('editor_result_ready')
+				uni.removeStorageSync('editor_file_path')
+				uni.removeStorageSync('editor_saved')
+				uni.removeStorageSync('editor_saved_path')
+				uni.setStorageSync('editor_mode', 'text')
 				uni.setStorageSync('editor_content', this.agentDesc)
 				uni.setStorageSync('editor_title', '编辑描述')
 				uni.setStorageSync('editor_target', 'desc')
+				uni.setStorageSync('editor_placeholder', '写一下这个智能体的人设、用途或备注')
 				uni.navigateTo({
 					url: '/pages/common/editor/editor'
 				})
@@ -531,9 +548,16 @@
 			/** 打开全屏编辑器编辑系统提示词 */
 			openSystemPromptEditor() {
 				uni.removeStorageSync('editor_draft')
+				uni.removeStorageSync('editor_result')
+				uni.removeStorageSync('editor_result_ready')
+				uni.removeStorageSync('editor_file_path')
+				uni.removeStorageSync('editor_saved')
+				uni.removeStorageSync('editor_saved_path')
+				uni.setStorageSync('editor_mode', 'text')
 				uni.setStorageSync('editor_content', this.agentSystemPrompt)
 				uni.setStorageSync('editor_title', '编辑提示词')
 				uni.setStorageSync('editor_target', 'systemPrompt')
+				uni.setStorageSync('editor_placeholder', '定义说话风格、能力边界和输出习惯')
 				uni.navigateTo({
 					url: '/pages/common/editor/editor'
 				})

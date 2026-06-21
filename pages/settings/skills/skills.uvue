@@ -18,7 +18,13 @@
 					</view>
 				</view>
 				<view v-if="showImportPanel" class="import-panel">
-					<textarea class="large-textarea" v-model="importMarkdown" placeholder="粘贴 SKILL.md 内容..." placeholder-style="color:#D1D5DB;font-size:26rpx;" />
+					<view class="fullscreen-edit-card" @click="openImportMarkdownEditor">
+						<view class="fullscreen-edit-header">
+							<text class="input-label">SKILL.md 内容</text>
+							<text class="fullscreen-edit-action">全屏编辑</text>
+						</view>
+						<text class="fullscreen-edit-preview">{{getImportMarkdownPreview()}}</text>
+					</view>
 					<view class="primary-btn import-btn" @click="importMarkdownSkill">
 						<text class="primary-btn-text">导入为 Skill</text>
 					</view>
@@ -80,7 +86,13 @@
 				<text class="input-label">文档标题 / 路径</text>
 				<input class="flat-input" v-model="docTitle" placeholder="SKILL.md" placeholder-style="color:#D1D5DB;font-size:26rpx;" />
 				<text class="input-label">文档内容</text>
-				<textarea class="large-textarea" v-model="docContent" placeholder="写入纯文本指令..." placeholder-style="color:#D1D5DB;font-size:26rpx;" />
+				<view class="fullscreen-edit-card" @click="openDocContentEditor">
+					<view class="fullscreen-edit-header">
+						<text class="fullscreen-edit-title">{{docTitle != '' ? docTitle : 'SKILL.md'}}</text>
+						<text class="fullscreen-edit-action">全屏编辑</text>
+					</view>
+					<text class="fullscreen-edit-preview">{{getDocContentPreview()}}</text>
+				</view>
 
 				<view class="action-row">
 					<view class="primary-btn" @click="saveCurrentSkill">
@@ -121,6 +133,9 @@
 		onLoad() {
 			this.reloadSkills()
 		},
+		onShow() {
+			this.consumeEditorResult()
+		},
 		methods: {
 			reloadSkills() {
 				this.skills = getSkills()
@@ -143,6 +158,85 @@
 
 			getDocCountText(skill: UTSJSONObject): string {
 				return getSkillDocumentCount(skill) + ' 文档'
+			},
+
+			consumeEditorResult() {
+				const ready = uni.getStorageSync('editor_result_ready') as string | null
+				if (ready != 'true') {
+					return
+				}
+				const target = uni.getStorageSync('editor_target') as string | null
+				const result = uni.getStorageSync('editor_result') as string | null
+				if (target == 'skill-doc-content') {
+					this.docContent = result != null ? result : ''
+				} else if (target == 'skill-import-markdown') {
+					this.importMarkdown = result != null ? result : ''
+				} else {
+					return
+				}
+				this.clearEditorStorage()
+			},
+
+			clearEditorStorage() {
+				uni.removeStorageSync('editor_mode')
+				uni.removeStorageSync('editor_title')
+				uni.removeStorageSync('editor_content')
+				uni.removeStorageSync('editor_result')
+				uni.removeStorageSync('editor_result_ready')
+				uni.removeStorageSync('editor_target')
+				uni.removeStorageSync('editor_file_path')
+				uni.removeStorageSync('editor_saved')
+				uni.removeStorageSync('editor_saved_path')
+				uni.removeStorageSync('editor_readonly')
+				uni.removeStorageSync('editor_placeholder')
+				uni.removeStorageSync('editor_draft')
+			},
+
+			getDocContentPreview(): string {
+				const content = this.docContent.trim()
+				if (content == '') {
+					return '点击打开全屏编辑器，写入纯文本指令...'
+				}
+				if (content.length > 160) {
+					return content.substring(0, 160) + '...'
+				}
+				return content
+			},
+
+			getImportMarkdownPreview(): string {
+				const content = this.importMarkdown.trim()
+				if (content == '') {
+					return '点击打开全屏编辑器，粘贴 SKILL.md 内容...'
+				}
+				if (content.length > 160) {
+					return content.substring(0, 160) + '...'
+				}
+				return content
+			},
+
+			openDocContentEditor() {
+				this.syncDocumentFields()
+				this.clearEditorStorage()
+				uni.setStorageSync('editor_mode', 'text')
+				uni.setStorageSync('editor_content', this.docContent)
+				uni.setStorageSync('editor_title', '编辑 Skill 文档')
+				uni.setStorageSync('editor_target', 'skill-doc-content')
+				uni.setStorageSync('editor_placeholder', '写入纯文本指令...')
+				uni.navigateTo({
+					url: '/pages/common/editor/editor'
+				})
+			},
+
+			openImportMarkdownEditor() {
+				this.clearEditorStorage()
+				uni.setStorageSync('editor_mode', 'text')
+				uni.setStorageSync('editor_content', this.importMarkdown)
+				uni.setStorageSync('editor_title', '导入 SKILL.md')
+				uni.setStorageSync('editor_target', 'skill-import-markdown')
+				uni.setStorageSync('editor_placeholder', '粘贴 SKILL.md 内容...')
+				uni.navigateTo({
+					url: '/pages/common/editor/editor'
+				})
 			},
 
 			isSkillEnabled(skill: UTSJSONObject): boolean {
@@ -521,8 +615,7 @@
 	}
 
 	.flat-input,
-	.small-textarea,
-	.large-textarea {
+	.small-textarea {
 		background-color: #F9FAFB;
 		border-radius: 14rpx;
 		padding: 22rpx;
@@ -535,8 +628,40 @@
 		height: 150rpx;
 	}
 
-	.large-textarea {
-		height: 420rpx;
+	.fullscreen-edit-card {
+		background-color: #F9FAFB;
+		border-radius: 14rpx;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: #E5E7EB;
+		padding: 20rpx;
+	}
+
+	.fullscreen-edit-header {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 12rpx;
+	}
+
+	.fullscreen-edit-title {
+		font-size: 25rpx;
+		color: #374151;
+		font-weight: bold;
+	}
+
+	.fullscreen-edit-action {
+		font-size: 24rpx;
+		color: var(--rice-primary-color);
+		font-weight: bold;
+	}
+
+	.fullscreen-edit-preview {
+		font-size: 26rpx;
+		color: #6B7280;
+		line-height: 40rpx;
+		lines: 5;
+		text-overflow: ellipsis;
 	}
 
 	.divider {
