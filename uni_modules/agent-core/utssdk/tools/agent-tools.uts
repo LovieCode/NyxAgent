@@ -790,17 +790,17 @@ class MemorySearchTool implements AgentTool {
 }
 
 /**
- * 写入 128 字短记忆缓存工具
+ * 写入 64 字短记忆缓存工具
  */
 class MemoryBufferWriteTool implements AgentTool {
 	name: string = 'memory_buffer_write'
-	description: string = '写入短记忆缓存。缓存最多 128 字，会临时拼到后续用户消息后，适合保存当前阶段目标/称呼/临时约束。不要写工具调用信息、密钥、完整日志。'
+	description: string = '写入短记忆缓存。缓存最多 64 字，会临时拼到后续用户消息后，适合保存当前阶段目标/称呼/临时约束。不要写工具调用信息、密钥、完整日志。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
 			'content': {
 				'type': 'string',
-				'description': '缓存内容，必须简短，最多 128 字'
+				'description': '缓存内容，必须简短，最多 64 字'
 			}
 		},
 		'required': ['content']
@@ -824,7 +824,7 @@ class MemoryBufferWriteTool implements AgentTool {
 				return
 			}
 			const finalContent = updateMemoryBuffer(this.agentId, this.personId, this.conversationId, rawContent)
-			resolve({ content: '短记忆缓存已更新（' + finalContent.length + '/128）：' + finalContent, isError: false } as ToolResult)
+			resolve({ content: '短记忆缓存已更新（' + finalContent.length + '/64）：' + finalContent, isError: false } as ToolResult)
 		})
 	}
 }

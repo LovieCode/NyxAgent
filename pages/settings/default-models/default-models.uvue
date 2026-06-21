@@ -8,11 +8,23 @@
 					<text class="task-type-icon">{{taskIcon(task['type'] as string)}}</text>
 					<text class="task-type-name">{{task['typeName']}}</text>
 				</view>
+				<text v-if="isMemoryTask(task)" class="task-desc">不设置时默认使用对话模型；设置后记忆整理 Agent 会单独使用该模型。</text>
 
 				<!-- 选择提供商 -->
 				<text class="field-label">提供商</text>
 				<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
 					<view class="chip-row">
+						<view
+							v-if="isMemoryTask(task)"
+							class="chip"
+							:class="isFollowChatModel(task) ? 'chip-active' : ''"
+							@click="selectFollowChat(index)"
+						>
+							<text
+								class="chip-text"
+								:class="isFollowChatModel(task) ? 'chip-text-active' : ''"
+							>跟随对话模型</text>
+						</view>
 						<view
 							v-for="(p, pi) in allProviders"
 							:key="pi"
@@ -45,7 +57,8 @@
 							>{{m}}</text>
 						</view>
 						<!-- 没有模型时提示 -->
-						<text v-if="getTaskModels(task).length == 0" class="no-models-hint">该提供商未配置模型</text>
+						<text v-if="isFollowChatModel(task)" class="no-models-hint">当前跟随对话模型</text>
+						<text v-if="getTaskModels(task).length == 0 && isFollowChatModel(task) == false" class="no-models-hint">该提供商未配置模型</text>
 					</view>
 				</scroll-view>
 			</view>
@@ -55,7 +68,6 @@
 			</view>
 
 		</scroll-view>
-		<TabBar current="pages/settings/settings" />
 	</view>
 </template>
 
@@ -80,10 +92,22 @@
 
 			taskIcon(type: string): string {
 				if (type == 'chat') return 'Chat'
+				if (type == 'memory_organize') return 'Memory'
 				if (type == 'vision') return 'Vision'
 				if (type == 'stt') return 'STT'
 				if (type == 'tts') return 'TTS'
 				return ''
+			},
+
+			isMemoryTask(task: UTSJSONObject): boolean {
+				const type = task['type'] as string | null
+				return type == 'memory_organize'
+			},
+
+			isFollowChatModel(task: UTSJSONObject): boolean {
+				const providerId = task['providerId'] as string | null
+				const model = task['model'] as string | null
+				return this.isMemoryTask(task) && (providerId == null || providerId == '') && (model == null || model == '')
 			},
 
 			/** 获取某个任务当前选择的提供商下可用的模型 ID 列表 */
@@ -130,6 +154,13 @@
 				task['model'] = ''
 			},
 
+			selectFollowChat(taskIndex: number) {
+				const task = this.taskList[taskIndex]
+				if (task == null) return
+				task['providerId'] = ''
+				task['model'] = ''
+			},
+
 			selectModel(taskIndex: number, model: string) {
 				const task = this.taskList[taskIndex]
 				if (task == null) return
@@ -144,7 +175,9 @@
 					const rawModel = task['model']
 					const providerId = rawPid != null ? (rawPid as string) : ''
 					const model = rawModel != null ? (rawModel as string) : ''
-					if (providerId != '' && model != '') {
+					if (type == 'memory_organize') {
+						setDefaultTaskModel(type, providerId, model)
+					} else if (providerId != '' && model != '') {
 						setDefaultTaskModel(type, providerId, model)
 					}
 				}
@@ -186,6 +219,13 @@
 		font-size: 32rpx;
 		font-weight: bold;
 		color: #111827;
+	}
+
+	.task-desc {
+		font-size: 24rpx;
+		color: #6B7280;
+		line-height: 34rpx;
+		margin-bottom: 18rpx;
 	}
 
 	/* 字段标签 */
