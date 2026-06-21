@@ -97,16 +97,21 @@
 <style>
 	.page-shell {
 		flex: 1;
+		width: 100%;
+		flex-direction: column;
 		background-color: #FFFFFF;
 	}
 
 	.editor-wrap {
 		flex: 1;
+		width: 100%;
+		flex-direction: column;
 		background-color: #FFFFFF;
 		padding: 24rpx 28rpx 18rpx;
 	}
 
 	.editor-meta {
+		width: 100%;
 		padding: 0 0 18rpx 0;
 	}
 
@@ -119,6 +124,8 @@
 
 	.editor-input {
 		flex: 1;
+		width: 100%;
+		align-self: stretch;
 		font-size: 30rpx;
 		color: #111827;
 		line-height: 48rpx;
@@ -127,6 +134,7 @@
 	}
 
 	.editor-footer {
+		width: 100%;
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;

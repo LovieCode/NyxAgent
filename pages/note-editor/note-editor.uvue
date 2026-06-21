@@ -168,6 +168,7 @@
 
 <style>
 	.note-title-field {
+		width: 100%;
 		padding: 2rpx 0 18rpx 0;
 		margin-bottom: 18rpx;
 		border-bottom-width: 1rpx;
@@ -176,6 +177,8 @@
 	}
 
 	.title-input {
+		width: 100%;
+		align-self: stretch;
 		font-size: 38rpx;
 		font-weight: bold;
 		color: #111827;
