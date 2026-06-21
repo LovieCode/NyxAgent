@@ -30,6 +30,7 @@ export type PreparedAgentContext = {
 	bufferInjection: string
 	lastUserIndex: number
 	droppedCount: number
+	truncateDropCount: number
 	droppedMessages: UTSJSONObject[]
 }
 
@@ -113,24 +114,6 @@ function findLatestMessageTime(messages: UTSJSONObject[]): string {
 	return formatMemoryMessageTime(latest)
 }
 
-function buildDroppedMessagesSignature(messages: UTSJSONObject[]): string {
-	if (messages.length == 0) return ''
-	let total = 0
-	const first = messages[0]
-	const last = messages[messages.length - 1]
-	const firstContent = first['content'] as string | null
-	const lastContent = last['content'] as string | null
-	for (let i = 0; i < messages.length; i++) {
-		const content = messages[i]['content'] as string | null
-		if (content != null) {
-			total = total + content.length
-		}
-	}
-	const firstText = firstContent != null ? firstContent.substring(0, firstContent.length > 48 ? 48 : firstContent.length) : ''
-	const lastText = lastContent != null ? lastContent.substring(0, lastContent.length > 48 ? 48 : lastContent.length) : ''
-	return messages.length + '|' + total + '|' + firstText + '|' + lastText
-}
-
 function buildDroppedMessagesPreview(messages: UTSJSONObject[]): UTSJSONObject[] {
 	const list: UTSJSONObject[] = []
 	const limit = messages.length > 12 ? 12 : messages.length
@@ -155,10 +138,12 @@ function buildDroppedMessagesPreview(messages: UTSJSONObject[]): UTSJSONObject[]
 	return list
 }
 
-function buildMemoryManagerRunSignature(droppedMessages: UTSJSONObject[]): string {
-	const droppedSignature = buildDroppedMessagesSignature(droppedMessages)
-	if (droppedSignature == '') return ''
-	return droppedSignature
+function buildMemoryManagerRunSignature(droppedCount: number, truncateDropCount: number): string {
+	if (droppedCount <= 0) return ''
+	const batchSize = truncateDropCount > 0 ? truncateDropCount : 20
+	const batchIndex = Math.floor(droppedCount / batchSize)
+	if (batchIndex <= 0) return ''
+	return 'truncate-batch=' + batchIndex + '|size=' + batchSize
 }
 
 function shouldRunMemoryManager(agentId: string, conversationId: string, signature: string): boolean {
@@ -415,6 +400,7 @@ function prepareAgentContext(
 	}
 	let remainingSkip = 0
 	let droppedCount = 0
+	let truncateDropCount = 0
 	if (enableContextTruncation == true) {
 		const systemCount = workingMessages.length
 		// 截断权重：user 1，普通 assistant 0.3，工具调用/结果 0.1
@@ -424,6 +410,7 @@ function prepareAgentContext(
 			const rawDropCount = agent['truncateDropCount']
 			const threshold = rawThreshold != null ? (rawThreshold as number) : 40
 			const dropCount = rawDropCount != null ? (rawDropCount as number) : 20
+			truncateDropCount = dropCount
 			if (threshold > 0 && dropCount > 0) {
 				let score: number = systemCount
 				let totalDialog = 0
@@ -490,6 +477,7 @@ function prepareAgentContext(
 		bufferInjection,
 		lastUserIndex,
 		droppedCount,
+		truncateDropCount,
 		droppedMessages,
 	} as PreparedAgentContext
 }
@@ -1075,7 +1063,7 @@ function runAgentLoop(
 	const tools = createAgentTools(agentId, conversationId, personId, allowCoreMemoryWrite)
 	const toolDefs = prepared.toolDefs
 
-	const memoryRunSignature = buildMemoryManagerRunSignature(prepared.droppedMessages)
+	const memoryRunSignature = buildMemoryManagerRunSignature(prepared.droppedCount, prepared.truncateDropCount)
 	if (enableMemoryManager == true && shouldRunMemoryManager(agentId, conversationId, memoryRunSignature) == true) {
 		const started = startMemoryManagerLoop?.invoke(collectMemoryCandidateMessages(messages), providerId, model, agentId, conversationId, memoryRunSignature, prepared.droppedCount)
 		if (started == true) {
