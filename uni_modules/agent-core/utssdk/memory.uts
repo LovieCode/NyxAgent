@@ -28,6 +28,11 @@ export type MemoryTarget = {
 	label: string
 }
 
+export type MemoryCompactionCursor = {
+	lastMessageKey: string
+	lastMessageTimestamp: number
+}
+
 /** 记忆搜索筛选条件 */
 export type MemorySearchFilter = {
 	query: string           // 搜索关键词
@@ -109,6 +114,15 @@ export function initMemoryTables(): void {
 		'forgotten_count INTEGER NOT NULL DEFAULT 0,' +
 		'summary TEXT NOT NULL DEFAULT \'\',' +
 		'details TEXT NOT NULL DEFAULT \'\')'
+	)
+	db.run(
+		'CREATE TABLE IF NOT EXISTS agent_memory_compaction_state (' +
+		'id TEXT PRIMARY KEY,' +
+		'agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'conversation_id TEXT NOT NULL DEFAULT \'\',' +
+		'last_message_key TEXT NOT NULL DEFAULT \'\',' +
+		'last_message_timestamp INTEGER NOT NULL DEFAULT 0,' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
 	)
 	db.close()
 }
@@ -197,6 +211,10 @@ function trimToLimit(text: string, limit: number): string {
 
 function makeBufferId(agentId: string, personId: string, conversationId: string): string {
 	return normalizeAgentId(agentId) + '::' + normalizeMemoryPersonId(personId) + '::' + normalizeConversationId(conversationId)
+}
+
+function makeCompactionStateId(agentId: string, conversationId: string): string {
+	return normalizeAgentId(agentId) + '::' + normalizeConversationId(conversationId)
 }
 
 function isValidScope(scope: string): boolean {
@@ -776,7 +794,7 @@ export type MemoryManagerLog = {
 	agentId: string
 	conversationId: string
 	executedAt: number
-	/** 自动触发时的真实截断消息数；手动触发时为 0 */
+	/** 自动触发时本轮整理片段条数；手动触发时为 0 */
 	messageCount: number
 	savedCount: number
 	forgottenCount: number
@@ -812,4 +830,41 @@ export function listMemoryManagerLogs(agentId: string, conversationId: string): 
 	)
 	db.close()
 	return rowsToObjects(result)
+}
+
+export function getMemoryCompactionCursor(agentId: string, conversationId: string): MemoryCompactionCursor {
+	initMemoryTables()
+	const id = makeCompactionStateId(agentId, conversationId)
+	const db = getDb()
+	const result = db.query(
+		'SELECT last_message_key, last_message_timestamp FROM agent_memory_compaction_state WHERE id = ? AND ? = ? LIMIT 1',
+		[id, 1, 1]
+	)
+	db.close()
+	const rows = rowsToObjects(result)
+	if (rows.length == 0) {
+		return {
+			lastMessageKey: '',
+			lastMessageTimestamp: 0,
+		} as MemoryCompactionCursor
+	}
+	const row = rows[0]
+	return {
+		lastMessageKey: readStringField(row, 'last_message_key'),
+		lastMessageTimestamp: readNumberField(row, 'last_message_timestamp'),
+	} as MemoryCompactionCursor
+}
+
+export function saveMemoryCompactionCursor(agentId: string, conversationId: string, lastMessageKey: string, lastMessageTimestamp: number): void {
+	initMemoryTables()
+	if (lastMessageKey.trim() == '') return
+	const aid = normalizeAgentId(agentId)
+	const cid = normalizeConversationId(conversationId)
+	const id = makeCompactionStateId(aid, cid)
+	const db = getDb()
+	db.run(
+		'INSERT OR REPLACE INTO agent_memory_compaction_state (id, agent_id, conversation_id, last_message_key, last_message_timestamp, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+		[id, aid, cid, lastMessageKey, lastMessageTimestamp, Date.now()]
+	)
+	db.close()
 }

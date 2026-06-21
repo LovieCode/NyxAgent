@@ -69,6 +69,18 @@ function ensureConversationTokenUsageStatsTable(db: xSqlite): void {
 	)
 }
 
+function ensureMemoryCompactionStateTable(db: xSqlite): void {
+	db.run(
+		'CREATE TABLE IF NOT EXISTS agent_memory_compaction_state (' +
+		'id TEXT PRIMARY KEY,' +
+		'agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'conversation_id TEXT NOT NULL DEFAULT \'\',' +
+		'last_message_key TEXT NOT NULL DEFAULT \'\',' +
+		'last_message_timestamp INTEGER NOT NULL DEFAULT 0,' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+}
+
 /**
  * 初始化数据库（建表）
  * 在 App 启动时调用
@@ -138,6 +150,7 @@ export function initDatabase(): void {
 	)
 
 	ensureConversationTokenUsageStatsTable(db)
+	ensureMemoryCompactionStateTable(db)
 
 	db.run(
 		'CREATE TABLE IF NOT EXISTS memory_buffer (' +
@@ -195,7 +208,8 @@ export function importDatabaseTables(
 	appSettings: UTSJSONObject[],
 	memoryBuffers: UTSJSONObject[],
 	memoryCore: UTSJSONObject[],
-	conversationTokenUsageStats: UTSJSONObject[]
+	conversationTokenUsageStats: UTSJSONObject[],
+	memoryCompactionStates: UTSJSONObject[]
 ): void {
 	initDatabase()
 	const db = getDb()
@@ -206,6 +220,7 @@ export function importDatabaseTables(
 	db.run('DELETE FROM memory_buffer')
 	db.run('DELETE FROM agent_memory_core')
 	db.run('DELETE FROM conversation_token_usage_stats')
+	db.run('DELETE FROM agent_memory_compaction_state')
 
 	for (let i = 0; i < providers.length; i++) {
 		const item = providers[i]
@@ -311,6 +326,20 @@ export function importDatabaseTables(
 				readNumberField(item, 'prompt_tokens'),
 				readNumberField(item, 'prompt_cache_hit_tokens'),
 				readNumberField(item, 'call_count'),
+				readNumberField(item, 'updated_at'),
+			]
+		)
+	}
+	for (let i = 0; i < memoryCompactionStates.length; i++) {
+		const item = memoryCompactionStates[i]
+		db.run(
+			'INSERT OR REPLACE INTO agent_memory_compaction_state (id, agent_id, conversation_id, last_message_key, last_message_timestamp, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+			[
+				readStringField(item, 'id'),
+				readStringField(item, 'agent_id'),
+				readStringField(item, 'conversation_id'),
+				readStringField(item, 'last_message_key'),
+				readNumberField(item, 'last_message_timestamp'),
 				readNumberField(item, 'updated_at'),
 			]
 		)
@@ -617,16 +646,27 @@ export function getAllConversationTokenUsageStatsForExport(): UTSJSONObject[] {
 	return rowsToObjects(result)
 }
 
+/** 导出记忆整理游标状态。 */
+export function getAllMemoryCompactionStatesForExport(): UTSJSONObject[] {
+	const db = getDb()
+	ensureMemoryCompactionStateTable(db)
+	const result = db.query('SELECT * FROM agent_memory_compaction_state ORDER BY updated_at DESC')
+	db.close()
+	return rowsToObjects(result)
+}
+
 /**
  * 删除某条对话及其消息
  */
 export function deleteConversation(id: string): void {
 	const db = getDb()
 	ensureConversationTokenUsageStatsTable(db)
+	ensureMemoryCompactionStateTable(db)
 	db.run('DELETE FROM messages WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
 	db.run('DELETE FROM conversations WHERE id = ? AND ? = ?', [id, 1, 1])
 	db.run('DELETE FROM memory_buffer WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
 	db.run('DELETE FROM conversation_token_usage_stats WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
+	db.run('DELETE FROM agent_memory_compaction_state WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
 	db.run('UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE conversation_id = ?', [Date.now(), id])
 	db.close()
 }
@@ -637,12 +677,14 @@ export function deleteConversation(id: string): void {
 export function clearAll(): void {
 	const db = getDb()
 	ensureConversationTokenUsageStatsTable(db)
+	ensureMemoryCompactionStateTable(db)
 	db.run('DELETE FROM messages')
 	db.run('DELETE FROM conversations')
 	db.run('DELETE FROM providers')
 	db.run('DELETE FROM memory_buffer')
 	db.run('DELETE FROM agent_memory_core')
 	db.run('DELETE FROM conversation_token_usage_stats')
+	db.run('DELETE FROM agent_memory_compaction_state')
 	db.close()
 }
 

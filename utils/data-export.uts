@@ -3,7 +3,7 @@
  * 聚合 SQLite、uni.storage、智能体配置和本地资源，生成可备份 ZIP 清单。
  */
 
-import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings, getDatabaseFilePathForExport, getAllMemoryBuffersForExport, getAllMemoryCoreForExport, getAllConversationTokenUsageStatsForExport } from '@/utils/database.uts'
+import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings, getDatabaseFilePathForExport, getAllMemoryBuffersForExport, getAllMemoryCoreForExport, getAllConversationTokenUsageStatsForExport, getAllMemoryCompactionStatesForExport } from '@/utils/database.uts'
 import { getAllDefaultTaskModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
 import { getAgents } from '@/utils/agent.uts'
 import { getSkills } from '@/utils/skills.uts'
@@ -516,6 +516,7 @@ export function buildAllDataExport(): UTSJSONObject {
 	const memoryBuffers = getAllMemoryBuffersForExport()
 	const memoryCore = getAllMemoryCoreForExport()
 	const conversationTokenUsageStats = getAllConversationTokenUsageStatsForExport()
+	const memoryCompactionStates = getAllMemoryCompactionStatesForExport()
 	const storageKeys = collectStorageKeys()
 	const storage = collectKnownStorageByKeys(storageKeys)
 	const agents = getAgents()
@@ -553,6 +554,7 @@ export function buildAllDataExport(): UTSJSONObject {
 			memoryBuffers: memoryBuffers,
 			memoryCore: memoryCore,
 			conversationTokenUsageStats: conversationTokenUsageStats,
+			memoryCompactionStates: memoryCompactionStates,
 			notes: notes,
 			todos: todos,
 			storage: storage,

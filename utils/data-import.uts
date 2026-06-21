@@ -164,6 +164,7 @@ export function importAllDataFromZip(zipPath: string): string {
 		const memoryBuffers = readObjectArray(data, 'memoryBuffers')
 		const memoryCore = readObjectArray(data, 'memoryCore')
 		const conversationTokenUsageStats = readObjectArray(data, 'conversationTokenUsageStats')
+		const memoryCompactionStates = readObjectArray(data, 'memoryCompactionStates')
 		const agents = readObjectArray(data, 'agents')
 		const skills = readObjectArray(data, 'skills')
 		const notes = readObjectArray(data, 'notes')
@@ -187,7 +188,7 @@ export function importAllDataFromZip(zipPath: string): string {
 			storage['todo_list'] = JSON.stringify(todos)
 		}
 
-		importDatabaseTables(providers, conversations, messages, appSettings, memoryBuffers, memoryCore, conversationTokenUsageStats)
+		importDatabaseTables(providers, conversations, messages, appSettings, memoryBuffers, memoryCore, conversationTokenUsageStats, memoryCompactionStates)
 		if (agents.length > 0) {
 			saveAgents(agents)
 		}
