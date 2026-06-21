@@ -191,6 +191,21 @@
 			this.currentPath = VIRTUAL_ROOT
 			this.refreshList()
 		},
+		onBackPress(): boolean {
+			if (this.currentPath == VIRTUAL_ROOT) {
+				// 在根视图 → 正常返回
+				return false
+			}
+			// 在子目录 → 回到上一级
+			const parent = parentPath(this.currentPath)
+			if (parent == '' || parent == this.currentPath) {
+				this.currentPath = VIRTUAL_ROOT
+			} else {
+				this.currentPath = parent
+			}
+			this.refreshList()
+			return true // 拦截返回，不离开页面
+		},
 		onShow() {
 			const saved = uni.getStorageSync('editor_saved') as string | null
 			if (saved == 'true') {
