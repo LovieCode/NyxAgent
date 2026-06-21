@@ -38,8 +38,8 @@
 				</view>
 				<view class="detail-divider"></view>
 				<view class="detail-row">
-					<text class="detail-label">开发团队</text>
-					<text class="detail-value">OhMyOpenCode</text>
+					<text class="detail-label">开发者</text>
+					<text class="detail-value">洛薇</text>
 				</view>
 			</view>
 
