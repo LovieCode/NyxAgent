@@ -57,11 +57,11 @@
 										{{ todo['title'] }}
 									</text>
 									<view class="todo-meta">
-										<view :class="['priority-chip', 'priority-chip-' + (todo['priority'] as string)]">
-											<view :class="['priority-dot', 'priority-dot-' + (todo['priority'] as string)]"></view>
-											<text :class="['priority-chip-text', 'priority-chip-text-' + (todo['priority'] as string)]">{{ getPriorityLabel(todo['priority'] as string) }}</text>
+										<view v-if="(todo['priority'] as string) == 'high'" class="priority-urgent">
+											<text class="priority-urgent-icon">!</text>
+											<text class="priority-urgent-text">先做</text>
 										</view>
-										<text class="todo-time">{{ todo['createdAt'] }}</text>
+										<text class="todo-time">{{ formatTodoTime(todo['createdAt'] as string) }}</text>
 									</view>
 								</view>
 								<view class="todo-right" @click.stop="deleteTodo(todo['id'] as string)">
@@ -223,16 +223,38 @@
 		},
 		computed: {
 			filteredTodos() : UTSJSONObject[] {
+				let list: UTSJSONObject[] = []
 				if (this.filter == 'pending') {
-					return this.todos.filter((todo : UTSJSONObject) : boolean => {
+					list = this.todos.filter((todo : UTSJSONObject) : boolean => {
 						return (todo['completed'] as boolean) == false
 					})
 				} else if (this.filter == 'done') {
-					return this.todos.filter((todo : UTSJSONObject) : boolean => {
+					list = this.todos.filter((todo : UTSJSONObject) : boolean => {
 						return (todo['completed'] as boolean) == true
 					})
+				} else {
+					for (let i = 0; i < this.todos.length; i++) {
+						list.push(this.todos[i])
+					}
 				}
-				return this.todos
+				list.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
+					const aDone = a['completed'] as boolean
+					const bDone = b['completed'] as boolean
+					if (aDone != bDone) {
+						return aDone ? 1 : -1
+					}
+					const aScore = this.getPriorityScore(a['priority'] as string)
+					const bScore = this.getPriorityScore(b['priority'] as string)
+					if (aScore != bScore) {
+						return bScore - aScore
+					}
+					const aTime = a['createdAt'] as string
+					const bTime = b['createdAt'] as string
+					if (aTime > bTime) return -1
+					if (aTime < bTime) return 1
+					return 0
+				})
+				return list
 			},
 			filteredNotes() : UTSJSONObject[] {
 				if (this.searchQuery == '') {
@@ -415,7 +437,8 @@
 					this.padZero(now.getMonth() + 1) + '-' +
 					this.padZero(now.getDate()) + ' ' +
 					this.padZero(now.getHours()) + ':' +
-					this.padZero(now.getMinutes())
+					this.padZero(now.getMinutes()) + ':' +
+					this.padZero(now.getSeconds())
 				let newTodo = {
 					id: '' + Date.now(),
 					title: this.newTodoTitle.trim(),
@@ -441,6 +464,23 @@
 					return '中'
 				}
 				return '低'
+			},
+
+			getPriorityScore(priority : string) : number {
+				if (priority == 'high') {
+					return 3
+				}
+				if (priority == 'medium') {
+					return 2
+				}
+				return 1
+			},
+
+			formatTodoTime(value : string) : string {
+				if (value.length == 16) {
+					return value + ':00'
+				}
+				return value
 			},
 
 
@@ -857,66 +897,40 @@
 		margin-top: 8rpx;
 	}
 
-	.priority-chip {
+	.priority-urgent {
 		flex-direction: row;
 		align-items: center;
 		padding: 5rpx 12rpx;
 		border-radius: 999rpx;
-		background-color: #F9FAFB;
-	}
-
-	.priority-chip-high {
 		background-color: #FFF1F2;
+		border-width: 1rpx;
+		border-style: solid;
+		border-color: #FFE4E6;
+		margin-right: 12rpx;
 	}
 
-	.priority-chip-medium {
-		background-color: #FFF7ED;
-	}
-
-	.priority-chip-low {
-		background-color: #ECFDF5;
-	}
-
-	.priority-dot {
-		width: 10rpx;
-		height: 10rpx;
+	.priority-urgent-icon {
+		width: 24rpx;
+		height: 24rpx;
 		border-radius: 999rpx;
+		background-color: #FB7185;
+		color: #FFFFFF;
+		font-size: 18rpx;
+		font-weight: bold;
+		text-align: center;
+		line-height: 24rpx;
 		margin-right: 7rpx;
 	}
 
-	.priority-dot-high {
-		background-color: #FB7185;
-	}
-
-	.priority-dot-medium {
-		background-color: #FDBA74;
-	}
-
-	.priority-dot-low {
-		background-color: #86EFAC;
-	}
-
-	.priority-chip-text {
+	.priority-urgent-text {
 		font-size: 22rpx;
 		font-weight: bold;
-	}
-
-	.priority-chip-text-high {
 		color: #E11D48;
-	}
-
-	.priority-chip-text-medium {
-		color: #EA580C;
-	}
-
-	.priority-chip-text-low {
-		color: #059669;
 	}
 
 	.todo-time {
 		font-size: 22rpx;
 		color: #9CA3AF;
-		margin-left: 12rpx;
 	}
 
 	.dialog-content {
