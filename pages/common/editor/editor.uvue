@@ -1,44 +1,23 @@
 <template>
-	<view class="page-shell rice-theme-light">
-		<NavBar :title="navTitle" showBack @back="onBack">
-			<template #right>
-				<text v-if="readOnly == false" class="done-btn" @click="saveAndBack">保存</text>
-			</template>
-		</NavBar>
-		<view class="editor-wrap">
-			<view class="editor-meta" v-if="subTitle != ''">
-				<text class="editor-meta-text">{{ subTitle }}</text>
-			</view>
-			<textarea
-				class="editor-input"
-				v-model="editText"
-				:disabled="readOnly"
-				:placeholder="placeholder"
-				placeholder-style="color:#D1D5DB;font-size:30rpx;"
-				:auto-height="false"
-				@input="onInput"
-			/>
-			<view class="editor-footer">
-				<text class="footer-text">{{ dirty ? '未保存' : '已同步' }}</text>
-				<text class="footer-text">{{ editText.length }} 字</text>
-			</view>
-		</view>
-	</view>
+	<FullscreenTextEditor
+		:title="navTitle"
+		:subtitle="subTitle"
+		:value="editText"
+		:placeholder="placeholder"
+		:readOnly="readOnly"
+		:dirty="dirty"
+		@change="onEditorChange"
+		@save="saveAndBack"
+		@back="onBack"
+	/>
 </template>
 
 <script lang="uts">
 	import { readContent, writeContent, basename } from '@/utils/file-manager.uts'
 
 	/**
-	 * 通用全屏编辑器。
-	 *
-	 * storage 协议：
-	 * - editor_mode: text | file，默认 text
-	 * - editor_title: 导航标题
-	 * - editor_placeholder: 占位提示
-	 * - editor_target: 调用方标识
-	 * - text 模式：editor_content -> editor_result，保存后 editor_result_ready = true
-	 * - file 模式：editor_file_path，保存后直接写文件并设置 editor_saved = true
+	 * 通用全屏编辑路由适配器。
+	 * UI 由 FullscreenTextEditor 组件提供；本页只处理 storage/file 模式。
 	 */
 	export default {
 		data() {
@@ -60,7 +39,6 @@
 			this.loadEditorConfig()
 		},
 		methods: {
-			/** 读取调用方配置并加载初始文本 */
 			loadEditorConfig() {
 				const rawMode = uni.getStorageSync('editor_mode') as string | null
 				this.mode = rawMode == 'file' ? 'file' : 'text'
@@ -146,36 +124,43 @@
 				return result
 			},
 
-			/** 检查是否恢复草稿 */
 			restoreDraftIfNeeded(content: string) {
 				if (this.readOnly == true) {
 					return
 				}
 				const legacyDraft = uni.getStorageSync('editor_draft') as string | null
 				const scopedDraft = uni.getStorageSync(this.draftKey) as string | null
-				const draft = scopedDraft != null && scopedDraft != '' ? scopedDraft : legacyDraft
-				if (draft != null && draft != '' && draft != content) {
-					uni.showModal({
-						title: '恢复草稿',
-						content: '检测到上次未保存的内容，是否继续编辑？',
-						cancelText: '放弃草稿',
-						confirmText: '继续编辑',
-						success: (res) => {
-							if (res.confirm == true) {
-								this.editText = draft
-								this.dirty = this.editText != this.initialText
-							} else {
-								this.clearDraft()
-								this.editText = content
-								this.dirty = false
+				let draft = legacyDraft
+				if (scopedDraft != null) {
+					if (scopedDraft != '') {
+						draft = scopedDraft
+					}
+				}
+				if (draft != null) {
+					const safeDraft = draft as string
+					if (safeDraft != '' && safeDraft != content) {
+						uni.showModal({
+							title: '恢复草稿',
+							content: '检测到上次未保存的内容，是否继续编辑？',
+							cancelText: '放弃草稿',
+							confirmText: '继续编辑',
+							success: (res) => {
+								if (res.confirm == true) {
+									this.editText = safeDraft
+									this.dirty = this.editText != this.initialText
+								} else {
+									this.clearDraft()
+									this.editText = content
+									this.dirty = false
+								}
 							}
-						}
-					})
+						})
+					}
 				}
 			},
 
-			/** 输入变化时自动保存草稿 */
-			onInput() {
+			onEditorChange(value: string) {
+				this.editText = value
 				this.dirty = this.editText != this.initialText
 				this.saveDraft()
 			},
@@ -185,7 +170,6 @@
 					return
 				}
 				uni.setStorageSync(this.draftKey, this.editText)
-				// 兼容旧调用方/旧草稿。
 				uni.setStorageSync('editor_draft', this.editText)
 			},
 
@@ -215,7 +199,8 @@
 				})
 			},
 
-			saveAndBack() {
+			saveAndBack(value: string) {
+				this.editText = value
 				if (this.readOnly == true) {
 					uni.navigateBack()
 					return
@@ -257,55 +242,3 @@
 		}
 	}
 </script>
-
-<style>
-	.page-shell {
-		flex: 1;
-		background-color: #FFFFFF;
-	}
-
-	.editor-wrap {
-		flex: 1;
-		background-color: #FFFFFF;
-		padding: 24rpx 28rpx 18rpx;
-	}
-
-	.editor-meta {
-		padding: 0 0 18rpx 0;
-	}
-
-	.editor-meta-text {
-		font-size: 22rpx;
-		color: #9CA3AF;
-		lines: 1;
-		text-overflow: ellipsis;
-	}
-
-	.editor-input {
-		flex: 1;
-		font-size: 30rpx;
-		color: #111827;
-		line-height: 48rpx;
-		padding: 0;
-		background-color: transparent;
-	}
-
-	.editor-footer {
-		flex-direction: row;
-		align-items: center;
-		justify-content: space-between;
-		padding-top: 16rpx;
-	}
-
-	.footer-text {
-		font-size: 22rpx;
-		color: #9CA3AF;
-	}
-
-	.done-btn {
-		font-size: 30rpx;
-		color: #FFFFFF;
-		font-weight: bold;
-		padding: 16rpx 8rpx;
-	}
-</style>

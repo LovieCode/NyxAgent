@@ -1,0 +1,147 @@
+<template>
+	<view class="page-shell rice-theme-light">
+		<NavBar :title="title" showBack @back="handleBack">
+			<template #right>
+				<text v-if="readOnly == false" class="done-btn" @click="handleSave">{{ saveText }}</text>
+			</template>
+		</NavBar>
+		<view class="editor-wrap">
+			<slot name="header"></slot>
+			<view class="editor-meta" v-if="subtitle != ''">
+				<text class="editor-meta-text">{{ subtitle }}</text>
+			</view>
+			<textarea
+				class="editor-input"
+				v-model="localText"
+				:disabled="readOnly"
+				:placeholder="placeholder"
+				placeholder-style="color:#D1D5DB;font-size:30rpx;"
+				:auto-height="false"
+				@input="handleInput"
+			/>
+			<view class="editor-footer">
+				<text class="footer-text">{{ dirty ? '未保存' : '已同步' }}</text>
+				<text class="footer-text">{{ localText.length }} 字</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	/**
+	 * 通用全屏文本编辑组件。
+	 * 只负责编辑体验，不碰 storage / 文件系统 / 业务保存。
+	 */
+	export default {
+		name: 'FullscreenTextEditor',
+		props: {
+			title: {
+				type: String,
+				default: '编辑'
+			},
+			subtitle: {
+				type: String,
+				default: ''
+			},
+			value: {
+				type: String,
+				default: ''
+			},
+			placeholder: {
+				type: String,
+				default: '输入内容...'
+			},
+			readOnly: {
+				type: Boolean,
+				default: false
+			},
+			dirty: {
+				type: Boolean,
+				default: false
+			},
+			saveText: {
+				type: String,
+				default: '保存'
+			}
+		},
+		emits: ['change', 'save', 'back'],
+		data() {
+			return {
+				localText: '' as string,
+			}
+		},
+		watch: {
+			value(newVal: string, oldVal: string) {
+				if (newVal != this.localText) {
+					this.localText = newVal
+				}
+			}
+		},
+		created() {
+			this.localText = this.value
+		},
+		methods: {
+			handleInput() {
+				this.$emit('change', this.localText)
+			},
+			handleSave() {
+				this.$emit('save', this.localText)
+			},
+			handleBack() {
+				this.$emit('back')
+			},
+		}
+	}
+</script>
+
+<style>
+	.page-shell {
+		flex: 1;
+		background-color: #FFFFFF;
+	}
+
+	.editor-wrap {
+		flex: 1;
+		background-color: #FFFFFF;
+		padding: 24rpx 28rpx 18rpx;
+	}
+
+	.editor-meta {
+		padding: 0 0 18rpx 0;
+	}
+
+	.editor-meta-text {
+		font-size: 22rpx;
+		color: #9CA3AF;
+		lines: 1;
+		text-overflow: ellipsis;
+	}
+
+	.editor-input {
+		flex: 1;
+		font-size: 30rpx;
+		color: #111827;
+		line-height: 48rpx;
+		padding: 0;
+		background-color: transparent;
+	}
+
+	.editor-footer {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding-top: 16rpx;
+	}
+
+	.footer-text {
+		font-size: 22rpx;
+		color: #9CA3AF;
+	}
+
+	.done-btn {
+		font-size: 30rpx;
+		color: #FFFFFF;
+		font-weight: bold;
+		padding: 16rpx 8rpx;
+	}
+</style>

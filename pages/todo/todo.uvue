@@ -166,38 +166,6 @@
 
 				<!-- 添加笔记 FAB -->
 				<rice-float-fab icon="plus" bg-color="#FB8FAB" :gap-bottom="80" @click="createNote" />
-
-				<!-- 编辑笔记弹窗 -->
-				<rice-dialog
-					v-model:show="isEditingNote"
-					:title="editingNoteId == '' ? '新建笔记' : '编辑笔记'"
-					confirm-button-text="保存"
-					@confirm="saveNote"
-					@cancel="cancelEditNote"
-				>
-					<rice-input v-model="editingNoteTitle" placeholder="笔记标题" border="none" />
-					<view class="agent-selector" v-if="agents.length > 0">
-						<text class="form-label">所属智能体</text>
-						<view class="agent-options">
-							<view
-								v-for="(agent, agIdx) in agents"
-								:key="'ne-' + agIdx"
-								:class="['agent-option', editingNoteAgentIndex == agIdx ? 'agent-option-active' : '']"
-								@click="editingNoteAgentIndex = agIdx"
-							>
-								<text class="agent-option-text">{{ agent['name'] }}</text>
-							</view>
-						</view>
-					</view>
-					<view style="height: 16rpx;"></view>
-					<view class="note-full-editor-card" @click="openNoteContentEditor">
-						<view class="note-full-editor-header">
-							<text class="form-label">笔记内容</text>
-							<text class="note-full-editor-action">全屏编辑</text>
-						</view>
-						<text class="note-full-editor-preview">{{ getEditingNoteContentPreview() }}</text>
-					</view>
-				</rice-dialog>
 			</view>
 		</view>
 		<TabBar current="pages/todo/todo" />
@@ -241,11 +209,6 @@
 				// 笔记数据
 				notes: [] as UTSJSONObject[],
 				searchQuery: '' as string,
-				isEditingNote: false as boolean,
-				editingNoteId: '' as string,
-				editingNoteTitle: '' as string,
-				editingNoteContent: '' as string,
-				editingNoteAgentIndex: 0 as number
 			}
 		},
 		computed: {
@@ -279,10 +242,10 @@
 			this.loadNotes()
 		},
 		onShow() {
-			this.consumeEditorResult()
 			this.loadAgents()
 			this.loadTodos()
 			this.loadNotes()
+			this.consumeNoteEditorResult()
 		},
 		methods: {
 			/** 加载 agent 列表（预置用户条目在最前） */
@@ -608,143 +571,147 @@
 				return countInlineTodos(content)
 			},
 
-			consumeEditorResult() {
-				const ready = uni.getStorageSync('editor_result_ready') as string | null
-				if (ready != 'true') {
-					return
-				}
-				const target = uni.getStorageSync('editor_target') as string | null
-				if (target != 'todo-note-content') {
-					return
-				}
-				const result = uni.getStorageSync('editor_result') as string | null
-				this.editingNoteContent = result != null ? result : ''
-				uni.removeStorageSync('editor_result')
-				uni.removeStorageSync('editor_result_ready')
-				uni.removeStorageSync('editor_target')
-				uni.removeStorageSync('editor_mode')
-				uni.removeStorageSync('editor_title')
-				uni.removeStorageSync('editor_content')
-				uni.removeStorageSync('editor_placeholder')
+			clearNoteEditorStorage() {
+				uni.removeStorageSync('note_editor_id')
+				uni.removeStorageSync('note_editor_title')
+				uni.removeStorageSync('note_editor_content')
+				uni.removeStorageSync('note_editor_agent_id')
+				uni.removeStorageSync('note_editor_result')
 			},
 
-			clearEditorStorage() {
-				uni.removeStorageSync('editor_mode')
-				uni.removeStorageSync('editor_title')
-				uni.removeStorageSync('editor_content')
-				uni.removeStorageSync('editor_result')
-				uni.removeStorageSync('editor_result_ready')
-				uni.removeStorageSync('editor_target')
-				uni.removeStorageSync('editor_file_path')
-				uni.removeStorageSync('editor_saved')
-				uni.removeStorageSync('editor_saved_path')
-				uni.removeStorageSync('editor_readonly')
-				uni.removeStorageSync('editor_placeholder')
-				uni.removeStorageSync('editor_draft')
-			},
-
-			getEditingNoteContentPreview(): string {
-				const content = this.editingNoteContent.trim()
-				if (content == '') {
-					return '点击打开全屏编辑器，支持 - [ ] 待办 / - [x] 完成'
-				}
-				if (content.length > 120) {
-					return content.substring(0, 120) + '...'
-				}
-				return content
-			},
-
-			openNoteContentEditor() {
-				this.clearEditorStorage()
-				uni.setStorageSync('editor_mode', 'text')
-				uni.setStorageSync('editor_content', this.editingNoteContent)
-				uni.setStorageSync('editor_title', '编辑笔记内容')
-				uni.setStorageSync('editor_target', 'todo-note-content')
-				uni.setStorageSync('editor_placeholder', '笔记内容，支持 - [ ] 待办 / - [x] 完成')
+			openNoteEditor(noteId: string, title: string, content: string, agentId: string) {
+				this.clearNoteEditorStorage()
+				uni.setStorageSync('note_editor_id', noteId)
+				uni.setStorageSync('note_editor_title', title)
+				uni.setStorageSync('note_editor_content', content)
+				uni.setStorageSync('note_editor_agent_id', agentId)
 				uni.navigateTo({
-					url: '/pages/common/editor/editor'
+					url: '/pages/note-editor/note-editor'
 				})
+			},
+
+			consumeNoteEditorResult() {
+				const raw = uni.getStorageSync('note_editor_result') as string | null
+				if (raw == null || raw == '') {
+					return
+				}
+
+				uni.removeStorageSync('note_editor_result')
+
+				try {
+					const payload = JSON.parse(raw) as UTSJSONObject
+					const noteIdValue = payload['id'] as string | null
+					const titleValue = payload['title'] as string | null
+					const contentValue = payload['content'] as string | null
+					const agentIdValue = payload['agentId'] as string | null
+					const agentNameValue = payload['agentName'] as string | null
+
+					let noteId = ''
+					if (noteIdValue != null) {
+						noteId = noteIdValue
+					}
+					let title = ''
+					if (titleValue != null) {
+						title = titleValue.trim()
+					}
+					if (title == '') {
+						title = '无标题'
+					}
+					let content = ''
+					if (contentValue != null) {
+						content = contentValue
+					}
+					if (content.trim() == '') {
+						return
+					}
+					let agentId = '__user__'
+					if (agentIdValue != null) {
+						if (agentIdValue != '') {
+							agentId = agentIdValue
+						}
+					}
+					let agentName = ''
+					if (agentNameValue != null) {
+						agentName = agentNameValue
+					}
+					if (agentName == '') {
+						agentName = '用户'
+					}
+					const timeStr = this.formatNow()
+
+					if (noteId == '') {
+						const newNote = {
+							id: '' + Date.now(),
+							title: title,
+							content: content,
+							updatedAt: timeStr,
+							agentId: agentId,
+							agentName: agentName
+						} as UTSJSONObject
+						this.notes.unshift(newNote)
+					} else {
+						let updated = false
+						for (let i = 0; i < this.notes.length; i++) {
+							if ((this.notes[i]['id'] as string) == noteId) {
+								this.notes[i]['title'] = title
+								this.notes[i]['content'] = content
+								this.notes[i]['updatedAt'] = timeStr
+								this.notes[i]['agentId'] = agentId
+								this.notes[i]['agentName'] = agentName
+								updated = true
+								break
+							}
+						}
+						if (!updated) {
+							const restoredNote = {
+								id: noteId,
+								title: title,
+								content: content,
+								updatedAt: timeStr,
+								agentId: agentId,
+								agentName: agentName
+							} as UTSJSONObject
+							this.notes.unshift(restoredNote)
+						}
+					}
+
+					this.saveNotes()
+					uni.showToast({ position: 'bottom',
+						title: '已保存',
+						icon: 'success'
+					})
+				} catch (_e: any) {
+				}
 			},
 
 			createNote() {
-				this.editingNoteId = ''
-				this.editingNoteTitle = ''
-				this.editingNoteContent = ''
-				this.editingNoteAgentIndex = 0
-				this.isEditingNote = true
+				this.openNoteEditor('', '', '', '__user__')
 			},
 
 			editNote(note : UTSJSONObject) {
-				this.editingNoteId = note['id'] as string
-				this.editingNoteTitle = note['title'] as string
-				this.editingNoteContent = note['content'] as string
-				// 查找 agent 索引
-				const noteAgentId = note['agentId'] as string
-				let foundIdx = 0
-				for (let ai = 0; ai < this.agents.length; ai++) {
-					if ((this.agents[ai]['id'] as string) == noteAgentId) {
-						foundIdx = ai
-						break
+				const noteIdValue = note['id'] as string | null
+				const titleValue = note['title'] as string | null
+				const contentValue = note['content'] as string | null
+				const agentIdValue = note['agentId'] as string | null
+				let noteId = ''
+				if (noteIdValue != null) {
+					noteId = noteIdValue
+				}
+				let title = ''
+				if (titleValue != null) {
+					title = titleValue
+				}
+				let content = ''
+				if (contentValue != null) {
+					content = contentValue
+				}
+				let agentId = '__user__'
+				if (agentIdValue != null) {
+					if (agentIdValue != '') {
+						agentId = agentIdValue
 					}
 				}
-				this.editingNoteAgentIndex = foundIdx
-				this.isEditingNote = true
-			},
-
-			cancelEditNote() {
-				this.isEditingNote = false
-			},
-
-			saveNote() {
-				let title = this.editingNoteTitle.trim()
-				if (title == '') {
-					title = '无标题'
-				}
-				const rawContent = this.editingNoteContent
-				if (rawContent.trim() == '') {
-					uni.showToast({ position: 'bottom',
-						title: '请输入内容',
-						icon: 'none'
-					})
-					return
-				}
-				let content = rawContent
-				let timeStr = this.formatNow()
-
-				// 确定所属 agent
-				let targetAgent: UTSJSONObject | null = null
-				if (this.editingNoteAgentIndex >= 0 && this.editingNoteAgentIndex < this.agents.length) {
-					targetAgent = this.agents[this.editingNoteAgentIndex]
-				}
-				const agentId = targetAgent != null ? (targetAgent['id'] as string) : ''
-				const agentName = targetAgent != null ? (targetAgent['name'] as string) : ''
-
-				if (this.editingNoteId == '') {
-					let newNote = {
-						id: '' + Date.now(),
-						title: title,
-						content: content,
-						updatedAt: timeStr,
-						agentId: agentId,
-						agentName: agentName
-					} as UTSJSONObject
-					this.notes.unshift(newNote)
-				} else {
-					for (let i = 0; i < this.notes.length; i++) {
-						if ((this.notes[i]['id'] as string) == this.editingNoteId) {
-							this.notes[i]['title'] = title
-							this.notes[i]['content'] = content
-							this.notes[i]['updatedAt'] = timeStr
-							break
-						}
-					}
-				}
-				this.saveNotes()
-				this.isEditingNote = false
-				uni.showToast({ position: 'bottom',
-					title: '已保存',
-					icon: 'success'
-				})
+				this.openNoteEditor(noteId, title, content, agentId)
 			},
 
 			confirmDeleteNote(id : string) {
@@ -1022,35 +989,6 @@
 		margin-left: 12rpx;
 	}
 
-	.note-full-editor-card {
-		background-color: #F9FAFB;
-		border-radius: 14rpx;
-		border-width: 2rpx;
-		border-style: solid;
-		border-color: #E5E7EB;
-		padding: 18rpx;
-	}
-
-	.note-full-editor-header {
-		flex-direction: row;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 12rpx;
-	}
-
-	.note-full-editor-action {
-		font-size: 24rpx;
-		color: #DB2777;
-		font-weight: bold;
-	}
-
-	.note-full-editor-preview {
-		font-size: 26rpx;
-		color: #6B7280;
-		line-height: 40rpx;
-		lines: 4;
-		text-overflow: ellipsis;
-	}
 
 	/* ===== Agent 分组头 ===== */
 	.agent-section-header {

@@ -22,6 +22,12 @@
 			}
 		},
 		{
+			"path": "pages/note-editor/note-editor",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/files/files",
 			"style": {
 				"navigationStyle": "custom"

@@ -1,0 +1,254 @@
+<template>
+	<FullscreenTextEditor
+		:title="pageTitle"
+		:subtitle="subtitle"
+		:value="noteContent"
+		placeholder="笔记内容，支持 - [ ] 待办 / - [x] 完成"
+		:dirty="dirty"
+		@change="onContentChange"
+		@save="saveAndBack"
+		@back="onBack"
+	>
+		<template #header>
+			<view class="note-meta-panel">
+				<input class="title-input" v-model="noteTitle" placeholder="笔记标题" placeholder-style="color:#D1D5DB;font-size:30rpx;" @input="markDirty" />
+				<view class="agent-block" v-if="agents.length > 0">
+					<text class="form-label">所属</text>
+					<scroll-view class="agent-scroll" :scroll-x="true" :show-scrollbar="false">
+						<view class="agent-options">
+							<view
+								v-for="(agent, index) in agents"
+								:key="agent['id'] as string"
+								:class="['agent-option', selectedAgentIndex == index ? 'agent-option-active' : '']"
+								@click="selectAgent(index)"
+							>
+								<text class="agent-option-text">{{ agent['name'] }}</text>
+							</view>
+						</view>
+					</scroll-view>
+				</view>
+			</view>
+		</template>
+	</FullscreenTextEditor>
+</template>
+
+<script lang="uts">
+	import { getAgents } from '@/utils/agent.uts'
+
+	const USER_AGENT_ENTRY: UTSJSONObject = {
+		id: '__user__',
+		name: '用户',
+	} as UTSJSONObject
+
+	export default {
+		data() {
+			return {
+				noteId: '' as string,
+				noteTitle: '' as string,
+				noteContent: '' as string,
+				initialTitle: '' as string,
+				initialContent: '' as string,
+				initialAgentId: '' as string,
+				agents: [] as UTSJSONObject[],
+				selectedAgentIndex: 0 as number,
+				dirty: false as boolean,
+			}
+		},
+		computed: {
+			pageTitle(): string {
+				return this.noteId == '' ? '新建笔记' : '编辑笔记'
+			},
+			subtitle(): string {
+				const name = this.getSelectedAgentName()
+				return name != '' ? '保存到：' + name : ''
+			}
+		},
+		onLoad() {
+			this.loadAgents()
+			this.loadEditorPayload()
+		},
+		methods: {
+			loadAgents() {
+				const list = getAgents()
+				const result = [USER_AGENT_ENTRY] as UTSJSONObject[]
+				for (let i = 0; i < list.length; i++) {
+					result.push(list[i])
+				}
+				this.agents = result
+			},
+
+			loadEditorPayload() {
+				const rawId = uni.getStorageSync('note_editor_id') as string | null
+				const rawTitle = uni.getStorageSync('note_editor_title') as string | null
+				const rawContent = uni.getStorageSync('note_editor_content') as string | null
+				const rawAgentId = uni.getStorageSync('note_editor_agent_id') as string | null
+				this.noteId = rawId != null ? rawId : ''
+				this.noteTitle = rawTitle != null ? rawTitle : ''
+				this.noteContent = rawContent != null ? rawContent : ''
+				this.initialTitle = this.noteTitle
+				this.initialContent = this.noteContent
+				let agentId = '__user__'
+				if (rawAgentId != null) {
+					if (rawAgentId != '') {
+						agentId = rawAgentId
+					}
+				}
+				this.initialAgentId = agentId
+				this.selectedAgentIndex = this.findAgentIndex(this.initialAgentId)
+				this.dirty = false
+			},
+
+			findAgentIndex(agentId: string): number {
+				for (let i = 0; i < this.agents.length; i++) {
+					if ((this.agents[i]['id'] as string) == agentId) {
+						return i
+					}
+				}
+				return 0
+			},
+
+			getSelectedAgentId(): string {
+				if (this.selectedAgentIndex >= 0 && this.selectedAgentIndex < this.agents.length) {
+					return this.agents[this.selectedAgentIndex]['id'] as string
+				}
+				return '__user__'
+			},
+
+			getSelectedAgentName(): string {
+				if (this.selectedAgentIndex >= 0 && this.selectedAgentIndex < this.agents.length) {
+					return this.agents[this.selectedAgentIndex]['name'] as string
+				}
+				return '用户'
+			},
+
+			selectAgent(index: number) {
+				if (index < 0 || index >= this.agents.length) {
+					return
+				}
+				this.selectedAgentIndex = index
+				this.updateDirty()
+			},
+
+			onContentChange(value: string) {
+				this.noteContent = value
+				this.updateDirty()
+			},
+
+			markDirty() {
+				this.updateDirty()
+			},
+
+			updateDirty() {
+				this.dirty = this.noteTitle != this.initialTitle || this.noteContent != this.initialContent || this.getSelectedAgentId() != this.initialAgentId
+			},
+
+			onBack() {
+				if (this.dirty == false) {
+					uni.navigateBack()
+					return
+				}
+				uni.showModal({
+					title: '放弃编辑？',
+					content: '笔记尚未保存',
+					cancelText: '继续编辑',
+					confirmText: '放弃',
+					confirmColor: '#EF4444',
+					success: (res) => {
+						if (res.confirm == true) {
+							uni.navigateBack()
+						}
+					}
+				})
+			},
+
+			saveAndBack(value: string) {
+				this.noteContent = value
+				let title = this.noteTitle.trim()
+				if (title == '') {
+					title = '无标题'
+				}
+				if (this.noteContent.trim() == '') {
+					uni.showToast({ position: 'bottom', title: '请输入内容', icon: 'none' })
+					return
+				}
+				const payload: UTSJSONObject = {
+					id: this.noteId,
+					title: title,
+					content: this.noteContent,
+					agentId: this.getSelectedAgentId(),
+					agentName: this.getSelectedAgentName(),
+				} as UTSJSONObject
+				uni.setStorageSync('note_editor_result', JSON.stringify(payload))
+				this.clearEditorPayload()
+				this.dirty = false
+				uni.navigateBack()
+			},
+
+			clearEditorPayload() {
+				uni.removeStorageSync('note_editor_id')
+				uni.removeStorageSync('note_editor_title')
+				uni.removeStorageSync('note_editor_content')
+				uni.removeStorageSync('note_editor_agent_id')
+			},
+		}
+	}
+</script>
+
+<style>
+	.note-meta-panel {
+		background-color: #FFF7FA;
+		border-radius: 18rpx;
+		padding: 22rpx;
+		margin-bottom: 20rpx;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: #FCE7F3;
+	}
+
+	.title-input {
+		font-size: 34rpx;
+		font-weight: bold;
+		color: #111827;
+		padding: 0 0 18rpx 0;
+		background-color: transparent;
+	}
+
+	.agent-block {
+		margin-top: 4rpx;
+	}
+
+	.form-label {
+		font-size: 24rpx;
+		color: #6B7280;
+		margin-bottom: 10rpx;
+	}
+
+	.agent-scroll {
+		width: 100%;
+	}
+
+	.agent-options {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.agent-option {
+		padding: 10rpx 24rpx;
+		border-radius: 999rpx;
+		background-color: #FFFFFF;
+		margin-right: 12rpx;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: #F3D5E1;
+	}
+
+	.agent-option-active {
+		border-color: #DB2777;
+		background-color: #FDE8EF;
+	}
+
+	.agent-option-text {
+		font-size: 25rpx;
+		color: #374151;
+	}
+</style>
