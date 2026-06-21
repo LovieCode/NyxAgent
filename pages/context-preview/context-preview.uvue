@@ -827,7 +827,7 @@
 
 	.summary-param-pill {
 		flex: 1;
-		background-color: #FFF7FA;
+		background-color: #F8FAFC;
 		border-radius: 16rpx;
 		padding: 15rpx 8rpx;
 		margin-right: 8rpx;
@@ -858,7 +858,7 @@
 
 	.summary-metric {
 		flex: 1;
-		background-color: #FFF7FA;
+		background-color: #F8FAFC;
 		border-radius: 18rpx;
 		padding: 18rpx 8rpx;
 		margin-right: 8rpx;
@@ -892,7 +892,7 @@
 	}
 
 	.last-call-panel {
-		background-color: #FFFBFC;
+		background-color: #F9FAFB;
 		border-radius: 20rpx;
 		padding: 20rpx;
 		margin-top: 0;
@@ -940,7 +940,7 @@
 
 	.last-call-token {
 		flex: 1;
-		background-color: #FFF7FA;
+		background-color: #F8FAFC;
 		border-radius: 16rpx;
 		padding: 14rpx;
 		margin-right: 10rpx;
