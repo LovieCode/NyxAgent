@@ -64,7 +64,7 @@
 							<text class="summary-metric-value">{{messageCount}}</text>
 							<text class="summary-metric-label">发送消息 / 原始 {{totalMessages}}</text>
 						</view>
-						<view class="summary-metric">
+						<view class="summary-metric summary-metric-last">
 							<text class="summary-metric-value">≈ {{totalTokens}}</text>
 							<text class="summary-metric-label">上下文 Token（估算）</text>
 						</view>
@@ -695,14 +695,12 @@
 	}
 
 	.summary-card {
-		padding-bottom: 20rpx;
+		padding-bottom: 22rpx;
 	}
 
 	.summary-section {
-		background-color: #F9FAFB;
-		border-radius: 22rpx;
-		padding: 24rpx;
-		margin-bottom: 18rpx;
+		padding: 0;
+		margin-bottom: 28rpx;
 	}
 
 	.summary-section-last {
@@ -710,10 +708,10 @@
 	}
 
 	.summary-section-title {
-		font-size: 24rpx;
+		font-size: 25rpx;
 		font-weight: bold;
-		color: #6B7280;
-		margin-bottom: 16rpx;
+		color: #A8556F;
+		margin-bottom: 14rpx;
 	}
 
 	.summary-row {
@@ -752,9 +750,9 @@
 
 	.summary-param-pill {
 		flex: 1;
-		background-color: #FFFFFF;
+		background-color: #FFF7FA;
 		border-radius: 16rpx;
-		padding: 14rpx 8rpx;
+		padding: 15rpx 8rpx;
 		margin-right: 8rpx;
 		align-items: center;
 	}
@@ -783,10 +781,14 @@
 
 	.summary-metric {
 		flex: 1;
-		background-color: #FFFFFF;
+		background-color: #FFF7FA;
 		border-radius: 18rpx;
 		padding: 20rpx 16rpx;
 		margin-right: 12rpx;
+	}
+
+	.summary-metric-last {
+		margin-right: 0;
 	}
 
 	.summary-metric-value {
@@ -813,10 +815,10 @@
 	}
 
 	.last-call-panel {
-		background-color: #FFFFFF;
+		background-color: #FFFBFC;
 		border-radius: 20rpx;
-		padding: 22rpx;
-		margin-top: 8rpx;
+		padding: 20rpx;
+		margin-top: 0;
 	}
 
 	.last-call-head {
@@ -861,7 +863,7 @@
 
 	.last-call-token {
 		flex: 1;
-		background-color: #F0FDF4;
+		background-color: #FFF7FA;
 		border-radius: 16rpx;
 		padding: 14rpx;
 		margin-right: 10rpx;
