@@ -22,14 +22,7 @@
 
 ## 开发
 
-```bash
-# 安装依赖
-npm install
-
-# HBuilderX 中运行/打包
-```
-
-项目需使用 [HBuilderX](https://www.dcloud.io/hbuilderx.html) 打开并运行。
+使用 [HBuilderX](https://www.dcloud.io/hbuilderx.html) 打开项目根目录即可运行/打包。
 
 ## 许可
 
