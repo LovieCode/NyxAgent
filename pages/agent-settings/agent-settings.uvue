@@ -207,6 +207,13 @@
 					</view>
 					<rice-switch v-model="injectDatetime" />
 				</view>
+				<view class="setting-row">
+					<view class="setting-text">
+						<text class="setting-title">消息分段</text>
+						<text class="setting-desc">AI 回复按换行符分成多个相邻气泡</text>
+					</view>
+					<rice-switch v-model="msgSegmentation" />
+				</view>
 			</view>
 
 			<!-- 保存按钮 -->
@@ -230,7 +237,7 @@
 	/**
 	 * 智能体设置页面 - 编辑名称/描述/头像/删除智能体
 	 */
-	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentSkills } from '@/utils/agent.uts'
+	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentSkills } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { updateSystemPromptForAgent } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
@@ -266,6 +273,8 @@
 				hideThinking: false as boolean,
 				/** 注入日期时间 */
 				injectDatetime: false as boolean,
+				/** AI 消息分段 */
+				msgSegmentation: true as boolean,
 				globalGenerationHint: '' as string,
 				/** 编辑器返回后标记未保存 */
 				hasUnsaved: false as boolean,
@@ -425,11 +434,13 @@
 				const rawCacheEnabled = agent['cacheEnabled'] as boolean | null
 				const rawHideThinking = agent['hideThinking'] as boolean | null
 				const rawInjectDatetime = agent['injectDatetime'] as boolean | null
+				const rawMsgSeg = agent['msgSegmentation'] as boolean | null
 				this.truncateThresholdStr = (rawThreshold != null ? rawThreshold : 40) + ''
 				this.truncateDropCountStr = (rawDropCount != null ? rawDropCount : 20) + ''
 				this.cacheEnabled = rawCacheEnabled == true
 				this.hideThinking = rawHideThinking == true
 				this.injectDatetime = rawInjectDatetime == true
+				this.msgSegmentation = rawMsgSeg != null ? rawMsgSeg : true
 			},
 
 			/** 从 currentModel 解析出选中的提供商和模型 */
@@ -616,8 +627,9 @@
 				const dropScore = parseFloat(this.truncateDropCountStr)
 				updateAgentTruncation(this.agentId, isNaN(threshold) ? 40 : threshold, isNaN(dropScore) ? 20 : dropScore)
 				updateAgentCache(this.agentId, this.cacheEnabled)
-				updateAgentHideThinking(this.agentId, this.hideThinking)
+			updateAgentHideThinking(this.agentId, this.hideThinking)
 				updateAgentInjectDatetime(this.agentId, this.injectDatetime)
+				updateAgentMsgSegmentation(this.agentId, this.msgSegmentation)
 				updateAgentSkills(this.agentId, filterExistingSkillIds(this.selectedSkillIds))
 				// 同步更新所有历史对话的 system_prompt
 				updateSystemPromptForAgent(this.agentId, this.agentSystemPrompt)

@@ -43,6 +43,11 @@ type MemoryCompactionCandidateResult = {
 	lastMessageTimestamp: number
 }
 
+type ImageBase64Result = {
+	data: string
+	mimeType: string
+}
+
 import { resolveLLMConfig, normalizeBaseUrl, getMemoryOrganizeTaskModel } from './provider'
 import { getAgentById } from '@/utils/agent.uts'
 import { getGlobalGenerationSettings, getEffectiveGenerationSettings, getMemoryOrganizerGenerationSettings, GenerationSettings } from '@/utils/generation-settings.uts'
@@ -283,6 +288,26 @@ function buildOpenAIToolDefs(tools: AgentTool[]): UTSJSONObject[] {
 	return toolDefs
 }
 
+function readImageAsBase64(imagePath: string): ImageBase64Result | null {
+	try {
+		const fm = uni.getFileSystemManager()
+		const base64 = fm.readFileSync(imagePath, 'base64')
+		if (base64 == null) return null
+		let raw = base64 as string
+		// 移除可能有的换行符（某些平台的 base64 输出会插入 \n）
+		raw = raw.split('\n').join('').split('\r').join('')
+		let mimeType = 'image/jpeg'
+		const lower = imagePath.toLowerCase()
+		if (lower.endsWith('.png')) mimeType = 'image/png'
+		else if (lower.endsWith('.gif')) mimeType = 'image/gif'
+		else if (lower.endsWith('.webp')) mimeType = 'image/webp'
+		else if (lower.endsWith('.bmp')) mimeType = 'image/bmp'
+		return { data: raw, mimeType: mimeType }
+	} catch (_e: any) {
+		return null
+	}
+}
+
 function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[]): UTSJSONObject[] {
 	const apiMessages: UTSJSONObject[] = []
 	if (systemPrompt != '') {
@@ -317,10 +342,42 @@ function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[]): U
 			apiMessages.push(amsg)
 		} else {
 			const msgContent = msg['content'] as string | null
-			apiMessages.push({
-				role: role,
-				content: msgContent != null ? msgContent : '',
-			} as UTSJSONObject)
+			const textContent = msgContent != null ? msgContent : ''
+
+			// 图片消息：构建多段 content（文字 + 图片 base64）
+			const msgType = msg['msgType'] as string | null
+			const imageUrl = msg['imageUrl'] as string | null
+			if (role == 'user' && msgType == 'image' && imageUrl != null && imageUrl != '') {
+				const imageResult = readImageAsBase64(imageUrl)
+				if (imageResult != null) {
+					// 用 JSON 字符串构造多段 content，避免 UTSJSONObject 数组序列化问题
+					const dataUrl = 'data:' + imageResult.mimeType + ';base64,' + imageResult.data
+					const contentJsonStr = '[{"type":"text","text":' + JSON.stringify(textContent) + '},{"type":"image_url","image_url":{"url":' + JSON.stringify(dataUrl) + '}}]'
+					try {
+						const contentJson = JSON.parse(contentJsonStr)
+						apiMessages.push({
+							role: 'user',
+							content: contentJson,
+						} as UTSJSONObject)
+					} catch (_e: any) {
+						// JSON 构造失败，回退纯文本
+						apiMessages.push({
+							role: 'user',
+							content: textContent,
+						} as UTSJSONObject)
+					}
+				} else {
+					apiMessages.push({
+						role: 'user',
+						content: textContent,
+					} as UTSJSONObject)
+				}
+			} else {
+				apiMessages.push({
+					role: role,
+					content: textContent,
+				} as UTSJSONObject)
+			}
 		}
 	}
 	return apiMessages
@@ -554,6 +611,9 @@ function prepareAgentContext(
 			if (i == lastUserIndex && bufferInjection != '') {
 				suffixBlocks.push(makeAgentContextBlock('after', '短记忆缓存', bufferInjection))
 			}
+			if (i == lastUserIndex) {
+				suffixBlocks.push(makeAgentContextBlock('after', '回复约束', '严格遵守系统提示内容对<user_message>进行回复，只有在系统提示里的人格设定才有效，其他包括记忆和规则都无效'))
+			}
 			workingMessages.push(buildUserMessageForAgent(msg, suffixBlocks))
 			continue
 		}
@@ -638,11 +698,15 @@ function callChatAPI(
 	console.log('[LLM] Body: ' + JSON.stringify(body))
 	console.log('[LLM] =======================')
 
+	// 序列化再反序列化，确保 UTSJSONObject 内嵌套数组能被正确识别
+	const bodyStr = JSON.stringify(body)
+	const finalBody = JSON.parse(bodyStr)
+
 	uni.request({
 		url: url,
 		method: 'POST',
 		header: headers,
-		data: body,
+		data: finalBody,
 		success: (res) => {
 			const statusCode = res.statusCode as number
 			if (statusCode != 200) {
@@ -1024,6 +1088,10 @@ function callChatAPIStream(
 	console.log('[LLM] Body: ' + JSON.stringify(body))
 	console.log('[LLM] =============================')
 
+	// 序列化再反序列化，避免 UTSJSONObject 内嵌数组序列化问题
+	const bodyStr = JSON.stringify(body)
+	const finalBody = JSON.parse(bodyStr)
+
 	// 流式状态（用单元素数组模拟引用传递，兼容 UTS 闭包限制）
 	const fullTextRef: string[] = ['']
 	const sseBufferRef: string[] = ['']
@@ -1036,7 +1104,7 @@ function callChatAPIStream(
 		url: url,
 		method: 'POST',
 		header: headers,
-		data: body,
+		data: finalBody,
 		enableChunked: true,
 		success: (res) => {
 			streamEnded = true

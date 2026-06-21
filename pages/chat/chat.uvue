@@ -51,6 +51,7 @@
 					:toolName="msg.toolName != null ? msg.toolName : ''"
 					:thinking="msg.thinking != null ? msg.thinking : ''"
 					:hideThinking="hideThinking"
+				:msgSegmentation="msgSegmentation"
 					:isError="msg.isError == true"
 					:isStreaming="msg.isStreaming == true"
 					:cancelToken="longpressCancelToken"
@@ -165,6 +166,7 @@
 				hideThinking: false as boolean,
 				/** 是否注入日期时间（来自智能体设置） */
 				injectDatetime: false as boolean,
+			msgSegmentation: true as boolean,
 				/** 流式滚动节拍计数器 */
 				_streamScrollTick: 0 as number,
 				/** 滚动位置 */
@@ -246,8 +248,10 @@
 					this.currentAgentAvatar = rawAvatar != null ? (rawAvatar as string) : ''
 					const rawHideThinking = agent['hideThinking']
 					this.hideThinking = rawHideThinking != null ? (rawHideThinking as boolean) : false
-					const rawInjectDatetime = agent['injectDatetime']
-					this.injectDatetime = rawInjectDatetime != null ? (rawInjectDatetime as boolean) : false
+			const rawInjectDatetime = agent['injectDatetime']
+			this.injectDatetime = rawInjectDatetime != null ? (rawInjectDatetime as boolean) : false
+			const rawMsgSeg = agent['msgSegmentation']
+			this.msgSegmentation = rawMsgSeg != null ? (rawMsgSeg as boolean) : true
 				}
 			},
 
