@@ -170,19 +170,19 @@
 					<text class="card-label">上下文截断</text>
 				</view>
 				<view class="context-tip">
-					<text class="context-tip-text">按权重计算上下文长度：用户消息 1 分，普通 Agent 回复 0.3 分，工具调用/结果 0.1 分。超过阈值会截断早期消息，并自动触发记忆整理。</text>
+					<text class="context-tip-text">按权重计算上下文长度：用户消息 1 分，普通 Agent 回复 0.3 分，工具调用/结果 0.1 分。达到阈值会截断早期消息，并自动触发记忆整理。</text>
 				</view>
 				<view class="setting-row">
 					<view class="setting-text">
 						<text class="setting-title">截断阈值（分）</text>
-						<text class="setting-desc">超分后丢弃较早对话，0 不启用</text>
+						<text class="setting-desc">达到该分数后整理记忆并截断，0 不启用</text>
 					</view>
 					<input class="param-input short-input" type="text" v-model="truncateThresholdStr" placeholder="0" />
 				</view>
 				<view class="setting-row">
 					<view class="setting-text">
-						<text class="setting-title">丢弃条数</text>
-						<text class="setting-desc">触发截断时按批移除的早期消息数，单批不足以达标时继续追加一批</text>
+						<text class="setting-title">丢弃分数</text>
+						<text class="setting-desc">达到阈值后回落的分数，例如阈值 40、丢弃 20，则保留约 20 分上下文</text>
 					</view>
 					<input class="param-input short-input" type="text" v-model="truncateDropCountStr" placeholder="20" />
 				</view>
@@ -258,7 +258,7 @@
 				streamEnabled: true as boolean,
 				/** 上下文截断阈值（分），0 不启用 */
 				truncateThresholdStr: '40' as string,
-				/** 触发截断时每批丢弃的早期消息数 */
+				/** 触发截断时按积分回落的分数 */
 				truncateDropCountStr: '20' as string,
 				/** 启用缓存 ID */
 				cacheEnabled: false as boolean,
@@ -613,8 +613,8 @@
 				updateAgentGenerationSettings(this.agentId, temperature, maxTokens, maxIterations, streamEnabled)
 				// 保存截断/缓存 ID/隐藏思考
 				const threshold = parseFloat(this.truncateThresholdStr)
-				const dropCount = parseInt(this.truncateDropCountStr)
-				updateAgentTruncation(this.agentId, isNaN(threshold) ? 40 : threshold, isNaN(dropCount) ? 20 : dropCount)
+				const dropScore = parseFloat(this.truncateDropCountStr)
+				updateAgentTruncation(this.agentId, isNaN(threshold) ? 40 : threshold, isNaN(dropScore) ? 20 : dropScore)
 				updateAgentCache(this.agentId, this.cacheEnabled)
 				updateAgentHideThinking(this.agentId, this.hideThinking)
 				updateAgentInjectDatetime(this.agentId, this.injectDatetime)

@@ -176,12 +176,12 @@ export function deleteAgent(id: string): void {
 }
 
 /** 更新智能体截断设置 */
-export function updateAgentTruncation(id: string, threshold: number, dropCount: number): void {
+export function updateAgentTruncation(id: string, threshold: number, dropScore: number): void {
 	const agents = getAgents()
 	for (let i = 0; i < agents.length; i++) {
 		if ((agents[i]['id'] as string) == id) {
 			agents[i]['truncateThreshold'] = threshold
-			agents[i]['truncateDropCount'] = dropCount
+			agents[i]['truncateDropCount'] = dropScore
 			break
 		}
 	}

@@ -70,7 +70,7 @@
 						</view>
 						<view class="summary-metric">
 							<text class="summary-metric-value">{{droppedCount}}</text>
-							<text class="summary-metric-label">已截断</text>
+							<text class="summary-metric-label">已截断 / {{droppedScoreText}} 分</text>
 						</view>
 						<view class="summary-metric summary-metric-last">
 							<text class="summary-metric-value">≈ {{totalTokens}}</text>
@@ -169,6 +169,7 @@
 				messageCount: 0 as number,
 				totalMessages: 0 as number,
 				droppedCount: 0 as number,
+				droppedScoreText: '0' as string,
 				userMsgCount: 0 as number,
 				userCharCount: 0 as number,
 				assistantMsgCount: 0 as number,
@@ -273,6 +274,8 @@
 				this.totalMessages = rawTotal != null ? rawTotal : this.messageCount
 				const rawDropped = parsed['droppedCount'] as number | null
 				this.droppedCount = rawDropped != null ? rawDropped : 0
+				const rawDroppedScore = parsed['droppedScore'] as number | null
+				this.droppedScoreText = rawDroppedScore != null ? this.formatScoreText(rawDroppedScore) : '0'
 				// 按角色统计消息数和字数
 				if (openaiMessages != null) {
 					let uc = 0; let ucc = 0; let ac = 0; let acc = 0
@@ -325,6 +328,11 @@
 			setTimeout(() => { this.measureScrollSize() }, 800)
 		},
 		methods: {
+			formatScoreText(score: number): string {
+				const fixed = Math.round(score * 10) / 10
+				return '' + fixed
+			},
+
 			formatPercentText(hitTokens: number, promptTokens: number): string {
 				if (promptTokens <= 0) {
 					return '—'

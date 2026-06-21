@@ -30,7 +30,8 @@ export type PreparedAgentContext = {
 	bufferInjection: string
 	lastUserIndex: number
 	droppedCount: number
-	truncateDropCount: number
+	droppedScore: number
+	truncateDropScore: number
 	droppedMessages: UTSJSONObject[]
 }
 
@@ -138,10 +139,10 @@ function buildDroppedMessagesPreview(messages: UTSJSONObject[]): UTSJSONObject[]
 	return list
 }
 
-function buildMemoryManagerRunSignature(droppedCount: number, truncateDropCount: number): string {
-	if (droppedCount <= 0) return ''
-	const batchSize = truncateDropCount > 0 ? truncateDropCount : 20
-	const batchIndex = Math.floor(droppedCount / batchSize)
+function buildMemoryManagerRunSignature(droppedScore: number, truncateDropScore: number): string {
+	if (droppedScore <= 0) return ''
+	const batchSize = truncateDropScore > 0 ? truncateDropScore : 20
+	const batchIndex = Math.floor((droppedScore + 0.0001) / batchSize)
 	if (batchIndex <= 0) return ''
 	return 'truncate-batch=' + batchIndex + '|size=' + batchSize
 }
@@ -400,7 +401,8 @@ function prepareAgentContext(
 	}
 	let remainingSkip = 0
 	let droppedCount = 0
-	let truncateDropCount = 0
+	let droppedScore = 0
+	let truncateDropScore = 0
 	if (enableContextTruncation == true) {
 		const systemCount = workingMessages.length
 		// 截断权重：user 1，普通 assistant 0.3，工具调用/结果 0.1
@@ -409,9 +411,9 @@ function prepareAgentContext(
 			const rawThreshold = agent['truncateThreshold']
 			const rawDropCount = agent['truncateDropCount']
 			const threshold = rawThreshold != null ? (rawThreshold as number) : 40
-			const dropCount = rawDropCount != null ? (rawDropCount as number) : 20
-			truncateDropCount = dropCount
-			if (threshold > 0 && dropCount > 0) {
+			const dropScore = rawDropCount != null ? (rawDropCount as number) : 20
+			truncateDropScore = dropScore
+			if (threshold > 0 && dropScore > 0) {
 				let score: number = systemCount
 				let totalDialog = 0
 				for (let i = 0; i < messages.length; i++) {
@@ -421,19 +423,19 @@ function prepareAgentContext(
 						totalDialog++
 					}
 				}
-				if (score > threshold) {
+				if (score >= threshold) {
+					let targetScore = threshold - dropScore
+					if (targetScore < 0) {
+						targetScore = 0
+					}
 					let trimScore = score
-					let batchLimit = dropCount
 					for (let i = 0; i < messages.length; i++) {
 						const msgScore = getContextMessageScore(messages[i])
 						if (msgScore <= 0) continue
 						remainingSkip++
 						trimScore = trimScore - msgScore
-						if (remainingSkip >= batchLimit && (trimScore <= threshold || remainingSkip >= totalDialog)) {
+						if (trimScore <= targetScore || remainingSkip >= totalDialog) {
 							break
-						}
-						if (remainingSkip >= batchLimit && trimScore > threshold) {
-							batchLimit = batchLimit + dropCount
 						}
 					}
 				}
@@ -446,8 +448,10 @@ function prepareAgentContext(
 		const role = msg['role'] as string | null
 		// 跳过早的对话消息（含工具调用/结果）
 		if (remainingSkip > 0 && getContextMessageScore(msg) > 0) {
+			const msgScore = getContextMessageScore(msg)
 			remainingSkip--
 			droppedCount++
+			droppedScore = droppedScore + msgScore
 			if (i == lastUserIndex) { lastUserIndex = -1 }
 			const rawContent = msg['content'] as string | null
 			if (rawContent != null && rawContent.trim() != '') {
@@ -481,7 +485,8 @@ function prepareAgentContext(
 		bufferInjection,
 		lastUserIndex,
 		droppedCount,
-		truncateDropCount,
+		droppedScore,
+		truncateDropScore,
 		droppedMessages,
 	} as PreparedAgentContext
 }
@@ -1067,7 +1072,7 @@ function runAgentLoop(
 	const tools = createAgentTools(agentId, conversationId, personId, allowCoreMemoryWrite)
 	const toolDefs = prepared.toolDefs
 
-	const memoryRunSignature = buildMemoryManagerRunSignature(prepared.droppedCount, prepared.truncateDropCount)
+	const memoryRunSignature = buildMemoryManagerRunSignature(prepared.droppedScore, prepared.truncateDropScore)
 	if (enableMemoryManager == true && shouldRunMemoryManager(agentId, conversationId, memoryRunSignature) == true) {
 		const started = startMemoryManagerLoop?.invoke(collectMemoryCandidateMessages(messages), providerId, model, agentId, conversationId, memoryRunSignature, prepared.droppedCount)
 		if (started == true) {
@@ -1418,6 +1423,7 @@ export function buildAgentContextPreview(
 		lastUserIndex: prepared.lastUserIndex,
 		totalMessages: messages.length,
 		droppedCount: prepared.droppedCount,
+		droppedScore: prepared.droppedScore,
 		droppedPreview: buildDroppedMessagesPreview(prepared.droppedMessages),
 		lastTokenUsage: lastTokenUsage,
 		lastCallInfo: lastCallInfo,
