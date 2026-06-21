@@ -111,7 +111,7 @@
 					<text class="refresh-btn" @click="loadMemory">刷新</text>
 				</view>
 
-				<!-- 搜索筛选区域 -->
+				<!-- 搜索区域 -->
 				<view class="search-section">
 					<view class="search-input-row">
 						<input
@@ -122,49 +122,10 @@
 							placeholder-style="color:#9CA3AF"
 							@confirm="onSearchConfirm"
 						/>
+						<text class="search-action" @click="loadMemory">搜索</text>
 						<text v-if="searchQuery != ''" class="search-clear" @click="clearSearchFilter">✕</text>
 					</view>
-					<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
-						<view class="chip-row">
-							<view v-for="(sm, smi) in searchModes" :key="smi" class="chip chip-sm" :class="searchMode == sm ? 'chip-active' : ''" @click="selectSearchMode(sm)">
-								<text class="chip-text chip-text-sm" :class="searchMode == sm ? 'chip-text-active' : ''">{{searchModeLabel(sm)}}</text>
-							</view>
-						</view>
-					</scroll-view>
-					<view class="filter-toggle-row">
-						<text class="filter-toggle" @click="showAdvancedFilter = !showAdvancedFilter">{{showAdvancedFilter ? '收起筛选 ▲' : '高级筛选 ▼'}}</text>
-						<text v-if="hasActiveSearchFilter()" class="filter-clear-all" @click="clearSearchFilter">清空筛选</text>
-					</view>
-					<view v-if="showAdvancedFilter" class="advanced-filter">
-						<text class="field-label">日期范围（YYYY-MM-DD）</text>
-						<view class="date-range-row">
-							<input class="flat-input date-input" type="text" v-model="searchStartDate" placeholder="开始日期" placeholder-style="color:#D1D5DB" @confirm="onSearchConfirm" />
-							<text class="date-sep">—</text>
-							<input class="flat-input date-input" type="text" v-model="searchEndDate" placeholder="结束日期" placeholder-style="color:#D1D5DB" @confirm="onSearchConfirm" />
-						</view>
-						<text class="field-label" style="margin-top:16rpx;">使用范围</text>
-						<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
-							<view class="chip-row">
-								<view class="chip chip-sm" :class="searchScope == '' ? 'chip-active' : ''" @click="selectSearchScope('')">
-									<text class="chip-text chip-text-sm" :class="searchScope == '' ? 'chip-text-active' : ''">全部</text>
-								</view>
-								<view v-for="(s, si) in scopes" :key="si" class="chip chip-sm" :class="searchScope == s ? 'chip-active' : ''" @click="selectSearchScope(s)">
-									<text class="chip-text chip-text-sm" :class="searchScope == s ? 'chip-text-active' : ''">{{scopeLabel(s)}}</text>
-								</view>
-							</view>
-						</scroll-view>
-						<text class="field-label" style="margin-top:12rpx;">分类</text>
-						<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
-							<view class="chip-row">
-								<view class="chip chip-sm" :class="searchCategory == '' ? 'chip-active' : ''" @click="selectSearchCategory('')">
-									<text class="chip-text chip-text-sm" :class="searchCategory == '' ? 'chip-text-active' : ''">全部</text>
-								</view>
-								<view v-for="(c, ci) in categories" :key="ci" class="chip chip-sm" :class="searchCategory == c ? 'chip-active' : ''" @click="selectSearchCategory(c)">
-									<text class="chip-text chip-text-sm" :class="searchCategory == c ? 'chip-text-active' : ''">{{categoryLabel(c)}}</text>
-								</view>
-							</view>
-						</scroll-view>
-					</view>
+					<text class="field-tip search-tip">按内容关键词搜索；范围用下方「查看对象」切换。</text>
 				</view>
 
 				<text class="field-label" style="margin-top:18rpx;">查看对象</text>
@@ -282,15 +243,8 @@
 				bufferContent: '' as string,
 				memoryList: [] as UTSJSONObject[],
 				agents: [] as UTSJSONObject[],
-				// 搜索筛选
+				// 搜索
 				searchQuery: '' as string,
-				searchMode: 'fuzzy' as string,
-				searchScope: '' as string,
-				searchCategory: '' as string,
-				searchStartDate: '' as string,
-				searchEndDate: '' as string,
-				showAdvancedFilter: false as boolean,
-				searchModes: ['fuzzy', 'exact', 'prefix', 'regex'] as string[],
 				scopes: ['person_only', 'always', 'conversation_only', 'manual_only', 'rule'] as string[],
 				categories: ['important', 'preference', 'fact', 'impression', 'rule'] as string[],
 				newScope: 'person_only' as string,
@@ -442,7 +396,7 @@
 				this.memoryEnabled = getMemoryEnabled()
 				const viewPersonId = this.buildViewTargetPersonId()
 				this.bufferContent = getMemoryBuffer(this.agentId, this.personId, this.conversationId)
-				// 有搜索关键词时使用高级搜索，否则使用普通列表
+				// 有搜索关键词时执行内容搜索，否则使用普通列表
 				if (this.searchQuery.trim() != '') {
 					this.doSearch(viewPersonId)
 				} else {
@@ -450,27 +404,20 @@
 				}
 			},
 
-			/** 执行高级搜索 */
+			/** 执行关键词搜索 */
 			doSearch(personId: string) {
-				const startTime = this.parseDateInput(this.searchStartDate)
-				const endTime = this.parseEndDateInput(this.searchEndDate)
 				const filter: MemorySearchFilter = {
-					query: this.searchQuery,
-					searchMode: this.searchMode,
-					scope: this.searchScope,
-					category: this.searchCategory,
+					query: this.searchQuery.trim(),
+					searchMode: 'fuzzy',
+					scope: '',
+					category: '',
 					priorityMin: 0,
 					priorityMax: 0,
-					startTime: startTime,
-					endTime: endTime,
+					startTime: 0,
+					endTime: 0,
 					limit: 50,
 				} as MemorySearchFilter
 				this.memoryList = searchCoreMemoryAdvanced(this.agentId, personId, this.conversationId, filter)
-			},
-
-			/** 搜索输入处理 */
-			onSearchInput(value: string) {
-				this.searchQuery = value
 			},
 
 			/** 搜索确认 */
@@ -478,83 +425,10 @@
 				this.loadMemory()
 			},
 
-			/** 切换搜索模式 */
-			selectSearchMode(mode: string) {
-				this.searchMode = mode
-				if (this.searchQuery.trim() != '') {
-					this.loadMemory()
-				}
-			},
-
-			/** 切换搜索筛选 scope */
-			selectSearchScope(scope: string) {
-				this.searchScope = scope
-				if (this.searchQuery.trim() != '') {
-					this.loadMemory()
-				}
-			},
-
-			/** 切换搜索筛选 category */
-			selectSearchCategory(category: string) {
-				this.searchCategory = category
-				if (this.searchQuery.trim() != '') {
-					this.loadMemory()
-				}
-			},
-
-			/** 清空所有搜索筛选 */
+			/** 清空搜索 */
 			clearSearchFilter() {
 				this.searchQuery = ''
-				this.searchMode = 'fuzzy'
-				this.searchScope = ''
-				this.searchCategory = ''
-				this.searchStartDate = ''
-				this.searchEndDate = ''
 				this.loadMemory()
-			},
-
-			/** 解析日期输入 YYYY-MM-DD → 当天 00:00:00 毫秒时间戳 */
-			parseDateInput(dateStr: string): number {
-				if (dateStr == '') return 0
-				const parts = dateStr.split('-')
-				if (parts.length >= 3) {
-					const year = parseInt(parts[0])
-					const month = parseInt(parts[1]) - 1
-					const day = parseInt(parts[2])
-					if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
-						return new Date(year, month, day, 0, 0, 0, 0).getTime()
-					}
-				}
-				return 0
-			},
-
-			/** 解析结束日期 → 当天 23:59:59.999 */
-			parseEndDateInput(dateStr: string): number {
-				if (dateStr == '') return 0
-				const parts = dateStr.split('-')
-				if (parts.length >= 3) {
-					const year = parseInt(parts[0])
-					const month = parseInt(parts[1]) - 1
-					const day = parseInt(parts[2])
-					if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
-						return new Date(year, month, day, 23, 59, 59, 999).getTime()
-					}
-				}
-				return 0
-			},
-
-			/** 搜索模式标签 */
-			searchModeLabel(mode: string): string {
-				if (mode == 'fuzzy') return '模糊'
-				if (mode == 'exact') return '精确'
-				if (mode == 'prefix') return '前缀'
-				if (mode == 'regex') return '正则'
-				return mode
-			},
-
-			/** 是否有激活的搜索筛选 */
-			hasActiveSearchFilter(): boolean {
-				return this.searchQuery.trim() != '' || this.searchScope != '' || this.searchCategory != '' || this.searchStartDate != '' || this.searchEndDate != ''
 			},
 
 			saveMemoryEnabled() {
@@ -633,7 +507,24 @@
 					uni.showToast({ position: 'bottom',  title: '记忆 id 异常', icon: 'none' })
 					return
 				}
-				this.forgetMemory(id)
+				const memoryId = id
+				const rawContent = item['content'] as string | null
+				let preview = rawContent != null ? rawContent : ''
+				if (preview.length > 36) {
+					preview = preview.substring(0, 36) + '...'
+				}
+				uni.showModal({
+					title: '遗忘记忆',
+					content: '确认遗忘这条重要记忆？\n' + preview,
+					success: (res: any) => {
+						const raw = JSON.stringify(res)
+						if (raw == null || raw == '') { return }
+						const parsed = JSON.parse(raw) as UTSJSONObject
+						if (parsed['confirm'] == true) {
+							this.forgetMemory(memoryId)
+						}
+					}
+				})
 			},
 
 			confirmClearCore() {
@@ -949,7 +840,7 @@
 		color: #DC2626;
 	}
 
-	/* ===== 搜索筛选 ===== */
+	/* ===== 搜索 ===== */
 	.search-section {
 		margin-top: 18rpx;
 	}
@@ -969,61 +860,21 @@
 		padding: 16rpx 0;
 	}
 
+	.search-action {
+		font-size: 24rpx;
+		font-weight: bold;
+		color: var(--rice-primary-color);
+		padding: 8rpx 12rpx;
+	}
+
 	.search-clear {
 		font-size: 32rpx;
 		color: #9CA3AF;
 		padding: 8rpx 12rpx;
 	}
 
-	.chip-sm {
-		padding: 10rpx 16rpx;
-		margin-right: 10rpx;
-	}
-
-	.chip-text-sm {
-		font-size: 22rpx;
-	}
-
-	.filter-toggle-row {
-		flex-direction: row;
-		align-items: center;
-		justify-content: space-between;
-		margin-top: 12rpx;
-	}
-
-	.filter-toggle {
-		font-size: 22rpx;
-		color: #8B5CF6;
-		padding: 6rpx 0;
-	}
-
-	.filter-clear-all {
-		font-size: 22rpx;
-		color: #EF4444;
-		padding: 6rpx 8rpx;
-	}
-
-	.advanced-filter {
-		margin-top: 14rpx;
-		padding: 20rpx;
-		background-color: #F9FAFB;
-		border-radius: 14rpx;
-	}
-
-	.date-range-row {
-		flex-direction: row;
-		align-items: center;
-	}
-
-	.date-input {
-		flex: 1;
-		padding: 16rpx;
-	}
-
-	.date-sep {
-		font-size: 24rpx;
-		color: #9CA3AF;
-		margin: 0 10rpx;
+	.search-tip {
+		margin-top: 10rpx;
 	}
 
 	/* ===== 记忆整理日志 ===== */
