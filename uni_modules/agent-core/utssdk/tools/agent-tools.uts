@@ -834,7 +834,7 @@ class MemoryBufferWriteTool implements AgentTool {
  */
 class MemoryCoreSaveTool implements AgentTool {
 	name: string = 'memory_core_save'
-	description: string = '保存 Agent 重要信息。scope 只能是 always、person_only、conversation_only、manual_only、rule；category 只能是 impression、important、rule、preference、fact。用于长期偏好、重要事实、面对某人的规则，不要保存工具调用信息、密钥或流水账。'
+	description: string = '保存 Agent 重要信息。scope 只能是 always、person_only、conversation_only、manual_only、rule；category 只能是 impression、important、rule、preference、fact。数量限制按范围桶裁剪：person_only/manual_only 按面对对象独立，conversation_only 按会话独立，always/rule 为 Agent 全局共享。面对某人的规则请用 scope=person_only + category=rule；只有全局规则才用 scope=rule。不要保存工具调用信息、密钥或流水账。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
@@ -844,7 +844,7 @@ class MemoryCoreSaveTool implements AgentTool {
 			},
 			'scope': {
 				'type': 'string',
-				'description': '使用范围：always/person_only/conversation_only/manual_only/rule'
+				'description': '使用范围：always/person_only/conversation_only/manual_only/rule。person_only/manual_only 按对象独立限额；conversation_only 按会话独立限额；always/rule 为 Agent 全局共享限额'
 			},
 			'category': {
 				'type': 'string',

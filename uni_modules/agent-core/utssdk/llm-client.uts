@@ -166,7 +166,7 @@ function buildMemoryManagerSystemPrompt(agentId: string, conversationId: string,
 		'不要保存工具调用信息、工具结果、API 密钥、临时流水账、一次性任务细节、用户未明确表达的猜测。\n' +
 		'默认面对对象是当前用户：target_type=user，target_id 留空。对话内短期状态优先写入短记忆缓存，不要写入重要记忆。\n' +
 		'如果需要保存长期记忆，优先使用 memory_core_save；如果发现明显重复或过期，可以谨慎使用 memory_core_forget。\n' +
-		'保存范围建议：稳定偏好用 person_only/preference；长期规则用 rule/rule；跨对话事实用 person_only/fact；只对当前对话有用才用 conversation_only。\n' +
+		'保存范围建议：稳定偏好用 person_only/preference；面对某人的规则用 person_only/rule；全局规则才用 rule/rule；跨对话事实用 person_only/fact；只对当前对话有用才用 conversation_only。person_only/manual_only 的数量限制按面对对象独立，不同对象不要互相挤占。\n' +
 		'当前 agentId=' + agentId + '，conversationId=' + conversationId + '。最终只回复一行整理结果。'
 }
 
