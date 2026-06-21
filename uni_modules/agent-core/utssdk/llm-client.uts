@@ -423,13 +423,17 @@ function prepareAgentContext(
 				}
 				if (score > threshold) {
 					let trimScore = score
+					let batchLimit = dropCount
 					for (let i = 0; i < messages.length; i++) {
 						const msgScore = getContextMessageScore(messages[i])
 						if (msgScore <= 0) continue
 						remainingSkip++
 						trimScore = trimScore - msgScore
-						if (remainingSkip >= dropCount && (trimScore <= threshold || remainingSkip >= totalDialog)) {
+						if (remainingSkip >= batchLimit && (trimScore <= threshold || remainingSkip >= totalDialog)) {
 							break
+						}
+						if (remainingSkip >= batchLimit && trimScore > threshold) {
+							batchLimit = batchLimit + dropCount
 						}
 					}
 				}
