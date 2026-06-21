@@ -416,10 +416,12 @@ function buildUserMessageForAgent(msg: UTSJSONObject, suffixBlocks: AgentContext
 	if (prefixBlocks.length == 0 && suffixBlocks.length == 0) {
 		return msg
 	}
-	return {
-		role: 'user',
-		content: wrapUserContentForAgent(baseContent, prefixBlocks, suffixBlocks),
-	} as UTSJSONObject
+	// 保留原消息的所有字段（如 msgType、imageUrl 等），再覆盖 role 和 content
+	const raw = JSON.stringify(msg)
+	const cloned = JSON.parse(raw) as UTSJSONObject
+	cloned['role'] = 'user'
+	cloned['content'] = wrapUserContentForAgent(baseContent, prefixBlocks, suffixBlocks)
+	return cloned
 }
 
 function getContextMessageScore(msg: UTSJSONObject): number {
