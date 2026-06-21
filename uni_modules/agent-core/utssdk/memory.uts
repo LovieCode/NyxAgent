@@ -225,6 +225,12 @@ function clampPriority(priority: number): number {
 	return priority
 }
 
+/**
+ * 重要记忆数量限制按“可见/注入范围桶”裁剪：
+ * - always/rule：Agent 全局桶，所有对象共享。
+ * - person_only/manual_only：按 person_id 独立，不同用户/Agent/自定义对象互不挤占。
+ * - conversation_only：按 conversation_id 独立。
+ */
 function getScopeLimit(scope: string): number {
 	if (scope == 'rule') return 5
 	if (scope == 'always') return 3
