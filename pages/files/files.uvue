@@ -99,7 +99,7 @@
 </template>
 
 <script lang="uts">
-	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, parentPath, basename, joinPath, normalizePath, getUserDir, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
+	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, parentPath, basename, joinPath, normalizePath, getUserDir, getInternalFilesDir, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
 
 	/** 虚拟根路径标记（合并视图用） */
 	const VIRTUAL_ROOT = '__FILE_ROOT__'
@@ -193,18 +193,21 @@
 		},
 		onBackPress(): boolean {
 			if (this.currentPath == VIRTUAL_ROOT) {
-				// 在根视图 → 正常返回
-				return false
+				return false // 根视图 → 正常返回
 			}
-			// 在子目录 → 回到上一级
 			const parent = parentPath(this.currentPath)
-			if (parent == '' || parent == this.currentPath) {
+			const isRootLevel = (
+				parent == '' || parent == this.currentPath ||
+				parent == getUserDir() ||
+				parent == getInternalFilesDir()
+			)
+			if (isRootLevel) {
 				this.currentPath = VIRTUAL_ROOT
 			} else {
 				this.currentPath = parent
 			}
 			this.refreshList()
-			return true // 拦截返回，不离开页面
+			return true
 		},
 		onShow() {
 			const saved = uni.getStorageSync('editor_saved') as string | null
