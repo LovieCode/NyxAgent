@@ -33,37 +33,42 @@
 						<text class="empty-text">暂无待办事项</text>
 					</view>
 					<view v-else>
-						<view
-							v-for="todo in filteredTodos"
-							:key="todo['id'] as string"
-							class="todo-item"
-							@click="toggleTodo(todo['id'] as string)"
-						>
-							<view class="todo-left">
-								<rice-checkbox
-									:model-value="(todo['completed'] as boolean)"
-									shape="round"
-									checked-color="#FB8FAB"
-									icon-size="40rpx"
-									@change="toggleTodo(todo['id'] as string)"
-								/>
+						<view v-for="(agent, agIdx) in agents" :key="'agent-todo-' + (agent['id'] as string)">
+							<view v-if="getAgentTodos(agent['id'] as string).length > 0" class="agent-section-header">
+								<text class="agent-section-name">{{ agent['name'] }}</text>
 							</view>
-							<view class="todo-content">
-								<text :class="['todo-title', (todo['completed'] as boolean) ? 'todo-title-done' : '']">
-									{{ todo['title'] }}
-								</text>
-								<view class="todo-meta">
-									<rice-tag
-										:type="getTagType(todo['priority'] as string)"
-										:text="getPriorityLabel(todo['priority'] as string)"
-										size="small"
-										round
+							<view
+								v-for="todo in getAgentTodos(agent['id'] as string)"
+								:key="todo['id'] as string"
+								class="todo-item"
+								@click="toggleTodo(todo['id'] as string)"
+							>
+								<view class="todo-left">
+									<rice-checkbox
+										:model-value="(todo['completed'] as boolean)"
+										shape="round"
+										checked-color="#FB8FAB"
+										icon-size="40rpx"
+										@change="toggleTodo(todo['id'] as string)"
 									/>
-									<text class="todo-time">{{ todo['createdAt'] }}</text>
 								</view>
-							</view>
-							<view class="todo-right" @click.stop="deleteTodo(todo['id'] as string)">
-								<rice-icon name="delete" size="32rpx" color="#9CA3AF" />
+								<view class="todo-content">
+									<text :class="['todo-title', (todo['completed'] as boolean) ? 'todo-title-done' : '']">
+										{{ todo['title'] }}
+									</text>
+									<view class="todo-meta">
+										<rice-tag
+											:type="getTagType(todo['priority'] as string)"
+											:text="getPriorityLabel(todo['priority'] as string)"
+											size="small"
+											round
+										/>
+										<text class="todo-time">{{ todo['createdAt'] }}</text>
+									</view>
+								</view>
+								<view class="todo-right" @click.stop="deleteTodo(todo['id'] as string)">
+									<rice-icon name="delete" size="32rpx" color="#9CA3AF" />
+								</view>
 							</view>
 						</view>
 					</view>
@@ -107,6 +112,19 @@
 								</view>
 							</view>
 						</view>
+						<view class="agent-selector">
+							<text class="form-label">所属智能体</text>
+							<view class="agent-options">
+								<view
+									v-for="(agent, agIdx) in agents"
+									:key="'at-' + agIdx"
+									:class="['agent-option', newTodoAgentIndex == agIdx ? 'agent-option-active' : '']"
+									@click="newTodoAgentIndex = agIdx"
+								>
+									<text class="agent-option-text">{{ agent['name'] }}</text>
+								</view>
+							</view>
+						</view>
 					</view>
 				</rice-dialog>
 			</view>
@@ -115,7 +133,7 @@
 			<view v-else class="view-container">
 				<!-- 搜索栏 -->
 				<view class="search-bar">
-					<rice-search v-model="searchQuery" placeholder="搜索笔记..." shape="round" :clearable="true" />
+					<rice-search v-model="searchQuery" placeholder="搜索笔记..." shape="round" :clearable="true" inputColor="#FFFFFF" />
 				</view>
 
 				<!-- 笔记列表 -->
@@ -124,18 +142,23 @@
 						<text class="empty-text">{{ searchQuery != '' ? '未找到匹配笔记' : '暂无笔记' }}</text>
 					</view>
 					<view v-else>
-						<view
-							v-for="note in filteredNotes"
-							:key="note['id'] as string"
-							class="note-card"
-							@click="editNote(note)"
-							@longpress="confirmDeleteNote(note['id'] as string)"
-						>
-							<text class="note-title">{{ note['title'] }}</text>
-							<text class="note-preview">{{ getNotePreview(note) }}</text>
-							<view class="note-meta-row">
-								<text class="note-time">{{ note['updatedAt'] }}</text>
-								<text v-if="getInlineTodoCount(note) > 0" class="note-todo-count">Todo {{ getInlineTodoCount(note) }}</text>
+						<view v-for="(agent, agIdx) in agents" :key="'agent-note-' + (agent['id'] as string)">
+							<view v-if="getAgentNotes(agent['id'] as string).length > 0" class="agent-section-header">
+								<text class="agent-section-name">{{ agent['name'] }}</text>
+							</view>
+							<view
+								v-for="note in getAgentNotes(agent['id'] as string)"
+								:key="note['id'] as string"
+								class="note-card"
+								@click="editNote(note)"
+								@longpress="confirmDeleteNote(note['id'] as string)"
+							>
+								<text class="note-title">{{ note['title'] }}</text>
+								<text class="note-preview">{{ getNotePreview(note) }}</text>
+								<view class="note-meta-row">
+									<text class="note-time">{{ note['updatedAt'] }}</text>
+									<text v-if="getInlineTodoCount(note) > 0" class="note-todo-count">Todo {{ getInlineTodoCount(note) }}</text>
+								</view>
 							</view>
 						</view>
 					</view>
@@ -153,6 +176,19 @@
 					@cancel="cancelEditNote"
 				>
 					<rice-input v-model="editingNoteTitle" placeholder="笔记标题" border="none" />
+					<view class="agent-selector" v-if="agents.length > 0">
+						<text class="form-label">所属智能体</text>
+						<view class="agent-options">
+							<view
+								v-for="(agent, agIdx) in agents"
+								:key="'ne-' + agIdx"
+								:class="['agent-option', editingNoteAgentIndex == agIdx ? 'agent-option-active' : '']"
+								@click="editingNoteAgentIndex = agIdx"
+							>
+								<text class="agent-option-text">{{ agent['name'] }}</text>
+							</view>
+						</view>
+					</view>
 					<view style="height: 16rpx;"></view>
 					<rice-textarea v-model="editingNoteContent" placeholder="笔记内容，支持 - [ ] 待办 / - [x] 完成" :auto-height="true" />
 				</rice-dialog>
@@ -163,8 +199,15 @@
 </template>
 
 <script lang="uts">
-	import { getAgentDir, readContent, writeContent, listDir, deleteItem, joinPath, type FileItem } from '@/utils/file-manager.uts'
+	import { getAgentDir, getUserDir, migrateLegacyUserDir, readContent, writeContent, listDir, deleteItem, joinPath, type FileItem } from '@/utils/file-manager.uts'
 	import { renderKnowledgeMarkdown, countInlineTodos, parseTodoMarkdown, parseNoteMarkdown, buildTodoMarkdown, buildNoteMarkdown, type KnowledgeRenderBlock } from '@/utils/markdown.uts'
+	import { getAgents } from '@/utils/agent.uts'
+
+	/** 虚拟用户条目，显示在所有 agent 之前 */
+	const USER_AGENT_ENTRY: UTSJSONObject = {
+		id: '__user__',
+		name: '用户',
+	} as UTSJSONObject
 
 	/**
 	 * 待办 + 笔记 合并页面
@@ -175,11 +218,11 @@
 	export default {
 		data() {
 			return {
-				// 选中的智能体 ID
-				selectedAgentId: 'default' as string,
-
 				// 视图切换
 				activeView: 'todo' as string,
+
+				// 智能体列表
+				agents: [] as UTSJSONObject[],
 
 				// 待办数据
 				todos: [] as UTSJSONObject[],
@@ -187,6 +230,7 @@
 				showAddTodo: false as boolean,
 				newTodoTitle: '' as string,
 				newTodoPriority: 'medium' as string,
+				newTodoAgentIndex: 0 as number,
 
 				// 笔记数据
 				notes: [] as UTSJSONObject[],
@@ -194,7 +238,8 @@
 				isEditingNote: false as boolean,
 				editingNoteId: '' as string,
 				editingNoteTitle: '' as string,
-				editingNoteContent: '' as string
+				editingNoteContent: '' as string,
+				editingNoteAgentIndex: 0 as number
 			}
 		},
 		computed: {
@@ -223,14 +268,56 @@
 			}
 		},
 		onLoad() {
+			this.loadAgents()
 			this.loadTodos()
 			this.loadNotes()
 		},
 		onShow() {
+			this.loadAgents()
 			this.loadTodos()
 			this.loadNotes()
 		},
 		methods: {
+			/** 加载 agent 列表（预置用户条目在最前） */
+			loadAgents() {
+				migrateLegacyUserDir()
+				const list = getAgents()
+				const result = [USER_AGENT_ENTRY] as UTSJSONObject[]
+				for (let i = 0; i < list.length; i++) {
+					result.push(list[i])
+				}
+				this.agents = result
+			},
+
+			/** 获取用户/Agent 对应的文件目录 */
+			getOwnerDir(ownerId: string): string {
+				if (ownerId == '__user__') {
+					return getUserDir()
+				}
+				return getAgentDir(ownerId)
+			},
+
+			/** 获取某 agent 的已筛选待办（用于 template） */
+			getAgentTodos(agentId: string): UTSJSONObject[] {
+				const result: UTSJSONObject[] = []
+				for (let i = 0; i < this.filteredTodos.length; i++) {
+					if ((this.filteredTodos[i]['agentId'] as string) == agentId) {
+						result.push(this.filteredTodos[i])
+					}
+				}
+				return result
+			},
+
+			/** 获取某 agent 的已筛选笔记（用于 template） */
+			getAgentNotes(agentId: string): UTSJSONObject[] {
+				const result: UTSJSONObject[] = []
+				for (let i = 0; i < this.filteredNotes.length; i++) {
+					if ((this.filteredNotes[i]['agentId'] as string) == agentId) {
+						result.push(this.filteredNotes[i])
+					}
+				}
+				return result
+			},
 			// ===== 视图切换 =====
 			switchView(view : string) {
 				if (this.activeView == view) {
@@ -246,26 +333,43 @@
 
 			// ===== 待办相关 =====
 			loadTodos() {
-				const agentDir = getAgentDir(this.selectedAgentId)
-				if (agentDir == '') {
-					this.todos = []
-					return
+				const all: UTSJSONObject[] = []
+				for (let ai = 0; ai < this.agents.length; ai++) {
+					const agent = this.agents[ai]
+					const agentId = agent['id'] as string
+					const agentName = agent['name'] as string
+					if (agentId == '' || agentName == '') continue
+					const agentDir = this.getOwnerDir(agentId)
+					if (agentDir == '') continue
+					const mdPath = joinPath(agentDir, 'todo.md')
+					const content = readContent(mdPath)
+					if (content == null || content == '') continue
+					const parsed = parseTodoMarkdown(content)
+					for (let j = 0; j < parsed.length; j++) {
+						const item = parsed[j]
+						item['agentId'] = agentId
+						item['agentName'] = agentName
+						all.push(item)
+					}
 				}
-				const mdPath = joinPath(agentDir, 'todo.md')
-				const content = readContent(mdPath)
-				if (content == null || content == '') {
-					this.todos = []
-					return
-				}
-				this.todos = parseTodoMarkdown(content)
+				this.todos = all
 			},
 
 			saveTodos() {
-				const agentDir = getAgentDir(this.selectedAgentId)
-				if (agentDir == '') return
-				const mdPath = joinPath(agentDir, 'todo.md')
-				const markdown = buildTodoMarkdown(this.todos)
-				writeContent(mdPath, markdown)
+				for (let ai = 0; ai < this.agents.length; ai++) {
+					const agentId = this.agents[ai]['id'] as string
+					if (agentId == '') continue
+					const agentTodos: UTSJSONObject[] = []
+					for (let j = 0; j < this.todos.length; j++) {
+						if ((this.todos[j]['agentId'] as string) == agentId) {
+							agentTodos.push(this.todos[j])
+						}
+					}
+					const agentDir = this.getOwnerDir(agentId)
+					if (agentDir == '') continue
+					const markdown = buildTodoMarkdown(agentTodos)
+					writeContent(joinPath(agentDir, 'todo.md'), markdown)
+				}
 			},
 
 			setFilter(f : string) {
@@ -319,6 +423,13 @@
 					})
 					return
 				}
+				// 确定所属 agent
+				let targetAgent: UTSJSONObject | null = null
+				if (this.newTodoAgentIndex >= 0 && this.newTodoAgentIndex < this.agents.length) {
+					targetAgent = this.agents[this.newTodoAgentIndex]
+				}
+				const agentId = targetAgent != null ? (targetAgent['id'] as string) : ''
+				const agentName = targetAgent != null ? (targetAgent['name'] as string) : ''
 				let now = new Date()
 				let timeStr = now.getFullYear() + '-' +
 					this.padZero(now.getMonth() + 1) + '-' +
@@ -330,7 +441,9 @@
 					title: this.newTodoTitle.trim(),
 					priority: this.newTodoPriority,
 					completed: false,
-					createdAt: timeStr
+					createdAt: timeStr,
+					agentId: agentId,
+					agentName: agentName
 				} as UTSJSONObject
 				this.todos.unshift(newTodo)
 				this.saveTodos()
@@ -361,72 +474,87 @@
 
 			// ===== 笔记相关 =====
 			loadNotes() {
-				const agentDir = getAgentDir(this.selectedAgentId)
-				if (agentDir == '') {
-					this.notes = []
-					return
+				const all: UTSJSONObject[] = []
+				for (let ai = 0; ai < this.agents.length; ai++) {
+					const agent = this.agents[ai]
+					const agentId = agent['id'] as string
+					const agentName = agent['name'] as string
+					if (agentId == '' || agentName == '') continue
+					const agentDir = this.getOwnerDir(agentId)
+					if (agentDir == '') continue
+					const notesDir = joinPath(agentDir, 'notes')
+					const files = listDir(notesDir)
+					for (let fi = 0; fi < files.length; fi++) {
+						const file = files[fi] as FileItem
+						if (file.isDirectory) continue
+						if (!file.name.endsWith('.md')) continue
+						const content = readContent(file.path)
+						if (content == null) continue
+						const noteId = file.name.substring(0, file.name.length - 3)
+						const note = parseNoteMarkdown(content, noteId)
+						note['agentId'] = agentId
+						note['agentName'] = agentName
+						all.push(note)
+					}
 				}
-				const notesDir = joinPath(agentDir, 'notes')
-				const files = listDir(notesDir)
-				const result: UTSJSONObject[] = []
-				for (let i = 0; i < files.length; i++) {
-					const file = files[i] as FileItem
-					if (file.isDirectory) continue
-					if (!file.name.endsWith('.md')) continue
-					const content = readContent(file.path)
-					if (content == null) continue
-					const noteId = file.name.substring(0, file.name.length - 3)
-					const note = parseNoteMarkdown(content, noteId)
-					result.push(note)
-				}
-				// 按 updatedAt 降序排列（最新的在前）
-				result.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
+				// 按 updatedAt 降序
+				all.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
 					const aTime = a['updatedAt'] as string
 					const bTime = b['updatedAt'] as string
 					if (aTime > bTime) return -1
 					if (aTime < bTime) return 1
 					return 0
 				})
-				this.notes = result
+				this.notes = all
 			},
 
 			saveNotes() {
-				const agentDir = getAgentDir(this.selectedAgentId)
-				if (agentDir == '') return
-				const notesDir = joinPath(agentDir, 'notes')
-
-				// 读取现有文件，清理已删除的笔记
-				const existingFiles = listDir(notesDir)
-				const currentIds: string[] = []
-				for (let i = 0; i < this.notes.length; i++) {
-					currentIds.push(this.notes[i]['id'] as string)
-				}
-				for (let i = 0; i < existingFiles.length; i++) {
-					const file = existingFiles[i] as FileItem
-					if (file.isDirectory) continue
-					if (!file.name.endsWith('.md')) continue
-					const noteId = file.name.substring(0, file.name.length - 3)
-					let found = false
-					for (let j = 0; j < currentIds.length; j++) {
-						if (currentIds[j] == noteId) {
-							found = true
-							break
+				for (let ai = 0; ai < this.agents.length; ai++) {
+					const agentId = this.agents[ai]['id'] as string
+					if (agentId == '') continue
+					// 筛选此 agent 的笔记
+					const notes: UTSJSONObject[] = []
+					for (let ni = 0; ni < this.notes.length; ni++) {
+						if ((this.notes[ni]['agentId'] as string) == agentId) {
+							notes.push(this.notes[ni])
 						}
 					}
-					if (!found) {
-						deleteItem(file.path, false)
+					const agentDir = this.getOwnerDir(agentId)
+					if (agentDir == '') continue
+					const notesDir = joinPath(agentDir, 'notes')
+					// 收集当前笔记 ID
+					const currentIds: string[] = []
+					for (let ni = 0; ni < notes.length; ni++) {
+						currentIds.push(notes[ni]['id'] as string)
 					}
-				}
-
-				// 写入所有笔记
-				for (let i = 0; i < this.notes.length; i++) {
-					const note = this.notes[i]
-					const noteId = note['id'] as string
-					const title = note['title'] as string
-					const content = note['content'] as string
-					const md = buildNoteMarkdown(title, content, noteId)
-					const filePath = joinPath(notesDir, noteId + '.md')
-					writeContent(filePath, md)
+					// 清理已删除的文件
+					const existingFiles = listDir(notesDir)
+					for (let ei = 0; ei < existingFiles.length; ei++) {
+						const file = existingFiles[ei] as FileItem
+						if (file.isDirectory) continue
+						if (!file.name.endsWith('.md')) continue
+						const noteId = file.name.substring(0, file.name.length - 3)
+						let found = false
+						for (let ci = 0; ci < currentIds.length; ci++) {
+							if (currentIds[ci] == noteId) {
+								found = true
+								break
+							}
+						}
+						if (!found) {
+							deleteItem(file.path, false)
+						}
+					}
+					// 写入当前笔记
+					for (let ni = 0; ni < notes.length; ni++) {
+						const note = notes[ni]
+						const noteId = note['id'] as string
+						const title = note['title'] as string
+						const content = note['content'] as string
+						const md = buildNoteMarkdown(title, content, noteId)
+						const filePath = joinPath(notesDir, noteId + '.md')
+						writeContent(filePath, md)
+					}
 				}
 			},
 
@@ -484,6 +612,16 @@
 				this.editingNoteId = note['id'] as string
 				this.editingNoteTitle = note['title'] as string
 				this.editingNoteContent = note['content'] as string
+				// 查找 agent 索引
+				const noteAgentId = note['agentId'] as string
+				let foundIdx = 0
+				for (let ai = 0; ai < this.agents.length; ai++) {
+					if ((this.agents[ai]['id'] as string) == noteAgentId) {
+						foundIdx = ai
+						break
+					}
+				}
+				this.editingNoteAgentIndex = foundIdx
 				this.isEditingNote = true
 			},
 
@@ -506,12 +644,22 @@
 				}
 				let timeStr = this.formatNow()
 
+				// 确定所属 agent
+				let targetAgent: UTSJSONObject | null = null
+				if (this.editingNoteAgentIndex >= 0 && this.editingNoteAgentIndex < this.agents.length) {
+					targetAgent = this.agents[this.editingNoteAgentIndex]
+				}
+				const agentId = targetAgent != null ? (targetAgent['id'] as string) : ''
+				const agentName = targetAgent != null ? (targetAgent['name'] as string) : ''
+
 				if (this.editingNoteId == '') {
 					let newNote = {
 						id: '' + Date.now(),
 						title: title,
 						content: content,
-						updatedAt: timeStr
+						updatedAt: timeStr,
+						agentId: agentId,
+						agentName: agentName
 					} as UTSJSONObject
 					this.notes.unshift(newNote)
 				} else {
@@ -805,5 +953,50 @@
 		border-radius: 999rpx;
 		padding: 4rpx 12rpx;
 		margin-left: 12rpx;
+	}
+
+	/* ===== Agent 分组头 ===== */
+	.agent-section-header {
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 0 10rpx 0;
+	}
+
+	.agent-section-name {
+		font-size: 26rpx;
+		font-weight: bold;
+		color: #DB2777;
+	}
+
+	/* ===== Agent 选择器 ===== */
+	.agent-selector {
+		margin-top: 16rpx;
+		margin-bottom: 8rpx;
+	}
+
+	.agent-options {
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+
+	.agent-option {
+		padding: 10rpx 24rpx;
+		border-radius: 12rpx;
+		background-color: #F3F4F6;
+		margin-right: 12rpx;
+		margin-bottom: 8rpx;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: #E5E7EB;
+	}
+
+	.agent-option-active {
+		border-color: #DB2777;
+		background-color: #FDE8EF;
+	}
+
+	.agent-option-text {
+		font-size: 26rpx;
+		color: #111827;
 	}
 </style>

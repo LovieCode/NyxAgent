@@ -114,12 +114,12 @@
 				</view>
 			</rice-dialog>
 		</view>
-		<TabBar current="pages/notes/notes" />
+		<TabBar current="pages/files/files" />
 	</view>
 </template>
 
 <script lang="uts">
-	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, readContent, writeContent, parentPath, basename, joinPath, normalizePath, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
+	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, readContent, writeContent, parentPath, basename, joinPath, normalizePath, getUserDir, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
 
 	/** 虚拟根路径标记（合并视图用） */
 	const VIRTUAL_ROOT = '__FILE_ROOT__'
@@ -167,6 +167,7 @@
 					p = p.substring(0, p.length - 1)
 				}
 				const stack: PathSegment[] = []
+				const userDir = getUserDir()
 				// 从叶子向上收集所有层级
 				while (p != '') {
 					const name = basename(p)
@@ -196,6 +197,10 @@
 					// 跳过 agents 容器目录本身
 					if (displayName == 'agents') {
 						continue
+					}
+					// 用户目录固定显示中文名
+					if (userDir != '' && stack[i].path == userDir) {
+						displayName = '用户目录'
 					}
 					// 父级是 agents → 当前段是 agent ID，替换为显示名
 					if (i + 1 < stack.length && stack[i + 1].name == 'agents') {
@@ -385,7 +390,16 @@
 					uni.showToast({ position: 'bottom', title: '名称不能包含斜杠', icon: 'none' })
 					return
 				}
-				const fullPath = joinPath(this.currentPath, name)
+				let basePath = this.currentPath
+				const shouldEnterUserDir = basePath == VIRTUAL_ROOT
+				if (basePath == VIRTUAL_ROOT) {
+					basePath = getUserDir()
+					if (basePath == '') {
+						uni.showToast({ position: 'bottom', title: '用户目录不可用', icon: 'none' })
+						return
+					}
+				}
+				const fullPath = joinPath(basePath, name)
 				let result: FileOpResult
 				if (this.createMode == 'dir') {
 					result = createDir(fullPath, true)
@@ -396,6 +410,9 @@
 					uni.showToast({ position: 'bottom', title: '已创建', icon: 'success' })
 					this.showCreateDialog = false
 					this.createName = ''
+					if (shouldEnterUserDir) {
+						this.currentPath = basePath
+					}
 					this.refreshList()
 				} else {
 					uni.showToast({ position: 'bottom', title: '创建失败: ' + result.error, icon: 'none' })
@@ -513,7 +530,18 @@
 				return '#9CA3AF'
 			},
 
-			/** 检测是否分组起始（名称含 [Agent] 时为 Agent 组） */
+			/** 获取根视图分组类型 */
+			getItemGroup(item : FileItem) : string {
+				if (item.name.startsWith('[User]')) {
+					return 'user'
+				}
+				if (item.name.startsWith('[Agent]')) {
+					return 'agent'
+				}
+				return 'file'
+			},
+
+			/** 检测是否分组起始 */
 			isGroupStart(index : number, item : FileItem) : boolean {
 				if (index == 0) {
 					return true
@@ -522,14 +550,14 @@
 				if (prevItem == null) {
 					return true
 				}
-				// 分组依据：名称是否以 [Agent] 开头
-				const curIsAgent = item.name.startsWith('[Agent]')
-				const prevIsAgent = prevItem.name.startsWith('[Agent]')
-				return curIsAgent != prevIsAgent
+				return this.getItemGroup(item) != this.getItemGroup(prevItem)
 			},
 
 			/** 获取分组标签 */
 			getSectionLabel(item : FileItem) : string {
+				if (item.name.startsWith('[User]')) {
+					return '用户目录'
+				}
 				if (item.name.startsWith('[Agent]')) {
 					return 'Agent 目录'
 				}
