@@ -47,6 +47,23 @@ function buildMemoryManagerStorageKey(agentId: string, conversationId: string): 
 	return MEMORY_MANAGER_LAST_KEY_PREFIX + agentId + '_' + conversationId
 }
 
+function pad2(value: number): string {
+	if (value < 10) return '0' + value.toString()
+	return value.toString()
+}
+
+function formatMemoryMessageTime(timestamp: number): string {
+	if (timestamp <= 0) return '时间未知'
+	const d = new Date(timestamp)
+	const year = d.getFullYear().toString()
+	const month = pad2(d.getMonth() + 1)
+	const day = pad2(d.getDate())
+	const hour = pad2(d.getHours())
+	const minute = pad2(d.getMinutes())
+	const second = pad2(d.getSeconds())
+	return year + '-' + month + '-' + day + ' ' + hour + ':' + minute + ':' + second
+}
+
 function sanitizeMemoryManagerContent(content: string): string {
 	let text = content.trim()
 	text = text.replace(/\r/g, '\n')
@@ -65,7 +82,9 @@ function buildDroppedMessagesTranscript(messages: UTSJSONObject[]): string {
 		if (role == null || rawContent == null) continue
 		const content = sanitizeMemoryManagerContent(rawContent)
 		if (content == '') continue
-		let line = '[' + role + '] ' + content
+		const rawTimestamp = messages[i]['timestamp'] as number | null
+		const timestamp = rawTimestamp != null ? rawTimestamp : 0
+		let line = '[' + role + ' @ ' + formatMemoryMessageTime(timestamp) + '] ' + content
 		if (line.length > budget) {
 			line = line.substring(0, budget)
 		}
@@ -76,6 +95,18 @@ function buildDroppedMessagesTranscript(messages: UTSJSONObject[]): string {
 		}
 	}
 	return text.trim()
+}
+
+function findLatestMessageTime(messages: UTSJSONObject[]): string {
+	let latest = 0
+	for (let i = 0; i < messages.length; i++) {
+		const rawTimestamp = messages[i]['timestamp'] as number | null
+		const timestamp = rawTimestamp != null ? rawTimestamp : 0
+		if (timestamp > latest) {
+			latest = timestamp
+		}
+	}
+	return formatMemoryMessageTime(latest)
 }
 
 function buildDroppedMessagesSignature(messages: UTSJSONObject[]): string {
@@ -165,6 +196,7 @@ function buildMemoryManagerSystemPrompt(agentId: string, conversationId: string,
 		'只保存长期有用、未来会复用的信息：用户稳定偏好、明确规则、关键事实、对某人/某 Agent 的重要印象。\n' +
 		'不要保存工具调用信息、工具结果、API 密钥、临时流水账、一次性任务细节、用户未明确表达的猜测。\n' +
 		'默认面对对象是当前用户：target_type=user，target_id 留空。对话内短期状态优先写入短记忆缓存，不要写入重要记忆。\n' +
+		'时间语义规则：每条整理输入都带消息时间戳。对话里提到的“现在/当前/凌晨两点”等必须以该条消息时间为参照，再和最新消息时间比较，不能把旧消息时间误当成当前状态。短记忆缓存不要只记录“当前时间是几点/现在是某时”，应记录任务状态或临时约束。\n' +
 		'如果需要保存长期记忆，优先使用 memory_core_save；如果发现明显重复或过期，可以谨慎使用 memory_core_forget。\n' +
 		'保存范围建议：稳定偏好用 person_only/preference；面对某人的规则用 person_only/rule；全局规则才用 rule/rule；跨对话事实用 person_only/fact；只对当前对话有用才用 conversation_only。person_only/manual_only 的数量限制按面对对象独立，不同对象不要互相挤占。\n' +
 		'当前 agentId=' + agentId + '，conversationId=' + conversationId + '。最终只回复一行整理结果。'
@@ -172,7 +204,11 @@ function buildMemoryManagerSystemPrompt(agentId: string, conversationId: string,
 
 function buildMemoryManagerMessages(allMessages: UTSJSONObject[]): UTSJSONObject[] {
 	const transcript = buildDroppedMessagesTranscript(allMessages)
+	const latestTime = findLatestMessageTime(allMessages)
+	const runTime = formatMemoryMessageTime(Date.now())
 	const content = '以下为当前对话的完整上下文，请核查并整理重要信息到记忆库。\n\n' +
+		'【时间轴】最新消息时间：' + latestTime + '；本次整理运行时间：' + runTime + '。\n' +
+		'【时间说明】每条消息头部的 @ 时间是该消息发送时间。消息中出现的“现在/当前/凌晨两点”等相对时间，必须以该条消息时间为参照，再结合最新消息时间判断是否仍有效，不能直接写成短缓存状态。整理运行时间只用于判断新旧，不得作为记忆内容写入。\n\n' +
 		'【完整对话上下文】\n' + transcript
 	const messages: UTSJSONObject[] = []
 	messages.push({
@@ -194,9 +230,11 @@ function collectMemoryCandidateMessages(messages: UTSJSONObject[]): UTSJSONObjec
 		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true) continue
 		const rawContent = msg['content'] as string | null
 		if (rawContent == null || rawContent.trim() == '') continue
+		const rawTimestamp = msg['timestamp'] as number | null
 		list.push({
 			role: role,
 			content: rawContent,
+			timestamp: rawTimestamp != null ? rawTimestamp : 0,
 		} as UTSJSONObject)
 	}
 	return list
@@ -435,9 +473,11 @@ function prepareAgentContext(
 			if (i == lastUserIndex) { lastUserIndex = -1 }
 			const rawContent = msg['content'] as string | null
 			if (rawContent != null && rawContent.trim() != '') {
+				const rawTimestamp = msg['timestamp'] as number | null
 				droppedMessages.push({
 					role: role != null ? role : '',
 					content: rawContent,
+					timestamp: rawTimestamp != null ? rawTimestamp : 0,
 				} as UTSJSONObject)
 			}
 			continue
