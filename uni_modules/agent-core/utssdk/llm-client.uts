@@ -96,18 +96,66 @@ function buildDroppedMessagesSignature(messages: UTSJSONObject[]): string {
 	return messages.length + '|' + total + '|' + firstText + '|' + lastText
 }
 
-function shouldRunMemoryManager(agentId: string, conversationId: string, droppedMessages: UTSJSONObject[]): boolean {
+function buildDroppedMessagesPreview(messages: UTSJSONObject[]): UTSJSONObject[] {
+	const list: UTSJSONObject[] = []
+	const limit = messages.length > 12 ? 12 : messages.length
+	for (let i = 0; i < limit; i++) {
+		const role = messages[i]['role'] as string | null
+		const rawContent = messages[i]['content'] as string | null
+		let content = rawContent != null ? rawContent : ''
+		if (content.length > 200) {
+			content = content.substring(0, 200) + '...'
+		}
+		list.push({
+			role: role != null ? role : '',
+			content: content,
+		} as UTSJSONObject)
+	}
+	if (messages.length > limit) {
+		list.push({
+			role: 'summary',
+			content: '还有 ' + (messages.length - limit) + ' 条被截断消息未展开',
+		} as UTSJSONObject)
+	}
+	return list
+}
+
+function buildMemoryManagerRunSignature(droppedMessages: UTSJSONObject[], sourceMessages: UTSJSONObject[]): string {
+	const droppedSignature = buildDroppedMessagesSignature(droppedMessages)
+	if (droppedSignature == '') return ''
+	let candidateCount = 0
+	let total = 0
+	let lastText = ''
+	for (let i = 0; i < sourceMessages.length; i++) {
+		const msg = sourceMessages[i]
+		const role = msg['role'] as string | null
+		if (role != 'user' && role != 'assistant') continue
+		if (role == 'assistant' && msg['tool_calls'] != null) continue
+		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true) continue
+		const content = msg['content'] as string | null
+		if (content == null || content.trim() == '') continue
+		candidateCount++
+		total = total + content.length
+		lastText = content.substring(0, content.length > 48 ? 48 : content.length)
+	}
+	return droppedSignature + '|source=' + sourceMessages.length + '|candidate=' + candidateCount + '|' + total + '|' + lastText
+}
+
+function shouldRunMemoryManager(agentId: string, conversationId: string, signature: string): boolean {
 	if (getMemoryEnabled() == false) return false
-	if (droppedMessages.length == 0) return false
-	const signature = buildDroppedMessagesSignature(droppedMessages)
 	if (signature == '') return false
 	const storageKey = buildMemoryManagerStorageKey(agentId, conversationId)
 	const previous = uni.getStorageSync(storageKey) as string | null
 	if (previous != null && previous == signature) {
 		return false
 	}
-	uni.setStorageSync(storageKey, signature)
 	return true
+}
+
+function markMemoryManagerRun(agentId: string, conversationId: string, signature: string): void {
+	if (signature == '') return
+	const storageKey = buildMemoryManagerStorageKey(agentId, conversationId)
+	uni.setStorageSync(storageKey, signature)
 }
 
 function buildMemoryManagerSystemPrompt(agentId: string, conversationId: string): string {
@@ -258,6 +306,41 @@ function buildUserMessageForAgent(msg: UTSJSONObject, suffixBlocks: AgentContext
 	} as UTSJSONObject
 }
 
+function getContextMessageScore(msg: UTSJSONObject): number {
+	const role = msg['role'] as string | null
+	if (role == 'user') return 1
+	if (role == 'assistant') {
+		if (msg['tool_calls'] == null) return 0.3
+		return 0.1
+	}
+	if (role == 'tool' || role == 'toolResult') return 0.1
+	return 0
+}
+
+function normalizeContextSkipCount(messages: UTSJSONObject[], skipCount: number): number {
+	if (skipCount <= 0) return 0
+	let counted = 0
+	let nextIndex = messages.length
+	for (let i = 0; i < messages.length; i++) {
+		const msgScore = getContextMessageScore(messages[i])
+		if (msgScore <= 0) continue
+		counted++
+		if (counted >= skipCount) {
+			nextIndex = i + 1
+			break
+		}
+	}
+	while (nextIndex < messages.length) {
+		const role = messages[nextIndex]['role'] as string | null
+		if (role != 'tool' && role != 'toolResult') break
+		if (getContextMessageScore(messages[nextIndex]) > 0) {
+			counted++
+		}
+		nextIndex++
+	}
+	return counted
+}
+
 function prepareAgentContext(
 	messages: UTSJSONObject[],
 	systemPrompt: string,
@@ -313,32 +396,40 @@ function prepareAgentContext(
 			const threshold = rawThreshold != null ? (rawThreshold as number) : 40
 			const dropCount = rawDropCount != null ? (rawDropCount as number) : 20
 			if (threshold > 0 && dropCount > 0) {
-				let score: number = 0
+				let score: number = systemCount
 				let totalDialog = 0
 				for (let i = 0; i < messages.length; i++) {
-					const r = messages[i]['role'] as string | null
-					if (r == 'user') {
-						score = score + 1
-						totalDialog++
-					} else if (r == 'assistant' && messages[i]['tool_calls'] == null) {
-						score = score + 0.3
-						totalDialog++
-					} else if (r == 'assistant' || r == 'tool') {
-						score = score + 0.1
+					const msgScore = getContextMessageScore(messages[i])
+					if (msgScore > 0) {
+						score = score + msgScore
 						totalDialog++
 					}
 				}
-				if ((systemCount + score) > threshold) {
-					remainingSkip = dropCount < totalDialog ? dropCount : totalDialog
+				if (score > threshold) {
+					let trimScore = score
+					let batchLimit = dropCount
+					for (let i = 0; i < messages.length; i++) {
+						const msgScore = getContextMessageScore(messages[i])
+						if (msgScore <= 0) continue
+						remainingSkip++
+						trimScore = trimScore - msgScore
+						if (remainingSkip >= batchLimit && (trimScore <= threshold || remainingSkip >= totalDialog)) {
+							break
+						}
+						if (remainingSkip >= batchLimit && trimScore > threshold) {
+							batchLimit = batchLimit + dropCount
+						}
+					}
 				}
 			}
 		}
+		remainingSkip = normalizeContextSkipCount(messages, remainingSkip)
 	}
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i]
 		const role = msg['role'] as string | null
 		// 跳过早的对话消息（含工具调用/结果）
-		if (remainingSkip > 0 && (role == 'user' || role == 'assistant' || role == 'tool')) {
+		if (remainingSkip > 0 && getContextMessageScore(msg) > 0) {
 			remainingSkip--
 			if (i == lastUserIndex) { lastUserIndex = -1 }
 			const rawContent = msg['content'] as string | null
@@ -844,15 +935,18 @@ function runAgentLoop(
 	const mdl = config.model
 	baseUrl = normalizeBaseUrl(baseUrl)
 
-	const prepared = prepareAgentContext(messages, systemPrompt, agentId, conversationId, allowCoreMemoryWrite, enableMemoryManager)
+	// 上下文截断和记忆管理递归开关解耦：管理 Agent 不递归整理，但仍需要正常截断。
+	const prepared = prepareAgentContext(messages, systemPrompt, agentId, conversationId, allowCoreMemoryWrite, true)
 	const workingMessages = prepared.workingMessages
 	const personId = 'default'
 	const tools = createAgentTools(agentId, conversationId, personId, allowCoreMemoryWrite)
 	const toolDefs = prepared.toolDefs
 
-	if (enableMemoryManager == true && shouldRunMemoryManager(agentId, conversationId, prepared.droppedMessages) == true) {
+	const memoryRunSignature = buildMemoryManagerRunSignature(prepared.droppedMessages, messages)
+	if (enableMemoryManager == true && shouldRunMemoryManager(agentId, conversationId, memoryRunSignature) == true) {
 		const started = startMemoryManagerLoop?.invoke(collectMemoryCandidateMessages(messages), providerId, model, agentId, conversationId)
 		if (started == true) {
+			markMemoryManagerRun(agentId, conversationId, memoryRunSignature)
 			stream.push({ type: 'memory_organize_start', message: '记忆整理已开始' })
 		}
 	}
@@ -1178,6 +1272,8 @@ export function buildAgentContextPreview(
 		bufferInjection: prepared.bufferInjection,
 		lastUserIndex: prepared.lastUserIndex,
 		totalMessages: messages.length,
+		droppedCount: prepared.droppedMessages.length,
+		droppedPreview: buildDroppedMessagesPreview(prepared.droppedMessages),
 		lastTokenUsage: lastTokenUsage,
 		workingMessages: prepared.workingMessages,
 		openaiMessages: apiMessages,
