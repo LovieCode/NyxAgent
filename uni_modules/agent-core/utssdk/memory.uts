@@ -1,6 +1,6 @@
-﻿/**
+/**
  * Agent 记忆系统（SDK 模块）
- * - 短缓存：最多 128 字，运行时临时拼接到最新用户消息，不落入消息历史。
+ * - 短缓存：最多 64 字，运行时临时拼接到最新用户消息，不落入消息历史。
  * - 重要信息库：按固定 scope/category 存储，受限查询/写入，不开放 raw SQL。
  *
  * 存储后端：laoqianjunzi-sqlite（agent_chat.db）
@@ -11,7 +11,7 @@ const DB_NAME = 'agent_chat.db'
 const MEMORY_ENABLED_KEY = 'settings_memory_enabled'
 const DEFAULT_PERSON_ID = 'default'
 const DEFAULT_CONVERSATION_ID = 'global'
-const BUFFER_LIMIT = 128
+const BUFFER_LIMIT = 64
 const CORE_CONTENT_LIMIT = 240
 const CORE_INJECT_BUDGET = 800
 

@@ -32,7 +32,7 @@ export type PreparedAgentContext = {
 	droppedMessages: UTSJSONObject[]
 }
 
-import { resolveLLMConfig, normalizeBaseUrl } from './provider'
+import { resolveLLMConfig, normalizeBaseUrl, getMemoryOrganizeTaskModel } from './provider'
 import { getAgentById } from '@/utils/agent.uts'
 import { getGlobalGenerationSettings, getEffectiveGenerationSettings, GenerationSettings } from '@/utils/generation-settings.uts'
 import { createAgentTools, AgentTool, ToolResult } from './tools/agent-tools'
@@ -160,11 +160,12 @@ function markMemoryManagerRun(agentId: string, conversationId: string, signature
 
 function buildMemoryManagerSystemPrompt(agentId: string, conversationId: string): string {
 	return '你是记忆管理 Agent，不参与普通聊天，只负责在上下文截断时整理长期记忆。\n' +
-		'你拥有完整工具，可以查询历史、查看已有记忆、保存或遗忘重要记忆。必须先核查已有记忆，避免重复写入。\n' +
+		'你拥有完整工具，可以查询历史、查看已有记忆、保存或遗忘重要记忆，也可以用 memory_buffer_write 整理 64 字以内短记忆缓存。\n' +
+		'本轮最大迭代次数为 20。必须先核查已有记忆，避免重复写入。\n' +
 		'只保存长期有用、未来会复用的信息：用户稳定偏好、明确规则、关键事实、对某人/某 Agent 的重要印象。\n' +
 		'不要保存工具调用信息、工具结果、API 密钥、临时流水账、一次性任务细节、用户未明确表达的猜测。\n' +
-		'默认面对对象是当前用户：target_type=user，target_id 留空。对话内短期状态不要写入重要记忆。\n' +
-		'如果需要保存，优先使用 memory_core_save；如果发现明显重复或过期，可以谨慎使用 memory_core_forget。\n' +
+		'默认面对对象是当前用户：target_type=user，target_id 留空。对话内短期状态优先写入短记忆缓存，不要写入重要记忆。\n' +
+		'如果需要保存长期记忆，优先使用 memory_core_save；如果发现明显重复或过期，可以谨慎使用 memory_core_forget。\n' +
 		'保存范围建议：稳定偏好用 person_only/preference；长期规则用 rule/rule；跨对话事实用 person_only/fact；只对当前对话有用才用 conversation_only。\n' +
 		'当前 agentId=' + agentId + '，conversationId=' + conversationId + '。最终只回复一行整理结果。'
 }
@@ -181,7 +182,7 @@ function buildMemoryManagerMessages(allMessages: UTSJSONObject[]): UTSJSONObject
 	return messages
 }
 
-let startMemoryManagerLoop: ((allMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string) => boolean) | null = null
+let startMemoryManagerLoop: ((allMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string, markSignature: string) => boolean) | null = null
 
 function collectMemoryCandidateMessages(messages: UTSJSONObject[]): UTSJSONObject[] {
 	const list: UTSJSONObject[] = []
@@ -213,7 +214,7 @@ export function organizeAgentMemory(
 	if (candidates.length == 0) return false
 	const starter = startMemoryManagerLoop
 	if (starter == null) return false
-	return starter.invoke(candidates, providerId, model, agentId, conversationId)
+	return starter.invoke(candidates, providerId, model, agentId, conversationId, '')
 }
 
 // ====== 内部函数 ======
@@ -944,9 +945,8 @@ function runAgentLoop(
 
 	const memoryRunSignature = buildMemoryManagerRunSignature(prepared.droppedMessages, messages)
 	if (enableMemoryManager == true && shouldRunMemoryManager(agentId, conversationId, memoryRunSignature) == true) {
-		const started = startMemoryManagerLoop?.invoke(collectMemoryCandidateMessages(messages), providerId, model, agentId, conversationId)
+		const started = startMemoryManagerLoop?.invoke(collectMemoryCandidateMessages(messages), providerId, model, agentId, conversationId, memoryRunSignature)
 		if (started == true) {
-			markMemoryManagerRun(agentId, conversationId, memoryRunSignature)
 			stream.push({ type: 'memory_organize_start', message: '记忆整理已开始' })
 		}
 	}
@@ -1161,24 +1161,36 @@ function runAgentLoop(
 	continueLoop()
 }
 
-startMemoryManagerLoop = (allMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string): boolean => {
+startMemoryManagerLoop = (allMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string, markSignature: string): boolean => {
 	const managerMessages = buildMemoryManagerMessages(allMessages)
 	if (managerMessages.length == 0) return false
 	const managerSystemPrompt = buildMemoryManagerSystemPrompt(agentId, conversationId)
 	const agent = getAgentById(agentId)
 	const settings = getEffectiveGenerationSettings(agent)
 	settings.streamEnabled = false
-	if (settings.maxIterations == 0 || settings.maxIterations > 8) {
-		settings.maxIterations = 8
-	}
+	settings.maxIterations = 20
 	if (settings.maxTokens > 2048) {
 		settings.maxTokens = 2048
+	}
+	let managerProviderId = providerId
+	let managerModel = model
+	const managerTaskModel = getMemoryOrganizeTaskModel()
+	if (managerTaskModel != null) {
+		const rawProvider = managerTaskModel['providerId'] as string | null
+		const rawModel = managerTaskModel['model'] as string | null
+		if (rawProvider != null && rawProvider != '') {
+			managerProviderId = rawProvider
+		}
+		if (rawModel != null && rawModel != '') {
+			managerModel = rawModel
+		}
 	}
 	// 记录本次整理的操作明细
 	const toolOps: UTSJSONObject[] = []
 	let savedCount = 0
 	let forgottenCount = 0
 	let summaryText = ''
+	let hasError = false
 	const managerStream = new AgentEventStream()
 	managerStream.on((event: AgentEvent): void => {
 		if (event.type == 'tool_call' && event.toolName != null) {
@@ -1193,7 +1205,12 @@ startMemoryManagerLoop = (allMessages: UTSJSONObject[], providerId: string, mode
 			}
 		} else if (event.type == 'text_end' && event.fullText != null) {
 			summaryText = event.fullText
+		} else if (event.type == 'error') {
+			hasError = true
 		} else if (event.type == 'agent_end') {
+			if (hasError == true) {
+				return
+			}
 			// Agent 循环结束，写入日志
 			const now = Date.now()
 			const logId = 'mmlog_' + now + '_' + allMessages.length
@@ -1210,10 +1227,11 @@ startMemoryManagerLoop = (allMessages: UTSJSONObject[], providerId: string, mode
 				details: opsJson,
 			} as MemoryManagerLog
 			saveMemoryManagerLog(log)
+			markMemoryManagerRun(agentId, conversationId, markSignature)
 		}
 	})
 	setTimeout(() => {
-		runAgentLoop(managerMessages, managerSystemPrompt, providerId, model, agentId, settings, managerStream, conversationId, true, false)
+		runAgentLoop(managerMessages, managerSystemPrompt, managerProviderId, managerModel, agentId, settings, managerStream, conversationId, true, false)
 	}, 0)
 	return true
 }

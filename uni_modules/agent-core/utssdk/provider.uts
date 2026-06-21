@@ -349,6 +349,7 @@ export function getProviderApiConfig(id: string): UTSJSONObject | null {
 /** 任务类型中文名 */
 const taskTypeNames: UTSJSONObject = {
 	chat: '对话',
+	memory_organize: '记忆整理',
 	vision: '识图',
 	stt: '语音识别',
 	tts: '语音合成',
@@ -416,6 +417,17 @@ export function setDefaultTaskModel(type: string, providerId: string, model: str
 		uni.setStorageSync('settings_model', model)
 		uni.setStorageSync('settings_provider_id', providerId)
 	}
+}
+
+export function getMemoryOrganizeTaskModel(): UTSJSONObject | null {
+	const config = getDefaultTaskModel('memory_organize')
+	if (config == null) return null
+	const rawPid = config['providerId'] as string | null
+	const rawModel = config['model'] as string | null
+	const providerId = rawPid != null ? rawPid : ''
+	const model = rawModel != null ? rawModel : ''
+	if (providerId == '' || model == '') return null
+	return config
 }
 
 
@@ -520,7 +532,7 @@ export function resolveLLMConfig(providerId: string, model: string): LLMConfig |
  * 获取所有任务的默认配置
  */
 export function getAllDefaultTaskModels(): UTSJSONObject[] {
-	const taskTypes: string[] = ['chat', 'vision', 'stt', 'tts']
+	const taskTypes: string[] = ['chat', 'memory_organize', 'vision', 'stt', 'tts']
 	const result: UTSJSONObject[] = []
 	for (let i = 0; i < taskTypes.length; i++) {
 		const t = taskTypes[i]
