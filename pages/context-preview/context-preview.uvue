@@ -61,12 +61,20 @@
 					<text class="summary-section-title">上下文规模（Token 估算）</text>
 					<view class="summary-main-metrics">
 						<view class="summary-metric">
+							<text class="summary-metric-value">{{totalMessages}}</text>
+							<text class="summary-metric-label">原始消息</text>
+						</view>
+						<view class="summary-metric">
 							<text class="summary-metric-value">{{messageCount}}</text>
-							<text class="summary-metric-label">发送消息 / 原始 {{totalMessages}}</text>
+							<text class="summary-metric-label">发送消息</text>
+						</view>
+						<view class="summary-metric">
+							<text class="summary-metric-value">{{droppedCount}}</text>
+							<text class="summary-metric-label">已截断</text>
 						</view>
 						<view class="summary-metric summary-metric-last">
 							<text class="summary-metric-value">≈ {{totalTokens}}</text>
-							<text class="summary-metric-label">上下文 Token（估算）</text>
+							<text class="summary-metric-label">Token 估算</text>
 						</view>
 					</view>
 					<view class="summary-role-list">
@@ -159,6 +167,7 @@
 				model: '' as string,
 				messageCount: 0 as number,
 				totalMessages: 0 as number,
+				droppedCount: 0 as number,
 				userMsgCount: 0 as number,
 				userCharCount: 0 as number,
 				assistantMsgCount: 0 as number,
@@ -254,6 +263,8 @@
 				this.messageCount = openaiMessages != null ? openaiMessages.length : 0
 				const rawTotal = parsed['totalMessages'] as number | null
 				this.totalMessages = rawTotal != null ? rawTotal : this.messageCount
+				const rawDropped = parsed['droppedCount'] as number | null
+				this.droppedCount = rawDropped != null ? rawDropped : 0
 				// 按角色统计消息数和字数
 				if (openaiMessages != null) {
 					let uc = 0; let ucc = 0; let ac = 0; let acc = 0
@@ -783,8 +794,8 @@
 		flex: 1;
 		background-color: #FFF7FA;
 		border-radius: 18rpx;
-		padding: 20rpx 16rpx;
-		margin-right: 12rpx;
+		padding: 18rpx 8rpx;
+		margin-right: 8rpx;
 	}
 
 	.summary-metric-last {
@@ -792,14 +803,14 @@
 	}
 
 	.summary-metric-value {
-		font-size: 34rpx;
+		font-size: 30rpx;
 		font-weight: bold;
 		color: var(--rice-primary-color);
 	}
 
 	.summary-metric-label {
-		font-size: 21rpx;
-		line-height: 30rpx;
+		font-size: 20rpx;
+		line-height: 28rpx;
 		color: #6B7280;
 		margin-top: 6rpx;
 	}
