@@ -410,9 +410,8 @@
 				}
 				if (this.injectDatetime == true && lastUserIndex >= 0 && lastUserIndex < runtimeMessages.length) {
 					const target = runtimeMessages[lastUserIndex]
-					const rawContent = target['content'] as string | null
-					const content = rawContent != null ? rawContent : ''
-					target['content'] = this.buildDatetimePrefix() + '\n' + content
+					target['agent_context_before'] = this.buildDatetimePrefix()
+					target['agent_context_before_label'] = '当前时间'
 					runtimeMessages.splice(lastUserIndex, 1, target)
 				}
 				return runtimeMessages

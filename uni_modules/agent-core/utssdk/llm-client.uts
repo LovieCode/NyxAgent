@@ -39,6 +39,7 @@ import { createAgentTools, AgentTool, ToolResult } from './tools/agent-tools'
 import { AgentEventStream, AgentEvent } from '@/utils/event.uts'
 import { buildImportantMemoryInjection, buildBufferInjection, getMemoryEnabled, saveMemoryManagerLog, MemoryManagerLog } from './memory'
 import { buildAgentSkillsPrompt } from '@/utils/skills.uts'
+import { wrapUserContentForAgent, makeAgentContextBlock, type AgentContextBlock } from '@/utils/message-context.uts'
 
 const MEMORY_MANAGER_LAST_KEY_PREFIX = 'memory_manager_last_compaction_'
 
@@ -224,6 +225,39 @@ function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[]): U
 	return apiMessages
 }
 
+
+function buildUserPrefixContextBlocks(msg: UTSJSONObject): AgentContextBlock[] {
+	const blocks: AgentContextBlock[] = []
+	const rawBefore = msg['agent_context_before'] as string | null
+	if (rawBefore != null) {
+		const beforeContent = rawBefore as string
+		if (beforeContent.trim() != '') {
+			const rawLabel = msg['agent_context_before_label'] as string | null
+			let label = '前置上下文'
+			if (rawLabel != null) {
+				if (rawLabel != '') {
+					label = rawLabel
+				}
+			}
+			blocks.push(makeAgentContextBlock('before', label, beforeContent))
+		}
+	}
+	return blocks
+}
+
+function buildUserMessageForAgent(msg: UTSJSONObject, suffixBlocks: AgentContextBlock[]): UTSJSONObject {
+	const msgContent = msg['content'] as string | null
+	const baseContent = msgContent != null ? msgContent : ''
+	const prefixBlocks = buildUserPrefixContextBlocks(msg)
+	if (prefixBlocks.length == 0 && suffixBlocks.length == 0) {
+		return msg
+	}
+	return {
+		role: 'user',
+		content: wrapUserContentForAgent(baseContent, prefixBlocks, suffixBlocks),
+	} as UTSJSONObject
+}
+
 function prepareAgentContext(
 	messages: UTSJSONObject[],
 	systemPrompt: string,
@@ -318,12 +352,12 @@ function prepareAgentContext(
 		}
 		if (role == null) continue
 		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
-		if (i == lastUserIndex && bufferInjection != '') {
-			const msgContent2 = msg['content'] as string | null
-			workingMessages.push({
-				role: 'user',
-				content: (msgContent2 != null ? msgContent2 : '') + '\n\n' + bufferInjection,
-			} as UTSJSONObject)
+		if (role == 'user') {
+			const suffixBlocks: AgentContextBlock[] = []
+			if (i == lastUserIndex && bufferInjection != '') {
+				suffixBlocks.push(makeAgentContextBlock('after', '短记忆缓存', bufferInjection))
+			}
+			workingMessages.push(buildUserMessageForAgent(msg, suffixBlocks))
 			continue
 		}
 		workingMessages.push(msg)

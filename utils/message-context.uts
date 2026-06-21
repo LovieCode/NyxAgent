@@ -1,0 +1,67 @@
+/**
+ * Agent 内部消息结构化工具。
+ *
+ * 这些标签只出现在发给 LLM 的 runtime messages 中，
+ * 不写入聊天列表 / 数据库 / 用户可见内容。
+ */
+
+export type AgentContextBlock = {
+	position: string
+	label: string
+	content: string
+}
+
+function escapeAgentTagText(text: string): string {
+	let result = text.replace(/<\/user_message>/g, '</ user_message>')
+	result = result.replace(/<user_message>/g, '< user_message>')
+	result = result.replace(/<\/agent_context>/g, '</ agent_context>')
+	result = result.replace(/<agent_context/g, '< agent_context')
+	return result
+}
+
+function escapeAttributeText(text: string): string {
+	let result = text.replace(/&/g, '&amp;')
+	result = result.replace(/"/g, '&quot;')
+	result = result.replace(/</g, '&lt;')
+	result = result.replace(/>/g, '&gt;')
+	return result
+}
+
+function appendContextBlock(parts: string[], block: AgentContextBlock): void {
+	const content = block.content.trim()
+	if (content == '') {
+		return
+	}
+	const position = block.position != '' ? block.position : 'after'
+	const label = block.label != '' ? block.label : 'context'
+	parts.push('<agent_context position="' + escapeAttributeText(position) + '" label="' + escapeAttributeText(label) + '">')
+	parts.push(escapeAgentTagText(content))
+	parts.push('</agent_context>')
+}
+
+export function wrapUserContentForAgent(userContent: string, prefixBlocks: AgentContextBlock[], suffixBlocks: AgentContextBlock[]): string {
+	const hasPrefix = prefixBlocks.length > 0
+	const hasSuffix = suffixBlocks.length > 0
+	if (hasPrefix == false && hasSuffix == false) {
+		return userContent
+	}
+	const parts: string[] = []
+	for (let i = 0; i < prefixBlocks.length; i++) {
+		appendContextBlock(parts, prefixBlocks[i])
+	}
+	parts.push('<user_message>')
+	parts.push(escapeAgentTagText(userContent))
+	parts.push('</user_message>')
+	for (let i = 0; i < suffixBlocks.length; i++) {
+		appendContextBlock(parts, suffixBlocks[i])
+	}
+	return parts.join('\n\n')
+}
+
+export function makeAgentContextBlock(position: string, label: string, content: string): AgentContextBlock {
+	return {
+		position: position,
+		label: label,
+		content: content,
+	} as AgentContextBlock
+}
