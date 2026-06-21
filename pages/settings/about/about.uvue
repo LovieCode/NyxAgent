@@ -6,17 +6,17 @@
 			<!-- Logo 和 App 名称 -->
 			<view class="about-hero">
 				<view class="logo-circle">
-					<text class="logo-text">AI</text>
+					<text class="logo-text">N</text>
 				</view>
-				<text class="app-name">AI 助手</text>
-				<text class="app-version">版本 1.0.0</text>
+				<text class="app-name">{{appName}}</text>
+				<text class="app-version">版本 {{appVersion}}</text>
 			</view>
 
 			<!-- 应用说明卡片 -->
 			<view class="info-card">
 				<text class="info-title">应用简介</text>
 				<text class="info-desc">
-					AI 助手是一款智能对话应用，基于先进的 AI 模型，为你提供高效、自然的对话体验。支持多模型切换、插件扩展，帮助你完成各种任务。
+					NyxAI 是一款智能对话应用，基于先进大语言模型，支持多智能体切换、插件扩展、图片理解等能力，为你提供高效、自然的对话体验。
 				</text>
 			</view>
 
@@ -24,17 +24,17 @@
 			<view class="details-card">
 				<view class="detail-row">
 					<text class="detail-label">应用名称</text>
-					<text class="detail-value">AI 助手</text>
+					<text class="detail-value">{{appName}}</text>
 				</view>
 				<view class="detail-divider"></view>
 				<view class="detail-row">
 					<text class="detail-label">版本号</text>
-					<text class="detail-value">1.0.0</text>
+					<text class="detail-value">{{appVersion}}</text>
 				</view>
 				<view class="detail-divider"></view>
 				<view class="detail-row">
 					<text class="detail-label">构建版本</text>
-					<text class="detail-value">2024.06.17</text>
+					<text class="detail-value">{{appVersionCode}}</text>
 				</view>
 				<view class="detail-divider"></view>
 				<view class="detail-row">
@@ -45,7 +45,7 @@
 
 			<!-- 版权信息 -->
 			<view class="footer">
-				<text class="copyright">© 2024 OhMyOpenCode. All rights reserved.</text>
+				<text class="copyright">© 2026 OhMyOpenCode. All rights reserved.</text>
 			</view>
 		</scroll-view>
 	</view>
@@ -58,9 +58,27 @@
 
 	export default {
 		data() {
-			return {}
+			return {
+				appName: 'NyxAI 眠汐AI',
+				appVersion: '',
+				appVersionCode: '',
+			}
 		},
-		onLoad() {},
+		onLoad() {
+			try {
+				const baseInfo = uni.getAppBaseInfo()
+				if (baseInfo != null) {
+					const rawAppName = baseInfo['appName'] as string | null
+					if (rawAppName != null && rawAppName != '') { this.appName = rawAppName }
+					const rawVersion = baseInfo['appVersion'] as string | null
+					if (rawVersion != null) { this.appVersion = rawVersion }
+					const rawVersionCode = baseInfo['appVersionCode'] as string | null
+					if (rawVersionCode != null) { this.appVersionCode = rawVersionCode }
+				}
+			} catch (_e: any) {}
+			if (this.appVersion == '') { this.appVersion = '1.1.0' }
+			if (this.appVersionCode == '') { this.appVersionCode = '110' }
+		},
 		methods: {
 			goBack() {
 				uni.navigateBack()
