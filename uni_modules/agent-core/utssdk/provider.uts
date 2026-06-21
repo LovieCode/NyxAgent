@@ -60,6 +60,51 @@ export function normalizeBaseUrl(url: string): string {
 }
 
 /**
+ * 剥离 deep thinking 标签及其内容：<think_xxx>...</think_xxx>
+ * 豆包 / DeepSeek 等模型会在 content 中嵌入思考过程，需过滤掉全部思考内容
+ */
+export function stripThinkTags(text: string): string {
+	if (text.indexOf('<think_') < 0 && text.indexOf('</think_') < 0) return text
+	let result = ''
+	let i = 0
+	const len = text.length
+	while (i < len) {
+		// 检测 <think_ 开标签 → 跳过直到匹配的 </think_>
+		if (text[i] == '<' && i + 7 <= len && text.substring(i, i + 7) == '<think_') {
+			// 跳过开标签 <think_...>
+			let j = i + 7
+			while (j < len && text[j] != '>') j++
+			if (j < len) i = j + 1
+			// 跳过中间内容直到 </think_...>
+			while (i < len) {
+				if (text[i] == '<' && text[i + 1] == '/' && i + 8 <= len && text.substring(i, i + 8) == '</think_') {
+					let k = i + 8
+					while (k < len && text[k] != '>') k++
+					if (k < len) {
+						i = k + 1 // 跳过闭标签
+						break
+					}
+				}
+				i++
+			}
+			continue
+		}
+		// 处理孤立的 </think_...> 闭标签（没有对应开标签时）
+		if (text[i] == '<' && text[i + 1] == '/' && i + 8 <= len && text.substring(i, i + 8) == '</think_') {
+			let j = i + 8
+			while (j < len && text[j] != '>') j++
+			if (j < len) {
+				i = j + 1
+				continue
+			}
+		}
+		result += text[i]
+		i++
+	}
+	return result
+}
+
+/**
  * 获取默认 URL（兜底）
  */
 function getDefaultUrl(providerId: string): string {

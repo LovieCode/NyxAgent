@@ -48,7 +48,7 @@ type ImageBase64Result = {
 	mimeType: string
 }
 
-import { resolveLLMConfig, normalizeBaseUrl, getMemoryOrganizeTaskModel } from './provider'
+import { resolveLLMConfig, normalizeBaseUrl, getMemoryOrganizeTaskModel, stripThinkTags } from './provider'
 import { getAgentById } from '@/utils/agent.uts'
 import { getGlobalGenerationSettings, getEffectiveGenerationSettings, getMemoryOrganizerGenerationSettings, GenerationSettings } from '@/utils/generation-settings.uts'
 import { createAgentTools, AgentTool, ToolResult } from './tools/agent-tools'
@@ -755,8 +755,8 @@ function callChatAPI(
 					return
 				}
 
-				const rawText = message['content'] as string | null
-				const text = rawText != null ? rawText : ''
+			const rawText = message['content'] as string | null
+			const text = rawText != null ? stripThinkTags(rawText) : ''
 				const rawToolCalls = message['tool_calls'] as UTSJSONObject[] | null
 				let tcNames = ''
 				if (rawToolCalls != null) {
@@ -847,12 +847,13 @@ function processSSELine(
 			if (onThinking != null) onThinking(reasoning)
 		}
 
-		// 文本内容
-		const content = delta['content'] as string | null
-		if (content != null && content != '') {
-			fullTextRef[0] += content
-			if (onChunk != null) onChunk(content)
-		}
+		// 文本内容（剥离 deep thinking 标签）
+			const content = delta['content'] as string | null
+			if (content != null && content != '') {
+				const cleaned = stripThinkTags(content)
+				fullTextRef[0] += cleaned
+				if (onChunk != null) onChunk(cleaned)
+			}
 
 		// 工具调用
 		const rawToolCalls = delta['tool_calls'] as UTSJSONObject[]
@@ -1135,6 +1136,9 @@ function callChatAPIStream(
 				processSSELine(sseBufferRef[0], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk, fullThinkingRef, onThinking)
 				sseBufferRef[0] = ''
 			}
+			// 最终清理可能跨 chunk 残留的 think 标签
+			fullTextRef[0] = stripThinkTags(fullTextRef[0])
+
 			// 组装结果
 			if (hasToolCallsRef[0] == true) {
 				const tcList: ToolCallInfo[] = []
