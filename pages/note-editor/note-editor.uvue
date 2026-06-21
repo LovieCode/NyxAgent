@@ -1,7 +1,6 @@
 <template>
 	<FullscreenTextEditor
 		:title="pageTitle"
-		:subtitle="subtitle"
 		:value="noteContent"
 		placeholder="笔记内容，支持 - [ ] 待办 / - [x] 完成"
 		:dirty="dirty"
@@ -12,21 +11,6 @@
 		<template #header>
 			<view class="note-meta-panel">
 				<input class="title-input" v-model="noteTitle" placeholder="笔记标题" placeholder-style="color:#D1D5DB;font-size:30rpx;" @input="markDirty" />
-				<view class="agent-block" v-if="agents.length > 0">
-					<text class="form-label">所属</text>
-					<scroll-view class="agent-scroll" :scroll-x="true" :show-scrollbar="false">
-						<view class="agent-options">
-							<view
-								v-for="(agent, index) in agents"
-								:key="agent['id'] as string"
-								:class="['agent-option', selectedAgentIndex == index ? 'agent-option-active' : '']"
-								@click="selectAgent(index)"
-							>
-								<text class="agent-option-text">{{ agent['name'] }}</text>
-							</view>
-						</view>
-					</scroll-view>
-				</view>
 			</view>
 		</template>
 	</FullscreenTextEditor>
@@ -57,10 +41,6 @@
 		computed: {
 			pageTitle(): string {
 				return this.noteId == '' ? '新建笔记' : '编辑笔记'
-			},
-			subtitle(): string {
-				const name = this.getSelectedAgentName()
-				return name != '' ? '保存到：' + name : ''
 			}
 		},
 		onLoad() {
@@ -121,14 +101,6 @@
 				return '用户'
 			},
 
-			selectAgent(index: number) {
-				if (index < 0 || index >= this.agents.length) {
-					return
-				}
-				this.selectedAgentIndex = index
-				this.updateDirty()
-			},
-
 			onContentChange(value: string) {
 				this.noteContent = value
 				this.updateDirty()
@@ -139,7 +111,7 @@
 			},
 
 			updateDirty() {
-				this.dirty = this.noteTitle != this.initialTitle || this.noteContent != this.initialContent || this.getSelectedAgentId() != this.initialAgentId
+				this.dirty = this.noteTitle != this.initialTitle || this.noteContent != this.initialContent
 			},
 
 			onBack() {
@@ -213,42 +185,4 @@
 		background-color: transparent;
 	}
 
-	.agent-block {
-		margin-top: 4rpx;
-	}
-
-	.form-label {
-		font-size: 24rpx;
-		color: #6B7280;
-		margin-bottom: 10rpx;
-	}
-
-	.agent-scroll {
-		width: 100%;
-	}
-
-	.agent-options {
-		flex-direction: row;
-		align-items: center;
-	}
-
-	.agent-option {
-		padding: 10rpx 24rpx;
-		border-radius: 999rpx;
-		background-color: #FFFFFF;
-		margin-right: 12rpx;
-		border-width: 2rpx;
-		border-style: solid;
-		border-color: #F3D5E1;
-	}
-
-	.agent-option-active {
-		border-color: #DB2777;
-		background-color: #FDE8EF;
-	}
-
-	.agent-option-text {
-		font-size: 25rpx;
-		color: #374151;
-	}
 </style>

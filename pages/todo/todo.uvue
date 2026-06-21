@@ -57,12 +57,10 @@
 										{{ todo['title'] }}
 									</text>
 									<view class="todo-meta">
-										<rice-tag
-											:type="getTagType(todo['priority'] as string)"
-											:text="getPriorityLabel(todo['priority'] as string)"
-											size="small"
-											round
-										/>
+										<view :class="['priority-chip', 'priority-chip-' + (todo['priority'] as string)]">
+											<view :class="['priority-dot', 'priority-dot-' + (todo['priority'] as string)]"></view>
+											<text :class="['priority-chip-text', 'priority-chip-text-' + (todo['priority'] as string)]">{{ getPriorityLabel(todo['priority'] as string) }}</text>
+										</view>
 										<text class="todo-time">{{ todo['createdAt'] }}</text>
 									</view>
 								</view>
@@ -154,7 +152,19 @@
 								@longpress="confirmDeleteNote(note['id'] as string)"
 							>
 								<text class="note-title">{{ note['title'] }}</text>
-								<text class="note-preview">{{ getNotePreview(note) }}</text>
+								<view class="note-render-preview">
+									<view
+										v-for="(block, blockIndex) in getNoteRenderBlocks(note)"
+										:key="'note-block-' + (note['id'] as string) + '-' + blockIndex"
+										:class="['note-render-line', block.type == 'todo' ? 'note-render-todo' : '']"
+									>
+										<view v-if="block.type == 'todo'" :class="['note-checkbox', block.checked ? 'note-checkbox-checked' : '']">
+											<text v-if="block.checked" class="note-checkbox-mark">✓</text>
+										</view>
+										<text v-if="block.type == 'bullet'" class="note-bullet">•</text>
+										<text :class="['note-render-text', block.type == 'todo' && block.checked ? 'note-render-text-done' : '', block.type == 'heading' ? 'note-render-heading' : '']">{{ block.text }}</text>
+									</view>
+								</view>
 								<view class="note-meta-row">
 									<text class="note-time">{{ note['updatedAt'] }}</text>
 									<text v-if="getInlineTodoCount(note) > 0" class="note-todo-count">Todo {{ getInlineTodoCount(note) }}</text>
@@ -433,14 +443,6 @@
 				return '低'
 			},
 
-			getTagType(priority : string) : string {
-				if (priority == 'high') {
-					return 'error'
-				} else if (priority == 'medium') {
-					return 'warning'
-				}
-				return 'success'
-			},
 
 			// ===== 笔记相关 =====
 			loadNotes() {
@@ -537,30 +539,18 @@
 					this.padZero(now.getMinutes())
 			},
 
-			getNotePreview(note : UTSJSONObject) : string {
+			getNoteRenderBlocks(note : UTSJSONObject) : KnowledgeRenderBlock[] {
 				const content = note['content'] as string | null
 				if (content == null || content == '') {
-					return ''
+					return [] as KnowledgeRenderBlock[]
 				}
 				const blocks = renderKnowledgeMarkdown(content)
-				const parts: string[] = []
-				for (let i = 0; i < blocks.length && parts.length < 3; i++) {
+				const result: KnowledgeRenderBlock[] = []
+				for (let i = 0; i < blocks.length && result.length < 4; i++) {
 					const block = blocks[i] as KnowledgeRenderBlock
-					if (block.type == 'heading') {
-						continue
-					}
-					if (block.type == 'todo') {
-						parts.push((block.checked ? '☑ ' : '☐ ') + block.text)
-					} else if (block.type == 'bullet') {
-						parts.push('• ' + block.text)
-					} else {
-						parts.push(block.text)
-					}
+					result.push(block)
 				}
-				if (parts.length == 0) {
-					return content
-				}
-				return parts.join(' · ')
+				return result
 			},
 
 			getInlineTodoCount(note : UTSJSONObject) : number {
@@ -867,6 +857,62 @@
 		margin-top: 8rpx;
 	}
 
+	.priority-chip {
+		flex-direction: row;
+		align-items: center;
+		padding: 5rpx 12rpx;
+		border-radius: 999rpx;
+		background-color: #F9FAFB;
+	}
+
+	.priority-chip-high {
+		background-color: #FFF1F2;
+	}
+
+	.priority-chip-medium {
+		background-color: #FFF7ED;
+	}
+
+	.priority-chip-low {
+		background-color: #ECFDF5;
+	}
+
+	.priority-dot {
+		width: 10rpx;
+		height: 10rpx;
+		border-radius: 999rpx;
+		margin-right: 7rpx;
+	}
+
+	.priority-dot-high {
+		background-color: #FB7185;
+	}
+
+	.priority-dot-medium {
+		background-color: #FDBA74;
+	}
+
+	.priority-dot-low {
+		background-color: #86EFAC;
+	}
+
+	.priority-chip-text {
+		font-size: 22rpx;
+		font-weight: bold;
+	}
+
+	.priority-chip-text-high {
+		color: #E11D48;
+	}
+
+	.priority-chip-text-medium {
+		color: #EA580C;
+	}
+
+	.priority-chip-text-low {
+		color: #059669;
+	}
+
 	.todo-time {
 		font-size: 22rpx;
 		color: #9CA3AF;
@@ -893,33 +939,34 @@
 	}
 
 	.priority-option {
-		padding: 12rpx 32rpx;
-		border-radius: 12rpx;
-		background-color: #F3F4F6;
-		margin-right: 16rpx;
+		padding: 14rpx 30rpx;
+		border-radius: 999rpx;
+		background-color: #F9FAFB;
+		margin-right: 14rpx;
 		border-width: 2rpx;
 		border-style: solid;
-		border-color: #E5E7EB;
+		border-color: #EEF2F7;
 	}
 
 	.priority-option-active-high {
-		border-color: #EF4444;
-		background-color: rgba(239,68,68,0.08);
+		border-color: #FDA4AF;
+		background-color: #FFF1F2;
 	}
 
 	.priority-option-active-medium {
-		border-color: #F59E0B;
-		background-color: rgba(245,158,11,0.08);
+		border-color: #FDBA74;
+		background-color: #FFF7ED;
 	}
 
 	.priority-option-active-low {
-		border-color: #10B981;
-		background-color: rgba(16,185,129,0.08);
+		border-color: #86EFAC;
+		background-color: #ECFDF5;
 	}
 
 	.priority-option-text {
-		font-size: 26rpx;
-		color: #111827;
+		font-size: 25rpx;
+		font-weight: bold;
+		color: #374151;
 	}
 
 	/* ===== 笔记视图样式 ===== */
@@ -962,12 +1009,65 @@
 		margin-bottom: 10rpx;
 	}
 
-	.note-preview {
+	.note-render-preview {
+		margin-bottom: 8rpx;
+	}
+
+	.note-render-line {
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 6rpx;
+	}
+
+	.note-render-todo {
+		align-items: center;
+	}
+
+	.note-render-text {
 		font-size: 26rpx;
 		color: #6B7280;
-		lines: 2;
+		line-height: 38rpx;
+		lines: 1;
 		text-overflow: ellipsis;
-		margin-bottom: 8rpx;
+	}
+
+	.note-render-heading {
+		font-weight: bold;
+		color: #374151;
+	}
+
+	.note-render-text-done {
+		color: #9CA3AF;
+	}
+
+	.note-checkbox {
+		width: 28rpx;
+		height: 28rpx;
+		border-radius: 8rpx;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: #F9A8C7;
+		background-color: #FFFFFF;
+		align-items: center;
+		justify-content: center;
+		margin-right: 10rpx;
+	}
+
+	.note-checkbox-checked {
+		background-color: #FB8FAB;
+		border-color: #FB8FAB;
+	}
+
+	.note-checkbox-mark {
+		font-size: 20rpx;
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+
+	.note-bullet {
+		font-size: 26rpx;
+		color: #FB8FAB;
+		margin-right: 10rpx;
 	}
 
 	.note-time {
