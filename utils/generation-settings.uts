@@ -14,11 +14,17 @@ const GLOBAL_TEMPERATURE_KEY = 'settings_generation_temperature'
 const GLOBAL_MAX_TOKENS_KEY = 'settings_generation_max_tokens'
 const GLOBAL_MAX_ITERATIONS_KEY = 'settings_generation_max_iterations'
 const GLOBAL_STREAM_ENABLED_KEY = 'settings_generation_stream_enabled'
+const MEMORY_TEMPERATURE_KEY = 'settings_memory_generation_temperature'
+const MEMORY_MAX_TOKENS_KEY = 'settings_memory_generation_max_tokens'
+const MEMORY_MAX_ITERATIONS_KEY = 'settings_memory_generation_max_iterations'
 
 export const DEFAULT_TEMPERATURE = 0.7
 export const DEFAULT_MAX_TOKENS = 4096
 export const DEFAULT_MAX_ITERATIONS = 20
 export const DEFAULT_STREAM_ENABLED = true
+export const DEFAULT_MEMORY_TEMPERATURE = 0.2
+export const DEFAULT_MEMORY_MAX_TOKENS = 2048
+export const DEFAULT_MEMORY_MAX_ITERATIONS = 20
 
 function clampNumber(value: number, min: number, max: number): number {
 	if (value < min) return min
@@ -94,6 +100,21 @@ export function saveGlobalGenerationSettings(settings: GenerationSettings): void
 	uni.setStorageSync(GLOBAL_MAX_TOKENS_KEY, clampNumber(settings.maxTokens, 256, 65536) + '')
 	uni.setStorageSync(GLOBAL_MAX_ITERATIONS_KEY, clampNumber(settings.maxIterations, 0, 100) + '')
 	uni.setStorageSync(GLOBAL_STREAM_ENABLED_KEY, settings.streamEnabled ? 'true' : 'false')
+}
+
+export function getMemoryOrganizerGenerationSettings(): GenerationSettings {
+	return {
+		temperature: readNumberStorage(MEMORY_TEMPERATURE_KEY, DEFAULT_MEMORY_TEMPERATURE, 0, 2),
+		maxTokens: readIntStorage(MEMORY_MAX_TOKENS_KEY, DEFAULT_MEMORY_MAX_TOKENS, 256, 2048),
+		maxIterations: readIntStorage(MEMORY_MAX_ITERATIONS_KEY, DEFAULT_MEMORY_MAX_ITERATIONS, 1, 100),
+		streamEnabled: false,
+	} as GenerationSettings
+}
+
+export function saveMemoryOrganizerGenerationSettings(settings: GenerationSettings): void {
+	uni.setStorageSync(MEMORY_TEMPERATURE_KEY, clampNumber(settings.temperature, 0, 2) + '')
+	uni.setStorageSync(MEMORY_MAX_TOKENS_KEY, clampNumber(settings.maxTokens, 256, 2048) + '')
+	uni.setStorageSync(MEMORY_MAX_ITERATIONS_KEY, clampNumber(settings.maxIterations, 1, 100) + '')
 }
 
 export function getEffectiveGenerationSettings(agent: UTSJSONObject | null): GenerationSettings {

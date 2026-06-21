@@ -4,13 +4,13 @@
 		<scroll-view class="container" :scroll-y="true">
 			<view class="hero-card">
 				<text class="hero-title">全局默认生成参数</text>
-				<text class="hero-desc">这里是所有对话和 Agent 的默认值。单个智能体可以在「智能体设置」里覆盖它，像装备词条一样单独调校。</text>
+				<text class="hero-desc">这里是普通对话和记忆整理的默认生成参数。记忆整理参数独立保存，不会被某个智能体的人格配置带偏。</text>
 			</view>
 
 			<view class="card">
 				<view class="card-header">
 					<oui-icon-unix name="experiment" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
-					<text class="card-title">模型采样</text>
+					<text class="card-title">普通 Agent · 模型采样</text>
 				</view>
 				<text class="field-label">温度 temperature</text>
 				<input
@@ -26,7 +26,7 @@
 			<view class="card">
 				<view class="card-header">
 					<oui-icon-unix name="file-text" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
-					<text class="card-title">输出与循环</text>
+					<text class="card-title">普通 Agent · 输出与循环</text>
 				</view>
 				<text class="field-label">输出上限 max_tokens</text>
 				<input
@@ -50,10 +50,47 @@
 			</view>
 
 			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="robot" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+					<text class="card-title">记忆整理 Agent</text>
+				</view>
+				<text class="field-label">温度 temperature</text>
+				<input
+					class="flat-input"
+					type="text"
+					v-model="memoryTemperatureStr"
+					placeholder="0 - 2，默认 0.2"
+					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+				/>
+				<text class="field-tip">建议保持低温，优先稳定整理和去重，不要脑洞。</text>
+
+				<text class="field-label" style="margin-top:24rpx;">输出上限 max_tokens</text>
+				<input
+					class="flat-input"
+					type="text"
+					v-model="memoryMaxTokensStr"
+					placeholder="256 - 2048，默认 2048"
+					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+				/>
+				<text class="field-tip">记忆整理只需要简短总结，最高限制为 2048。</text>
+
+				<text class="field-label" style="margin-top:24rpx;">最大迭代次数</text>
+				<input
+					class="flat-input"
+					type="text"
+					v-model="memoryMaxIterationsStr"
+					placeholder="1 - 100，默认 20"
+					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+				/>
+				<text class="field-tip">记忆整理会查历史、查记忆、写短缓存/长期记忆。默认 20，系统提示也会同步标注。</text>
+				<text class="field-tip">记忆整理固定非流式运行，避免后台维护过程刷屏。</text>
+			</view>
+
+			<view class="card">
 				<view class="setting-row">
 					<view class="setting-text">
-						<text class="setting-title">流式显示</text>
-						<text class="setting-desc">开启后边生成边显示；关闭后等完整回复再展示，画面更稳但反馈慢一点。</text>
+						<text class="setting-title">普通 Agent 流式显示</text>
+						<text class="setting-desc">开启后边生成边显示；记忆整理 Agent 固定非流式，不受这里影响。</text>
 					</view>
 					<rice-switch v-model="streamEnabled" />
 				</view>
@@ -69,7 +106,7 @@
 </template>
 
 <script lang="uts">
-	import { getGlobalGenerationSettings, saveGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
+	import { getGlobalGenerationSettings, saveGlobalGenerationSettings, getMemoryOrganizerGenerationSettings, saveMemoryOrganizerGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
 
 	export default {
 		data() {
@@ -78,6 +115,9 @@
 				maxTokensStr: '' as string,
 				maxIterationsStr: '' as string,
 				streamEnabled: true as boolean,
+				memoryTemperatureStr: '' as string,
+				memoryMaxTokensStr: '' as string,
+				memoryMaxIterationsStr: '' as string,
 			}
 		},
 		onLoad() {
@@ -112,20 +152,35 @@
 				this.maxTokensStr = settings.maxTokens + ''
 				this.maxIterationsStr = settings.maxIterations + ''
 				this.streamEnabled = settings.streamEnabled
+				const memorySettings = getMemoryOrganizerGenerationSettings()
+				this.memoryTemperatureStr = memorySettings.temperature + ''
+				this.memoryMaxTokensStr = memorySettings.maxTokens + ''
+				this.memoryMaxIterationsStr = memorySettings.maxIterations + ''
 			},
 
 			saveSettings() {
 				const oldSettings = getGlobalGenerationSettings()
+				const oldMemorySettings = getMemoryOrganizerGenerationSettings()
 				const settings: GenerationSettings = {
 					temperature: this.parseFloatSetting(this.temperatureStr, oldSettings.temperature, 0, 2),
 					maxTokens: this.parseIntSetting(this.maxTokensStr, oldSettings.maxTokens, 256, 65536),
 					maxIterations: this.parseIntSetting(this.maxIterationsStr, oldSettings.maxIterations, 0, 100),
 					streamEnabled: this.streamEnabled,
 				}
+				const memorySettings: GenerationSettings = {
+					temperature: this.parseFloatSetting(this.memoryTemperatureStr, oldMemorySettings.temperature, 0, 2),
+					maxTokens: this.parseIntSetting(this.memoryMaxTokensStr, oldMemorySettings.maxTokens, 256, 2048),
+					maxIterations: this.parseIntSetting(this.memoryMaxIterationsStr, oldMemorySettings.maxIterations, 1, 100),
+					streamEnabled: false,
+				}
 				saveGlobalGenerationSettings(settings)
+				saveMemoryOrganizerGenerationSettings(memorySettings)
 				this.temperatureStr = settings.temperature + ''
 				this.maxTokensStr = settings.maxTokens + ''
 				this.maxIterationsStr = settings.maxIterations + ''
+				this.memoryTemperatureStr = memorySettings.temperature + ''
+				this.memoryMaxTokensStr = memorySettings.maxTokens + ''
+				this.memoryMaxIterationsStr = memorySettings.maxIterations + ''
 				uni.showToast({ position: 'bottom', 
 					title: '已保存',
 					icon: 'success'

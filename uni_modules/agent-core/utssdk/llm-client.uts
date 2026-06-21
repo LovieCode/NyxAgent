@@ -34,7 +34,7 @@ export type PreparedAgentContext = {
 
 import { resolveLLMConfig, normalizeBaseUrl, getMemoryOrganizeTaskModel } from './provider'
 import { getAgentById } from '@/utils/agent.uts'
-import { getGlobalGenerationSettings, getEffectiveGenerationSettings, GenerationSettings } from '@/utils/generation-settings.uts'
+import { getGlobalGenerationSettings, getEffectiveGenerationSettings, getMemoryOrganizerGenerationSettings, GenerationSettings } from '@/utils/generation-settings.uts'
 import { createAgentTools, AgentTool, ToolResult } from './tools/agent-tools'
 import { AgentEventStream, AgentEvent } from '@/utils/event.uts'
 import { buildImportantMemoryInjection, buildBufferInjection, getMemoryEnabled, saveMemoryManagerLog, MemoryManagerLog } from './memory'
@@ -158,10 +158,10 @@ function markMemoryManagerRun(agentId: string, conversationId: string, signature
 	uni.setStorageSync(storageKey, signature)
 }
 
-function buildMemoryManagerSystemPrompt(agentId: string, conversationId: string): string {
+function buildMemoryManagerSystemPrompt(agentId: string, conversationId: string, maxIterations: number): string {
 	return '你是记忆管理 Agent，不参与普通聊天，只负责在上下文截断时整理长期记忆。\n' +
 		'你拥有完整工具，可以查询历史、查看已有记忆、保存或遗忘重要记忆，也可以用 memory_buffer_write 整理 64 字以内短记忆缓存。\n' +
-		'本轮最大迭代次数为 20。必须先核查已有记忆，避免重复写入。\n' +
+		'本轮最大迭代次数为 ' + maxIterations + '。必须先核查已有记忆，避免重复写入。\n' +
 		'只保存长期有用、未来会复用的信息：用户稳定偏好、明确规则、关键事实、对某人/某 Agent 的重要印象。\n' +
 		'不要保存工具调用信息、工具结果、API 密钥、临时流水账、一次性任务细节、用户未明确表达的猜测。\n' +
 		'默认面对对象是当前用户：target_type=user，target_id 留空。对话内短期状态优先写入短记忆缓存，不要写入重要记忆。\n' +
@@ -1164,14 +1164,9 @@ function runAgentLoop(
 startMemoryManagerLoop = (allMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string, markSignature: string): boolean => {
 	const managerMessages = buildMemoryManagerMessages(allMessages)
 	if (managerMessages.length == 0) return false
-	const managerSystemPrompt = buildMemoryManagerSystemPrompt(agentId, conversationId)
-	const agent = getAgentById(agentId)
-	const settings = getEffectiveGenerationSettings(agent)
+	const settings = getMemoryOrganizerGenerationSettings()
 	settings.streamEnabled = false
-	settings.maxIterations = 20
-	if (settings.maxTokens > 2048) {
-		settings.maxTokens = 2048
-	}
+	const managerSystemPrompt = buildMemoryManagerSystemPrompt(agentId, conversationId, settings.maxIterations)
 	let managerProviderId = providerId
 	let managerModel = model
 	const managerTaskModel = getMemoryOrganizeTaskModel()
