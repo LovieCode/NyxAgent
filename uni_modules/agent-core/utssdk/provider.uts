@@ -277,12 +277,9 @@ export function getProviderApiConfig(id: string): UTSJSONObject | null {
 		if (baseUrl.endsWith('/')) {
 			baseUrl = baseUrl.substring(0, baseUrl.length - 1)
 		}
-		const url = baseUrl + '/v1/models'
-		// 火山引擎 / 豆包 使用非标准端点 /api/v3/models
-		let fetchUrl = url
-		if (baseUrl.indexOf('volces.com') >= 0 || baseUrl.indexOf('volcengine.com') >= 0) {
-			fetchUrl = baseUrl + '/models'
-		}
+		// 检测 baseUrl 是否已包含 API 版本路径
+		const hasApiVersion = baseUrl.indexOf('/v1') >= 0 || baseUrl.indexOf('/api/v') >= 0
+		const fetchUrl = hasApiVersion ? baseUrl + '/models' : baseUrl + '/v1/models'
 		const hasKey = apiKey != null && apiKey != ''
 		const keyPreview = hasKey ? apiKey.substring(0, apiKey.length < 8 ? apiKey.length : 8) + '...' : '无'
 		console.log('[Provider] 获取模型列表 → ' + baseUrl + ' | Key=' + keyPreview)

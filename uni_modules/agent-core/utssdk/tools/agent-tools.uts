@@ -960,7 +960,8 @@ class WebSearchTool implements AgentTool {
 		baseUrl: string, apiKey: string, model: string,
 		query: string, providerId: string, resolve: (value: ToolResult) => void
 	): void {
-		const url = baseUrl + '/v1/chat/completions'
+		const hasApiVersion = baseUrl.indexOf('/v1') >= 0 || baseUrl.indexOf('/api/v') >= 0
+		const url = hasApiVersion ? baseUrl + '/chat/completions' : baseUrl + '/v1/chat/completions'
 		const systemPrompt = '你是网络搜索工具。收到搜索请求后，请搜索网页并返回结果。\n\n' +
 			'要求：\n' +
 			'1. 对搜索结果进行总结，提取有价值的信息，控制在 500 字以内\n' +
