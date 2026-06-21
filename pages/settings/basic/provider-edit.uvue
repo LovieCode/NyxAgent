@@ -153,7 +153,7 @@
 </template>
 
 <script lang="uts">
-	import { saveProvider, fetchProviderModels, parseModels, ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { saveProvider, fetchProviderModels, parseModels, ModelInfo, getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
 
 	export default {
 			data() {
@@ -376,9 +376,28 @@
 				}
 				saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, true)
 				uni.showToast({ position: 'bottom',  title: '已保存', icon: 'success' })
-				setTimeout(() => {
-					uni.navigateBack()
-				}, 500)
+
+				// 检查是否已设置默认聊天模型，没有则引导
+				const defaultChat = getDefaultTaskModel('chat')
+				if (defaultChat == null && validModels.length > 0) {
+					setTimeout(() => {
+						uni.showModal({
+							title: '设置默认模型',
+							content: '还没有设置默认聊天模型，是否现在去设置？',
+							success: (res) => {
+								if (res.confirm == true) {
+									uni.navigateTo({ url: '/pages/settings/default-models/default-models' })
+								} else {
+									uni.navigateBack()
+								}
+							}
+						})
+					}, 600)
+				} else {
+					setTimeout(() => {
+						uni.navigateBack()
+					}, 500)
+				}
 			}
 		}
 	}
