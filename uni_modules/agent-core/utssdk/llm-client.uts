@@ -48,7 +48,7 @@ type ImageBase64Result = {
 	mimeType: string
 }
 
-import { resolveLLMConfig, normalizeBaseUrl, getMemoryOrganizeTaskModel, stripThinkTags } from './provider'
+import { resolveLLMConfig, normalizeBaseUrl, getMemoryOrganizeTaskModel, stripThinkTags, getAllProviders } from './provider'
 import { getAgentById } from '@/utils/agent.uts'
 import { getGlobalGenerationSettings, getEffectiveGenerationSettings, getMemoryOrganizerGenerationSettings, GenerationSettings } from '@/utils/generation-settings.uts'
 import { createAgentTools, AgentTool, ToolResult } from './tools/agent-tools'
@@ -1222,8 +1222,15 @@ function runAgentLoop(
 ): void {
 	const config = resolveLLMConfig(providerId, model)
 	if (config == null) {
-		saveLastLLMCall(false, settings.streamEnabled, model, '', 0, '未配置 LLM，请先在设置中添加 API 提供商', null, messages.length, 0, 0, false)
-		stream.error('（未配置 LLM，请先在设置中添加 API 提供商）')
+		const hasProvider = getAllProviders().length > 0
+		let errMsg: string
+		if (hasProvider) {
+			errMsg = '未找到模型「' + model + '」，请在智能体设置中重新选择模型'
+		} else {
+			errMsg = '未配置 LLM，请先在设置中添加 API 提供商'
+		}
+		saveLastLLMCall(false, settings.streamEnabled, model, '', 0, errMsg, null, messages.length, 0, 0, false)
+		stream.error('（' + errMsg + '）')
 		return
 	}
 	const apiKey = config.apiKey
@@ -1640,7 +1647,9 @@ export function chatWithLLM(
 	return new Promise<string | null>((resolve) => {
 		const config = resolveLLMConfig(providerId, model)
 		if (config == null) {
-			resolve('（未配置 LLM，请先在设置中添加 API 提供商）')
+			const hasProvider = getAllProviders().length > 0
+			const errMsg = hasProvider ? '未找到模型「' + model + '」，请先设置默认模型' : '未配置 LLM，请先在设置中添加 API 提供商'
+			resolve('（' + errMsg + '）')
 			return
 		}
 
