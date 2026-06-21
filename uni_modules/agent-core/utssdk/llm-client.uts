@@ -40,6 +40,7 @@ import { AgentEventStream, AgentEvent } from '@/utils/event.uts'
 import { buildImportantMemoryInjection, buildBufferInjection, getMemoryEnabled, saveMemoryManagerLog, MemoryManagerLog } from './memory'
 import { buildAgentSkillsPrompt } from '@/utils/skills.uts'
 import { wrapUserContentForAgent, makeAgentContextBlock, type AgentContextBlock } from '@/utils/message-context.uts'
+import { addConversationTokenUsage, getConversationTokenUsageStats } from '@/utils/database.uts'
 
 const MEMORY_MANAGER_LAST_KEY_PREFIX = 'memory_manager_last_compaction_'
 const LAST_TOKEN_USAGE_KEY = 'last_token_usage'
@@ -751,11 +752,29 @@ function processSSELine(
 	} catch (_) {}
 }
 
+function readPromptCacheHitTokens(usage: UTSJSONObject): number | null {
+	let hitTokens = usage['prompt_cache_hit_tokens'] as number | null
+	if (hitTokens == null) hitTokens = usage['cache_read_input_tokens'] as number | null
+	if (hitTokens == null) hitTokens = usage['prompt_cache_read_tokens'] as number | null
+	if (hitTokens == null) hitTokens = usage['cached_tokens'] as number | null
+	const promptDetails = usage['prompt_tokens_details'] as UTSJSONObject | null
+	if (hitTokens == null && promptDetails != null) {
+		hitTokens = promptDetails['cached_tokens'] as number | null
+	}
+	const inputDetails = usage['input_tokens_details'] as UTSJSONObject | null
+	if (hitTokens == null && inputDetails != null) {
+		hitTokens = inputDetails['cached_tokens'] as number | null
+		if (hitTokens == null) hitTokens = inputDetails['cache_read_tokens'] as number | null
+	}
+	return hitTokens
+}
+
 /** 标准化 Token 用量字段，兼容 OpenAI/Anthropic 命名。 */
 function normalizeTokenUsage(usage: UTSJSONObject): UTSJSONObject {
 	let promptTokens = usage['prompt_tokens'] as number | null
 	let completionTokens = usage['completion_tokens'] as number | null
 	let totalTokens = usage['total_tokens'] as number | null
+	const promptCacheHitTokens = readPromptCacheHitTokens(usage)
 	if (promptTokens == null) promptTokens = usage['input_tokens'] as number | null
 	if (completionTokens == null) completionTokens = usage['output_tokens'] as number | null
 	if (totalTokens == null && promptTokens != null && completionTokens != null) {
@@ -765,6 +784,10 @@ function normalizeTokenUsage(usage: UTSJSONObject): UTSJSONObject {
 	if (promptTokens != null) obj['prompt_tokens'] = promptTokens
 	if (completionTokens != null) obj['completion_tokens'] = completionTokens
 	if (totalTokens != null) obj['total_tokens'] = totalTokens
+	if (promptCacheHitTokens != null) {
+		obj['prompt_cache_hit_tokens'] = promptCacheHitTokens
+		obj['prompt_cache_hit_tokens_reported'] = true
+	}
 	return obj
 }
 
@@ -802,7 +825,8 @@ function saveLastLLMCall(
 	messageCount: number,
 	toolCount: number,
 	textLength: number,
-	hasToolCalls: boolean
+	hasToolCalls: boolean,
+	conversationId: string = ''
 ): void {
 	const now = Date.now()
 	const obj: UTSJSONObject = {
@@ -821,6 +845,18 @@ function saveLastLLMCall(
 	} as UTSJSONObject
 	if (usage != null) {
 		obj['usage'] = usage
+		const cacheReported = usage['prompt_cache_hit_tokens_reported'] as boolean | null
+		if (success == true && cacheReported == true && conversationId != '') {
+			const promptTokens = usage['prompt_tokens'] as number | null
+			const cacheHitTokens = usage['prompt_cache_hit_tokens'] as number | null
+			try {
+				addConversationTokenUsage(
+					conversationId,
+					promptTokens != null ? promptTokens : 0,
+					cacheHitTokens != null ? cacheHitTokens : 0
+				)
+			} catch (_e: any) {}
+		}
 	}
 	const json = JSON.stringify(obj)
 	uni.setStorageSync(LAST_LLM_CALL_KEY, json)
@@ -878,7 +914,8 @@ function callChatAPIStream(
 	onChunk: ((text: string) => void) | null,
 	done: (text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null) => void,
 	cacheKey: string = '',
-	onThinking: ((text: string) => void) | null = null
+	onThinking: ((text: string) => void) | null = null,
+	conversationId: string = ''
 ): RequestTask {
 	const apiMessages = buildOpenAIMessages(systemPrompt, messages)
 	clearLastTokenUsage()
@@ -953,7 +990,7 @@ function callChatAPIStream(
 				console.log('[LLM] ====== STREAM ERROR ======')
 				console.log('[LLM] Status: ' + statusCode + errDetail)
 				console.log('[LLM] ===========================')
-				saveLastLLMCall(false, true, model, baseUrl, statusCode, 'API 请求失败' + errDetail, null, apiMessages.length, tools.length, fullTextRef[0].length, false)
+				saveLastLLMCall(false, true, model, baseUrl, statusCode, 'API 请求失败' + errDetail, null, apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
 				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null, null)
 				return
 			}
@@ -985,19 +1022,19 @@ function callChatAPIStream(
 				console.log('[LLM] ====== STREAM RESPONSE ======')
 				console.log('[LLM] Status: 200 tools:' + tcNames + ' | ' + preview)
 				console.log('[LLM] ==============================')
-				saveLastLLMCall(true, true, model, baseUrl, statusCode, '', readLastTokenUsageForCall(), apiMessages.length, tools.length, fullTextRef[0].length, true)
+				saveLastLLMCall(true, true, model, baseUrl, statusCode, '', readLastTokenUsageForCall(), apiMessages.length, tools.length, fullTextRef[0].length, true, conversationId)
 				done(fullTextRef[0], tcList, fullThinkingRef[0])
 			} else {
 				const preview = fullTextRef[0] != '' ? fullTextRef[0].substring(0, fullTextRef[0].length < 200 ? fullTextRef[0].length : 200) : ''
 				console.log('[LLM] ====== STREAM RESPONSE ======')
 				console.log('[LLM] Status: 200 | ' + preview)
 				console.log('[LLM] ==============================')
-				saveLastLLMCall(true, true, model, baseUrl, statusCode, '', readLastTokenUsageForCall(), apiMessages.length, tools.length, fullTextRef[0].length, false)
+				saveLastLLMCall(true, true, model, baseUrl, statusCode, '', readLastTokenUsageForCall(), apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
 				done(fullTextRef[0], null, fullThinkingRef[0])
 			}
 		},
 	fail: (_err: any) => {
-			saveLastLLMCall(false, true, model, baseUrl, -1, '网络请求失败: ' + _err, null, apiMessages.length, tools.length, fullTextRef[0].length, false)
+			saveLastLLMCall(false, true, model, baseUrl, -1, '网络请求失败: ' + _err, null, apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
 			done('网络请求失败: ' + _err, null, null)
 		},
 	})
@@ -1265,7 +1302,8 @@ function runAgentLoop(
 				executeNext?.invoke()
 			},
 			cacheKey,
-			thinkingHandler
+			thinkingHandler,
+			conversationId
 		)
 	}
 	continueLoop()
@@ -1405,6 +1443,7 @@ export function buildAgentContextPreview(
 		droppedPreview: buildDroppedMessagesPreview(prepared.droppedMessages),
 		lastTokenUsage: lastTokenUsage,
 		lastCallInfo: lastCallInfo,
+		conversationTokenUsageStats: getConversationTokenUsageStats(conversationId),
 		workingMessages: prepared.workingMessages,
 		openaiMessages: apiMessages,
 		toolDefs: prepared.toolDefs,
