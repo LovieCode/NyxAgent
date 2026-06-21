@@ -9,8 +9,8 @@
 		@back="onBack"
 	>
 		<template #header>
-			<view class="note-meta-panel">
-				<input class="title-input" v-model="noteTitle" placeholder="笔记标题" placeholder-style="color:#D1D5DB;font-size:30rpx;" @input="markDirty" />
+			<view class="note-title-field">
+				<input class="title-input" v-model="noteTitle" placeholder="未命名笔记" placeholder-style="color:#D1D5DB;font-size:34rpx;" @input="markDirty" />
 			</view>
 		</template>
 	</FullscreenTextEditor>
@@ -167,21 +167,19 @@
 </script>
 
 <style>
-	.note-meta-panel {
-		background-color: #FFF7FA;
-		border-radius: 18rpx;
-		padding: 22rpx;
-		margin-bottom: 20rpx;
-		border-width: 2rpx;
-		border-style: solid;
-		border-color: #FCE7F3;
+	.note-title-field {
+		padding: 2rpx 0 18rpx 0;
+		margin-bottom: 18rpx;
+		border-bottom-width: 1rpx;
+		border-bottom-style: solid;
+		border-bottom-color: #F3F4F6;
 	}
 
 	.title-input {
-		font-size: 34rpx;
+		font-size: 38rpx;
 		font-weight: bold;
 		color: #111827;
-		padding: 0 0 18rpx 0;
+		padding: 0;
 		background-color: transparent;
 	}
 
