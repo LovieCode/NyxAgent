@@ -133,7 +133,7 @@
 			<view v-else class="view-container">
 				<!-- 搜索栏 -->
 				<view class="search-bar">
-					<rice-search v-model="searchQuery" placeholder="搜索笔记..." shape="round" :clearable="true" inputColor="#FFFFFF" />
+					<rice-search v-model="searchQuery" placeholder="搜索笔记..." shape="round" :clearable="true" bgColor="transparent" />
 				</view>
 
 				<!-- 笔记列表 -->
@@ -190,7 +190,13 @@
 						</view>
 					</view>
 					<view style="height: 16rpx;"></view>
-					<rice-textarea v-model="editingNoteContent" placeholder="笔记内容，支持 - [ ] 待办 / - [x] 完成" :auto-height="true" />
+					<view class="note-full-editor-card" @click="openNoteContentEditor">
+						<view class="note-full-editor-header">
+							<text class="form-label">笔记内容</text>
+							<text class="note-full-editor-action">全屏编辑</text>
+						</view>
+						<text class="note-full-editor-preview">{{ getEditingNoteContentPreview() }}</text>
+					</view>
 				</rice-dialog>
 			</view>
 		</view>
@@ -273,6 +279,7 @@
 			this.loadNotes()
 		},
 		onShow() {
+			this.consumeEditorResult()
 			this.loadAgents()
 			this.loadTodos()
 			this.loadNotes()
@@ -601,10 +608,69 @@
 				return countInlineTodos(content)
 			},
 
+			consumeEditorResult() {
+				const ready = uni.getStorageSync('editor_result_ready') as string | null
+				if (ready != 'true') {
+					return
+				}
+				const target = uni.getStorageSync('editor_target') as string | null
+				if (target != 'todo-note-content') {
+					return
+				}
+				const result = uni.getStorageSync('editor_result') as string | null
+				this.editingNoteContent = result != null ? result : ''
+				uni.removeStorageSync('editor_result')
+				uni.removeStorageSync('editor_result_ready')
+				uni.removeStorageSync('editor_target')
+				uni.removeStorageSync('editor_mode')
+				uni.removeStorageSync('editor_title')
+				uni.removeStorageSync('editor_content')
+				uni.removeStorageSync('editor_placeholder')
+			},
+
+			clearEditorStorage() {
+				uni.removeStorageSync('editor_mode')
+				uni.removeStorageSync('editor_title')
+				uni.removeStorageSync('editor_content')
+				uni.removeStorageSync('editor_result')
+				uni.removeStorageSync('editor_result_ready')
+				uni.removeStorageSync('editor_target')
+				uni.removeStorageSync('editor_file_path')
+				uni.removeStorageSync('editor_saved')
+				uni.removeStorageSync('editor_saved_path')
+				uni.removeStorageSync('editor_readonly')
+				uni.removeStorageSync('editor_placeholder')
+				uni.removeStorageSync('editor_draft')
+			},
+
+			getEditingNoteContentPreview(): string {
+				const content = this.editingNoteContent.trim()
+				if (content == '') {
+					return '点击打开全屏编辑器，支持 - [ ] 待办 / - [x] 完成'
+				}
+				if (content.length > 120) {
+					return content.substring(0, 120) + '...'
+				}
+				return content
+			},
+
+			openNoteContentEditor() {
+				this.clearEditorStorage()
+				uni.setStorageSync('editor_mode', 'text')
+				uni.setStorageSync('editor_content', this.editingNoteContent)
+				uni.setStorageSync('editor_title', '编辑笔记内容')
+				uni.setStorageSync('editor_target', 'todo-note-content')
+				uni.setStorageSync('editor_placeholder', '笔记内容，支持 - [ ] 待办 / - [x] 完成')
+				uni.navigateTo({
+					url: '/pages/common/editor/editor'
+				})
+			},
+
 			createNote() {
 				this.editingNoteId = ''
 				this.editingNoteTitle = ''
 				this.editingNoteContent = ''
+				this.editingNoteAgentIndex = 0
 				this.isEditingNote = true
 			},
 
@@ -634,14 +700,15 @@
 				if (title == '') {
 					title = '无标题'
 				}
-				let content = this.editingNoteContent.trim()
-				if (content == '') {
+				const rawContent = this.editingNoteContent
+				if (rawContent.trim() == '') {
 					uni.showToast({ position: 'bottom',
 						title: '请输入内容',
 						icon: 'none'
 					})
 					return
 				}
+				let content = rawContent
 				let timeStr = this.formatNow()
 
 				// 确定所属 agent
@@ -890,7 +957,7 @@
 
 	/* ===== 笔记视图样式 ===== */
 	.search-bar {
-		padding: 20rpx 30rpx;
+		padding: 0 12rpx 6rpx;
 		background-color: #FFFFFF;
 	}
 
@@ -953,6 +1020,36 @@
 		border-radius: 999rpx;
 		padding: 4rpx 12rpx;
 		margin-left: 12rpx;
+	}
+
+	.note-full-editor-card {
+		background-color: #F9FAFB;
+		border-radius: 14rpx;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: #E5E7EB;
+		padding: 18rpx;
+	}
+
+	.note-full-editor-header {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 12rpx;
+	}
+
+	.note-full-editor-action {
+		font-size: 24rpx;
+		color: #DB2777;
+		font-weight: bold;
+	}
+
+	.note-full-editor-preview {
+		font-size: 26rpx;
+		color: #6B7280;
+		line-height: 40rpx;
+		lines: 4;
+		text-overflow: ellipsis;
 	}
 
 	/* ===== Agent 分组头 ===== */

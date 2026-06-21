@@ -80,12 +80,23 @@
 		},
 		onShow() {
 			// 检查全屏编辑器是否有返回结果
-			const result = uni.getStorageSync('editor_result') as string
-			if (result != null && result != '') {
-				this.description = result
-				uni.removeStorageSync('editor_result')
-				// 自动保存
-				this.saveProfile()
+			const ready = uni.getStorageSync('editor_result_ready') as string | null
+			const result = uni.getStorageSync('editor_result') as string | null
+			if (ready == 'true' || (result != null && result != '')) {
+				const target = uni.getStorageSync('editor_target') as string | null
+				if (target == 'profile-description' || target == null || target == '') {
+					this.description = result != null ? result : ''
+					uni.removeStorageSync('editor_result')
+					uni.removeStorageSync('editor_result_ready')
+					uni.removeStorageSync('editor_target')
+					uni.removeStorageSync('editor_mode')
+					uni.removeStorageSync('editor_content')
+					uni.removeStorageSync('editor_title')
+					uni.removeStorageSync('editor_placeholder')
+					uni.removeStorageSync('editor_readonly')
+					// 自动保存
+					this.saveProfile()
+				}
 			}
 			// 检查裁剪页面是否有返回结果
 			const cropTarget = uni.getStorageSync('crop_target') as string
@@ -146,8 +157,16 @@
 			/** 打开全屏编辑器 */
 			openFullEditor() {
 				uni.removeStorageSync('editor_draft')
+				uni.removeStorageSync('editor_result')
+				uni.removeStorageSync('editor_result_ready')
+				uni.removeStorageSync('editor_file_path')
+				uni.removeStorageSync('editor_saved')
+				uni.removeStorageSync('editor_saved_path')
+				uni.setStorageSync('editor_mode', 'text')
 				uni.setStorageSync('editor_content', this.description)
 				uni.setStorageSync('editor_title', '编辑个人简介')
+				uni.setStorageSync('editor_target', 'profile-description')
+				uni.setStorageSync('editor_placeholder', '详细介绍一下自己…')
 				uni.navigateTo({
 					url: '/pages/common/editor/editor'
 				})

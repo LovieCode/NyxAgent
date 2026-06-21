@@ -93,33 +93,13 @@
 				</view>
 			</rice-dialog>
 
-			<!-- 文本编辑弹窗 -->
-			<rice-dialog
-				v-model:show="showEditor"
-				:title="editingFileName"
-				:show-cancel-button="true"
-				cancel-button-text="关闭"
-				confirm-button-text="保存"
-				@confirm="saveFileContent"
-				@cancel="closeEditor"
-			>
-				<view class="editor-content">
-					<textarea
-						class="editor-textarea"
-						v-model="editingContent"
-						:disabled="editingReadOnly"
-						placeholder="文件内容为空"
-						placeholder-style="color:#9CA3AF"
-					/>
-				</view>
-			</rice-dialog>
 		</view>
 		<TabBar current="pages/files/files" />
 	</view>
 </template>
 
 <script lang="uts">
-	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, readContent, writeContent, parentPath, basename, joinPath, normalizePath, getUserDir, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
+	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, parentPath, basename, joinPath, normalizePath, getUserDir, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
 
 	/** 虚拟根路径标记（合并视图用） */
 	const VIRTUAL_ROOT = '__FILE_ROOT__'
@@ -143,13 +123,6 @@
 				showRenameDialog: false as boolean,
 				renameTargetPath: '' as string,
 				renameNewName: '' as string,
-
-				// 文本编辑弹窗
-				showEditor: false as boolean,
-				editingFilePath: '' as string,
-				editingFileName: '' as string,
-				editingContent: '' as string,
-				editingReadOnly: false as boolean,
 
 				// 长按操作菜单锁
 				actionSheetOpen: false as boolean
@@ -219,6 +192,16 @@
 			this.refreshList()
 		},
 		onShow() {
+			const saved = uni.getStorageSync('editor_saved') as string | null
+			if (saved == 'true') {
+				uni.removeStorageSync('editor_saved')
+				uni.removeStorageSync('editor_saved_path')
+				uni.removeStorageSync('editor_mode')
+				uni.removeStorageSync('editor_file_path')
+				uni.removeStorageSync('editor_title')
+				uni.removeStorageSync('editor_target')
+				uni.removeStorageSync('editor_placeholder')
+			}
 			if (this.currentPath != '') {
 				this.refreshList()
 			}
@@ -311,36 +294,32 @@
 				})
 			},
 
+			clearEditorStorage() {
+				uni.removeStorageSync('editor_mode')
+				uni.removeStorageSync('editor_title')
+				uni.removeStorageSync('editor_content')
+				uni.removeStorageSync('editor_result')
+				uni.removeStorageSync('editor_result_ready')
+				uni.removeStorageSync('editor_target')
+				uni.removeStorageSync('editor_file_path')
+				uni.removeStorageSync('editor_saved')
+				uni.removeStorageSync('editor_saved_path')
+				uni.removeStorageSync('editor_readonly')
+				uni.removeStorageSync('editor_placeholder')
+				uni.removeStorageSync('editor_draft')
+			},
+
 			/** 打开文本编辑器 */
 			openTextEditor(item : FileItem) {
-				this.editingFilePath = item.path
-				this.editingFileName = item.name
-				const content = readContent(item.path)
-				this.editingContent = content != null ? content : ''
-				this.editingReadOnly = false
-				this.showEditor = true
-			},
-
-			/** 保存文本文件 */
-			saveFileContent() {
-				if (this.editingFilePath == '') {
-					return
-				}
-				const result = writeContent(this.editingFilePath, this.editingContent)
-				if (result.ok) {
-					uni.showToast({ position: 'bottom', title: '已保存', icon: 'success' })
-					this.showEditor = false
-					this.refreshList()
-				} else {
-					uni.showToast({ position: 'bottom', title: '保存失败: ' + result.error, icon: 'none' })
-				}
-			},
-
-			/** 关闭编辑器 */
-			closeEditor() {
-				this.showEditor = false
-				this.editingFilePath = ''
-				this.editingContent = ''
+				this.clearEditorStorage()
+				uni.setStorageSync('editor_mode', 'file')
+				uni.setStorageSync('editor_file_path', item.path)
+				uni.setStorageSync('editor_title', item.name)
+				uni.setStorageSync('editor_target', 'file-manager')
+				uni.setStorageSync('editor_placeholder', '文件内容为空')
+				uni.navigateTo({
+					url: '/pages/common/editor/editor'
+				})
 			},
 
 			/** 显示新建菜单 */
@@ -744,20 +723,4 @@
 		width: 100%;
 	}
 
-	/* 文本编辑器 */
-	.editor-content {
-		width: 100%;
-	}
-
-	.editor-textarea {
-		width: 100%;
-		min-height: 400rpx;
-		max-height: 600rpx;
-		font-size: 28rpx;
-		color: #111827;
-		line-height: 44rpx;
-		padding: 16rpx;
-		background-color: #F9FAFB;
-		border-radius: 12rpx;
-	}
 </style>
