@@ -42,6 +42,8 @@ import { buildAgentSkillsPrompt } from '@/utils/skills.uts'
 import { wrapUserContentForAgent, makeAgentContextBlock, type AgentContextBlock } from '@/utils/message-context.uts'
 
 const MEMORY_MANAGER_LAST_KEY_PREFIX = 'memory_manager_last_compaction_'
+const LAST_TOKEN_USAGE_KEY = 'last_token_usage'
+const LAST_LLM_CALL_KEY = 'last_llm_call'
 
 function buildMemoryManagerStorageKey(agentId: string, conversationId: string): string {
 	return MEMORY_MANAGER_LAST_KEY_PREFIX + agentId + '_' + conversationId
@@ -531,6 +533,7 @@ function callChatAPI(
 	done: (text: string | null, toolCalls: ToolCallInfo[] | null) => void
 ): void {
 	const apiMessages = buildOpenAIMessages(systemPrompt, messages)
+	clearLastTokenUsage()
 
 	// 构建请求体
 	const url = baseUrl + '/v1/chat/completions'
@@ -590,27 +593,32 @@ function callChatAPI(
 				console.log('[LLM] ====== RESPONSE ERROR ======')
 				console.log('[LLM] Status: ' + statusCode + errDetail)
 				console.log('[LLM] =============================')
+				saveLastLLMCall(false, false, model, baseUrl, statusCode, 'API 请求失败' + errDetail, null, apiMessages.length, tools.length, 0, false)
 				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null)
 				return
 			}
 			try {
 				const responseData = res.data as UTSJSONObject
 				if (responseData == null) {
+					saveLastLLMCall(false, false, model, baseUrl, statusCode, 'API 响应为空', null, apiMessages.length, tools.length, 0, false)
 					done(null, null)
 					return
 				}
 				// 保存 Token 用量
 				const usage = responseData['usage'] as UTSJSONObject | null
 				console.log('[LLM] 非流式响应 usage: ' + (usage != null ? JSON.stringify(usage) : 'null'))
-				if (usage != null) { saveLastTokenUsage(usage) }
+				let normalizedUsage: UTSJSONObject | null = null
+				if (usage != null) { normalizedUsage = saveLastTokenUsage(usage) }
 				const choices = responseData['choices'] as UTSJSONObject[] | null
 				if (choices == null || choices.length == 0) {
+					saveLastLLMCall(false, false, model, baseUrl, statusCode, 'choices 为空', normalizedUsage, apiMessages.length, tools.length, 0, false)
 					done('', null)
 					return
 				}
 				const choice = choices[0]
 				const message = choice['message'] as UTSJSONObject | null
 				if (message == null) {
+					saveLastLLMCall(false, false, model, baseUrl, statusCode, 'message 为空', normalizedUsage, apiMessages.length, tools.length, 0, false)
 					done('', null)
 					return
 				}
@@ -633,6 +641,7 @@ function callChatAPI(
 				console.log('[LLM] ====== RESPONSE ======')
 				console.log('[LLM] Status: 200' + tag + ' | ' + preview)
 				console.log('[LLM] =======================')
+				saveLastLLMCall(true, false, model, baseUrl, statusCode, '', normalizedUsage, apiMessages.length, tools.length, text.length, rawToolCalls != null && rawToolCalls.length > 0)
 
 				if (rawToolCalls != null && rawToolCalls.length > 0) {
 					const tcList: ToolCallInfo[] = []
@@ -654,10 +663,12 @@ function callChatAPI(
 					done(text, null)
 				}
 			} catch (_e: any) {
+				saveLastLLMCall(false, false, model, baseUrl, statusCode, 'API 响应解析异常: ' + _e, null, apiMessages.length, tools.length, 0, false)
 				done('API 响应解析异常: ' + _e, null)
 			}
 		},
 		fail: (_err: any) => {
+			saveLastLLMCall(false, false, model, baseUrl, -1, '网络请求失败: ' + _err, null, apiMessages.length, tools.length, 0, false)
 			done('网络请求失败: ' + _err, null, null)
 		},
 	})
@@ -740,14 +751,11 @@ function processSSELine(
 	} catch (_) {}
 }
 
-/**
- * 保存最近一次 API 调用的 Token 用量
- */
-function saveLastTokenUsage(usage: UTSJSONObject): void {
+/** 标准化 Token 用量字段，兼容 OpenAI/Anthropic 命名。 */
+function normalizeTokenUsage(usage: UTSJSONObject): UTSJSONObject {
 	let promptTokens = usage['prompt_tokens'] as number | null
 	let completionTokens = usage['completion_tokens'] as number | null
 	let totalTokens = usage['total_tokens'] as number | null
-	// Anthropic 格式兼容：input_tokens / output_tokens
 	if (promptTokens == null) promptTokens = usage['input_tokens'] as number | null
 	if (completionTokens == null) completionTokens = usage['output_tokens'] as number | null
 	if (totalTokens == null && promptTokens != null && completionTokens != null) {
@@ -757,9 +765,65 @@ function saveLastTokenUsage(usage: UTSJSONObject): void {
 	if (promptTokens != null) obj['prompt_tokens'] = promptTokens
 	if (completionTokens != null) obj['completion_tokens'] = completionTokens
 	if (totalTokens != null) obj['total_tokens'] = totalTokens
+	return obj
+}
+
+/** 保存最近一次 API 调用的 Token 用量。 */
+function saveLastTokenUsage(usage: UTSJSONObject): UTSJSONObject {
+	const obj = normalizeTokenUsage(usage)
 	const json = JSON.stringify(obj)
-	uni.setStorageSync('last_token_usage', json)
+	uni.setStorageSync(LAST_TOKEN_USAGE_KEY, json)
 	console.log('[LLM] Token 用量已保存: ' + json)
+	return obj
+}
+
+function clearLastTokenUsage(): void {
+	uni.setStorageSync(LAST_TOKEN_USAGE_KEY, '')
+}
+
+function readLastTokenUsageForCall(): UTSJSONObject | null {
+	try {
+		const rawUsage = uni.getStorageSync(LAST_TOKEN_USAGE_KEY) as string | null
+		if (rawUsage != null && rawUsage != '') {
+			return JSON.parse(rawUsage) as UTSJSONObject
+		}
+	} catch (_e: any) {}
+	return null
+}
+
+function saveLastLLMCall(
+	success: boolean,
+	streamEnabled: boolean,
+	model: string,
+	baseUrl: string,
+	statusCode: number,
+	errorMessage: string,
+	usage: UTSJSONObject | null,
+	messageCount: number,
+	toolCount: number,
+	textLength: number,
+	hasToolCalls: boolean
+): void {
+	const now = Date.now()
+	const obj: UTSJSONObject = {
+		success: success,
+		stream: streamEnabled,
+		model: model,
+		baseUrl: baseUrl,
+		statusCode: statusCode,
+		errorMessage: errorMessage,
+		messageCount: messageCount,
+		toolCount: toolCount,
+		textLength: textLength,
+		hasToolCalls: hasToolCalls,
+		timestamp: now,
+		timeText: formatMemoryMessageTime(now),
+	} as UTSJSONObject
+	if (usage != null) {
+		obj['usage'] = usage
+	}
+	const json = JSON.stringify(obj)
+	uni.setStorageSync(LAST_LLM_CALL_KEY, json)
 }
 
 /**
@@ -817,6 +881,7 @@ function callChatAPIStream(
 	onThinking: ((text: string) => void) | null = null
 ): RequestTask {
 	const apiMessages = buildOpenAIMessages(systemPrompt, messages)
+	clearLastTokenUsage()
 
 	const url = baseUrl + '/v1/chat/completions'
 	const headers: UTSJSONObject = {
@@ -888,6 +953,7 @@ function callChatAPIStream(
 				console.log('[LLM] ====== STREAM ERROR ======')
 				console.log('[LLM] Status: ' + statusCode + errDetail)
 				console.log('[LLM] ===========================')
+				saveLastLLMCall(false, true, model, baseUrl, statusCode, 'API 请求失败' + errDetail, null, apiMessages.length, tools.length, fullTextRef[0].length, false)
 				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null, null)
 				return
 			}
@@ -919,16 +985,19 @@ function callChatAPIStream(
 				console.log('[LLM] ====== STREAM RESPONSE ======')
 				console.log('[LLM] Status: 200 tools:' + tcNames + ' | ' + preview)
 				console.log('[LLM] ==============================')
+				saveLastLLMCall(true, true, model, baseUrl, statusCode, '', readLastTokenUsageForCall(), apiMessages.length, tools.length, fullTextRef[0].length, true)
 				done(fullTextRef[0], tcList, fullThinkingRef[0])
 			} else {
 				const preview = fullTextRef[0] != '' ? fullTextRef[0].substring(0, fullTextRef[0].length < 200 ? fullTextRef[0].length : 200) : ''
 				console.log('[LLM] ====== STREAM RESPONSE ======')
 				console.log('[LLM] Status: 200 | ' + preview)
 				console.log('[LLM] ==============================')
+				saveLastLLMCall(true, true, model, baseUrl, statusCode, '', readLastTokenUsageForCall(), apiMessages.length, tools.length, fullTextRef[0].length, false)
 				done(fullTextRef[0], null, fullThinkingRef[0])
 			}
 		},
 	fail: (_err: any) => {
+			saveLastLLMCall(false, true, model, baseUrl, -1, '网络请求失败: ' + _err, null, apiMessages.length, tools.length, fullTextRef[0].length, false)
 			done('网络请求失败: ' + _err, null, null)
 		},
 	})
@@ -968,6 +1037,7 @@ function runAgentLoop(
 ): void {
 	const config = resolveLLMConfig(providerId, model)
 	if (config == null) {
+		saveLastLLMCall(false, settings.streamEnabled, model, '', 0, '未配置 LLM，请先在设置中添加 API 提供商', null, messages.length, 0, 0, false)
 		stream.error('（未配置 LLM，请先在设置中添加 API 提供商）')
 		return
 	}
@@ -1298,12 +1368,19 @@ export function buildAgentContextPreview(
 	const apiMessages = buildOpenAIMessages('', prepared.workingMessages)
 	// 读取上次调用的真实 Token 用量
 	let lastTokenUsage: UTSJSONObject | null = null
+	let lastCallInfo: UTSJSONObject | null = null
 	try {
-		const rawUsage = uni.getStorageSync('last_token_usage') as string | null
+		const rawUsage = uni.getStorageSync(LAST_TOKEN_USAGE_KEY) as string | null
 		if (rawUsage != null && rawUsage != '') {
 			lastTokenUsage = JSON.parse(rawUsage) as UTSJSONObject
 		}
 	} catch (_e: any) {}
+	try {
+		const rawCall = uni.getStorageSync(LAST_LLM_CALL_KEY) as string | null
+		if (rawCall != null && rawCall != '') {
+			lastCallInfo = JSON.parse(rawCall) as UTSJSONObject
+		}
+	} catch (_e2: any) {}
 	const openaiTools: UTSJSONObject[] = []
 	for (let i = 0; i < prepared.toolDefs.length; i++) {
 		const t = prepared.toolDefs[i]
@@ -1316,7 +1393,6 @@ export function buildAgentContextPreview(
 			},
 		} as UTSJSONObject)
 	}
-	console.log('[LLM] payload lastTokenUsage: ' + (lastTokenUsage != null ? JSON.stringify(lastTokenUsage) : 'null'))
 	return {
 		providerId: resolvedProviderId,
 		baseUrl: normalizedBaseUrl,
@@ -1328,6 +1404,7 @@ export function buildAgentContextPreview(
 		droppedCount: prepared.droppedMessages.length,
 		droppedPreview: buildDroppedMessagesPreview(prepared.droppedMessages),
 		lastTokenUsage: lastTokenUsage,
+		lastCallInfo: lastCallInfo,
 		workingMessages: prepared.workingMessages,
 		openaiMessages: apiMessages,
 		toolDefs: prepared.toolDefs,

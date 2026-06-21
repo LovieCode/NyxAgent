@@ -13,81 +13,129 @@
 				<text class="hero-desc">这里展示本轮真正会发给 agent 的首轮原始上下文，包含系统提示词、记忆动态注入、消息重写结果、工具定义与请求体。不会显示 API Key。</text>
 			</view>
 
-		<view id="section-summary" class="card">
+			<view id="section-summary" class="card summary-card">
 				<text class="section-title">摘要</text>
-				<view class="summary-grid">
-					<view class="summary-item">
+				<view class="summary-section">
+					<text class="summary-section-title">请求目标</text>
+					<view class="summary-row">
 						<text class="summary-label">模型</text>
-						<text class="summary-value">{{model != '' ? model : '未解析'}}</text>
+						<text class="summary-value summary-value-strong">{{model != '' ? model : '未解析'}}</text>
 					</view>
-					<view class="summary-item">
-						<text class="summary-label">接口</text>
+					<view class="summary-row">
+						<text class="summary-label">Provider</text>
 						<text class="summary-value">{{providerId != '' ? providerId : '未解析'}}</text>
 					</view>
-					<view class="summary-item">
-						<text class="summary-label">地址</text>
-						<text class="summary-value">{{baseUrl != '' ? baseUrl : '未解析'}}</text>
+					<view class="summary-row">
+						<text class="summary-label">Base URL</text>
+						<text class="summary-value summary-url">{{baseUrl != '' ? baseUrl : '未解析'}}</text>
 					</view>
-					<view class="summary-item">
-						<text class="summary-label">温度</text>
-						<text class="summary-value">{{settingsTemperature}}</text>
+				</view>
+
+				<view class="summary-section">
+					<text class="summary-section-title">生成参数</text>
+					<view class="summary-pill-row">
+						<view class="summary-pill">
+							<text class="summary-label">temperature</text>
+							<text class="summary-value">{{settingsTemperature}}</text>
+						</view>
+						<view class="summary-pill">
+							<text class="summary-label">max_tokens</text>
+							<text class="summary-value">{{settingsMaxTokens}}</text>
+						</view>
+						<view class="summary-pill">
+							<text class="summary-label">max_iter</text>
+							<text class="summary-value">{{settingsMaxIterations}}</text>
+						</view>
+						<view class="summary-pill">
+							<text class="summary-label">stream</text>
+							<text class="summary-value">{{settingsStreamEnabled ? '开' : '关'}}</text>
+						</view>
 					</view>
-					<view class="summary-item">
-						<text class="summary-label">最大 Token</text>
-						<text class="summary-value">{{settingsMaxTokens}}</text>
+				</view>
+
+				<view class="summary-section">
+					<text class="summary-section-title">上下文规模</text>
+					<view class="summary-main-metrics">
+						<view class="summary-metric">
+							<text class="summary-metric-value">{{messageCount}}</text>
+							<text class="summary-metric-label">发送消息 / 原始 {{totalMessages}}</text>
+						</view>
+						<view class="summary-metric">
+							<text class="summary-metric-value">≈ {{totalTokens}}</text>
+							<text class="summary-metric-label">估算上下文 Token</text>
+						</view>
+						<view class="summary-metric">
+							<text class="summary-metric-value">{{toolCount}}</text>
+							<text class="summary-metric-label">工具定义</text>
+						</view>
 					</view>
-					<view class="summary-item">
-						<text class="summary-label">最大轮次</text>
-						<text class="summary-value">{{settingsMaxIterations}}</text>
+					<view class="summary-role-list">
+						<text class="summary-role-text">user：{{userMsgCount}} 条 / {{userCharCount}} 字</text>
+						<text class="summary-role-text">assistant：{{assistantMsgCount}} 条 / {{assistantCharCount}} 字</text>
+						<text class="summary-role-text">system：{{systemMsgCount}} 条 / {{systemCharCount}} 字</text>
+						<text class="summary-role-text">tool：{{toolMsgCount}} 条 / {{toolCharCount}} 字</text>
 					</view>
-					<view class="summary-item">
-						<text class="summary-label">流式</text>
-						<text class="summary-value">{{settingsStreamEnabled ? '开' : '关'}}</text>
+				</view>
+
+				<view class="summary-section summary-section-last">
+					<text class="summary-section-title">动态注入与用量</text>
+					<view class="summary-pill-row">
+						<view class="summary-pill" :class="importantMemory != '' ? 'summary-pill-on' : ''">
+							<text class="summary-label">重要记忆</text>
+							<text class="summary-value">{{importantMemory != '' ? '已注入' : '无'}}</text>
+						</view>
+						<view class="summary-pill" :class="bufferInjection != '' ? 'summary-pill-on' : ''">
+							<text class="summary-label">短缓存</text>
+							<text class="summary-value">{{bufferInjection != '' ? '已注入' : '无'}}</text>
+						</view>
 					</view>
-					<view class="summary-item">
-						<text class="summary-label">原始消息</text>
-						<text class="summary-value">{{totalMessages}} 条</text>
-					</view>
-					<view class="summary-item">
-						<text class="summary-label">保留消息</text>
-						<text class="summary-value">{{messageCount}} 条</text>
-					</view>
-					<view class="summary-item">
-						<text class="summary-label">上下文总 Token</text>
-						<text class="summary-value">≈ {{totalTokens}}</text>
-					</view>
-					<view class="summary-item">
-						<text class="summary-label">用户消息</text>
-						<text class="summary-value">{{userMsgCount}} 条 · {{userCharCount}} 字</text>
-					</view>
-					<view class="summary-item">
-						<text class="summary-label">AI 消息</text>
-						<text class="summary-value">{{assistantMsgCount}} 条 · {{assistantCharCount}} 字</text>
-					</view>
-					<view class="summary-item">
-						<text class="summary-label">系统消息</text>
-						<text class="summary-value">{{systemMsgCount}} 条 · {{systemCharCount}} 字</text>
-					</view>
-					<view class="summary-item">
-						<text class="summary-label">工具消息</text>
-						<text class="summary-value">{{toolMsgCount}} 条 · {{toolCharCount}} 字</text>
-					</view>
-					<view class="summary-item">
-						<text class="summary-label">工具定义</text>
-						<text class="summary-value">{{toolCount}} 个</text>
-					</view>
-					<view class="summary-item">
-						<text class="summary-label">重要记忆</text>
-						<text class="summary-value">{{importantMemory != '' ? '有' : '无'}}</text>
-					</view>
-					<view class="summary-item">
-						<text class="summary-label">短缓存</text>
-						<text class="summary-value">{{bufferInjection != '' ? '有' : '无'}}</text>
-					</view>
-					<view class="summary-item" style="background-color:#F0FFF4;border-radius:16rpx;padding:8rpx 16rpx;">
-						<text class="summary-label" style="color:#059669;">上次调用</text>
-						<text v-if="lastTotalTokens > 0" class="summary-value" style="color:#059669;">{{lastPromptTokens}} → {{lastCompletionTokens}}（共 {{lastTotalTokens}}）</text>
-						<text v-else class="summary-value" style="color:#059669;">—</text>
+
+					<view class="last-call-panel">
+						<view class="last-call-head">
+							<text class="last-call-title">上次调用</text>
+							<text class="last-call-badge" :class="lastCallBadgeClass">{{lastCallStatus}}</text>
+						</view>
+						<view class="summary-row">
+							<text class="summary-label">时间</text>
+							<text class="summary-value">{{lastCallTime}}</text>
+						</view>
+						<view class="summary-row">
+							<text class="summary-label">模式 / 状态码</text>
+							<text class="summary-value">{{lastCallMode}} · {{lastCallStatusCode}}</text>
+						</view>
+						<view class="summary-row">
+							<text class="summary-label">模型</text>
+							<text class="summary-value summary-url">{{lastCallModel}}</text>
+						</view>
+						<view class="summary-row">
+							<text class="summary-label">地址</text>
+							<text class="summary-value summary-url">{{lastCallBaseUrl}}</text>
+						</view>
+						<view class="summary-row">
+							<text class="summary-label">请求规模</text>
+							<text class="summary-value">{{lastCallMessageCount}} 消息 · {{lastCallToolCount}} 工具</text>
+						</view>
+						<view class="summary-row">
+							<text class="summary-label">输出</text>
+							<text class="summary-value">{{lastCallTextLength}} 字 · 工具调用 {{lastCallHasToolCalls}}</text>
+						</view>
+						<view class="last-call-token-row">
+							<view class="last-call-token">
+								<text class="summary-label">Prompt</text>
+								<text class="summary-value">{{lastPromptTokensText}}</text>
+							</view>
+							<view class="last-call-token">
+								<text class="summary-label">Completion</text>
+								<text class="summary-value">{{lastCompletionTokensText}}</text>
+							</view>
+							<view class="last-call-token">
+								<text class="summary-label">Total</text>
+								<text class="summary-value">{{lastTotalTokensText}}</text>
+							</view>
+						</view>
+						<view v-if="lastCallError != ''" class="last-call-error">
+							<text class="last-call-error-text">{{lastCallError}}</text>
+						</view>
 					</view>
 				</view>
 			</view>
@@ -147,6 +195,20 @@
 				lastPromptTokens: 0 as number,
 				lastCompletionTokens: 0 as number,
 				lastTotalTokens: 0 as number,
+				lastPromptTokensText: '—' as string,
+				lastCompletionTokensText: '—' as string,
+				lastTotalTokensText: '—' as string,
+				lastCallStatus: '未知' as string,
+				lastCallTime: '—' as string,
+				lastCallMode: '—' as string,
+				lastCallStatusCode: '—' as string,
+				lastCallModel: '—' as string,
+				lastCallBaseUrl: '—' as string,
+				lastCallMessageCount: '—' as string,
+				lastCallToolCount: '—' as string,
+				lastCallTextLength: '—' as string,
+				lastCallHasToolCalls: '—' as string,
+				lastCallError: '' as string,
 				toolCount: 0 as number,
 				settingsTemperature: '—' as string,
 				settingsMaxTokens: '—' as string,
@@ -182,6 +244,12 @@
 				if (top > maxTop) top = maxTop
 				return 'top:' + top + 'px;height:' + thumbH + 'px;'
 			},
+
+			lastCallBadgeClass(): string {
+				if (this.lastCallStatus == '成功') return 'last-call-badge-ok'
+				if (this.lastCallStatus == '失败') return 'last-call-badge-error'
+				return 'last-call-badge-unknown'
+			},
 		},
 		onLoad() {
 			const raw = uni.getStorageSync('context_preview_payload') as string | null
@@ -204,6 +272,7 @@
 				const openaiMessages = parsed['openaiMessages'] as UTSJSONObject[] | null
 				const openaiTools = parsed['openaiTools'] as UTSJSONObject[] | null
 				const requestBody = parsed['requestBody'] as UTSJSONObject | null
+				const lastCallInfo = parsed['lastCallInfo'] as UTSJSONObject | null
 				this.providerId = providerId != null ? providerId : ''
 				this.baseUrl = baseUrl != null ? baseUrl : ''
 				this.model = model != null ? model : ''
@@ -236,17 +305,13 @@
 					this.totalTokens = Math.round(allChars / 2)
 				}
 				this.toolCount = openaiTools != null ? openaiTools.length : 0
-				// 上次调用的真实 Token 用量
+				// 上次调用信息
 				const ltu = parsed['lastTokenUsage'] as UTSJSONObject | null
-				console.log('[Preview] lastTokenUsage raw: ' + (ltu != null ? JSON.stringify(ltu) : 'null'))
 				if (ltu != null) {
-					const pt = ltu['prompt_tokens'] as number | null
-					const ct = ltu['completion_tokens'] as number | null
-					const tt = ltu['total_tokens'] as number | null
-					console.log('[Preview] parsed tokens: pt=' + pt + ' ct=' + ct + ' tt=' + tt)
-					if (pt != null) this.lastPromptTokens = pt
-					if (ct != null) this.lastCompletionTokens = ct
-					if (tt != null) this.lastTotalTokens = tt
+					this.applyLastTokenUsage(ltu)
+				}
+				if (lastCallInfo != null) {
+					this.applyLastCallInfo(lastCallInfo)
 				}
 				if (settings != null) {
 					const temp = settings['temperature'] as number | null
@@ -263,8 +328,73 @@
 			this.scheduleLayoutCache()
 			setTimeout(() => { this.measureScrollSize() }, 300)
 			setTimeout(() => { this.measureScrollSize() }, 800)
-	},
+		},
 		methods: {
+			applyLastTokenUsage(usage: UTSJSONObject): void {
+				const pt = usage['prompt_tokens'] as number | null
+				const ct = usage['completion_tokens'] as number | null
+				const tt = usage['total_tokens'] as number | null
+				if (pt != null) {
+					this.lastPromptTokens = pt
+					this.lastPromptTokensText = '' + pt
+				}
+				if (ct != null) {
+					this.lastCompletionTokens = ct
+					this.lastCompletionTokensText = '' + ct
+				}
+				if (tt != null) {
+					this.lastTotalTokens = tt
+					this.lastTotalTokensText = '' + tt
+				}
+			},
+
+			applyLastCallInfo(info: UTSJSONObject): void {
+				const success = info['success'] as boolean | null
+				if (success == true) {
+					this.lastCallStatus = '成功'
+				} else if (success == false) {
+					this.lastCallStatus = '失败'
+				} else {
+					this.lastCallStatus = '未知'
+				}
+				const timeText = info['timeText'] as string | null
+				this.lastCallTime = timeText != null && timeText != '' ? timeText : '—'
+				const streamEnabled = info['stream'] as boolean | null
+				if (streamEnabled == true) {
+					this.lastCallMode = '流式'
+				} else if (streamEnabled == false) {
+					this.lastCallMode = '非流式'
+				} else {
+					this.lastCallMode = '—'
+				}
+				const statusCode = info['statusCode'] as number | null
+				this.lastCallStatusCode = statusCode != null ? ('' + statusCode) : '—'
+				const model = info['model'] as string | null
+				this.lastCallModel = model != null && model != '' ? model : '—'
+				const baseUrl = info['baseUrl'] as string | null
+				this.lastCallBaseUrl = baseUrl != null && baseUrl != '' ? baseUrl : '—'
+				const messageCount = info['messageCount'] as number | null
+				this.lastCallMessageCount = messageCount != null ? ('' + messageCount) : '—'
+				const toolCount = info['toolCount'] as number | null
+				this.lastCallToolCount = toolCount != null ? ('' + toolCount) : '—'
+				const textLength = info['textLength'] as number | null
+				this.lastCallTextLength = textLength != null ? ('' + textLength) : '—'
+				const hasToolCalls = info['hasToolCalls'] as boolean | null
+				if (hasToolCalls == true) {
+					this.lastCallHasToolCalls = '有'
+				} else if (hasToolCalls == false) {
+					this.lastCallHasToolCalls = '无'
+				} else {
+					this.lastCallHasToolCalls = '—'
+				}
+				const errorMessage = info['errorMessage'] as string | null
+				this.lastCallError = errorMessage != null ? errorMessage : ''
+				const usage = info['usage'] as UTSJSONObject | null
+				if (usage != null) {
+					this.applyLastTokenUsage(usage)
+				}
+			},
+
 			scheduleLayoutCache(): void {
 				setTimeout(() => {
 					this.cacheLayoutMetrics()
@@ -598,28 +728,177 @@
 		color: var(--rice-text-color-2);
 	}
 
-	.summary-grid {
-		flex-direction: row;
-		flex-wrap: wrap;
-		align-items: flex-start;
+	.summary-card {
+		padding-bottom: 20rpx;
 	}
 
-	.summary-item {
+	.summary-section {
+		background-color: #F9FAFB;
+		border-radius: 22rpx;
+		padding: 24rpx;
+		margin-bottom: 18rpx;
+	}
+
+	.summary-section-last {
+		margin-bottom: 0;
+	}
+
+	.summary-section-title {
+		font-size: 24rpx;
+		font-weight: bold;
+		color: #6B7280;
+		margin-bottom: 16rpx;
+	}
+
+	.summary-row {
 		flex-direction: row;
-		align-items: center;
-		padding: 12rpx 32rpx 12rpx 0;
+		align-items: flex-start;
+		justify-content: space-between;
+		padding: 10rpx 0;
 	}
 
 	.summary-label {
-		font-size: 24rpx;
+		font-size: 23rpx;
 		color: #9CA3AF;
-		margin-right: 12rpx;
+		margin-right: 14rpx;
 		flex-shrink: 0;
 	}
 
 	.summary-value {
 		font-size: 26rpx;
 		color: var(--rice-text-color);
+		text-align: right;
+	}
+
+	.summary-value-strong {
+		font-weight: bold;
+	}
+
+	.summary-url {
+		font-size: 23rpx;
+		color: #4B5563;
+		flex: 1;
+	}
+
+	.summary-pill-row {
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+
+	.summary-pill {
+		background-color: #FFFFFF;
+		border-radius: 18rpx;
+		padding: 14rpx 18rpx;
+		margin-right: 12rpx;
+		margin-bottom: 12rpx;
+		min-width: 150rpx;
+	}
+
+	.summary-pill-on {
+		background-color: #FFF1F2;
+	}
+
+	.summary-main-metrics {
+		flex-direction: row;
+	}
+
+	.summary-metric {
+		flex: 1;
+		background-color: #FFFFFF;
+		border-radius: 18rpx;
+		padding: 20rpx 16rpx;
+		margin-right: 12rpx;
+	}
+
+	.summary-metric-value {
+		font-size: 34rpx;
+		font-weight: bold;
+		color: var(--rice-primary-color);
+	}
+
+	.summary-metric-label {
+		font-size: 21rpx;
+		line-height: 30rpx;
+		color: #6B7280;
+		margin-top: 6rpx;
+	}
+
+	.summary-role-list {
+		margin-top: 16rpx;
+	}
+
+	.summary-role-text {
+		font-size: 23rpx;
+		line-height: 34rpx;
+		color: #4B5563;
+	}
+
+	.last-call-panel {
+		background-color: #FFFFFF;
+		border-radius: 20rpx;
+		padding: 22rpx;
+		margin-top: 8rpx;
+	}
+
+	.last-call-head {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 10rpx;
+	}
+
+	.last-call-title {
+		font-size: 26rpx;
+		font-weight: bold;
+		color: var(--rice-text-color);
+	}
+
+	.last-call-badge {
+		font-size: 22rpx;
+		font-weight: bold;
+		border-radius: 999rpx;
+		padding: 8rpx 18rpx;
+	}
+
+	.last-call-badge-ok {
+		color: #059669;
+		background-color: #ECFDF5;
+	}
+
+	.last-call-badge-error {
+		color: #DC2626;
+		background-color: #FEF2F2;
+	}
+
+	.last-call-badge-unknown {
+		color: #6B7280;
+		background-color: #F3F4F6;
+	}
+
+	.last-call-token-row {
+		flex-direction: row;
+		margin-top: 12rpx;
+	}
+
+	.last-call-token {
+		flex: 1;
+		background-color: #F0FDF4;
+		border-radius: 16rpx;
+		padding: 14rpx;
+		margin-right: 10rpx;
+	}
+
+	.last-call-error {
+		background-color: #FEF2F2;
+		border-radius: 16rpx;
+		padding: 16rpx;
+		margin-top: 14rpx;
+	}
+
+	.last-call-error-text {
+		font-size: 23rpx;
+		line-height: 34rpx;
+		color: #B91C1C;
 	}
 
 	.block-text {
