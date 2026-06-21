@@ -62,49 +62,13 @@ export function normalizeBaseUrl(url: string): string {
 /**
  * 剥离 deep thinking 标签及其内容：<think_xxx>...</think_xxx>
  * 豆包 / DeepSeek 等模型会在 content 中嵌入思考过程，需过滤掉全部思考内容
- * 注意：UTS 不支持 Char 与 String 比较，所有下标取字符均用 substring 实现
  */
 export function stripThinkTags(text: string): string {
-	const len = text.length
-	if (len < 7) return text
-	if (text.indexOf('<think_') < 0 && text.indexOf('</think_') < 0) return text
-	let result = ''
-	let i = 0
-	let c: string
-	while (i < len) {
-		c = text.substring(i, i + 1)
-
-		// 检测 <think_ 开标签 → 跳过直到匹配的 </think_>
-		if (c == '<' && i + 7 <= len && text.substring(i, i + 7) == '<think_') {
-			// 跳过开标签 <think_...>
-			i = i + 7
-			while (i < len && text.substring(i, i + 1) != '>') i++
-			if (i < len) i++ // 跳过 >
-			// 跳过中间内容直到 </think_...>
-			while (i < len) {
-				if (i + 8 <= len && text.substring(i, i + 8) == '</think_') {
-					i = i + 8
-					while (i < len && text.substring(i, i + 1) != '>') i++
-					if (i < len) i++ // 跳过 >
-					break
-				}
-				i++
-			}
-			continue
-		}
-
-		// 处理孤立的 </think_...> 闭标签（没有对应开标签时）
-		if (c == '<' && i + 8 <= len && text.substring(i, i + 8) == '</think_') {
-			i = i + 8
-			while (i < len && text.substring(i, i + 1) != '>') i++
-			if (i < len) i++ // 跳过 >
-			continue
-		}
-
-		result += c
-		i++
-	}
-	return result
+	// 移除 <think_UUID>...</think_UUID> 及其中间全部内容
+	text = text.replace(/<think_[^>]*>[\s\S]*?<\/think_[^>]*>/g, '')
+	// 清理可能残留的孤立闭标签
+	text = text.replace(/<\/think_[^>]*>/g, '')
+	return text
 }
 
 /**
