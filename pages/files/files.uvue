@@ -99,7 +99,7 @@
 </template>
 
 <script lang="uts">
-	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, parentPath, basename, joinPath, normalizePath, getUserDir, getInternalFilesDir, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
+	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, parentPath, basename, joinPath, normalizePath, getUserDir, getInternalFilesDir, getExternalFilesDir, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
 
 	/** 虚拟根路径标记（合并视图用） */
 	const VIRTUAL_ROOT = '__FILE_ROOT__'
@@ -199,7 +199,8 @@
 			const isRootLevel = (
 				parent == '' || parent == this.currentPath ||
 				parent == getUserDir() ||
-				parent == getInternalFilesDir()
+				parent == getInternalFilesDir() ||
+				parent == getExternalFilesDir()
 			)
 			if (isRootLevel) {
 				this.currentPath = VIRTUAL_ROOT
