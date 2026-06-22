@@ -1517,13 +1517,11 @@ function runAgentLoop(
 				stream.push({ type: 'thinking_delta', thinkingText: text })
 			}
 			toolCallDeltaHandler = (index: number, name: string | null, args: string | null): void => {
-				// 没名字不发（SSE 早期 delta 可能只有 args，稍后批量的 tool_call 事件会补全）
-				if (name == null || name == '') return
 				const argsStr = args != null ? args : '{}'
 				stream.push({
 					type: 'tool_call',
 					toolCallId: '',
-					toolName: name,
+					toolName: name != null ? name : '',
 					toolArgs: argsStr
 				})
 			}
