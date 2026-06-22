@@ -267,6 +267,8 @@
 					this.timerRunning = true
 					this.toolCallTimer = setInterval(() => {
 						this.timerTick = this.timerTick + 1
+						// 强制 Vue 重新渲染（uni-app x 中 computed 不追踪 setInterval 内的变更）
+						;(this as any).$forceUpdate()
 						// 在回调中自检：没有 running 状态的工具则自动停止
 						let anyRunning = false
 						for (let i = 0; i < this.displayBlocks.length; i++) {
