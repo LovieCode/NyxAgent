@@ -1173,21 +1173,26 @@
 						newBlocks.push(oldBlocks[k])
 					}
 				}
-				// Check if last block is a toolCall with same name → append args（保留已有 ts/status）
-				const lastBlockIdx = newBlocks.length - 1
-				if (lastBlockIdx >= 0 && (newBlocks[lastBlockIdx]['type'] as string) == 'toolCall' && (newBlocks[lastBlockIdx]['name'] as string) == name) {
-					const oldArgs = newBlocks[lastBlockIdx]['arguments'] as string | null
-					const oldTs = newBlocks[lastBlockIdx]['ts']
-					const oldStatus = newBlocks[lastBlockIdx]['status']
-					newBlocks[lastBlockIdx] = {
-						type: 'toolCall',
-						name: name,
-						arguments: (oldArgs != null ? oldArgs : '') + args,
-						ts: oldTs != null ? oldTs : now,
-						status: oldStatus != null ? oldStatus : 'pending',
-						result: '',
-					} as UTSJSONObject
-				} else {
+				// 在全部 blocks 中查找同名 toolCall 合并，避免批量先到+增量后到产生重复
+				let merged = false
+				for (let k = newBlocks.length - 1; k >= 0; k--) {
+					if ((newBlocks[k]['type'] as string) == 'toolCall' && (newBlocks[k]['name'] as string) == name) {
+						const oldArgs = newBlocks[k]['arguments'] as string | null
+						const oldTs = newBlocks[k]['ts']
+						const oldStatus = newBlocks[k]['status']
+						newBlocks[k] = {
+							type: 'toolCall',
+							name: name,
+							arguments: (oldArgs != null ? oldArgs : '') + args,
+							ts: oldTs != null ? oldTs : now,
+							status: oldStatus != null ? oldStatus : 'pending',
+							result: '',
+						} as UTSJSONObject
+						merged = true
+						break
+					}
+				}
+				if (merged == false) {
 					newBlocks.push({ type: 'toolCall', name: name, arguments: args, ts: now, status: 'pending', result: '' } as UTSJSONObject)
 				}
 				const oldContent = existing['content'] as string | null
