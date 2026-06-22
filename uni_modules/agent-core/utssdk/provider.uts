@@ -30,7 +30,11 @@ export type ModelInfo = {
 	/** 自定义参数 JSON 字符串，用于传递 provider-specific 的参数 */
 	params?: string
 	/** 是否支持多模态（识图）能力 */
-	supportsVision?: boolean
+	supportsVision: boolean
+	/** 是否支持原生工具调用 (function calling) */
+	supportsToolCall: boolean
+	/** 是否支持思维链/推理 (reasoning) */
+	supportsReasoning: boolean
 	// === UI state (不序列化) ===
 	ctxStr?: string
 	maxTokensStr?: string
@@ -130,6 +134,12 @@ export function serializeModels(models: ModelInfo[]): string {
 		if (m.supportsVision == true) {
 			obj['vision'] = true
 		}
+		if (m.supportsToolCall == true) {
+			obj['toolCall'] = true
+		}
+		if (m.supportsReasoning == true) {
+			obj['reasoning'] = true
+		}
 		// UI state 不存
 		list.push(obj)
 	}
@@ -150,13 +160,13 @@ export function parseModels(modelsStr: string): ModelInfo[] {
 			const item = raw[i]
 			if (typeof item == 'string') {
 				// 旧格式 ["model-id"]
-				result.push({ id: item } as ModelInfo)
+				result.push({ id: item, supportsVision: false, supportsToolCall: false, supportsReasoning: false } as ModelInfo)
 			} else if (typeof item == 'object' && item != null) {
 				// 新格式 [{"id":"...","context":...}]
 				const obj = item as UTSJSONObject
 				const mid = obj['id'] as string | null
 				if (mid != null && mid != '') {
-					const mi: ModelInfo = { id: mid, ctxStr: '', maxTokensStr: '', expanded: false } as ModelInfo
+					const mi: ModelInfo = { id: mid, ctxStr: '', maxTokensStr: '', expanded: false, supportsVision: false, supportsToolCall: false, supportsReasoning: false } as ModelInfo
 					// name
 					const nm = obj['name'] as string | null
 					if (nm != null && nm != '') {
@@ -179,12 +189,16 @@ export function parseModels(modelsStr: string): ModelInfo[] {
 					if (pms != null && pms != '') {
 						mi.params = pms
 					}
-					// vision capability
-					const vision = obj['vision'] as boolean | null
-					if (vision == true) {
-						mi.supportsVision = true
-					}
-					result.push(mi)
+				// vision capability
+				const vision = obj['vision'] as boolean | null
+				mi.supportsVision = vision == true
+				// tool call capability
+				const toolCall = obj['toolCall'] as boolean | null
+				mi.supportsToolCall = toolCall == true
+				// reasoning capability
+				const reasoning = obj['reasoning'] as boolean | null
+				mi.supportsReasoning = reasoning == true
+				result.push(mi)
 				}
 			}
 		}

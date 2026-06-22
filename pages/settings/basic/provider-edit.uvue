@@ -135,11 +135,19 @@
 							<input class="detail-field-input detail-params-input" type="text" v-model="m.params" placeholder='{"key": "value"}' placeholder-class="ph" />
 							<text class="detail-field-hint">额外的 API 参数，例如温度、top_p 等</text>
 						</view>
-						<view class="detail-field model-vision-row">
-							<text class="detail-field-label">支持识图</text>
-							<rice-switch v-model="m.supportsVision" />
-						</view>
+					<view class="detail-field model-vision-row">
+						<text class="detail-field-label">支持识图</text>
+						<rice-switch v-model="m.supportsVision" />
 					</view>
+					<view class="detail-field model-vision-row">
+						<text class="detail-field-label">支持工具调用</text>
+						<rice-switch v-model="m.supportsToolCall" />
+					</view>
+					<view class="detail-field model-vision-row">
+						<text class="detail-field-label">支持思维链</text>
+						<rice-switch v-model="m.supportsReasoning" />
+					</view>
+				</view>
 				</view>
 
 				<!-- 添加模型 -->
@@ -249,7 +257,7 @@
 			},
 
 			addModel() {
-				const m: ModelInfo = { id: '', ctxStr: '', maxTokensStr: '', expanded: true } as ModelInfo
+				const m: ModelInfo = { id: '', ctxStr: '', maxTokensStr: '', expanded: true, supportsVision: false, supportsToolCall: false, supportsReasoning: false } as ModelInfo
 				this.editModels.push(m)
 			},
 
@@ -334,7 +342,7 @@
 				let addedCount = 0
 				for (let i = 0; i < this.fetchedModelIds.length; i++) {
 					if (this.selectedModelIndexes[i] == true) {
-						this.editModels.push({ id: this.fetchedModelIds[i], ctxStr: '' } as ModelInfo)
+						this.editModels.push({ id: this.fetchedModelIds[i], ctxStr: '', supportsVision: false, supportsToolCall: false, supportsReasoning: false } as ModelInfo)
 						addedCount++
 					}
 				}
