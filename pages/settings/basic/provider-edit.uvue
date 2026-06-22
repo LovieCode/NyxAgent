@@ -166,6 +166,7 @@
 
 <script lang="uts">
 	import { saveProvider, fetchProviderModels, parseModels, ModelInfo, getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { getModelCapabilities, refreshMetadataCache } from '@/uni_modules/agent-core/utssdk/llm-metadata.uts'
 
 	export default {
 			data() {
@@ -256,71 +257,6 @@
 				}
 			},
 
-			/** 已知多模态模型 */
-			isKnownVisionModel(modelId: string): boolean {
-				const m = modelId.toLowerCase()
-				if (m.indexOf('vision') >= 0) return true
-				if (m.indexOf('vl') >= 0) return true
-				if (m.indexOf('gpt-4o') >= 0) return true
-				if (m.indexOf('gemini-2') >= 0) return true
-				if (m.indexOf('gemini-1.5') >= 0) return true
-				if (m.indexOf('claude-3') >= 0) return true
-				if (m.indexOf('claude-3.5') >= 0) return true
-				if (m.indexOf('claude-4') >= 0) return true
-				if (m.indexOf('pixtral') >= 0) return true
-				if (m.indexOf('mimo') >= 0) return true
-				if (m.indexOf('MiniMax-M') >= 0) return true
-				if (m.indexOf('step-3') >= 0) return true
-				return false
-			},
-
-			/** 已知思维链模型 */
-			isKnownReasoningModel(modelId: string): boolean {
-				const m = modelId.toLowerCase()
-				if (m.indexOf('deepseek-r') >= 0) return true
-				if (m.indexOf('deepseek-v4') >= 0) return true
-				if (m.indexOf('o1') >= 0) return true
-				if (m.indexOf('o3') >= 0) return true
-				if (m.indexOf('o4') >= 0) return true
-				if (m.indexOf('qwq') >= 0) return true
-				if (m.indexOf('qvq') >= 0) return true
-				if (m.indexOf('grok-4') >= 0) return true
-				if (m.indexOf('reasoning') >= 0) return true
-				if (m.indexOf('think') >= 0) return true
-				if (m.indexOf('nemotron-3-ultra') >= 0) return true
-				return false
-			},
-
-			/** 已知工具调用模型 */
-			isKnownToolCallModel(modelId: string): boolean {
-				const m = modelId.toLowerCase()
-				if (m.indexOf('gpt-4') >= 0) return true
-				if (m.indexOf('gpt-5') >= 0) return true
-				if (m.indexOf('claude-3') >= 0) return true
-				if (m.indexOf('claude-4') >= 0) return true
-				if (m.indexOf('gemini-2') >= 0) return true
-				if (m.indexOf('gemini-1.5') >= 0) return true
-				if (m.indexOf('qwen3') >= 0) return true
-				if (m.indexOf('qwen2.5') >= 0) return true
-				if (m.indexOf('deepseek-v4') >= 0) return true
-				if (m.indexOf('deepseek-chat') >= 0) return true
-				if (m.indexOf('command-r') >= 0) return true
-				if (m.indexOf('command-a') >= 0) return true
-				if (m.indexOf('mistral-large') >= 0) return true
-				if (m.indexOf('mistral-medium') >= 0) return true
-				if (m.indexOf('mistral-small') >= 0) return true
-				if (m.indexOf('minimax') >= 0) return true
-				if (m.indexOf('grok') >= 0) return true
-				if (m.indexOf('kimi') >= 0) return true
-				if (m.indexOf('step-3') >= 0) return true
-				if (m.indexOf('glm-4') >= 0) return true
-				if (m.indexOf('glm-5') >= 0) return true
-				if (m.indexOf('llama-3') >= 0) return true
-				if (m.indexOf('llama-4') >= 0) return true
-				if (m.indexOf('nemotron') >= 0) return true
-				return false
-			},
-
 			addModel() {
 				const m: ModelInfo = { id: '', ctxStr: '', maxTokensStr: '', expanded: true, supportsVision: false, supportsToolCall: false, supportsReasoning: false } as ModelInfo
 				this.editModels.push(m)
@@ -370,6 +306,8 @@
 					uni.showToast({ position: 'bottom',  title: '所有模型已存在', icon: 'none' })
 					return
 				}
+				// 后台刷新元数据缓存（不阻塞 UI）
+				refreshMetadataCache()
 				this.fetchedModelIds = newIds
 				this.selectedModelIndexes = []
 				for (let i = 0; i < newIds.length; i++) {
@@ -408,12 +346,13 @@
 				for (let i = 0; i < this.fetchedModelIds.length; i++) {
 					if (this.selectedModelIndexes[i] == true) {
 						const modelId = this.fetchedModelIds[i]
+						const caps = getModelCapabilities(modelId)
 						this.editModels.push({
 							id: modelId,
 							ctxStr: '',
-							supportsVision: this.isKnownVisionModel(modelId),
-							supportsToolCall: this.isKnownToolCallModel(modelId),
-							supportsReasoning: this.isKnownReasoningModel(modelId),
+							supportsVision: caps.supportsVision,
+							supportsToolCall: caps.supportsToolCall,
+							supportsReasoning: caps.supportsReasoning,
 						} as ModelInfo)
 						addedCount++
 					}

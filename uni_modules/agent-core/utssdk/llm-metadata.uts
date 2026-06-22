@@ -1,0 +1,129 @@
+/**
+ * llm-metadata.uts — 从 models.dev 获取 LLM 模型元数据
+ *
+ * 参考 AstrBot astrbot/core/utils/llm_metadata.py
+ * 缓存 models.dev/api.json 的模型能力数据到 uni.storage
+ */
+
+/**
+ * 模型能力描述
+ */
+export type ModelCapabilities = {
+	supportsVision: boolean
+	supportsToolCall: boolean
+	supportsReasoning: boolean
+}
+
+/** 缓存过期时间（7天） */
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000
+
+/** 内存缓存 */
+let metadataCache: UTSJSONObject | null = null
+let cacheTimestamp: number = 0
+
+/**
+ * 获取模型能力
+ * 从 models.dev 元数据缓存中查询，缓存过期自动刷新
+ * @param modelId 模型 ID（例如 "gpt-4o"、"deepseek-chat"）
+ * @returns 模型能力对象，所有字段默认为 false
+ */
+export function getModelCapabilities(modelId: string): ModelCapabilities {
+	const result: ModelCapabilities = {
+		supportsVision: false,
+		supportsToolCall: false,
+		supportsReasoning: false,
+	}
+
+	// 先查内存缓存
+	if (metadataCache == null) {
+		// 尝试从本地存储恢复
+		const cached = uni.getStorageSync('llm_metadata_cache') as string | null
+		const cachedTime = uni.getStorageSync('llm_metadata_cache_time') as number | null
+		if (cached != null && cached != '') {
+			try {
+				metadataCache = JSON.parse(cached) as UTSJSONObject
+				cacheTimestamp = cachedTime != null ? cachedTime : 0
+			} catch (_e: any) {
+				metadataCache = null
+			}
+		}
+	}
+
+	// 从缓存中查找模型（遍历所有 provider）
+	if (metadataCache != null) {
+		const keys = Object.keys(metadataCache)
+		for (let i = 0; i < keys.length; i++) {
+			const providerData = metadataCache[keys[i]] as UTSJSONObject
+			const models = providerData['models'] as UTSJSONObject | null
+			if (models == null) continue
+			const modelData = models[modelId] as UTSJSONObject | null
+			if (modelData == null) continue
+
+			// 解析能力
+			const reasoning = modelData['reasoning'] as boolean | null
+			const toolCall = modelData['tool_call'] as boolean | null
+			const modalities = modelData['modalities'] as UTSJSONObject | null
+
+			if (reasoning == true) result.supportsReasoning = true
+			if (toolCall == true) result.supportsToolCall = true
+			if (modalities != null) {
+				const input = modalities['input'] as string | null
+				if (input != null && input.indexOf('image') >= 0) {
+					result.supportsVision = true
+				}
+			}
+			return result
+		}
+	}
+
+	return result
+}
+
+/**
+ * 异步刷新元数据缓存
+ * 调用后缓存到内存 + 本地存储，不阻塞调用方
+ * @returns 是否刷新成功
+ */
+export function refreshMetadataCache(): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		uni.request({
+			url: 'https://models.dev/api.json',
+			method: 'GET',
+			timeout: 30000,
+			success: (res) => {
+				const statusCode = res.statusCode as number
+				if (statusCode == 200) {
+					try {
+						const raw = JSON.stringify(res.data)
+						metadataCache = JSON.parse(raw) as UTSJSONObject
+						cacheTimestamp = Date.now()
+						// 存本地
+						uni.setStorageSync('llm_metadata_cache', raw)
+						uni.setStorageSync('llm_metadata_cache_time', cacheTimestamp)
+						console.log('[LLM-Meta] 元数据缓存已刷新')
+						resolve(true)
+					} catch (_e: any) {
+						console.log('[LLM-Meta] 元数据解析失败')
+						resolve(false)
+					}
+				} else {
+					console.log('[LLM-Meta] 获取元数据失败: ' + statusCode)
+					resolve(false)
+				}
+			},
+			fail: (_err: any) => {
+				console.log('[LLM-Meta] 网络请求失败，使用本地缓存')
+				resolve(false)
+			}
+		})
+	})
+}
+
+/**
+ * 检查缓存是否过期
+ * @returns true 表示缓存已过期，需要刷新
+ */
+export function isMetadataCacheStale(): boolean {
+	if (cacheTimestamp == 0) return true
+	return (Date.now() - cacheTimestamp) > CACHE_TTL
+}
