@@ -42,7 +42,7 @@
 					<view v-if="block.type == 'thinking'" class="step-body thinking-step" @click.stop="toggleBlockExpand(bi)">
 						<view class="thinking-step-header">
 							<text class="thinking-step-icon">{{getBlockExpanded(bi) ? '▾' : '▸'}}</text>
-							<text class="thinking-step-label">{{thinkingCount > 1 ? ('思考 ' + (getThinkingIndex(bi) + 1)) : '思考过程'}}</text>
+							<text class="thinking-step-label">{{getThinkingLabel(bi)}}</text>
 						</view>
 						<text v-if="getBlockExpanded(bi) == true" class="thinking-step-text">{{block.thinking}}</text>
 					</view>
@@ -502,6 +502,13 @@
 					}
 				}
 				return count
+			},
+			/** 获取思考块标签文本 */
+			getThinkingLabel(blockIdx: number): string {
+				if (this.thinkingCount > 1) {
+					return '思考 ' + (this.getThinkingIndex(blockIdx) + 1)
+				}
+				return '思考过程'
 			},
 			/** 工具图标 */
 			getToolIcon(block: DisplayBlock): string {
