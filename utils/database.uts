@@ -498,6 +498,10 @@ export function saveConversation(
 		if (toolCalls != null) {
 			extra['tool_calls'] = toolCalls
 		}
+		const blocks = msg['blocks']
+		if (blocks != null) {
+			extra['blocks'] = blocks
+		}
 		const args = msg['args']
 		if (args != null) {
 			extra['args'] = args
@@ -602,6 +606,9 @@ export function getMessages(conversationId: string): UTSJSONObject[] {
 				}
 				if (extra['args'] != null) {
 					row['args'] = extra['args']
+				}
+				if (extra['blocks'] != null) {
+					row['blocks'] = extra['blocks']
 				}
 			} catch (_e: any) {
 				// ignore parse error
