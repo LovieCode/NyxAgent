@@ -373,7 +373,11 @@
 					if (raw.trim() == '') {
 						// 空行 = 段落分隔符
 						if (para != '') {
-							result.push({
+				// 过滤无名的 toolCall 块（增量 SSE 可能产生空名块）
+					if (blockType == 'toolCall' && blockName == '') {
+						continue
+					}
+					result.push({
 								text: para.trim(),
 								isLast: false
 							} as ContentSegment)

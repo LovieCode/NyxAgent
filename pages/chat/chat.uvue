@@ -1136,6 +1136,8 @@
 
 			/** 向最后一条 assistant 消息追加 toolCall block（增量 SSE delta），带 ts+status 以支持时间线渲染 */
 			appendToolCallBlockToAssistant(name: string, args: string) {
+				// 跳过空名（SSE 增量可能先发空名再填）
+				if (name == '') return
 				const now = Date.now()
 				const lastIdx = this.messages.length - 1
 				if (lastIdx < 0) {
@@ -1213,9 +1215,12 @@
 					for (let i = 0; i < toolCalls.length; i++) {
 						const tc = toolCalls[i]
 						const fobj = tc['function'] as UTSJSONObject | null
+						const tName = fobj != null ? (fobj['name'] as string) : ''
+						// 跳过空名（可能是 API 返回的畸形条目）
+						if (tName == '') continue
 						blocks.push({
 							type: 'toolCall',
-							name: fobj != null ? (fobj['name'] as string) : '',
+							name: tName,
 							arguments: fobj != null ? (fobj['arguments'] as string) : '{}',
 							ts: now,
 							status: 'pending',
@@ -1317,6 +1322,7 @@
 
 			/** 工具开始执行：仅同步 blocks 时间线状态（不再创建独立 toolResult 消息） */
 			addToolExecutionStart(toolCallId: string, toolName: string, argsStr: string) {
+				if (toolName == '') return
 				const assistantIdx = this.findLastAssistantIndex()
 				if (assistantIdx < 0) return
 				const assistantMsg = this.messages[assistantIdx]
@@ -1361,6 +1367,7 @@
 
 			/** 工具结束执行：仅同步 blocks 时间线状态（不再创建/更新独立 toolResult 消息） */
 			updateToolExecutionEnd(toolCallId: string, toolName: string, result: string, isError: boolean) {
+				if (toolName == '') return
 				this.syncToolCallBlockStatus(toolName, result, isError)
 				this.scrollToBottom()
 			},
