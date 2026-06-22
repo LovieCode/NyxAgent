@@ -335,6 +335,10 @@
 						blockSt = tSt
 						blockResult = tResult
 					}
+					// 过滤无名的 toolCall 块
+					if (blockType == 'toolCall' && blockName == '') {
+						continue
+					}
 					result.push({
 						type: blockType,
 						text: blockText,
@@ -372,12 +376,8 @@
 					const raw = lines[i]
 					if (raw.trim() == '') {
 						// 空行 = 段落分隔符
-					if (para != '') {
-				// 过滤无名的 toolCall 块（增量 SSE 可能产生空名块）
-					if (blockType == 'toolCall' && blockName == '') {
-						continue
-					}
-					result.push({
+						if (para != '') {
+							result.push({
 								text: para.trim(),
 								isLast: false
 							} as ContentSegment)
