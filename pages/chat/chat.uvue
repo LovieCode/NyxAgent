@@ -1232,9 +1232,10 @@
 						const incName = incoming[i]['name'] as string
 						let dup = false
 						for (let j = 0; j < existing.length; j++) {
-							const exName = existing[j]['name'] as string
-							const exType = existing[j]['type'] as string
-							if (exType == 'toolCall' && exName == incName) {
+							const exType = existing[j]['type']
+							if (exType == null || (exType as string) != 'toolCall') continue
+							const exName = existing[j]['name']
+							if (exName != null && (exName as string) == incName) {
 								dup = true
 								break
 							}

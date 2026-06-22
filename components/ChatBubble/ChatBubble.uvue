@@ -51,7 +51,7 @@
 									<text class="tool-call-card-name">{{getToolDisplayName(block.name)}}</text>
 								</view>
 								<view class="tool-call-card-right">
-									<text v-if="block.ts != null && block.ts > 0" class="tool-call-elapsed">{{getToolElapsed(block)}}</text>
+									<text v-if="block.ts != null && block.ts > 0 && timerTick >= 0" class="tool-call-elapsed">{{getToolElapsed(block)}}</text>
 									<text class="tool-call-chevron">{{getToolCallExpanded(bi) ? '▾' : '▸'}}</text>
 								</view>
 							</view>
