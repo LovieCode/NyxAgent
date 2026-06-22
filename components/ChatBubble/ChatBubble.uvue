@@ -35,7 +35,7 @@
 				<view v-for="(block, bi) in displayBlocks" :key="bi" class="block-entry">
 					<!-- 思考块 -->
 					<view v-if="block.type == 'thinking'" class="thinking-wrap" @click.stop="toggleBlockExpand(bi)">
-						<text class="thinking-toggle">{{getBlockExpanded(bi) ? '▾' : '▸'}} 思考 {{bi + 1}}</text>
+						<text class="thinking-toggle">{{getBlockExpanded(bi) ? '▾' : '▸'}} {{thinkingCount > 1 ? ('思考 ' + (bi + 1)) : '思考过程'}}</text>
 						<text v-if="getBlockExpanded(bi) == true" class="thinking-text">{{block.thinking}}</text>
 					</view>
 					<!-- 文本块 -->
@@ -269,6 +269,16 @@
 					} as DisplayBlock)
 				}
 				return result
+			},
+			/** 统计 thinking 块数量，用于单块/多块标签切换 */
+			thinkingCount(): number {
+				let count = 0
+				for (let i = 0; i < this.displayBlocks.length; i++) {
+					if (this.displayBlocks[i].type == 'thinking') {
+						count++
+					}
+				}
+				return count
 			},
 			/** 按段落分段（连续空行分隔），单换行保留在段落内 */
 			contentLines(): ContentSegment[] {
