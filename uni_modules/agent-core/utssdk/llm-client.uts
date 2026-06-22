@@ -764,6 +764,34 @@ function prepareAgentContext(
  *     - text: assistant 的文本回复（可为空字符串）
  *     - toolCalls: 工具调用列表（没有则为 null）
  */
+/**
+ * 格式化 body 用于日志输出（去掉 messages 字段节省空间）
+ */
+function formatBodyForLog(body: UTSJSONObject): string {
+	const logBody: UTSJSONObject = {}
+	const msgs = body['messages'] as UTSJSONObject[] | null
+	if (msgs != null) {
+		logBody['messages'] = '[' + msgs.length + ' messages]'
+	}
+	const modelVal = body['model'] as string | null
+	if (modelVal != null) logBody['model'] = modelVal
+	const maxTokens = body['max_tokens'] as number | null
+	if (maxTokens != null) logBody['max_tokens'] = maxTokens
+	const temperature = body['temperature'] as number | null
+	if (temperature != null) logBody['temperature'] = temperature
+	const stream = body['stream'] as boolean | null
+	if (stream != null) logBody['stream'] = stream
+	const tools = body['tools'] as UTSJSONObject[] | null
+	if (tools != null) logBody['tools'] = '[' + tools.length + ' tools]'
+	const cacheKey = body['cache_key'] as string | null
+	if (cacheKey != null) logBody['cache_key'] = cacheKey
+	const thinking = body['thinking'] as UTSJSONObject | null
+	if (thinking != null) logBody['thinking'] = thinking
+	const reasoningEffort = body['reasoning_effort'] as string | null
+	if (reasoningEffort != null) logBody['reasoning_effort'] = reasoningEffort
+	return JSON.stringify(logBody)
+}
+
 function callChatAPI(
 	baseUrl: string,
 	apiKey: string,
@@ -821,7 +849,7 @@ function callChatAPI(
 	console.log('[LLM] ====== REQUEST ======')
 	console.log('[LLM] URL: ' + url)
 	console.log('[LLM] Model: ' + model + ' | Messages: ' + apiMessages.length + ' | Tools: ' + tools.length)
-	console.log('[LLM] Body: ' + JSON.stringify(body))
+	console.log('[LLM] Body: ' + formatBodyForLog(body))
 	console.log('[LLM] =======================')
 
 	// 序列化再反序列化，确保 UTSJSONObject 内嵌套数组能被正确识别
@@ -849,7 +877,7 @@ function callChatAPI(
 				} catch (_) {}
 			console.log('[LLM] ====== RESPONSE ERROR ======')
 				console.log('[LLM] Status: ' + statusCode + errDetail)
-				console.log('[LLM] Request body: ' + bodyStr)
+				console.log('[LLM] Request body: ' + formatBodyForLog(body))
 				console.log('[LLM] =============================')
 				saveLastLLMCall(false, false, model, baseUrl, statusCode, 'API 请求失败' + errDetail, null, apiMessages.length, tools.length, 0, false)
 				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null)
@@ -1248,7 +1276,7 @@ function callChatAPIStream(
 	console.log('[LLM] ====== STREAM REQUEST ======')
 	console.log('[LLM] URL: ' + url)
 	console.log('[LLM] Model: ' + model + ' | Messages: ' + apiMessages.length + ' | Tools: ' + tools.length + (cacheKey != '' ? ' | Cache: ' + cacheKey : ''))
-	console.log('[LLM] Body: ' + JSON.stringify(body))
+	console.log('[LLM] Body: ' + formatBodyForLog(body))
 	console.log('[LLM] =============================')
 
 	// 序列化再反序列化，避免 UTSJSONObject 内嵌数组序列化问题
@@ -1294,7 +1322,7 @@ function callChatAPIStream(
 				} catch (_) {}
 				console.log('[LLM] ====== STREAM ERROR ======')
 				console.log('[LLM] Status: ' + statusCode + errDetail)
-				console.log('[LLM] Request body: ' + bodyStr)
+				console.log('[LLM] Request body: ' + formatBodyForLog(body))
 				console.log('[LLM] ===========================')
 				saveLastLLMCall(false, true, model, baseUrl, statusCode, 'API 请求失败' + errDetail, null, apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
 				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null, null)
