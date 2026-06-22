@@ -267,6 +267,21 @@
 					this.timerRunning = true
 					this.toolCallTimer = setInterval(() => {
 						this.timerTick = this.timerTick + 1
+						// 在回调中自检：没有 running 状态的工具则自动停止
+						let anyRunning = false
+						for (let i = 0; i < this.displayBlocks.length; i++) {
+							if (this.displayBlocks[i].status == 'running') {
+								anyRunning = true
+								break
+							}
+						}
+						if (anyRunning == false && this.timerRunning == true) {
+							this.timerRunning = false
+							if (this.toolCallTimer != -1) {
+								clearInterval(this.toolCallTimer)
+								this.toolCallTimer = -1
+							}
+						}
 					}, 1000) as number
 				}
 				if (hasRunning == false && this.timerRunning == true) {
