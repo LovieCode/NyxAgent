@@ -186,6 +186,8 @@
 				longpressCancelToken: 0 as number,
 				/** 消息长按菜单锁，避免重复弹出 */
 				messageActionSheetOpen: false as boolean,
+				/** 软键盘高度（>0 表示键盘弹出） */
+				keyboardHeight: 0 as number,
 			}
 		},
 		computed: {
@@ -209,6 +211,13 @@
 			if (this.conversationId == '') {
 				this.conversationId = '' + Date.now()
 			}
+			// 监听软键盘高度变化：键盘弹出时自动收起工具栏面板，避免遮挡消息列表
+			uni.onKeyboardHeightChange((res: OnKeyboardHeightChangeCallbackResult) => {
+				this.keyboardHeight = res.height
+				if (res.height > 0 && this.showToolPanel == true) {
+					this.showToolPanel = false
+				}
+			})
 		},
 
 	onShow() {
@@ -225,6 +234,11 @@
 			onHide() {
 			// 离开页面时保存当前对话
 			this.saveCurrentConversation()
+		},
+
+		onUnload() {
+			// 页面卸载时移除软键盘高度监听，防止内存泄漏
+			uni.offKeyboardHeightChange()
 		},
 
 		methods: {

@@ -12,7 +12,8 @@
 			"style": {
 				"navigationStyle": "custom",
 				"navigationBarTextStyle": "white",
-				"disableScroll": true
+				"disableScroll": true,
+				"softinputMode": "adjustResize"
 			}
 		},
 		{
@@ -102,7 +103,8 @@
 		{
 			"path": "pages/agent-settings/agent-settings",
 			"style": {
-				"navigationStyle": "custom"
+				"navigationStyle": "custom",
+				"softinputMode": "adjustResize"
 			}
 		},
 		{
