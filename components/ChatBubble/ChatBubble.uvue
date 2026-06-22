@@ -304,16 +304,24 @@
 					} else if (blockType == 'toolCall') {
 						const nm = b['name'] as string
 						const ag = b['arguments'] as string
-						const tTs = b['ts'] as number
-						const tFt = b['finished_ts'] as number
-						const tSt = b['status'] as string
-						const tResult = b['result'] as string
+						const rawTs = b['ts']
+						let tTs = 0
+						if (rawTs != null) { tTs = rawTs as number }
+						const rawFt = b['finished_ts']
+						let tFt = 0
+						if (rawFt != null) { tFt = rawFt as number }
+						const rawSt = b['status']
+						let tSt = ''
+						if (rawSt != null) { tSt = rawSt as string }
+						const rawResult = b['result']
+						let tResult = ''
+						if (rawResult != null) { tResult = rawResult as string }
 						blockName = nm != null ? nm : ''
 						blockArgs = ag != null ? ag : ''
-						blockTs = tTs != null ? tTs : 0
-						blockFt = tFt != null ? tFt : 0
-						blockSt = tSt != null ? tSt : ''
-						blockResult = tResult != null ? tResult : ''
+						blockTs = tTs
+						blockFt = tFt
+						blockSt = tSt
+						blockResult = tResult
 					}
 					result.push({
 						type: blockType,

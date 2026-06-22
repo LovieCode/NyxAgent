@@ -1310,7 +1310,10 @@
 					if (existingBlocks != null) {
 						for (let j = existingBlocks.length - 1; j >= 0; j--) {
 							const block = existingBlocks[j]
-							if ((block['type'] as string) == 'toolCall' && (block['name'] as string) == toolName && block['ts'] == null) {
+							const bType2 = block['type']
+							const bName2 = block['name']
+							const bTs2 = block['ts']
+							if (bType2 != null && bName2 != null && (bType2 as string) == 'toolCall' && (bName2 as string) == toolName && bTs2 == null) {
 								const newBlocks: UTSJSONObject[] = []
 								for (let k = 0; k < existingBlocks.length; k++) {
 									newBlocks.push(existingBlocks[k])
@@ -1391,7 +1394,10 @@
 				if (existingBlocks == null) return
 				for (let j = 0; j < existingBlocks.length; j++) {
 					const block = existingBlocks[j]
-					if ((block['type'] as string) == 'toolCall' && (block['name'] as string) == toolName && (block['status'] as string) == 'running') {
+					const bType = block['type']
+					const bName = block['name']
+					const bStatus = block['status']
+					if (bType != null && bName != null && bStatus != null && (bType as string) == 'toolCall' && (bName as string) == toolName && (bStatus as string) == 'running') {
 						const newBlocks: UTSJSONObject[] = []
 						for (let k = 0; k < existingBlocks.length; k++) {
 							newBlocks.push(existingBlocks[k])
