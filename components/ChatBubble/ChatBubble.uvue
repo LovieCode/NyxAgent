@@ -23,7 +23,7 @@
 		</view>
 
 		<!-- 交错思维链时间线（blocks 模式） -->
-		<view v-if="role == 'assistant' && blocks.length > 0" class="ai-row">
+		<view v-if="role == 'assistant' && displayBlocks.length > 0" class="ai-row">
 			<image v-if="agentAvatar != ''" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" />
 			<view v-else class="chat-avatar ai-avatar">
 				<text class="chat-avatar-text">AI</text>
@@ -32,18 +32,18 @@
 				@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
 				@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
 				@touchend="onBubbleTouchEnd">
-				<view v-for="(block, bi) in blocks" :key="bi" class="block-entry">
+				<view v-for="(block, bi) in displayBlocks" :key="bi" class="block-entry">
 					<!-- 思考块 -->
-					<view v-if="block['type'] == 'thinking'" class="thinking-wrap" @click.stop="toggleBlockExpand(bi)">
+					<view v-if="block.type == 'thinking'" class="thinking-wrap" @click.stop="toggleBlockExpand(bi)">
 						<text class="thinking-toggle">{{getBlockExpanded(bi) ? '▾' : '▸'}} 思考 {{bi + 1}}</text>
-						<text v-if="getBlockExpanded(bi) == true" class="thinking-text">{{block['thinking']}}</text>
+						<text v-if="getBlockExpanded(bi) == true" class="thinking-text">{{block.thinking}}</text>
 					</view>
 					<!-- 文本块 -->
-					<text v-else-if="block['type'] == 'text'" class="text-assistant-pre">{{block['text']}}<text v-if="isStreaming && bi == blocks.length - 1 && (blocks[blocks.length - 1]['type'] as string) == 'text'" class="cursor">|</text></text>
+					<text v-else-if="block.type == 'text'" class="text-assistant-pre">{{block.text}}<text v-if="isStreaming && bi == displayBlocks.length - 1 && displayBlocks[displayBlocks.length - 1].type == 'text'" class="cursor">|</text></text>
 					<!-- 工具调用块 -->
-					<view v-else-if="block['type'] == 'toolCall'" class="tool-call-block">
-						<text class="tool-call-name">🔧 {{block['name']}}</text>
-						<text class="tool-call-args">{{block['arguments']}}</text>
+					<view v-else-if="block.type == 'toolCall'" class="tool-call-block">
+						<text class="tool-call-name">🔧 {{block.name}}</text>
+						<text class="tool-call-args">{{block.args}}</text>
 					</view>
 				</view>
 			</view>
@@ -107,6 +107,13 @@
 	type ContentSegment = {
 		text: string
 		isLast: boolean
+	}
+	type DisplayBlock = {
+		type: string
+		text: string
+		thinking: string
+		name: string
+		args: string
 	}
 	export default {
 		props: {
@@ -230,6 +237,39 @@
 			}
 		},
 		computed: {
+			/** 将 blocks (UTSJSONObject[]) 转为有类型的 DisplayBlock[]，避免模板中类型推断问题 */
+			displayBlocks(): DisplayBlock[] {
+				const result: DisplayBlock[] = []
+				for (let i = 0; i < this.blocks.length; i++) {
+					const b = this.blocks[i] as UTSJSONObject
+					const bt = b['type'] as string
+					const blockType = bt != null ? bt : ''
+					let blockText = ''
+					let blockThinking = ''
+					let blockName = ''
+					let blockArgs = ''
+					if (blockType == 'text') {
+						const txt = b['text'] as string
+						blockText = txt != null ? txt : ''
+					} else if (blockType == 'thinking') {
+						const thk = b['thinking'] as string
+						blockThinking = thk != null ? thk : ''
+					} else if (blockType == 'toolCall') {
+						const nm = b['name'] as string
+						const ag = b['arguments'] as string
+						blockName = nm != null ? nm : ''
+						blockArgs = ag != null ? ag : ''
+					}
+					result.push({
+						type: blockType,
+						text: blockText,
+						thinking: blockThinking,
+						name: blockName,
+						args: blockArgs,
+					} as DisplayBlock)
+				}
+				return result
+			},
 			/** 按段落分段（连续空行分隔），单换行保留在段落内 */
 			contentLines(): ContentSegment[] {
 				const text = this.content as string
@@ -326,6 +366,37 @@
 			getBlockExpanded(index: number): boolean {
 				if (index >= this.blocksExpanded.length) return false
 				return this.blocksExpanded[index] == true
+			},
+			/** 获取 block 的类型字符串 */
+			getBlockType(block: UTSJSONObject | null): string {
+				if (block == null) return ''
+
+				const t = block['type'] as string
+				return t != null ? t : ''
+			},
+			/** 获取 block 的文本内容 */
+			getBlockText(block: UTSJSONObject | null): string {
+				if (block == null) return ''
+				const t = block['text'] as string
+				return t != null ? t : ''
+			},
+			/** 获取 block 的思考内容 */
+			getBlockThinking(block: UTSJSONObject | null): string {
+				if (block == null) return ''
+				const t = block['thinking'] as string
+				return t != null ? t : ''
+			},
+			/** 获取 block 的工具名 */
+			getBlockName(block: UTSJSONObject | null): string {
+				if (block == null) return ''
+				const t = block['name'] as string
+				return t != null ? t : ''
+			},
+			/** 获取 block 的工具参数 */
+			getBlockArgs(block: UTSJSONObject | null): string {
+				if (block == null) return ''
+				const t = block['arguments'] as string
+				return t != null ? t : ''
 			},
 			/** 取消长按状态 */
 			cancelLongpress() {

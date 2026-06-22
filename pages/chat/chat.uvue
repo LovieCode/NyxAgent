@@ -39,8 +39,7 @@
 						<text class="inline-edit-send" @click="saveAndSend">发送</text>
 					</view>
 				</view>
-				<ChatBubble
-					v-else
+				<ChatBubble v-else-if="msg.blocks != null"
 					:role="msg.role"
 					:content="msg.content"
 					:msgType="msg.msgType != null ? msg.msgType : 'text'"
@@ -50,7 +49,24 @@
 					:userAvatar="userAvatar"
 					:toolName="msg.toolName != null ? msg.toolName : ''"
 					:thinking="msg.thinking != null ? msg.thinking : ''"
-					:blocks="msg.blocks != null ? msg.blocks : []"
+					:blocks="msg.blocks"
+					:hideThinking="hideThinking"
+				:msgSegmentation="msgSegmentation"
+					:isError="msg.isError == true"
+					:isStreaming="msg.isStreaming == true"
+					:cancelToken="longpressCancelToken"
+					@bubbleLongpress="onMessageLongpress(index)"
+				/>
+				<ChatBubble v-else
+					:role="msg.role"
+					:content="msg.content"
+					:msgType="msg.msgType != null ? msg.msgType : 'text'"
+					:imageUrl="msg.imageUrl != null ? msg.imageUrl : ''"
+					:agentAvatar="currentAgentAvatar"
+					:userNickname="userNickname"
+					:userAvatar="userAvatar"
+					:toolName="msg.toolName != null ? msg.toolName : ''"
+					:thinking="msg.thinking != null ? msg.thinking : ''"
 					:hideThinking="hideThinking"
 				:msgSegmentation="msgSegmentation"
 					:isError="msg.isError == true"
@@ -971,6 +987,13 @@
 					}
 				}
 				return ''
+			},
+
+			/** 安全获取消息的 blocks 数组，避免模板三元表达式类型推断失败 */
+			getMessageBlocks(msg: UTSJSONObject): UTSJSONObject[] {
+				const blocks = msg['blocks'] as UTSJSONObject[] | null
+				if (blocks != null) return blocks
+				return [] as UTSJSONObject[]
 			},
 
 			/** 追加流式文本到最后一条 assistant 消息 */
