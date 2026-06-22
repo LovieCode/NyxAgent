@@ -316,8 +316,19 @@
 					}
 					return providerId + ' / ' + modelId
 				}
-				// 旧格式：纯模型名 → 提示去重选
+				// 旧格式：纯模型名 → 在所有启用的提供商中查找匹配
 				if (this.currentModel != '') {
+					for (let i = 0; i < this.allProviders.length; i++) {
+						if ((this.allProviders[i]['enabled'] as number) == 1) {
+							const providerId = this.allProviders[i]['id'] as string
+							const models = getProviderModels(providerId)
+							for (let j = 0; j < models.length; j++) {
+								if (models[j].id == this.currentModel) {
+									return (this.allProviders[i]['name'] as string) + ' / ' + this.currentModel
+								}
+							}
+						}
+					}
 					return this.currentModel + '（未关联提供商）'
 				}
 				return '未选择模型'
