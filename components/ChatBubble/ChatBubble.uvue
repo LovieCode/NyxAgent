@@ -210,12 +210,13 @@
 				isPressed: false as boolean,
 				/** 思考内容折叠态 */
 				thinkingExpanded: false as boolean,
-				/** 每个 thinking block 的展开状态（按块索引） */
-				blocksExpanded: [] as boolean[],
-				/** 工具调用块的展开状态 */
+		/** 每个 thinking block 的展开状态（按块索引） */
+			blocksExpanded: [] as boolean[],
 				toolCallExpanded: [] as boolean[],
 				/** 工具调用耗时计时器 */
 				toolCallTimer: -1 as number,
+				/** 计时器 tick 计数器，用于触发耗时重新渲染 */
+				timerTick: 0 as number,
 			}
 		},
 		watch: {
@@ -247,20 +248,22 @@
 						}
 					}
 					// 启动/停止工具调用耗时计时器
-					let hasRunning = false
-					for (let i = 0; i < this.displayBlocks.length; i++) {
-						if (this.displayBlocks[i].status == 'running') {
-							hasRunning = true
-							break
-						}
+				let hasRunning = false
+				for (let i = 0; i < this.displayBlocks.length; i++) {
+					if (this.displayBlocks[i].status == 'running') {
+						hasRunning = true
+						break
 					}
-					if (hasRunning == true && this.toolCallTimer == -1) {
-						this.toolCallTimer = setInterval(() => {}, 1000) as unknown as number
-					}
-					if (hasRunning == false && this.toolCallTimer != -1) {
-						clearInterval(this.toolCallTimer)
-						this.toolCallTimer = -1
-					}
+				}
+				if (hasRunning == true && this.toolCallTimer == -1) {
+					this.toolCallTimer = setInterval(() => {
+						this.timerTick = this.timerTick + 1
+					}, 1000) as number
+				}
+				if (hasRunning == false && this.toolCallTimer != -1) {
+					clearInterval(this.toolCallTimer)
+					this.toolCallTimer = -1
+				}
 				},
 				deep: true
 			},
@@ -435,6 +438,7 @@
 			},
 			/** 格式化工具调用耗时 */
 			getToolElapsed(block: DisplayBlock): string {
+				const _tick = this.timerTick  // bind reactivity for live timing
 				const ts = block.ts
 				const finished = block.finished_ts
 				if (ts == null || ts == 0) return ''
