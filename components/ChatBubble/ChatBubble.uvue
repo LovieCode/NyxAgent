@@ -41,9 +41,25 @@
 					<!-- 文本块 -->
 					<text v-else-if="block.type == 'text'" class="text-assistant-pre">{{block.text}}<text v-if="isStreaming && bi == displayBlocks.length - 1 && displayBlocks[displayBlocks.length - 1].type == 'text'" class="cursor">|</text></text>
 					<!-- 工具调用块 -->
-					<view v-else-if="block.type == 'toolCall'" class="tool-call-block">
-						<text class="tool-call-name">🔧 {{block.name}}</text>
-						<text class="tool-call-args">{{block.args}}</text>
+					<view v-else-if="block.type == 'toolCall'" class="tool-call-block" @click.stop="toggleToolCallExpand(bi)">
+						<!-- Header: 始终可见 -->
+						<view class="tool-call-header">
+							<view class="tool-call-header-left">
+								<text class="tool-call-status">{{getToolStatus(block)}}</text>
+								<text class="tool-call-name">{{block.name}}</text>
+							</view>
+							<view class="tool-call-header-right">
+								<text v-if="block.ts != null && block.ts > 0" class="tool-call-elapsed">{{getToolElapsed(block)}}</text>
+								<text class="tool-call-chevron">{{getToolCallExpanded(bi) ? '▾' : '▸'}}</text>
+							</view>
+						</view>
+						<!-- 展开区域: args + result -->
+						<view v-if="getToolCallExpanded(bi) == true" class="tool-call-detail">
+							<text class="tool-call-args-label">参数</text>
+							<text class="tool-call-args">{{block.args}}</text>
+							<text v-if="block.status == 'completed' && block.result != null && block.result != ''" class="tool-call-result-label">结果</text>
+							<text v-if="block.status == 'completed' && block.result != null && block.result != ''" class="tool-call-result">{{block.result}}</text>
+						</view>
 					</view>
 				</view>
 			</view>
@@ -114,6 +130,10 @@
 		thinking: string
 		name: string
 		args: string
+		ts: number
+		finished_ts: number
+		status: string
+		result: string
 	}
 	export default {
 		props: {
@@ -192,6 +212,10 @@
 				thinkingExpanded: false as boolean,
 				/** 每个 thinking block 的展开状态（按块索引） */
 				blocksExpanded: [] as boolean[],
+				/** 工具调用块的展开状态 */
+				toolCallExpanded: [] as boolean[],
+				/** 工具调用耗时计时器 */
+				toolCallTimer: -1 as number,
 			}
 		},
 		watch: {
@@ -222,6 +246,21 @@
 							this.blocksExpanded[newBlocks.length - 1] = true
 						}
 					}
+					// 启动/停止工具调用耗时计时器
+					let hasRunning = false
+					for (let i = 0; i < this.displayBlocks.length; i++) {
+						if (this.displayBlocks[i].status == 'running') {
+							hasRunning = true
+							break
+						}
+					}
+					if (hasRunning == true && this.toolCallTimer == -1) {
+						this.toolCallTimer = setInterval(() => {}, 1000) as unknown as number
+					}
+					if (hasRunning == false && this.toolCallTimer != -1) {
+						clearInterval(this.toolCallTimer)
+						this.toolCallTimer = -1
+					}
 				},
 				deep: true
 			},
@@ -249,6 +288,10 @@
 					let blockThinking = ''
 					let blockName = ''
 					let blockArgs = ''
+					let blockTs = 0
+					let blockFt = 0
+					let blockSt = ''
+					let blockResult = ''
 					if (blockType == 'text') {
 						const txt = b['text'] as string
 						blockText = txt != null ? txt : ''
@@ -258,8 +301,16 @@
 					} else if (blockType == 'toolCall') {
 						const nm = b['name'] as string
 						const ag = b['arguments'] as string
+						const tTs = b['ts'] as number
+						const tFt = b['finished_ts'] as number
+						const tSt = b['status'] as string
+						const tResult = b['result'] as string
 						blockName = nm != null ? nm : ''
 						blockArgs = ag != null ? ag : ''
+						blockTs = tTs != null ? tTs : 0
+						blockFt = tFt != null ? tFt : 0
+						blockSt = tSt != null ? tSt : ''
+						blockResult = tResult != null ? tResult : ''
 					}
 					result.push({
 						type: blockType,
@@ -267,6 +318,10 @@
 						thinking: blockThinking,
 						name: blockName,
 						args: blockArgs,
+						ts: blockTs != null ? blockTs : 0,
+						finished_ts: blockFt != null ? blockFt : 0,
+						status: blockSt != null ? blockSt : '',
+						result: blockResult != null ? blockResult : '',
 					} as DisplayBlock)
 				}
 				return result
@@ -378,36 +433,38 @@
 				if (index >= this.blocksExpanded.length) return false
 				return this.blocksExpanded[index] == true
 			},
-			/** 获取 block 的类型字符串 */
-			getBlockType(block: UTSJSONObject | null): string {
-				if (block == null) return ''
-
-				const t = block['type'] as string
-				return t != null ? t : ''
+			/** 格式化工具调用耗时 */
+			getToolElapsed(block: DisplayBlock): string {
+				const ts = block.ts
+				const finished = block.finished_ts
+				if (ts == null || ts == 0) return ''
+				if (finished != null && finished > 0) {
+					const elapsed = ((finished - ts) / 1000)
+					return elapsed.toFixed(1) + 's'
+				}
+				const now = Date.now()
+				const elapsed = ((now - ts) / 1000)
+				return elapsed.toFixed(1) + 's'
 			},
-			/** 获取 block 的文本内容 */
-			getBlockText(block: UTSJSONObject | null): string {
-				if (block == null) return ''
-				const t = block['text'] as string
-				return t != null ? t : ''
+			/** 获取工具状态文本 */
+			getToolStatus(block: DisplayBlock): string {
+				const status = block.status
+				if (status == 'running') return '⏳'
+				if (status == 'completed') return '✅'
+				if (status == 'error') return '❌'
+				return '🔧'
 			},
-			/** 获取 block 的思考内容 */
-			getBlockThinking(block: UTSJSONObject | null): string {
-				if (block == null) return ''
-				const t = block['thinking'] as string
-				return t != null ? t : ''
+			/** 切换工具调用的展开/折叠 */
+			toggleToolCallExpand(index: number) {
+				while (this.toolCallExpanded.length <= index) {
+					this.toolCallExpanded.push(false)
+				}
+				this.toolCallExpanded[index] = !(this.toolCallExpanded[index] == true)
 			},
-			/** 获取 block 的工具名 */
-			getBlockName(block: UTSJSONObject | null): string {
-				if (block == null) return ''
-				const t = block['name'] as string
-				return t != null ? t : ''
-			},
-			/** 获取 block 的工具参数 */
-			getBlockArgs(block: UTSJSONObject | null): string {
-				if (block == null) return ''
-				const t = block['arguments'] as string
-				return t != null ? t : ''
+			/** 获取工具调用展开状态 */
+			getToolCallExpanded(index: number): boolean {
+				if (index >= this.toolCallExpanded.length) return false
+				return this.toolCallExpanded[index] == true
 			},
 			/** 取消长按状态 */
 			cancelLongpress() {
@@ -696,17 +753,65 @@
 		background-color: #F0F4FF;
 		border-radius: 12rpx;
 		padding: 16rpx;
-		margin-top: 8rpx;
-		margin-bottom: 8rpx;
+		margin-vertical: 8rpx;
+	}
+	.tool-call-header {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.tool-call-header-left {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	.tool-call-header-right {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+	.tool-call-status {
+		font-size: 28rpx;
+		margin-right: 8rpx;
 	}
 	.tool-call-name {
 		font-size: 26rpx;
 		color: #4A90D9;
 		font-weight: bold;
 	}
-	.tool-call-args {
+	.tool-call-elapsed {
 		font-size: 22rpx;
 		color: #888888;
-		margin-top: 8rpx;
+		margin-right: 8rpx;
+	}
+	.tool-call-chevron {
+		font-size: 24rpx;
+		color: #AAAAAA;
+	}
+	.tool-call-detail {
+		margin-top: 12rpx;
+		padding-top: 12rpx;
+		border-top-width: 1px;
+		border-top-color: #DDE4F0;
+	}
+	.tool-call-args-label {
+		font-size: 22rpx;
+		color: #888888;
+		margin-bottom: 4rpx;
+	}
+	.tool-call-args {
+		font-size: 22rpx;
+		color: #555555;
+	}
+	.tool-call-result-label {
+		font-size: 22rpx;
+		color: #888888;
+		margin-top: 12rpx;
+		margin-bottom: 4rpx;
+	}
+	.tool-call-result {
+		font-size: 22rpx;
+		color: #333333;
 	}
 </style>

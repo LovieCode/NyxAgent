@@ -1277,7 +1277,17 @@
 				} as UTSJSONObject)
 			},
 
-			/** 工具开始执行：插入一条 toolResult 展示消息 */
+			/** 获取最后一条 assistant 消息的索引（跳过 toolResult） */
+			findLastAssistantIndex(): number {
+				for (let i = this.messages.length - 1; i >= 0; i--) {
+					if ((this.messages[i]['role'] as string) == 'assistant') {
+						return i
+					}
+				}
+				return -1
+			},
+
+			/** 工具开始执行：插入一条 toolResult 展示消息 + 同步 blocks 状态 */
 			addToolExecutionStart(toolCallId: string, toolName: string, argsStr: string) {
 				this.messages.push({
 					role: 'toolResult',
@@ -1289,10 +1299,48 @@
 					args: argsStr,
 					timestamp: Date.now()
 				} as UTSJSONObject)
+				// 同步状态到 blocks 时间线
+				const lastIdx = this.messages.length - 2
+				if (lastIdx >= 0) {
+					const lastMsg = this.messages[lastIdx]
+					const existingBlocks = lastMsg['blocks'] as UTSJSONObject[] | null
+					if (existingBlocks != null) {
+						for (let j = existingBlocks.length - 1; j >= 0; j--) {
+							const block = existingBlocks[j]
+							if ((block['type'] as string) == 'toolCall' && (block['name'] as string) == toolName && block['ts'] == null) {
+								const newBlocks: UTSJSONObject[] = []
+								for (let k = 0; k < existingBlocks.length; k++) {
+									newBlocks.push(existingBlocks[k])
+								}
+								newBlocks[j] = {
+									type: 'toolCall',
+									name: toolName,
+									arguments: block['arguments'],
+									ts: Date.now(),
+									status: 'running',
+									result: '',
+								} as UTSJSONObject
+								const oldContent = lastMsg['content'] as string | null
+								const oldThinking = lastMsg['thinking'] as string | null
+								const existingTs = lastMsg['timestamp'] as number | null
+								this.messages.splice(lastIdx, 1, {
+									role: 'assistant',
+									content: oldContent != null ? oldContent : '',
+									thinking: oldThinking != null ? oldThinking : '',
+									blocks: newBlocks,
+									msgType: 'text',
+									isStreaming: (lastMsg['isStreaming'] as boolean) == true,
+									timestamp: existingTs != null ? existingTs : Date.now()
+								} as UTSJSONObject)
+								break
+							}
+						}
+					}
+				}
 				this.scrollToBottom()
 			},
 
-			/** 工具结束执行：更新对应 toolResult 消息 */
+			/** 工具结束执行：更新对应 toolResult 消息 + 同步 blocks 状态 */
 			updateToolExecutionEnd(toolCallId: string, toolName: string, result: string, isError: boolean) {
 				for (let i = this.messages.length - 1; i >= 0; i--) {
 					const m = this.messages[i]
@@ -1310,6 +1358,8 @@
 							isError: isError,
 							timestamp: Date.now()
 						} as UTSJSONObject)
+						// 同步完成状态到 blocks 时间线
+						this.syncToolCallBlockStatus(toolName, result, isError)
 						this.scrollToBottom()
 						return
 					}
@@ -1325,7 +1375,48 @@
 					isError: isError,
 					timestamp: Date.now()
 				} as UTSJSONObject)
+				this.syncToolCallBlockStatus(toolName, result, isError)
 				this.scrollToBottom()
+			},
+
+			/** 同步工具执行完成状态到最近的 assistant 消息的 blocks */
+			syncToolCallBlockStatus(toolName: string, result: string, isError: boolean) {
+				const assistantIdx = this.findLastAssistantIndex()
+				if (assistantIdx < 0) return
+				const assistantMsg = this.messages[assistantIdx]
+				const existingBlocks = assistantMsg['blocks'] as UTSJSONObject[] | null
+				if (existingBlocks == null) return
+				for (let j = 0; j < existingBlocks.length; j++) {
+					const block = existingBlocks[j]
+					if ((block['type'] as string) == 'toolCall' && (block['name'] as string) == toolName && (block['status'] as string) == 'running') {
+						const newBlocks: UTSJSONObject[] = []
+						for (let k = 0; k < existingBlocks.length; k++) {
+							newBlocks.push(existingBlocks[k])
+						}
+						newBlocks[j] = {
+							type: 'toolCall',
+							name: toolName,
+							arguments: block['arguments'],
+							ts: block['ts'],
+							finished_ts: Date.now(),
+							status: isError ? 'error' : 'completed',
+							result: result,
+						} as UTSJSONObject
+						const oldContent = assistantMsg['content'] as string | null
+						const oldThinking = assistantMsg['thinking'] as string | null
+						const existingTs = assistantMsg['timestamp'] as number | null
+						this.messages.splice(assistantIdx, 1, {
+							role: 'assistant',
+							content: oldContent != null ? oldContent : '',
+							thinking: oldThinking != null ? oldThinking : '',
+							blocks: newBlocks,
+							msgType: 'text',
+							isStreaming: false,
+							timestamp: existingTs != null ? existingTs : Date.now()
+						} as UTSJSONObject)
+						break
+					}
+				}
 			},
 
 			/** Agent 事件流统一入口 */
