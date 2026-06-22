@@ -372,7 +372,7 @@
 					const raw = lines[i]
 					if (raw.trim() == '') {
 						// 空行 = 段落分隔符
-						if (para != '') {
+					if (para != '') {
 				// 过滤无名的 toolCall 块（增量 SSE 可能产生空名块）
 					if (blockType == 'toolCall' && blockName == '') {
 						continue
