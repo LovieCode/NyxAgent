@@ -28,37 +28,51 @@
 			<view v-else class="chat-avatar ai-avatar">
 				<text class="chat-avatar-text">AI</text>
 			</view>
-			<view class="ai-content" :class="isPressed ? 'bubble-pressed' : ''"
+			<view class="ai-content timeline-content" :class="isPressed ? 'bubble-pressed' : ''"
 				@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
 				@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
 				@touchend="onBubbleTouchEnd">
-				<view v-for="(block, bi) in displayBlocks" :key="bi" class="block-entry">
+				<view v-for="(block, bi) in displayBlocks" :key="bi" class="timeline-step">
+					<!-- 时间线节点（点+线） -->
+					<view class="timeline-node">
+						<view class="timeline-dot" :class="getDotClass(block)"></view>
+						<view v-if="bi < displayBlocks.length - 1" class="timeline-line"></view>
+					</view>
 					<!-- 思考块 -->
-					<view v-if="block.type == 'thinking'" class="thinking-wrap" @click.stop="toggleBlockExpand(bi)">
-						<text class="thinking-toggle">{{getBlockExpanded(bi) ? '▾' : '▸'}} {{thinkingCount > 1 ? ('思考 ' + (bi + 1)) : '思考过程'}}</text>
-						<text v-if="getBlockExpanded(bi) == true" class="thinking-text">{{block.thinking}}</text>
+					<view v-if="block.type == 'thinking'" class="step-body thinking-step" @click.stop="toggleBlockExpand(bi)">
+						<view class="thinking-step-header">
+							<text class="thinking-step-icon">{{getBlockExpanded(bi) ? '▾' : '▸'}}</text>
+							<text class="thinking-step-label">{{thinkingCount > 1 ? ('思考 ' + (getThinkingIndex(bi) + 1)) : '思考过程'}}</text>
+						</view>
+						<text v-if="getBlockExpanded(bi) == true" class="thinking-step-text">{{block.thinking}}</text>
 					</view>
 					<!-- 文本块 -->
-					<text v-else-if="block.type == 'text'" class="text-assistant-pre">{{block.text}}<text v-if="isStreaming && bi == displayBlocks.length - 1 && displayBlocks[displayBlocks.length - 1].type == 'text'" class="cursor">|</text></text>
+					<view v-else-if="block.type == 'text'" class="step-body">
+						<text class="text-assistant-pre">{{block.text}}<text v-if="isStreaming && bi == displayBlocks.length - 1 && displayBlocks[displayBlocks.length - 1].type == 'text'" class="cursor">|</text></text>
+					</view>
 					<!-- 工具调用块 -->
-					<view v-else-if="block.type == 'toolCall'" class="tool-call-block" @click.stop="toggleToolCallExpand(bi)">
-						<!-- Header: 始终可见 -->
-						<view class="tool-call-header">
-							<view class="tool-call-header-left">
-								<text class="tool-call-status">{{getToolStatus(block)}}</text>
-								<text class="tool-call-name">{{block.name}}</text>
+					<view v-else-if="block.type == 'toolCall'" class="step-body tool-call-step" @click.stop="toggleToolCallExpand(bi)">
+						<view class="tool-call-card">
+							<view class="tool-call-card-header">
+								<view class="tool-call-card-left">
+									<text class="tool-call-icon">{{getToolIcon(block)}}</text>
+									<text class="tool-call-card-name">{{getToolDisplayName(block.name)}}</text>
+								</view>
+								<view class="tool-call-card-right">
+									<text v-if="block.ts != null && block.ts > 0" class="tool-call-elapsed">{{getToolElapsed(block)}}</text>
+									<text class="tool-call-chevron">{{getToolCallExpanded(bi) ? '▾' : '▸'}}</text>
+								</view>
 							</view>
-							<view class="tool-call-header-right">
-								<text v-if="block.ts != null && block.ts > 0" class="tool-call-elapsed">{{getToolElapsed(block)}}</text>
-								<text class="tool-call-chevron">{{getToolCallExpanded(bi) ? '▾' : '▸'}}</text>
+							<view v-if="getToolCallExpanded(bi) == true" class="tool-call-card-detail">
+								<view class="tool-detail-section">
+									<text class="tool-detail-label">参数</text>
+									<text class="tool-detail-value">{{block.args}}</text>
+								</view>
+								<view v-if="block.status == 'completed' && block.result != null && block.result != ''" class="tool-detail-section">
+									<text class="tool-detail-label">结果</text>
+									<text class="tool-detail-value">{{block.result}}</text>
+								</view>
 							</view>
-						</view>
-						<!-- 展开区域: args + result -->
-						<view v-if="getToolCallExpanded(bi) == true" class="tool-call-detail">
-							<text class="tool-call-args-label">参数</text>
-							<text class="tool-call-args">{{block.args}}</text>
-							<text v-if="block.status == 'completed' && block.result != null && block.result != ''" class="tool-call-result-label">结果</text>
-							<text v-if="block.status == 'completed' && block.result != null && block.result != ''" class="tool-call-result">{{block.result}}</text>
 						</view>
 					</view>
 				</view>
@@ -458,13 +472,60 @@
 				const elapsed = ((now - ts) / 1000)
 				return elapsed.toFixed(1) + 's'
 			},
-			/** 获取工具状态文本 */
+			/** 获取工具状态图标 */
 			getToolStatus(block: DisplayBlock): string {
 				const status = block.status
 				if (status == 'running') return '⏳'
 				if (status == 'completed') return '✅'
 				if (status == 'error') return '❌'
+				if (status == 'pending') return '🔧'
 				return '🔧'
+			},
+			/** 获取时间线节点 dot 样式类 */
+			getDotClass(block: DisplayBlock): string {
+				if (block.type == 'thinking') return 'dot-thinking'
+				if (block.type == 'text') return 'dot-text'
+				if (block.type == 'toolCall') {
+					if (block.status == 'running') return 'dot-running'
+					if (block.status == 'completed') return 'dot-completed'
+					if (block.status == 'error') return 'dot-error'
+					return 'dot-pending'
+				}
+				return 'dot-default'
+			},
+			/** 获取 thinking block 在全部 blocks 中的序号（从 0 开始） */
+			getThinkingIndex(blockIdx: number): number {
+				let count = 0
+				for (let i = 0; i <= blockIdx; i++) {
+					if (i < this.displayBlocks.length && this.displayBlocks[i].type == 'thinking') {
+						if (i < blockIdx) count++
+					}
+				}
+				return count
+			},
+			/** 工具图标 */
+			getToolIcon(block: DisplayBlock): string {
+				const name = block.name
+				if (name == 'file_read' || name == 'file_write' || name == 'file_delete' || name == 'file_list' || name == 'file_info' || name == 'directory_create') return '📁'
+				if (name == 'memory_search' || name == 'memory_buffer_write' || name == 'memory_core_list' || name == 'memory_core_save' || name == 'memory_core_forget') return '🧠'
+				if (name == 'web_search') return '🌐'
+				return '🔧'
+			},
+			/** 工具名友好显示 */
+			getToolDisplayName(name: string): string {
+				if (name == 'file_read') return '读取文件'
+				if (name == 'file_write') return '写入文件'
+				if (name == 'file_delete') return '删除文件'
+				if (name == 'file_list') return '列出文件'
+				if (name == 'file_info') return '文件信息'
+				if (name == 'directory_create') return '创建目录'
+				if (name == 'memory_search') return '搜索记忆'
+				if (name == 'memory_buffer_write') return '写短缓存'
+				if (name == 'memory_core_list') return '列出记忆'
+				if (name == 'memory_core_save') return '保存记忆'
+				if (name == 'memory_core_forget') return '遗忘记忆'
+				if (name == 'web_search') return '网络搜索'
+				return name
 			},
 			/** 切换工具调用的展开/折叠 */
 			toggleToolCallExpand(index: number) {
@@ -757,73 +818,171 @@
 		border-left-style: solid;
 	}
 
-	/* blocks 时间线样式 */
-	.block-entry {
-		margin-bottom: 8rpx;
+	/* ======== 交错思维链时间线样式 ======== */
+
+	/* 时间线整体容器 — 位于气泡内 */
+	.timeline-content {
+		padding: 8rpx 4rpx;
 	}
-	.tool-call-block {
-		background-color: #F0F4FF;
-		border-radius: 12rpx;
-		padding: 16rpx;
-		margin-vertical: 8rpx;
+
+	/* 每个时间线步骤：节点(左) + 内容(右) */
+	.timeline-step {
+		flex-direction: row;
+		align-items: stretch;
 	}
-	.tool-call-header {
-		display: flex;
+
+	/* 时间线节点列（点+线） */
+	.timeline-node {
+		width: 36rpx;
+		flex-direction: column;
+		align-items: center;
+		flex-shrink: 0;
+		margin-right: 10rpx;
+	}
+
+	/* 时间线圆点 */
+	.timeline-dot {
+		width: 12rpx;
+		height: 12rpx;
+		border-radius: 6rpx;
+		flex-shrink: 0;
+		margin-top: 10rpx;
+	}
+
+	/* 圆点颜色 */
+	.dot-thinking {
+		background-color: #A78BFA;
+	}
+	.dot-text {
+		background-color: var(--rice-primary-color);
+	}
+	.dot-running {
+		background-color: #F59E0B;
+	}
+	.dot-completed {
+		background-color: #10B981;
+	}
+	.dot-error {
+		background-color: #EF4444;
+	}
+	.dot-pending {
+		background-color: #9CA3AF;
+	}
+	.dot-default {
+		background-color: #D1D5DB;
+	}
+
+	/* 时间竖线 */
+	.timeline-line {
+		flex: 1;
+		width: 2rpx;
+		background-color: #E5E7EB;
+	}
+
+	/* 步骤内容区 */
+	.step-body {
+		flex: 1;
+		flex-shrink: 1;
+		padding-bottom: 12rpx;
+	}
+
+	/* ======== 思考块 ======== */
+	.thinking-step {
+		padding-top: 4rpx;
+	}
+	.thinking-step-header {
+		flex-direction: row;
+		align-items: center;
+	}
+	.thinking-step-icon {
+		font-size: 22rpx;
+		color: #A78BFA;
+		margin-right: 6rpx;
+		flex-shrink: 0;
+	}
+	.thinking-step-label {
+		font-size: 22rpx;
+		color: #A78BFA;
+		font-weight: 500;
+	}
+	.thinking-step-text {
+		font-size: 24rpx;
+		color: #6B7280;
+		line-height: 36rpx;
+		margin-top: 8rpx;
+		padding-left: 16rpx;
+		border-left-width: 2rpx;
+		border-left-color: #E5E7EB;
+		border-left-style: solid;
+		white-space: pre-wrap;
+	}
+
+	/* ======== 工具调用卡片 ======== */
+	.tool-call-step {
+		padding-top: 4rpx;
+	}
+	.tool-call-card {
+		background-color: #F5F7FA;
+		border-radius: 14rpx;
+		border-width: 1rpx;
+		border-color: #E5E7EB;
+		overflow: hidden;
+	}
+	.tool-call-card-header {
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
+		padding: 14rpx 16rpx;
 	}
-	.tool-call-header-left {
-		display: flex;
+	.tool-call-card-left {
 		flex-direction: row;
 		align-items: center;
+		flex-shrink: 1;
 	}
-	.tool-call-header-right {
-		display: flex;
+	.tool-call-card-right {
 		flex-direction: row;
 		align-items: center;
+		flex-shrink: 0;
 	}
-	.tool-call-status {
+	.tool-call-icon {
 		font-size: 28rpx;
 		margin-right: 8rpx;
 	}
-	.tool-call-name {
+	.tool-call-card-name {
 		font-size: 26rpx;
-		color: #4A90D9;
-		font-weight: bold;
+		color: var(--rice-text-color);
+		font-weight: 500;
+		flex-shrink: 1;
 	}
 	.tool-call-elapsed {
 		font-size: 22rpx;
-		color: #888888;
+		color: #9CA3AF;
 		margin-right: 8rpx;
 	}
 	.tool-call-chevron {
 		font-size: 24rpx;
 		color: #AAAAAA;
 	}
-	.tool-call-detail {
+
+	/* 展开区域 */
+	.tool-call-card-detail {
+		padding: 4rpx 16rpx 16rpx 16rpx;
+	}
+	.tool-detail-section {
 		margin-top: 12rpx;
-		padding-top: 12rpx;
-		border-top-width: 1px;
-		border-top-color: #DDE4F0;
 	}
-	.tool-call-args-label {
+	.tool-detail-label {
 		font-size: 22rpx;
-		color: #888888;
-		margin-bottom: 4rpx;
+		color: #9CA3AF;
+		margin-bottom: 6rpx;
 	}
-	.tool-call-args {
+	.tool-detail-value {
 		font-size: 22rpx;
-		color: #555555;
-	}
-	.tool-call-result-label {
-		font-size: 22rpx;
-		color: #888888;
-		margin-top: 12rpx;
-		margin-bottom: 4rpx;
-	}
-	.tool-call-result {
-		font-size: 22rpx;
-		color: #333333;
+		color: #4B5563;
+		line-height: 32rpx;
+		white-space: pre-wrap;
+		background-color: #FFFFFF;
+		border-radius: 10rpx;
+		padding: 10rpx 14rpx;
 	}
 </style>
