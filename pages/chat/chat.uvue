@@ -989,13 +989,6 @@
 				return ''
 			},
 
-			/** 安全获取消息的 blocks 数组，避免模板三元表达式类型推断失败 */
-			getMessageBlocks(msg: UTSJSONObject): UTSJSONObject[] {
-				const blocks = msg['blocks'] as UTSJSONObject[] | null
-				if (blocks != null) return blocks
-				return [] as UTSJSONObject[]
-			},
-
 			/** 追加流式文本到最后一条 assistant 消息 */
 			appendAssistantDelta(text: string) {
 				if (text == '') return
@@ -1203,30 +1196,84 @@
 				} as UTSJSONObject)
 			},
 
-			/** 插入 assistant 工具调用上下文消息 */
+			/** 向最后一条 assistant 消息追加批量 toolCall blocks（替代旧的独立消息） */
 			addToolCallMessage(fullText: string, toolCalls: UTSJSONObject[] | null) {
 				if (toolCalls == null || toolCalls.length == 0) return
 				const lastIdx = this.messages.length - 1
-				if (lastIdx >= 0 && (this.messages[lastIdx]['role'] as string) == 'assistant' && this.messages[lastIdx]['tool_calls'] == null) {
-					const existing = this.messages[lastIdx]
-					const existingContent = existing['content'] as string | null
-					const content = existingContent != null && existingContent != '' ? existingContent : fullText
-					const existingTimestamp = existing['timestamp'] as number | null
-					this.messages.splice(lastIdx, 1, {
+				if (lastIdx < 0) {
+					const blocks: UTSJSONObject[] = []
+					for (let i = 0; i < toolCalls.length; i++) {
+						const tc = toolCalls[i]
+						const fobj = tc['function'] as UTSJSONObject | null
+						blocks.push({
+							type: 'toolCall',
+							name: fobj != null ? (fobj['name'] as string) : '',
+							arguments: fobj != null ? (fobj['arguments'] as string) : '{}'
+						} as UTSJSONObject)
+					}
+					this.messages.push({
 						role: 'assistant',
-						content: content,
+						content: fullText,
+						thinking: '',
+						blocks: blocks,
 						msgType: 'text',
-						isStreaming: false,
-						tool_calls: toolCalls,
-						timestamp: existingTimestamp != null ? existingTimestamp : Date.now()
+						isStreaming: true,
+						timestamp: Date.now()
 					} as UTSJSONObject)
 					return
 				}
-				this.messages.push({
+				const existing = this.messages[lastIdx]
+				const role = existing['role'] as string | null
+				if (role != 'assistant') {
+					const blocks: UTSJSONObject[] = []
+					for (let i = 0; i < toolCalls.length; i++) {
+						const tc = toolCalls[i]
+						const fobj = tc['function'] as UTSJSONObject | null
+						blocks.push({
+							type: 'toolCall',
+							name: fobj != null ? (fobj['name'] as string) : '',
+							arguments: fobj != null ? (fobj['arguments'] as string) : '{}'
+						} as UTSJSONObject)
+					}
+					this.messages.push({
+						role: 'assistant',
+						content: fullText,
+						thinking: '',
+						blocks: blocks,
+						msgType: 'text',
+						isStreaming: true,
+						timestamp: Date.now()
+					} as UTSJSONObject)
+					return
+				}
+				// Append toolCall blocks to existing assistant's blocks
+				const oldBlocks = existing['blocks'] as UTSJSONObject[] | null
+				const newBlocks: UTSJSONObject[] = []
+				if (oldBlocks != null) {
+					for (let k = 0; k < oldBlocks.length; k++) {
+						newBlocks.push(oldBlocks[k])
+					}
+				}
+				for (let i = 0; i < toolCalls.length; i++) {
+					const tc = toolCalls[i]
+					const fobj = tc['function'] as UTSJSONObject | null
+					newBlocks.push({
+						type: 'toolCall',
+						name: fobj != null ? (fobj['name'] as string) : '',
+						arguments: fobj != null ? (fobj['arguments'] as string) : '{}'
+					} as UTSJSONObject)
+				}
+				const oldContent = existing['content'] as string | null
+				const oldThinking = existing['thinking'] as string | null
+				const existingTimestamp = existing['timestamp'] as number | null
+				this.messages.splice(lastIdx, 1, {
 					role: 'assistant',
-					content: fullText,
-					tool_calls: toolCalls,
-					timestamp: Date.now()
+					content: oldContent != null && oldContent != '' ? oldContent : fullText,
+					thinking: oldThinking != null ? oldThinking : '',
+					blocks: newBlocks,
+					msgType: 'text',
+					isStreaming: true,
+					timestamp: existingTimestamp != null ? existingTimestamp : Date.now()
 				} as UTSJSONObject)
 			},
 
