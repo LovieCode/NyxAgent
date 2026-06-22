@@ -1326,8 +1326,9 @@
 					const block = existingBlocks[j]
 					const bType2 = block['type']
 					const bName2 = block['name']
-					const bTs2 = block['ts']
-					if (bType2 != null && bName2 != null && (bType2 as string) == 'toolCall' && (bName2 as string) == toolName && bTs2 == null) {
+					const bStatus2 = block['status']
+					// 匹配 pending 状态的块（addToolCallMessage 初始 ts 已不为 null）
+					if (bType2 != null && bName2 != null && bStatus2 != null && (bType2 as string) == 'toolCall' && (bName2 as string) == toolName && (bStatus2 as string) == 'pending') {
 						const newBlocks: UTSJSONObject[] = []
 						for (let k = 0; k < existingBlocks.length; k++) {
 							newBlocks.push(existingBlocks[k])
