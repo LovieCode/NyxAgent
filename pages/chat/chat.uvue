@@ -1110,10 +1110,12 @@
 					(this.messages[lastIdx]['isStreaming'] as boolean | null) == true) {
 					const existing = this.messages[lastIdx]
 					const oldContent = existing['content'] as string | null
+					const oldBlocks = existing['blocks'] as UTSJSONObject[] | null
 					this.messages.splice(lastIdx, 1, {
 						role: 'assistant',
 						content: oldContent != null ? oldContent : '',
 						thinking: text,
+						blocks: oldBlocks,
 						msgType: 'text',
 						isStreaming: true,
 						timestamp: Date.now()
