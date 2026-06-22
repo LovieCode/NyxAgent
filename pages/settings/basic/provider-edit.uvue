@@ -135,6 +135,10 @@
 							<input class="detail-field-input detail-params-input" type="text" v-model="m.params" placeholder='{"key": "value"}' placeholder-class="ph" />
 							<text class="detail-field-hint">额外的 API 参数，例如温度、top_p 等</text>
 						</view>
+						<view class="detail-field model-vision-row">
+							<text class="detail-field-label">支持识图</text>
+							<rice-switch v-model="m.supportsVision" />
+						</view>
 					</view>
 				</view>
 
@@ -579,6 +583,12 @@
 	.detail-row {
 		flex-direction: row;
 		margin-top: 14rpx;
+	}
+
+	.model-vision-row {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
 	}
 
 	.add-model-btn {

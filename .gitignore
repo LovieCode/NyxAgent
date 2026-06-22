@@ -16,7 +16,7 @@ dist/
 .hbuilderx/
 
 # Local agent / AI tool workspace
-pi/
+AstrBot/
 .omo/
 .codex/
 .agents/

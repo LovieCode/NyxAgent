@@ -48,7 +48,7 @@ type ImageBase64Result = {
 	mimeType: string
 }
 
-import { resolveLLMConfig, normalizeBaseUrl, getMemoryOrganizeTaskModel, stripThinkTags, getAllProviders } from './provider'
+import { resolveLLMConfig, normalizeBaseUrl, getMemoryOrganizeTaskModel, stripThinkTags, getAllProviders, getProviderModels } from './provider'
 import { getAgentById } from '@/utils/agent.uts'
 import { getGlobalGenerationSettings, getEffectiveGenerationSettings, getMemoryOrganizerGenerationSettings, GenerationSettings } from '@/utils/generation-settings.uts'
 import { createAgentTools, AgentTool, ToolResult } from './tools/agent-tools'
@@ -313,7 +313,45 @@ function readImageAsBase64(imagePath: string): ImageBase64Result | null {
 	}
 }
 
-function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[]): UTSJSONObject[] {
+/**
+ * 判断模型是否支持多模态（vision/image 输入）
+ * 基于模型名关键词匹配，覆盖主流多模态模型
+ */
+function isVisionModel(model: string): boolean {
+	const m = model.toLowerCase()
+	if (m.indexOf('vision') >= 0) return true   // gpt-4-vision, qwen-vl, etc.
+	if (m.indexOf('vl') >= 0) return true        // Qwen-VL, InternVL
+	if (m.indexOf('gpt-4o') >= 0) return true    // GPT-4o / GPT-4o-mini (native vision)
+	if (m.indexOf('gpt-4-turbo') >= 0) return true
+	if (m.indexOf('gemini-2') >= 0) return true  // Gemini 2.0+
+	if (m.indexOf('gemini-1.5') >= 0) return true // Gemini 1.5
+	if (m.indexOf('claude-3') >= 0) return true   // Claude 3+
+	if (m.indexOf('claude-3.5') >= 0) return true
+	if (m.indexOf('qvq') >= 0) return true        // Qwen QVQ
+	if (m.indexOf('qwq') >= 0) return true
+	return false
+}
+
+/**
+ * 根据模型 ID 查找其 vision 能力标记
+ * 遍历所有启用的提供商，匹配模型 ID 返回 supportsVision
+ */
+function getModelVisionSupport(modelId: string): boolean {
+	const allProviders = getAllProviders()
+	for (let i = 0; i < allProviders.length; i++) {
+		const p = allProviders[i]
+		if (p['enabled'] != 1) continue
+		const models = getProviderModels(p['id'] as string)
+		for (let j = 0; j < models.length; j++) {
+			if (models[j].id == modelId) {
+				return models[j].supportsVision == true
+			}
+		}
+	}
+	return false
+}
+
+function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[], supportsVision: boolean): UTSJSONObject[] {
 	const apiMessages: UTSJSONObject[] = []
 	if (systemPrompt != '') {
 		apiMessages.push({
@@ -353,6 +391,15 @@ function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[]): U
 			const msgType = msg['msgType'] as string | null
 			const imageUrl = msg['imageUrl'] as string | null
 			if (role == 'user' && msgType == 'image' && imageUrl != null && imageUrl != '') {
+				// 模型不支持多模态 → 降级为纯文本
+				if (supportsVision == false) {
+					console.log('[LLM] 当前模型不支持多模态，图片消息降级为纯文本')
+					apiMessages.push({
+						role: 'user',
+						content: textContent != '' ? textContent : '[图片]',
+					} as UTSJSONObject)
+					continue
+				}
 				const imageResult = readImageAsBase64(imageUrl)
 				if (imageResult != null) {
 					// 用 JSON 字符串构造多段 content，避免 UTSJSONObject 数组序列化问题
@@ -667,7 +714,7 @@ function callChatAPI(
 	settings: GenerationSettings,
 	done: (text: string | null, toolCalls: ToolCallInfo[] | null) => void
 ): void {
-	const apiMessages = buildOpenAIMessages(systemPrompt, messages)
+	const apiMessages = buildOpenAIMessages(systemPrompt, messages, true)
 	clearLastTokenUsage()
 
 	// 构建请求体：检测 baseUrl 是否已包含 API 版本路径，避免重复
@@ -1055,9 +1102,10 @@ function callChatAPIStream(
 	done: (text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null) => void,
 	cacheKey: string = '',
 	onThinking: ((text: string) => void) | null = null,
-	conversationId: string = ''
+	conversationId: string = '',
+	supportsVision: boolean = true
 ): RequestTask {
-	const apiMessages = buildOpenAIMessages(systemPrompt, messages)
+	const apiMessages = buildOpenAIMessages(systemPrompt, messages, supportsVision)
 	clearLastTokenUsage()
 
 	const hasApiVersion = baseUrl.indexOf('/v1') >= 0 || baseUrl.indexOf('/api/v') >= 0
@@ -1318,6 +1366,7 @@ function runAgentLoop(
 			}
 		}
 
+		const currentModelVision = getModelVisionSupport(mdl)
 		activeTask = callChatAPIStream(baseUrl, apiKey, mdl, '', workingMessages, toolDefs, settings,
 			// onChunk
 			chunkHandler,
@@ -1472,7 +1521,8 @@ function runAgentLoop(
 			},
 			cacheKey,
 			thinkingHandler,
-			conversationId
+			conversationId,
+			currentModelVision
 		)
 	}
 	continueLoop()
@@ -1576,7 +1626,7 @@ export function buildAgentContextPreview(
 		normalizedBaseUrl = normalizeBaseUrl(config.baseUrl)
 		resolvedProviderId = config.providerId
 	}
-	const apiMessages = buildOpenAIMessages('', prepared.workingMessages)
+	const apiMessages = buildOpenAIMessages('', prepared.workingMessages, true)
 	// 读取上次调用的真实 Token 用量
 	let lastTokenUsage: UTSJSONObject | null = null
 	let lastCallInfo: UTSJSONObject | null = null

@@ -29,6 +29,8 @@ export type ModelInfo = {
 	maxTokens?: number
 	/** 自定义参数 JSON 字符串，用于传递 provider-specific 的参数 */
 	params?: string
+	/** 是否支持多模态（识图）能力 */
+	supportsVision?: boolean
 	// === UI state (不序列化) ===
 	ctxStr?: string
 	maxTokensStr?: string
@@ -125,6 +127,9 @@ export function serializeModels(models: ModelInfo[]): string {
 		if (m.params != null && m.params != '') {
 			obj['params'] = m.params
 		}
+		if (m.supportsVision == true) {
+			obj['vision'] = true
+		}
 		// UI state 不存
 		list.push(obj)
 	}
@@ -173,6 +178,11 @@ export function parseModels(modelsStr: string): ModelInfo[] {
 					const pms = obj['params'] as string | null
 					if (pms != null && pms != '') {
 						mi.params = pms
+					}
+					// vision capability
+					const vision = obj['vision'] as boolean | null
+					if (vision == true) {
+						mi.supportsVision = true
 					}
 					result.push(mi)
 				}
