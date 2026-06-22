@@ -50,6 +50,7 @@
 					:userAvatar="userAvatar"
 					:toolName="msg.toolName != null ? msg.toolName : ''"
 					:thinking="msg.thinking != null ? msg.thinking : ''"
+					:blocks="msg.blocks != null ? msg.blocks : []"
 					:hideThinking="hideThinking"
 				:msgSegmentation="msgSegmentation"
 					:isError="msg.isError == true"
@@ -981,10 +982,26 @@
 					const existing = this.messages[lastIdx]
 					const oldContent = existing['content'] as string | null
 					const oldThinking = existing['thinking'] as string | null
+					// Update blocks: append text to last text block or create new one
+					const oldBlocks = existing['blocks'] as UTSJSONObject[] | null
+					const newBlocks: UTSJSONObject[] = []
+					if (oldBlocks != null) {
+						for (let k = 0; k < oldBlocks.length; k++) {
+							newBlocks.push(oldBlocks[k])
+						}
+					}
+					const lastBlockIdx = newBlocks.length - 1
+					if (lastBlockIdx >= 0 && (newBlocks[lastBlockIdx]['type'] as string) == 'text') {
+						const oldText = newBlocks[lastBlockIdx]['text'] as string | null
+						newBlocks[lastBlockIdx] = { type: 'text', text: (oldText != null ? oldText : '') + text } as UTSJSONObject
+					} else {
+						newBlocks.push({ type: 'text', text: text } as UTSJSONObject)
+					}
 					this.messages.splice(lastIdx, 1, {
 						role: 'assistant',
 						content: (oldContent != null ? oldContent : '') + text,
 						thinking: oldThinking != null ? oldThinking : '',
+						blocks: newBlocks,
 						msgType: 'text',
 						isStreaming: true,
 						timestamp: Date.now()
@@ -994,6 +1011,7 @@
 						role: 'assistant',
 						content: text,
 						thinking: '',
+						blocks: [{ type: 'text', text: text } as UTSJSONObject],
 						msgType: 'text',
 						isStreaming: true,
 						timestamp: Date.now()
@@ -1010,6 +1028,7 @@
 					const existing = this.messages[lastIdx]
 					const oldContent = existing['content'] as string | null
 					const oldThinking = existing['thinking'] as string | null
+					const oldBlocks = existing['blocks'] as UTSJSONObject[] | null
 					let finalContent = oldContent != null ? oldContent : ''
 					if (finalContent == '' && response != '') {
 						finalContent = response
@@ -1018,6 +1037,7 @@
 						role: 'assistant',
 						content: finalContent,
 						thinking: oldThinking != null ? oldThinking : '',
+						blocks: oldBlocks,
 						msgType: 'text',
 						isStreaming: false,
 						timestamp: Date.now()
@@ -1044,10 +1064,26 @@
 					const existing = this.messages[lastIdx]
 					const oldThinking = existing['thinking'] as string | null
 					const oldContent = existing['content'] as string | null
+					// Update blocks: append thinking to last thinking block or create new one
+					const oldBlocks = existing['blocks'] as UTSJSONObject[] | null
+					const newBlocks: UTSJSONObject[] = []
+					if (oldBlocks != null) {
+						for (let k = 0; k < oldBlocks.length; k++) {
+							newBlocks.push(oldBlocks[k])
+						}
+					}
+					const lastBlockIdx = newBlocks.length - 1
+					if (lastBlockIdx >= 0 && (newBlocks[lastBlockIdx]['type'] as string) == 'thinking') {
+						const oldThink = newBlocks[lastBlockIdx]['thinking'] as string | null
+						newBlocks[lastBlockIdx] = { type: 'thinking', thinking: (oldThink != null ? oldThink : '') + text } as UTSJSONObject
+					} else {
+						newBlocks.push({ type: 'thinking', thinking: text } as UTSJSONObject)
+					}
 					this.messages.splice(lastIdx, 1, {
 						role: 'assistant',
 						content: oldContent != null ? oldContent : '',
 						thinking: (oldThinking != null ? oldThinking : '') + text,
+						blocks: newBlocks,
 						msgType: 'text',
 						isStreaming: true,
 						timestamp: Date.now()
@@ -1058,6 +1094,7 @@
 						role: 'assistant',
 						content: '',
 						thinking: text,
+						blocks: [{ type: 'thinking', thinking: text } as UTSJSONObject],
 						msgType: 'text',
 						isStreaming: true,
 						timestamp: Date.now()
@@ -1082,6 +1119,63 @@
 						timestamp: Date.now()
 					} as UTSJSONObject)
 				}
+			},
+
+			/** 向最后一条 assistant 消息追加 toolCall block */
+			appendToolCallBlockToAssistant(name: string, args: string) {
+				const lastIdx = this.messages.length - 1
+				if (lastIdx < 0) {
+					this.messages.push({
+						role: 'assistant',
+						content: '',
+						thinking: '',
+						blocks: [{ type: 'toolCall', name: name, arguments: args } as UTSJSONObject],
+						msgType: 'text',
+						isStreaming: true,
+						timestamp: Date.now()
+					} as UTSJSONObject)
+					return
+				}
+				const existing = this.messages[lastIdx]
+				const role = existing['role'] as string | null
+				if (role != 'assistant') {
+					this.messages.push({
+						role: 'assistant',
+						content: '',
+						thinking: '',
+						blocks: [{ type: 'toolCall', name: name, arguments: args } as UTSJSONObject],
+						msgType: 'text',
+						isStreaming: true,
+						timestamp: Date.now()
+					} as UTSJSONObject)
+					return
+				}
+				const oldBlocks = existing['blocks'] as UTSJSONObject[] | null
+				const newBlocks: UTSJSONObject[] = []
+				if (oldBlocks != null) {
+					for (let k = 0; k < oldBlocks.length; k++) {
+						newBlocks.push(oldBlocks[k])
+					}
+				}
+				// Check if last block is a toolCall with same name → append args
+				const lastBlockIdx = newBlocks.length - 1
+				if (lastBlockIdx >= 0 && (newBlocks[lastBlockIdx]['type'] as string) == 'toolCall' && (newBlocks[lastBlockIdx]['name'] as string) == name) {
+					const oldArgs = newBlocks[lastBlockIdx]['arguments'] as string | null
+					newBlocks[lastBlockIdx] = { type: 'toolCall', name: name, arguments: (oldArgs != null ? oldArgs : '') + args } as UTSJSONObject
+				} else {
+					newBlocks.push({ type: 'toolCall', name: name, arguments: args } as UTSJSONObject)
+				}
+				const oldContent = existing['content'] as string | null
+				const oldThinking = existing['thinking'] as string | null
+				this.messages.splice(lastIdx, 1, {
+					role: 'assistant',
+					content: oldContent != null ? oldContent : '',
+					thinking: oldThinking != null ? oldThinking : '',
+					blocks: newBlocks,
+					msgType: 'text',
+					isStreaming: true,
+					timestamp: Date.now()
+				} as UTSJSONObject)
 			},
 
 			/** 插入 assistant 工具调用上下文消息 */
@@ -1173,7 +1267,16 @@
 				} else if (event.type == 'thinking_end') {
 					this.finishAssistantThinking(event.fullThinking != null ? (event.fullThinking as string) : '')
 				} else if (event.type == 'tool_call') {
-					this.addToolCallMessage(event.fullText != null ? (event.fullText as string) : '', event.toolCalls != null ? (event.toolCalls as UTSJSONObject[]) : null)
+					// Incremental tool_call delta (from interleaved streaming)
+					if (event.toolName != null && event.toolCalls == null) {
+						this.appendToolCallBlockToAssistant(
+							event.toolName as string,
+							event.toolArgs != null ? (event.toolArgs as string) : '{}'
+						)
+					} else {
+						// Batch tool_calls (existing behavior, backward compat)
+						this.addToolCallMessage(event.fullText != null ? (event.fullText as string) : '', event.toolCalls != null ? (event.toolCalls as UTSJSONObject[]) : null)
+					}
 				} else if (event.type == 'tool_execution_start') {
 					this.addToolExecutionStart(
 						event.toolCallId != null ? (event.toolCallId as string) : '',
