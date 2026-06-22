@@ -49,8 +49,8 @@
 			</view>
 		</view>
 
-		<!-- AI 分段模式：每段独立一行带头像 -->
-		<template v-for="(segment, si) in contentLines" v-if="role == 'assistant' && msgSegmentation == true && msgType != 'image'">
+		<!-- AI 分段模式：每段独立一行带头像（无 blocks 时） -->
+		<template v-for="(segment, si) in contentLines" v-if="role == 'assistant' && displayBlocks.length == 0 && msgSegmentation == true && msgType != 'image'">
 			<view class="ai-row">
 				<image v-if="agentAvatar != ''" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" />
 				<view v-else class="chat-avatar ai-avatar">
@@ -70,8 +70,8 @@
 			</view>
 		</template>
 
-		<!-- AI 非分段模式：单行头像 + 气泡（含图片/思考） -->
-		<view v-if="role == 'assistant' && (msgSegmentation == false || msgType == 'image')" class="ai-row">
+		<!-- AI 非分段模式：单行头像 + 气泡（含图片/思考，无 blocks 时） -->
+		<view v-if="role == 'assistant' && displayBlocks.length == 0 && (msgSegmentation == false || msgType == 'image')" class="ai-row">
 			<image v-if="agentAvatar != ''" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" />
 			<view v-else class="chat-avatar ai-avatar">
 				<text class="chat-avatar-text">AI</text>
