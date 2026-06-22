@@ -34,7 +34,7 @@
 					@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
 					@touchend="onBubbleTouchEnd">
 					<!-- 思考内容——每段都显示 -->
-					<view v-if="thinking != '' && hideThinking == false" class="thinking-wrap" @click.stop="thinkingExpanded = !thinkingExpanded">
+<view v-if="si == 0 && thinking != '' && hideThinking == false" class="thinking-wrap" @click.stop="thinkingExpanded = !thinkingExpanded">
 						<text class="thinking-toggle">{{thinkingExpanded ? '▾' : '▸'}} 思考过程</text>
 						<text v-if="thinkingExpanded == true" class="thinking-text">{{thinking}}</text>
 					</view>
