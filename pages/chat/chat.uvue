@@ -1052,7 +1052,18 @@
 						isStreaming: true,
 						timestamp: Date.now()
 					} as UTSJSONObject)
+				} else {
+					// thinking 先于 text 到达，创建新的流式 assistant 消息承载 thinking
+					this.messages.push({
+						role: 'assistant',
+						content: '',
+						thinking: text,
+						msgType: 'text',
+						isStreaming: true,
+						timestamp: Date.now()
+					} as UTSJSONObject)
 				}
+				this.scrollToBottom()
 			},
 
 			/** 结束思考内容追加 */

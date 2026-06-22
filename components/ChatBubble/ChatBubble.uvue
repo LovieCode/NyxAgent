@@ -159,6 +159,26 @@
 				if (newVal != oldVal) {
 					this.cancelLongpress()
 				}
+			},
+			thinking(newVal: string, oldVal: string) {
+				// thinking 从空变为非空 + 正在流式 → 自动展开
+				if (oldVal == '' && newVal != '' && this.isStreaming == true) {
+					this.thinkingExpanded = true
+				}
+				// thinking 从非空变为空 → 自动折叠
+				if (oldVal != '' && newVal == '') {
+					this.thinkingExpanded = false
+				}
+			},
+			isStreaming(newVal: boolean, oldVal: boolean) {
+				// 开始流式 + thinking 不为空 → 自动展开
+				if (newVal == true && oldVal == false && this.thinking != '') {
+					this.thinkingExpanded = true
+				}
+				// 流式结束 → 自动折叠
+				if (newVal == false && oldVal == true) {
+					this.thinkingExpanded = false
+				}
 			}
 		},
 		computed: {
