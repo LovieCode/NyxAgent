@@ -18,13 +18,14 @@
 					<oui-icon-unix name="edit" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
 					<text class="card-label">名称</text>
 				</view>
-				<input
-					class="flat-input"
-					type="text"
-					v-model="agentName"
-					placeholder="输入智能体名称"
-					placeholder-class="input-placeholder"
-				/>
+			<input
+				class="flat-input"
+				type="text"
+				v-model="agentName"
+				placeholder="输入智能体名称"
+				placeholder-class="input-placeholder"
+				@input="hasUnsaved = true"
+			/>
 
 				<view class="card-header" style="margin-top:20rpx;">
 					<oui-icon-unix name="file-text" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
@@ -177,42 +178,42 @@
 						<text class="setting-title">截断阈值（分）</text>
 						<text class="setting-desc">达到该分数后整理记忆并截断，0 不启用</text>
 					</view>
-					<input class="param-input short-input" type="text" v-model="truncateThresholdStr" placeholder="0" />
+					<input class="param-input short-input" type="text" v-model="truncateThresholdStr" placeholder="0" @input="hasUnsaved = true" />
 				</view>
 				<view class="setting-row">
 					<view class="setting-text">
 						<text class="setting-title">丢弃分数</text>
 						<text class="setting-desc">达到阈值后回落的分数，例如阈值 40、丢弃 20，则保留约 20 分上下文</text>
 					</view>
-					<input class="param-input short-input" type="text" v-model="truncateDropCountStr" placeholder="20" />
+					<input class="param-input short-input" type="text" v-model="truncateDropCountStr" placeholder="20" @input="hasUnsaved = true" />
 				</view>
 				<view class="setting-row">
 					<view class="setting-text">
 						<text class="setting-title">启用缓存ID</text>
 						<text class="setting-desc">开启后请求会携带 cache_key（智能体ID:对话ID）</text>
 					</view>
-					<rice-switch v-model="cacheEnabled" />
+					<rice-switch v-model="cacheEnabled" @change="hasUnsaved = true" />
 				</view>
 				<view class="setting-row">
 					<view class="setting-text">
 						<text class="setting-title">隐藏思考过程</text>
 						<text class="setting-desc">AI 回复中的思考折叠区不显示</text>
 					</view>
-					<rice-switch v-model="hideThinking" />
+					<rice-switch v-model="hideThinking" @change="hasUnsaved = true" />
 				</view>
 				<view class="setting-row">
 					<view class="setting-text">
 						<text class="setting-title">注入日期时间</text>
 						<text class="setting-desc">每条消息前自动附加当前日期、星期、节日</text>
 					</view>
-					<rice-switch v-model="injectDatetime" />
+					<rice-switch v-model="injectDatetime" @change="hasUnsaved = true" />
 				</view>
 				<view class="setting-row">
 					<view class="setting-text">
 						<text class="setting-title">消息分段</text>
 						<text class="setting-desc">AI 回复按换行符分成多个相邻气泡</text>
 					</view>
-					<rice-switch v-model="msgSegmentation" />
+					<rice-switch v-model="msgSegmentation" @change="hasUnsaved = true" />
 				</view>
 			</view>
 
@@ -278,6 +279,8 @@
 				globalGenerationHint: '' as string,
 				/** 编辑器返回后标记未保存 */
 				hasUnsaved: false as boolean,
+				/** 防止重复弹出确认离开对话框 */
+				isConfirmingLeave: false as boolean,
 			}
 		},
 		computed: {
@@ -360,6 +363,14 @@
 				uni.removeStorageSync('crop_target')
 				uni.removeStorageSync('crop_image_path')
 			}
+		},
+		/** Android 系统返回键 / iOS 滑动返回 */
+		onBackPress(): boolean {
+			if (this.hasUnsaved == false) {
+				return false
+			}
+			this.confirmLeave()
+			return true
 		},
 		methods: {
 			loadAgent() {
@@ -672,25 +683,36 @@
 				})
 			},
 
-			goBack() {
-				if (this.hasUnsaved) {
-					uni.showModal({
-						title: '未保存的更改',
-						content: '有未保存的更改，是否保存？',
-						cancelText: '不保存',
-						confirmText: '保存',
-						success: (res) => {
-							if (res.confirm == true) {
-								this.saveSettings()
-							} else {
-								this.hasUnsaved = false
-								uni.navigateBack()
-							}
-						}
-					})
-				} else {
+			/** 弹出确认离开对话框，供 goBack / onBackPress 共用 */
+			confirmLeave() {
+				if (this.hasUnsaved == false) {
 					uni.navigateBack()
+					return
 				}
+				if (this.isConfirmingLeave == true) {
+					return
+				}
+				this.isConfirmingLeave = true
+				uni.showModal({
+					title: '未保存的更改',
+					content: '有未保存的更改，是否保存？',
+					cancelText: '不保存',
+					confirmText: '保存',
+					success: (res) => {
+						this.isConfirmingLeave = false
+						if (res.confirm == true) {
+							this.saveSettings()
+						} else {
+							this.hasUnsaved = false
+							uni.navigateBack()
+						}
+					}
+				})
+			},
+
+			/** NavBar 返回按钮事件 */
+			goBack() {
+				this.confirmLeave()
 			},
 		}
 	}
