@@ -847,8 +847,9 @@ function callChatAPI(
 						}
 					}
 				} catch (_) {}
-				console.log('[LLM] ====== RESPONSE ERROR ======')
+			console.log('[LLM] ====== RESPONSE ERROR ======')
 				console.log('[LLM] Status: ' + statusCode + errDetail)
+				console.log('[LLM] Request body: ' + bodyStr)
 				console.log('[LLM] =============================')
 				saveLastLLMCall(false, false, model, baseUrl, statusCode, 'API 请求失败' + errDetail, null, apiMessages.length, tools.length, 0, false)
 				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null)
@@ -1271,9 +1272,10 @@ function callChatAPIStream(
 		success: (res) => {
 			streamEnded = true
 			const statusCode = res.statusCode as number
-			if (statusCode != 200) {
+		if (statusCode != 200) {
 				let errDetail = ''
 				try {
+					// 优先从 chunked 响应体中提取错误
 					if (fullTextRef[0] != '') {
 						const errData = JSON.parse(fullTextRef[0]) as UTSJSONObject
 						const errObj = errData['error'] as UTSJSONObject
@@ -1282,9 +1284,17 @@ function callChatAPIStream(
 							errDetail = ': ' + (errMessage != null ? errMessage : '')
 						}
 					}
+					// 如果 chunked 没有数据，尝试从 res.data 读取
+					if (errDetail == '' && res.data != null) {
+						try {
+							const resDataStr = JSON.stringify(res.data)
+							errDetail = ': ' + (resDataStr.length > 300 ? resDataStr.substring(0, 300) : resDataStr)
+						} catch (_d) {}
+					}
 				} catch (_) {}
 				console.log('[LLM] ====== STREAM ERROR ======')
 				console.log('[LLM] Status: ' + statusCode + errDetail)
+				console.log('[LLM] Request body: ' + bodyStr)
 				console.log('[LLM] ===========================')
 				saveLastLLMCall(false, true, model, baseUrl, statusCode, 'API 请求失败' + errDetail, null, apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
 				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null, null)
