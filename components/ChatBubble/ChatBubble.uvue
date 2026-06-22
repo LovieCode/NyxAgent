@@ -219,9 +219,7 @@
 		/** 每个 thinking block 的展开状态（按块索引） */
 			blocksExpanded: [] as boolean[],
 				toolCallExpanded: [] as boolean[],
-				/** 工具调用耗时计时器 */
-				toolCallTimer: -1 as number,
-				/** 计时器是否在运行 */
+				/** 计时器是否在运行（递归 setTimeout 控制） */
 				timerRunning: false as boolean,
 				/** 渲染开关 — setInterval 里 toggle 触发 v-if 重渲染 */
 				_renderSwitch: false as boolean,
@@ -267,33 +265,10 @@
 				}
 				if (hasRunning == true && this.timerRunning == false) {
 					this.timerRunning = true
-					this.toolCallTimer = setInterval(() => {
-						this.timerTick = this.timerTick + 1
-						// 通过 v-if 切换触发重渲染（uni-app x 不支持 $forceUpdate）
-						this._renderSwitch = !this._renderSwitch
-						// 在回调中自检：没有 running 状态的工具则自动停止
-						let anyRunning = false
-						for (let i = 0; i < this.displayBlocks.length; i++) {
-							if (this.displayBlocks[i].status == 'running') {
-								anyRunning = true
-								break
-							}
-						}
-						if (anyRunning == false && this.timerRunning == true) {
-							this.timerRunning = false
-							if (this.toolCallTimer != -1) {
-								clearInterval(this.toolCallTimer)
-								this.toolCallTimer = -1
-							}
-						}
-					}, 1000) as number
+					this.tick()
 				}
 				if (hasRunning == false && this.timerRunning == true) {
 					this.timerRunning = false
-					if (this.toolCallTimer != -1) {
-						clearInterval(this.toolCallTimer)
-						this.toolCallTimer = -1
-					}
 				}
 				},
 				deep: true
@@ -303,19 +278,15 @@
 				if (newVal == true && oldVal == false && this.thinking != '') {
 					this.thinkingExpanded = true
 				}
-				// 流式结束 → 自动折叠
+				// 流式结束 → 自动折叠 + 停止计时
 				if (newVal == false && oldVal == true) {
 					this.thinkingExpanded = false
 					this.blocksExpanded = []
+					this.timerRunning = false
 				}
 			}
 		},
 		unmounted() {
-			// 组件销毁时清理定时器，防止退出页面后继续累加
-			if (this.toolCallTimer != -1) {
-				clearInterval(this.toolCallTimer)
-				this.toolCallTimer = -1
-			}
 			this.timerRunning = false
 		},
 		computed: {
@@ -473,6 +444,25 @@
 			}
 		},
 		methods: {
+			/** 递归计时 —— 每秒自检，running 停止则终止递归 */
+			tick() {
+				if (this.timerRunning == false) return
+				this.timerTick = this.timerTick + 1
+				this._renderSwitch = !this._renderSwitch
+				// 自检：没有 running 状态的工具则停止
+				let anyRunning = false
+				for (let i = 0; i < this.displayBlocks.length; i++) {
+					if (this.displayBlocks[i].status == 'running') {
+						anyRunning = true
+						break
+					}
+				}
+				if (anyRunning == false) {
+					this.timerRunning = false
+					return
+				}
+				setTimeout(() => { this.tick() }, 1000)
+			},
 			/** 切换 block 展开/折叠 */
 			toggleBlockExpand(index: number) {
 				while (this.blocksExpanded.length <= index) {
