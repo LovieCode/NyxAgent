@@ -166,7 +166,7 @@
 
 <script lang="uts">
 	import { saveProvider, fetchProviderModels, parseModels, ModelInfo, getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
-	import { getModelCapabilities, refreshMetadataCache } from '@/uni_modules/agent-core/utssdk/llm-metadata.uts'
+	import { getModelCapabilities, refreshMetadataCache, isMetadataCacheStale } from '@/uni_modules/agent-core/utssdk/llm-metadata.uts'
 
 	export default {
 			data() {
@@ -283,8 +283,10 @@
 				}
 				this.fetchingModels = true
 				const ids = await fetchProviderModels(this.editApiBase, this.editApiKey)
-				// 同步刷新元数据缓存，确保 confirmAddModels 时数据可用
-				await refreshMetadataCache()
+				// 过期才刷新元数据缓存，避免每次拉取 130KB
+				if (isMetadataCacheStale()) {
+					await refreshMetadataCache()
+				}
 				this.fetchingModels = false
 				if (ids.length == 0) {
 					uni.showToast({ position: 'bottom',  title: '获取失败，请检查地址和 Key', icon: 'none' })
