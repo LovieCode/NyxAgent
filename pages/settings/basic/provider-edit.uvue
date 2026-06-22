@@ -283,6 +283,8 @@
 				}
 				this.fetchingModels = true
 				const ids = await fetchProviderModels(this.editApiBase, this.editApiKey)
+				// 同步刷新元数据缓存，确保 confirmAddModels 时数据可用
+				await refreshMetadataCache()
 				this.fetchingModels = false
 				if (ids.length == 0) {
 					uni.showToast({ position: 'bottom',  title: '获取失败，请检查地址和 Key', icon: 'none' })
@@ -306,8 +308,6 @@
 					uni.showToast({ position: 'bottom',  title: '所有模型已存在', icon: 'none' })
 					return
 				}
-				// 后台刷新元数据缓存（不阻塞 UI）
-				refreshMetadataCache()
 				this.fetchedModelIds = newIds
 				this.selectedModelIndexes = []
 				for (let i = 0; i < newIds.length; i++) {
