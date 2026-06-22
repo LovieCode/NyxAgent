@@ -221,6 +221,8 @@
 				toolCallExpanded: [] as boolean[],
 				/** 工具调用耗时计时器 */
 				toolCallTimer: -1 as number,
+				/** 计时器是否在运行 */
+				timerRunning: false as boolean,
 				/** 计时器 tick 计数器，用于触发耗时重新渲染 */
 				timerTick: 0 as number,
 			}
@@ -261,14 +263,18 @@
 						break
 					}
 				}
-				if (hasRunning == true && this.toolCallTimer == -1) {
+				if (hasRunning == true && this.timerRunning == false) {
+					this.timerRunning = true
 					this.toolCallTimer = setInterval(() => {
 						this.timerTick = this.timerTick + 1
 					}, 1000) as number
 				}
-				if (hasRunning == false && this.toolCallTimer != -1) {
-					clearInterval(this.toolCallTimer)
-					this.toolCallTimer = -1
+				if (hasRunning == false && this.timerRunning == true) {
+					this.timerRunning = false
+					if (this.toolCallTimer != -1) {
+						clearInterval(this.toolCallTimer)
+						this.toolCallTimer = -1
+					}
 				}
 				},
 				deep: true
@@ -288,6 +294,8 @@
 		computed: {
 			/** 将 blocks (UTSJSONObject[]) 转为有类型的 DisplayBlock[]，避免模板中类型推断问题 */
 			displayBlocks(): DisplayBlock[] {
+				const _tick = this.timerTick  // 强制依赖 timerTick，每秒刷新 UI
+				const now = Date.now()
 				const result: DisplayBlock[] = []
 				for (let i = 0; i < this.blocks.length; i++) {
 					const b = this.blocks[i] as UTSJSONObject
