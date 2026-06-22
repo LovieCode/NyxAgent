@@ -855,6 +855,18 @@ function callChatAPI(
 			}
 		},
 		fail: (_err: any) => {
+			// 检测是否不支持 function calling，自动降级重试
+			const errMsg = JSON.stringify(_err)
+			if (tools.length > 0 && (
+				errMsg.indexOf('Function calling is not enabled') >= 0 ||
+				(errMsg.indexOf('tool') >= 0 && errMsg.indexOf('support') >= 0) ||
+				(errMsg.indexOf('function') >= 0 && errMsg.indexOf('support') >= 0)
+			)) {
+				console.log('[LLM] 模型不支持 function calling，去除 tools 后重试')
+				uni.showToast({ position: 'bottom', title: '当前模型不支持工具调用，已自动忽略', icon: 'none' })
+				callChatAPI(baseUrl, apiKey, model, systemPrompt, messages, [], settings, done)
+				return
+			}
 			saveLastLLMCall(false, false, model, baseUrl, -1, '网络请求失败: ' + _err, null, apiMessages.length, tools.length, 0, false)
 			done('网络请求失败: ' + _err, null, null)
 		},
@@ -1230,6 +1242,18 @@ function callChatAPIStream(
 			}
 		},
 	fail: (_err: any) => {
+			// 检测是否不支持 function calling，自动降级重试
+			const errMsg = JSON.stringify(_err)
+			if (tools.length > 0 && (
+				errMsg.indexOf('Function calling is not enabled') >= 0 ||
+				(errMsg.indexOf('tool') >= 0 && errMsg.indexOf('support') >= 0) ||
+				(errMsg.indexOf('function') >= 0 && errMsg.indexOf('support') >= 0)
+			)) {
+				console.log('[LLM] 模型不支持 function calling，去除 tools 后重试')
+				uni.showToast({ position: 'bottom', title: '当前模型不支持工具调用，已自动忽略', icon: 'none' })
+				callChatAPIStream(baseUrl, apiKey, model, systemPrompt, messages, [], settings, onChunk, done, cacheKey, onThinking, conversationId, supportsVision)
+				return
+			}
 			saveLastLLMCall(false, true, model, baseUrl, -1, '网络请求失败: ' + _err, null, apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
 			done('网络请求失败: ' + _err, null, null)
 		},
