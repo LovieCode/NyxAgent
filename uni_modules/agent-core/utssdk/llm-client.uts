@@ -781,8 +781,6 @@ function formatBodyForLog(body: UTSJSONObject): string {
 	if (temperature != null) logBody['temperature'] = temperature
 	const stream = body['stream'] as boolean | null
 	if (stream != null) logBody['stream'] = stream
-	const tools = body['tools'] as UTSJSONObject[] | null
-	if (tools != null) logBody['tools'] = '[' + tools.length + ' tools]'
 	const cacheKey = body['cache_key'] as string | null
 	if (cacheKey != null) logBody['cache_key'] = cacheKey
 	const thinking = body['thinking'] as UTSJSONObject | null
