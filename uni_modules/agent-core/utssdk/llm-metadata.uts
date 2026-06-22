@@ -23,6 +23,22 @@ let metadataCache: UTSJSONObject | null = null
 let cacheTimestamp: number = 0
 
 /**
+ * 确保元数据缓存已加载到内存（从本地存储读取，不走网络）
+ * 应在页面加载时调用，避免 getModelCapabilities 冷启动查不到数据
+ */
+export function ensureMetadataCache(): void {
+	if (metadataCache != null) return
+	const cached = uni.getStorageSync('llm_metadata_cache') as string | null
+	const cachedTime = uni.getStorageSync('llm_metadata_cache_time') as number | null
+	if (cached != null && cached != '') {
+		try {
+			metadataCache = JSON.parse(cached) as UTSJSONObject
+			cacheTimestamp = cachedTime != null ? cachedTime : 0
+		} catch (_e: any) {}
+	}
+}
+
+/**
  * 获取模型能力
  * 从 models.dev 元数据缓存中查询（扁平结构，直接下标访问，无需 Object.keys）
  * @param modelId 模型 ID（例如 "openai/gpt-4o"、"deepseek/deepseek-chat"）
@@ -35,21 +51,9 @@ export function getModelCapabilities(modelId: string): ModelCapabilities {
 		supportsReasoning: false,
 	}
 
-	// 先查内存缓存（用局部变量避免 smart cast 问题）
+	// 确保缓存已加载到内存
+	ensureMetadataCache()
 	let cache = metadataCache
-	if (cache == null) {
-		const cached = uni.getStorageSync('llm_metadata_cache') as string | null
-		const cachedTime = uni.getStorageSync('llm_metadata_cache_time') as number | null
-		if (cached != null && cached != '') {
-			try {
-				cache = JSON.parse(cached) as UTSJSONObject
-				metadataCache = cache
-				cacheTimestamp = cachedTime != null ? cachedTime : 0
-			} catch (_e: any) {
-				cache = null
-			}
-		}
-	}
 
 	// models.json 键带 provider 前缀（如 "openai/gpt-4o"）
 	// 先从精确匹配开始，失败则尝试常见前缀

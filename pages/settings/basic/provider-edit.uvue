@@ -166,7 +166,7 @@
 
 <script lang="uts">
 	import { saveProvider, fetchProviderModels, parseModels, ModelInfo, getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
-	import { getModelCapabilities, refreshMetadataCache, isMetadataCacheStale } from '@/uni_modules/agent-core/utssdk/llm-metadata.uts'
+	import { getModelCapabilities, refreshMetadataCache, isMetadataCacheStale, ensureMetadataCache } from '@/uni_modules/agent-core/utssdk/llm-metadata.uts'
 
 	export default {
 			data() {
@@ -185,6 +185,8 @@
 			}
 		},
 		onLoad() {
+			// 预加载元数据缓存到内存，保证后续 getModelCapabilities 直接命中
+			ensureMetadataCache()
 			const editData = uni.getStorageSync('provider_edit_data') as string
 			if (editData != null && editData != '') {
 				try {
