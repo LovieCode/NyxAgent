@@ -233,6 +233,7 @@
 				// 流式结束 → 自动折叠
 				if (newVal == false && oldVal == true) {
 					this.thinkingExpanded = false
+					this.blocksExpanded = []
 				}
 			}
 		},
