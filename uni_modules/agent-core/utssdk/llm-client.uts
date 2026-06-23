@@ -378,6 +378,47 @@ function collectApiToolCalls(msg: UTSJSONObject): UTSJSONObject[] {
 	return result
 }
 
+function findEmbeddedToolResult(msg: UTSJSONObject, toolCallId: string): string | null {
+	if (toolCallId == '') {
+		return null
+	}
+	const parts = getMessagePartsForLLM(msg)
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		const type = part['type'] as string | null
+		if (type != 'tool_call' && type != 'toolCall') { continue }
+		const calls = part['tool_calls'] as UTSJSONObject[] | null
+		if (calls != null) {
+			for (let j = 0; j < calls.length; j++) {
+				const itemId = calls[j]['id'] as string | null
+				if (itemId != null && itemId == toolCallId) {
+					const result = calls[j]['result'] as string | null
+					if (result != null) {
+						return result
+					}
+					const status = calls[j]['status'] as string | null
+					if (status != null && status != '') {
+						return '[' + status + ']'
+					}
+				}
+			}
+		} else {
+			const itemId = part['id'] as string | null
+			if (itemId != null && itemId == toolCallId) {
+				const result = part['result'] as string | null
+				if (result != null) {
+					return result
+				}
+				const status = part['status'] as string | null
+				if (status != null && status != '') {
+					return '[' + status + ']'
+				}
+			}
+		}
+	}
+	return null
+}
+
 function hasAssistantToolCalls(msg: UTSJSONObject): boolean {
 	return collectApiToolCalls(msg).length > 0
 }
@@ -554,8 +595,93 @@ function buildImageUserMessageContent(prompt: string, imagePath: string): UTSJSO
 	}
 }
 
+function readMessageToolCallId(msg: UTSJSONObject): string {
+	const rawToolCallId = msg['tool_call_id']
+	const tcId = rawToolCallId != null ? rawToolCallId : msg['toolCallId']
+	if (tcId == null) {
+		return ''
+	}
+	return tcId as string
+}
+
+function hasCompleteFollowingToolResults(messages: UTSJSONObject[], assistantIndex: number, apiToolCalls: UTSJSONObject[]): boolean {
+	if (apiToolCalls.length == 0) {
+		return false
+	}
+	const assistantMsg = messages[assistantIndex]
+	let cursor = assistantIndex + 1
+	for (let i = 0; i < apiToolCalls.length; i++) {
+		const expectedIdRaw = apiToolCalls[i]['id'] as string | null
+		const expectedId = expectedIdRaw != null ? expectedIdRaw : ''
+		if (expectedId == '') {
+			return false
+		}
+		const embeddedResult = findEmbeddedToolResult(assistantMsg, expectedId)
+		if (embeddedResult != null) {
+			continue
+		}
+		if (cursor >= messages.length) {
+			return false
+		}
+		const nextMsg = messages[cursor]
+		const nextRole = nextMsg['role'] as string | null
+		if (nextRole != 'tool' && nextRole != 'toolResult') {
+			return false
+		}
+		const actualId = readMessageToolCallId(nextMsg)
+		if (actualId != expectedId) {
+			return false
+		}
+		cursor++
+	}
+	return true
+}
+
+function appendPendingToolCallIds(apiToolCalls: UTSJSONObject[], pendingToolCallIds: string[], msg: UTSJSONObject): void {
+	for (let i = 0; i < apiToolCalls.length; i++) {
+		const rawId = apiToolCalls[i]['id'] as string | null
+		const id = rawId != null ? rawId : ''
+		if (id != '') {
+			const embeddedResult = findEmbeddedToolResult(msg, id)
+			if (embeddedResult == null) {
+				pendingToolCallIds.push(id)
+			}
+		}
+	}
+}
+
+function appendEmbeddedToolResultMessages(apiMessages: UTSJSONObject[], apiToolCalls: UTSJSONObject[], msg: UTSJSONObject): void {
+	for (let i = 0; i < apiToolCalls.length; i++) {
+		const rawId = apiToolCalls[i]['id'] as string | null
+		const id = rawId != null ? rawId : ''
+		if (id == '') {
+			continue
+		}
+		const embeddedResult = findEmbeddedToolResult(msg, id)
+		if (embeddedResult != null) {
+			apiMessages.push({
+				role: 'tool',
+				tool_call_id: id,
+				content: embeddedResult,
+			} as UTSJSONObject)
+		}
+	}
+}
+
+function consumePendingToolCallId(pendingToolCallIds: string[], toolCallId: string): boolean {
+	if (pendingToolCallIds.length == 0 || toolCallId == '') {
+		return false
+	}
+	if (pendingToolCallIds[0] != toolCallId) {
+		return false
+	}
+	pendingToolCallIds.splice(0, 1)
+	return true
+}
+
 function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[], supportsVision: boolean): UTSJSONObject[] {
 	const apiMessages: UTSJSONObject[] = []
+	const pendingToolCallIds: string[] = []
 	if (systemPrompt != '') {
 		apiMessages.push({
 			role: 'system',
@@ -570,25 +696,42 @@ function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[], su
 		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && apiToolCalls.length == 0) continue
 
 		if (role == 'tool' || role == 'toolResult') {
-			const rawToolCallId = msg['tool_call_id']
-			const tcId = rawToolCallId != null ? rawToolCallId : msg['toolCallId']
-			if (tcId == null || (tcId as string) == '') continue
+			const tcId = readMessageToolCallId(msg)
+			if (tcId == '') continue
+			if (consumePendingToolCallId(pendingToolCallIds, tcId) == false) {
+				console.log('[LLM] 跳过孤立 toolResult，避免 OpenAI 400 | tool_call_id=' + tcId)
+				continue
+			}
 			apiMessages.push({
 				role: 'tool',
-				tool_call_id: tcId as string,
+				tool_call_id: tcId,
 				content: getMessageApiText(msg),
 			} as UTSJSONObject)
 		} else if (role == 'assistant' && apiToolCalls.length > 0) {
-			const amsg: UTSJSONObject = {
-				role: 'assistant',
-				content: getMessageApiText(msg),
-				tool_calls: apiToolCalls,
-			} as UTSJSONObject
-			const reasoningHistory = getMessageReasoningText(msg)
-			if (reasoningHistory != '') {
-				amsg['reasoning_content'] = reasoningHistory
+			if (hasCompleteFollowingToolResults(messages, i, apiToolCalls) == true) {
+				const amsg: UTSJSONObject = {
+					role: 'assistant',
+					content: getMessageApiText(msg),
+					tool_calls: apiToolCalls,
+				} as UTSJSONObject
+				const reasoningHistory = getMessageReasoningText(msg)
+				if (reasoningHistory != '') {
+					amsg['reasoning_content'] = reasoningHistory
+				}
+				apiMessages.push(amsg)
+				appendEmbeddedToolResultMessages(apiMessages, apiToolCalls, msg)
+				appendPendingToolCallIds(apiToolCalls, pendingToolCallIds, msg)
+			} else {
+				const textContent = getMessageApiText(msg)
+				if (textContent != '') {
+					apiMessages.push({
+						role: 'assistant',
+						content: textContent,
+					} as UTSJSONObject)
+				} else {
+					console.log('[LLM] 跳过缺少 toolResult 的历史工具调用，避免 OpenAI 400')
+				}
 			}
-			apiMessages.push(amsg)
 		} else {
 			const textContent = getMessageApiText(msg)
 			const imagePath = getFirstImagePathFromParts(msg)
