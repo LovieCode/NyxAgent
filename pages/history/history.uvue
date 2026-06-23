@@ -103,6 +103,9 @@
 	import {
 		deleteGroupAgentContextRecord,
 		getGroupAgentContextRecord,
+		getGroupChats,
+		getGroupMessages,
+		getGroupSessions,
 		listGroupAgentContextRecords,
 	} from '@/utils/group-chat-service.uts'
 
@@ -225,6 +228,80 @@
 				this.loadGroupHistory()
 			},
 
+			buildLegacyContextPreview(messages: UTSJSONObject[], centerIndex: number): UTSJSONObject[] {
+				const result: UTSJSONObject[] = []
+				let start = centerIndex - 12
+				if (start < 0) { start = 0 }
+				for (let i = start; i <= centerIndex && i < messages.length; i++) {
+					const msg = messages[i]
+					const visible = msg['visible'] as boolean | null
+					if (visible == false) { continue }
+					const roleRaw = msg['role'] as string | null
+					const role = roleRaw != null ? roleRaw : ''
+					if (role != 'user' && role != 'assistant') { continue }
+					const senderName = msg['senderName'] as string | null
+					const senderType = msg['senderType'] as string | null
+					const contentRaw = msg['content'] as string | null
+					const timestampRaw = msg['timestamp'] as number | null
+					result.push({
+						role: role,
+						senderType: senderType != null ? senderType : '',
+						senderName: this.resolveGroupPreviewSenderName(senderName, senderType, role),
+						content: contentRaw != null ? contentRaw : '',
+						timestamp: timestampRaw != null ? timestampRaw : 0,
+					} as UTSJSONObject)
+				}
+				return result
+			},
+
+			appendLegacyGroupContextItems(result: UTSJSONObject[]): void {
+				if (this.activeAgentId == '') { return }
+				const groups = getGroupChats()
+				for (let gi = 0; gi < groups.length; gi++) {
+					const group = groups[gi]
+					const sessions = getGroupSessions(group.id)
+					for (let si = 0; si < sessions.length; si++) {
+						const session = sessions[si]
+						const messages = getGroupMessages(group.id, session.id)
+						for (let mi = 0; mi < messages.length; mi++) {
+							const msg = messages[mi]
+							const senderAgentId = msg['senderAgentId'] as string | null
+							if (senderAgentId != this.activeAgentId) { continue }
+							const visible = msg['visible'] as boolean | null
+							if (visible == false) { continue }
+							const role = msg['role'] as string | null
+							if (role != 'assistant') { continue }
+							const contextRecordId = msg['contextRecordId'] as string | null
+							if (contextRecordId != null && contextRecordId != '') { continue }
+							const messageIdRaw = msg['id'] as string | null
+							const timestampRaw = msg['timestamp'] as number | null
+							const contentRaw = msg['content'] as string | null
+							const contextCount = this.buildLegacyContextPreview(messages, mi).length
+							const messageId = messageIdRaw != null && messageIdRaw != '' ? messageIdRaw : 'legacy-' + mi.toString()
+							let preview = contentRaw != null ? contentRaw : ''
+							if (preview == '') { preview = '旧群聊发言记录：无法还原完整私密上下文' }
+							if (preview.length > 50) { preview = preview.substring(0, 50) + '...' }
+							result.push({
+								id: 'legacy:' + group.id + ':' + session.id + ':' + messageId,
+								type: 'legacy_group_message',
+								agent_id: this.activeAgentId,
+								group_id: group.id,
+								group_name: group.name,
+								session_id: session.id,
+								session_title: session.title,
+								message_index: mi,
+								title: group.name + ' / ' + session.title,
+								created_at: timestampRaw != null ? timestampRaw : session.updatedAt,
+								updated_at: timestampRaw != null ? timestampRaw : session.updatedAt,
+								message_count: contextCount,
+								preview: preview,
+								model: '旧群聊记录',
+							} as UTSJSONObject)
+						}
+					}
+				}
+			},
+
 			loadGroupHistory(): void {
 				const result: UTSJSONObject[] = []
 				if (this.activeAgentId == '') {
@@ -262,6 +339,15 @@
 						model: '群聊上下文',
 					} as UTSJSONObject)
 				}
+				this.appendLegacyGroupContextItems(result)
+				result.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
+					const at = a['updated_at'] as number | null
+					const bt = b['updated_at'] as number | null
+					const av = at != null ? at : 0
+					const bv = bt != null ? bt : 0
+					if (av == bv) { return 0 }
+					return av > bv ? -1 : 1
+				})
 				this.groupHistoryList = result
 			},
 
@@ -560,15 +646,32 @@
 				let previewJson = '[]'
 				let subtitle = ''
 				if (tab == 'group') {
-					const recordId = item['id'] as string | null
-					const agentId = item['agent_id'] as string | null
-					if (recordId != null && recordId != '' && agentId != null && agentId != '') {
-						const record = getGroupAgentContextRecord(agentId, recordId)
-						if (record != null) {
-							previewJson = JSON.stringify(record, null, 2)
-							const runtimeMessages = record['runtimeMessages'] as UTSJSONObject[] | null
-							const count = runtimeMessages != null ? runtimeMessages.length : 0
-							subtitle = '该智能体实际收到的群聊上下文 · ' + count + ' 条 runtime messages'
+					const itemType = item['type'] as string | null
+					if (itemType == 'legacy_group_message') {
+						const groupId = item['group_id'] as string | null
+						const sessionId = item['session_id'] as string | null
+						const messageIndexRaw = item['message_index'] as number | null
+						if (groupId != null && groupId != '' && sessionId != null && sessionId != '' && messageIndexRaw != null) {
+							const messages = getGroupMessages(groupId, sessionId)
+							const context = this.buildLegacyContextPreview(messages, messageIndexRaw)
+							previewJson = JSON.stringify({
+								type: 'legacy_group_message',
+								note: '旧数据没有保存私密调度上下文；这里只能展示该智能体发言前的公开群聊上下文。',
+								contextMessages: context,
+							} as UTSJSONObject, null, 2)
+							subtitle = '旧群聊记录：只能还原公开上下文 · ' + context.length + ' 条'
+						}
+					} else {
+						const recordId = item['id'] as string | null
+						const agentId = item['agent_id'] as string | null
+						if (recordId != null && recordId != '' && agentId != null && agentId != '') {
+							const record = getGroupAgentContextRecord(agentId, recordId)
+							if (record != null) {
+								previewJson = JSON.stringify(record, null, 2)
+								const runtimeMessages = record['runtimeMessages'] as UTSJSONObject[] | null
+								const count = runtimeMessages != null ? runtimeMessages.length : 0
+								subtitle = '该智能体实际收到的群聊上下文 · ' + count + ' 条 runtime messages'
+							}
 						}
 					}
 				} else {
