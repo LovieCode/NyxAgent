@@ -31,13 +31,12 @@
 
 		<view v-else-if="role == 'assistant' && msgSegmentation == true && renderContentParts.length > 1" class="assistant-segment-list">
 			<view v-for="(part, pi) in renderContentParts" :key="'assistant-segment-' + pi" class="ai-row">
-				<image v-if="agentAvatar != '' && pi == 0" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" @click.stop="onAvatarClick" />
-				<view v-else-if="pi == 0" class="chat-avatar ai-avatar" @click.stop="onAvatarClick">
+				<image v-if="agentAvatar != ''" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" @click.stop="onAvatarClick" />
+				<view v-else class="chat-avatar ai-avatar" @click.stop="onAvatarClick">
 					<text class="chat-avatar-text">AI</text>
 				</view>
-				<view v-else class="chat-avatar ai-avatar-spacer" />
 				<view class="ai-stack">
-					<text v-if="assistantName != '' && pi == 0" class="speaker-name assistant-name">{{assistantName}}</text>
+					<text v-if="assistantName != ''" class="speaker-name assistant-name">{{assistantName}}</text>
 					<view class="ai-content timeline-content" :class="isPressed ? 'bubble-pressed' : ''"
 						@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
 						@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
@@ -757,10 +756,6 @@
 		align-items: center;
 	}
 	.ai-avatar-image {
-		margin-right: 16rpx;
-	}
-	.ai-avatar-spacer {
-		background-color: transparent;
 		margin-right: 16rpx;
 	}
 	.assistant-segment-list {
