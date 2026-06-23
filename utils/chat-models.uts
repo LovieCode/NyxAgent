@@ -1,9 +1,10 @@
 /**
  * 对话系统数据模型
  *
- * 参考 AstrBot webui 的 ChatRecord / MessagePart / MessageDisplayBlock 分层：
- * - 页面和数据库仍然使用 UTSJSONObject，保证兼容旧数据。
- * - 新代码统一通过这些工厂和读取函数访问字段，别再到处手搓 key 了。
+ * 参考 AstrBot webui 的 ChatRecord / MessagePart：
+ * - 顶层消息只负责角色、时间、流式状态。
+ * - message: ChatPart[] 是唯一内容真相。
+ * - UI blocks、正文、思考过程、工具状态全部从 parts 派生。
  */
 
 export const CHAT_ROLE_USER = 'user'
@@ -15,6 +16,14 @@ export const CHAT_MESSAGE_TYPE_IMAGE = 'image'
 export const CHAT_MESSAGE_TYPE_FILE = 'file'
 export const CHAT_MESSAGE_TYPE_LOCATION = 'location'
 export const CHAT_MESSAGE_TYPE_VOICE = 'voice'
+
+export const CHAT_PART_PLAIN = 'plain'
+export const CHAT_PART_THINK = 'think'
+export const CHAT_PART_TOOL_CALL = 'tool_call'
+export const CHAT_PART_IMAGE = 'image'
+export const CHAT_PART_FILE = 'file'
+export const CHAT_PART_LOCATION = 'location'
+export const CHAT_PART_RECORD = 'record'
 
 export const CHAT_BLOCK_TEXT = 'text'
 export const CHAT_BLOCK_THINKING = 'thinking'
@@ -65,32 +74,126 @@ export function createEmptyAgentSnapshot(): ChatAgentSnapshot {
 	} as ChatAgentSnapshot
 }
 
-export function createTextMessage(role: string, content: string): UTSJSONObject {
+export function createPlainPart(text: string): UTSJSONObject {
+	return {
+		type: CHAT_PART_PLAIN,
+		text: text,
+	} as UTSJSONObject
+}
+
+export function createThinkPart(text: string): UTSJSONObject {
+	return {
+		type: CHAT_PART_THINK,
+		think: text,
+	} as UTSJSONObject
+}
+
+export function createToolCallItem(id: string, name: string, args: string, timestamp: number, status: string): UTSJSONObject {
+	return {
+		id: id,
+		name: name,
+		arguments: args,
+		args: args,
+		ts: timestamp,
+		status: status,
+		result: '',
+		isError: false,
+	} as UTSJSONObject
+}
+
+export function createToolCallPart(toolCalls: UTSJSONObject[]): UTSJSONObject {
+	return {
+		type: CHAT_PART_TOOL_CALL,
+		tool_calls: toolCalls,
+	} as UTSJSONObject
+}
+
+export function createImagePart(imagePath: string): UTSJSONObject {
+	return {
+		type: CHAT_PART_IMAGE,
+		url: imagePath,
+		path: imagePath,
+	} as UTSJSONObject
+}
+
+export function createFilePart(fileName: string, filePath: string): UTSJSONObject {
+	return {
+		type: CHAT_PART_FILE,
+		filename: fileName,
+		path: filePath,
+	} as UTSJSONObject
+}
+
+export function createLocationPart(locationText: string): UTSJSONObject {
+	return {
+		type: CHAT_PART_LOCATION,
+		text: locationText,
+	} as UTSJSONObject
+}
+
+export function createRecordPart(tempPath: string): UTSJSONObject {
+	return {
+		type: CHAT_PART_RECORD,
+		url: tempPath,
+		path: tempPath,
+	} as UTSJSONObject
+}
+
+export function extractPlainText(parts: UTSJSONObject[]): string {
+	let text = ''
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		const type = part['type'] as string | null
+		if (type == CHAT_PART_PLAIN) {
+			const rawText = part['text'] as string | null
+			if (rawText != null) {
+				text += rawText
+			}
+		} else if (type == CHAT_PART_LOCATION) {
+			const rawLocation = part['text'] as string | null
+			if (rawLocation != null) {
+				if (text != '') { text += '\n' }
+				text += rawLocation
+			}
+		}
+	}
+	return text
+}
+
+export function getMessageParts(message: UTSJSONObject): UTSJSONObject[] {
+	const parts = message['message'] as UTSJSONObject[] | null
+	if (parts != null) {
+		return parts
+	}
+	return [] as UTSJSONObject[]
+}
+
+export function createChatMessage(role: string, parts: UTSJSONObject[], timestamp: number): UTSJSONObject {
 	return {
 		role: role,
-		content: content,
+		content: extractPlainText(parts),
+		message: parts,
 		msgType: CHAT_MESSAGE_TYPE_TEXT,
-		timestamp: Date.now(),
+		timestamp: timestamp,
 	} as UTSJSONObject
+}
+
+export function createTextMessage(role: string, content: string): UTSJSONObject {
+	return createChatMessage(role, [createPlainPart(content)], Date.now())
 }
 
 export function createImageMessage(imagePath: string): UTSJSONObject {
-	return {
-		role: CHAT_ROLE_USER,
-		content: '[图片]',
-		msgType: CHAT_MESSAGE_TYPE_IMAGE,
-		imageUrl: imagePath,
-		timestamp: Date.now(),
-	} as UTSJSONObject
+	const msg = createChatMessage(CHAT_ROLE_USER, [createImagePart(imagePath)], Date.now())
+	msg['content'] = '[图片]'
+	msg['msgType'] = CHAT_MESSAGE_TYPE_IMAGE
+	msg['imageUrl'] = imagePath
+	return msg
 }
 
 export function createFileMessage(fileName: string, filePath: string): UTSJSONObject {
-	const msg: UTSJSONObject = {
-		role: CHAT_ROLE_USER,
-		content: '[文件] ' + fileName,
-		msgType: CHAT_MESSAGE_TYPE_FILE,
-		timestamp: Date.now(),
-	}
+	const msg = createChatMessage(CHAT_ROLE_USER, [createFilePart(fileName, filePath)], Date.now())
+	msg['content'] = '[文件] ' + fileName
+	msg['msgType'] = CHAT_MESSAGE_TYPE_FILE
 	if (filePath != '') {
 		msg['imageUrl'] = filePath
 	}
@@ -98,51 +201,29 @@ export function createFileMessage(fileName: string, filePath: string): UTSJSONOb
 }
 
 export function createLocationMessage(locationText: string): UTSJSONObject {
-	return {
-		role: CHAT_ROLE_USER,
-		content: locationText,
-		msgType: CHAT_MESSAGE_TYPE_LOCATION,
-		timestamp: Date.now(),
-	} as UTSJSONObject
-}
-
-export function createVoiceMessage(tempPath: string): UTSJSONObject {
-	return {
-		role: CHAT_ROLE_USER,
-		content: '[语音消息]',
-		msgType: CHAT_MESSAGE_TYPE_VOICE,
-		imageUrl: tempPath,
-		timestamp: Date.now(),
-	} as UTSJSONObject
-}
-
-export function createAssistantStreamingMessage(content: string, thinking: string, blocks: UTSJSONObject[] | null, timestamp: number): UTSJSONObject {
-	const msg: UTSJSONObject = {
-		role: CHAT_ROLE_ASSISTANT,
-		content: content,
-		thinking: thinking,
-		msgType: CHAT_MESSAGE_TYPE_TEXT,
-		isStreaming: true,
-		timestamp: timestamp,
-	}
-	if (blocks != null) {
-		msg['blocks'] = blocks
-	}
+	const msg = createChatMessage(CHAT_ROLE_USER, [createLocationPart(locationText)], Date.now())
+	msg['content'] = locationText
+	msg['msgType'] = CHAT_MESSAGE_TYPE_LOCATION
 	return msg
 }
 
-export function createAssistantFinalMessage(content: string, thinking: string, blocks: UTSJSONObject[] | null, timestamp: number): UTSJSONObject {
-	const msg: UTSJSONObject = {
-		role: CHAT_ROLE_ASSISTANT,
-		content: content,
-		thinking: thinking,
-		msgType: CHAT_MESSAGE_TYPE_TEXT,
-		isStreaming: false,
-		timestamp: timestamp,
-	}
-	if (blocks != null) {
-		msg['blocks'] = blocks
-	}
+export function createVoiceMessage(tempPath: string): UTSJSONObject {
+	const msg = createChatMessage(CHAT_ROLE_USER, [createRecordPart(tempPath)], Date.now())
+	msg['content'] = '[语音消息]'
+	msg['msgType'] = CHAT_MESSAGE_TYPE_VOICE
+	msg['imageUrl'] = tempPath
+	return msg
+}
+
+export function createAssistantStreamingMessage(parts: UTSJSONObject[], timestamp: number): UTSJSONObject {
+	const msg = createChatMessage(CHAT_ROLE_ASSISTANT, parts, timestamp)
+	msg['isStreaming'] = true
+	return msg
+}
+
+export function createAssistantFinalMessage(parts: UTSJSONObject[], timestamp: number): UTSJSONObject {
+	const msg = createChatMessage(CHAT_ROLE_ASSISTANT, parts, timestamp)
+	msg['isStreaming'] = false
 	return msg
 }
 
@@ -178,12 +259,26 @@ export function getMessageRole(message: UTSJSONObject): string {
 
 export function getMessageContent(message: UTSJSONObject): string {
 	const raw = message['content'] as string | null
-	return raw != null ? raw : ''
+	if (raw != null && raw != '') {
+		return raw
+	}
+	return extractPlainText(getMessageParts(message))
 }
 
 export function getMessageThinking(message: UTSJSONObject): string {
-	const raw = message['thinking'] as string | null
-	return raw != null ? raw : ''
+	let thinking = ''
+	const parts = getMessageParts(message)
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		const type = part['type'] as string | null
+		if (type == CHAT_PART_THINK) {
+			const raw = part['think'] as string | null
+			if (raw != null && raw != '') {
+				thinking += raw
+			}
+		}
+	}
+	return thinking
 }
 
 export function getMessageTimestamp(message: UTSJSONObject): number {
@@ -195,15 +290,19 @@ export function isStreamingAssistant(message: UTSJSONObject): boolean {
 	return getMessageRole(message) == CHAT_ROLE_ASSISTANT && (message['isStreaming'] as boolean | null) == true
 }
 
-export function cloneBlocks(blocks: UTSJSONObject[] | null): UTSJSONObject[] {
+export function cloneParts(parts: UTSJSONObject[] | null): UTSJSONObject[] {
 	const copied: UTSJSONObject[] = []
-	if (blocks == null) {
+	if (parts == null) {
 		return copied
 	}
-	for (let i = 0; i < blocks.length; i++) {
-		copied.push(blocks[i])
+	for (let i = 0; i < parts.length; i++) {
+		copied.push(JSON.parse(JSON.stringify(parts[i])) as UTSJSONObject)
 	}
 	return copied
+}
+
+export function cloneBlocks(blocks: UTSJSONObject[] | null): UTSJSONObject[] {
+	return cloneParts(blocks)
 }
 
 export function cloneMessage(message: UTSJSONObject): UTSJSONObject {

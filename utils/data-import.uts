@@ -105,22 +105,53 @@ function updateMappedAgentAssets(agents: UTSJSONObject[], assetMap: UTSJSONObjec
 	}
 }
 
+
+function updatePartAssetPath(part: UTSJSONObject, mappedPath: string): void {
+	part['path'] = mappedPath
+	part['url'] = mappedPath
+}
+
 function updateMappedMessageAssets(messages: UTSJSONObject[], assetMap: UTSJSONObject): void {
 	for (let i = 0; i < messages.length; i++) {
 		const id = messages[i]['id'] as number | null
 		const idText = id != null ? (id + '') : (i + '')
-		const imagePath = assetMap['messages.' + idText + '.imageUrl'] as string | null
-		if (imagePath != null && imagePath != '') {
-			const extraText = messages[i]['extra'] as string | null
-			let extra: UTSJSONObject = {}
-			if (extraText != null && extraText != '') {
-				try {
-					extra = JSON.parse(extraText) as UTSJSONObject
-				} catch (_e: any) {
-					extra = {}
+		const extraText = messages[i]['extra'] as string | null
+		let extra: UTSJSONObject = {}
+		if (extraText != null && extraText != '') {
+			try {
+				extra = JSON.parse(extraText) as UTSJSONObject
+			} catch (_e: any) {
+				extra = {}
+			}
+		}
+		const parts = extra['message'] as UTSJSONObject[] | null
+		if (parts != null) {
+			let changed = false
+			for (let pi = 0; pi < parts.length; pi++) {
+				const mapped = assetMap['messages.' + idText + '.message.' + pi + '.path'] as string | null
+				if (mapped != null && mapped != '') {
+					updatePartAssetPath(parts[pi], mapped)
+					changed = true
 				}
 			}
+			if (changed == true) {
+				extra['message'] = parts
+				messages[i]['extra'] = JSON.stringify(extra)
+			}
+		}
+		const imagePath = assetMap['messages.' + idText + '.imageUrl'] as string | null
+		if (imagePath != null && imagePath != '') {
 			extra['imageUrl'] = imagePath
+			if (parts != null) {
+				for (let pi = 0; pi < parts.length; pi++) {
+					const partType = parts[pi]['type'] as string | null
+					if (partType == 'image') {
+						updatePartAssetPath(parts[pi], imagePath)
+						break
+					}
+				}
+				extra['message'] = parts
+			}
 			messages[i]['extra'] = JSON.stringify(extra)
 		}
 	}

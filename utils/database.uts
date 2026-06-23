@@ -456,35 +456,19 @@ export function saveConversation(
 		const content = rawContent != null ? rawContent : ''
 		const timestamp = rawTimestamp != null ? rawTimestamp : now
 
-		// 收集可选字段到 extra
+		// parts 是消息唯一内容真相；extra 只保存运行状态和 message parts。
 		const extra: UTSJSONObject = {}
+		const messageParts = msg['message']
+		if (messageParts != null) {
+			extra['message'] = messageParts
+		}
 		const isStreaming = msg['isStreaming']
 		if (isStreaming != null) {
 			extra['isStreaming'] = isStreaming
 		}
-		const thinking = msg['thinking']
-		if (thinking != null && thinking != '') {
-			extra['thinking'] = thinking
-		}
 		const isError = msg['isError']
 		if (isError != null) {
 			extra['isError'] = isError
-		}
-		const toolName = msg['toolName']
-		if (toolName != null) {
-			extra['toolName'] = toolName
-		}
-		const toolStatus = msg['toolStatus']
-		if (toolStatus != null) {
-			extra['toolStatus'] = toolStatus
-		}
-		const msgType = msg['msgType']
-		if (msgType != null) {
-			extra['msgType'] = msgType
-		}
-		const imageUrl = msg['imageUrl']
-		if (imageUrl != null) {
-			extra['imageUrl'] = imageUrl
 		}
 		const toolCallId = msg['tool_call_id']
 		if (toolCallId != null) {
@@ -494,17 +478,9 @@ export function saveConversation(
 		if (camelToolCallId != null) {
 			extra['toolCallId'] = camelToolCallId
 		}
-		const toolCalls = msg['tool_calls']
-		if (toolCalls != null) {
-			extra['tool_calls'] = toolCalls
-		}
-		const blocks = msg['blocks']
-		if (blocks != null) {
-			extra['blocks'] = blocks
-		}
-		const args = msg['args']
-		if (args != null) {
-			extra['args'] = args
+		const toolName = msg['toolName']
+		if (toolName != null) {
+			extra['toolName'] = toolName
 		}
 		const extraStr = JSON.stringify(extra)
 
@@ -573,27 +549,15 @@ export function getMessages(conversationId: string): UTSJSONObject[] {
 		if (extraStr != null && extraStr != '' && extraStr != '{}') {
 			try {
 				const extra = JSON.parse(extraStr) as UTSJSONObject
-				// 手动合并已知的 extra 字段（UTS 不支持 Object.keys）
-		if (extra['isStreaming'] != null) {
-			row['isStreaming'] = extra['isStreaming']
-		}
-		if (extra['thinking'] != null) {
-			row['thinking'] = extra['thinking']
-		}
-		if (extra['isError'] != null) {
+				// 手动合并已知 extra 字段；message parts 是主存储。
+				if (extra['message'] != null) {
+					row['message'] = extra['message']
+				}
+				if (extra['isStreaming'] != null) {
+					row['isStreaming'] = extra['isStreaming']
+				}
+				if (extra['isError'] != null) {
 					row['isError'] = extra['isError']
-				}
-				if (extra['toolName'] != null) {
-					row['toolName'] = extra['toolName']
-				}
-				if (extra['toolStatus'] != null) {
-					row['toolStatus'] = extra['toolStatus']
-				}
-				if (extra['msgType'] != null) {
-					row['msgType'] = extra['msgType']
-				}
-				if (extra['imageUrl'] != null) {
-					row['imageUrl'] = extra['imageUrl']
 				}
 				if (extra['tool_call_id'] != null) {
 					row['tool_call_id'] = extra['tool_call_id']
@@ -601,14 +565,8 @@ export function getMessages(conversationId: string): UTSJSONObject[] {
 				if (extra['toolCallId'] != null) {
 					row['toolCallId'] = extra['toolCallId']
 				}
-				if (extra['tool_calls'] != null) {
-					row['tool_calls'] = extra['tool_calls']
-				}
-				if (extra['args'] != null) {
-					row['args'] = extra['args']
-				}
-				if (extra['blocks'] != null) {
-					row['blocks'] = extra['blocks']
+				if (extra['toolName'] != null) {
+					row['toolName'] = extra['toolName']
 				}
 			} catch (_e: any) {
 				// ignore parse error

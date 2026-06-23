@@ -1,15 +1,15 @@
 /**
  * 对话消息 reducer
  *
- * 页面只负责调度；消息如何追加、合并、截断、同步工具状态都放这里。
- * 架构参考 AstrBot webui 的 appendPlain / appendReasoningPart / upsertToolCall / finishToolCall。
+ * AstrBot 风格：message: ChatPart[] 是唯一内容真相。
+ * UI blocks、正文、思考过程、工具状态全部由 parts 派生。
  */
 
 import { AgentEvent } from '@/utils/event.uts'
 import {
-	CHAT_BLOCK_TEXT,
-	CHAT_BLOCK_THINKING,
-	CHAT_BLOCK_TOOL_CALL,
+	CHAT_PART_PLAIN,
+	CHAT_PART_THINK,
+	CHAT_PART_TOOL_CALL,
 	CHAT_ROLE_ASSISTANT,
 	CHAT_ROLE_USER,
 	TOOL_STATUS_PENDING,
@@ -17,17 +17,19 @@ import {
 	TOOL_STATUS_COMPLETED,
 	TOOL_STATUS_ERROR,
 	type ChatRuntimeContextOptions,
-	cloneBlocks,
+	cloneParts,
 	cloneMessage,
 	createAssistantFinalMessage,
 	createAssistantStreamingMessage,
-	createTextBlock,
-	createThinkingBlock,
-	createToolCallBlock,
+	createPlainPart,
+	createThinkPart,
+	createToolCallItem,
+	createToolCallPart,
 	createTextMessage,
+	extractPlainText,
 	getMessageContent,
+	getMessageParts,
 	getMessageRole,
-	getMessageThinking,
 	getMessageTimestamp,
 	isStreamingAssistant,
 } from '@/utils/chat-models.uts'
@@ -45,6 +47,15 @@ function findLastAssistantIndex(messages: UTSJSONObject[]): number {
 	return -1
 }
 
+function findLastStreamingAssistantIndex(messages: UTSJSONObject[]): number {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		if (isStreamingAssistant(messages[i]) == true) {
+			return i
+		}
+	}
+	return -1
+}
+
 function findLastUserText(messages: UTSJSONObject[]): string {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const role = getMessageRole(messages[i])
@@ -55,10 +66,16 @@ function findLastUserText(messages: UTSJSONObject[]): string {
 	return ''
 }
 
+function readToolCallId(toolCall: UTSJSONObject): string {
+	const rawId = toolCall['id'] as string | null
+	return rawId != null ? rawId : ''
+}
+
 function readToolName(toolCall: UTSJSONObject): string {
 	const fobj = toolCall['function'] as UTSJSONObject | null
 	if (fobj == null) {
-		return ''
+		const raw = toolCall['name'] as string | null
+		return raw != null ? raw : ''
 	}
 	const raw = fobj['name'] as string | null
 	return raw != null ? raw : ''
@@ -67,82 +84,268 @@ function readToolName(toolCall: UTSJSONObject): string {
 function readToolArgs(toolCall: UTSJSONObject): string {
 	const fobj = toolCall['function'] as UTSJSONObject | null
 	if (fobj == null) {
-		return '{}'
+		const raw = toolCall['arguments'] as string | null
+		if (raw != null) { return raw }
+		const rawArgs = toolCall['args'] as string | null
+		return rawArgs != null ? rawArgs : '{}'
 	}
 	const raw = fobj['arguments'] as string | null
 	return raw != null ? raw : '{}'
 }
 
-function buildToolCallBlocks(toolCalls: UTSJSONObject[] | null, timestamp: number): UTSJSONObject[] {
-	const blocks: UTSJSONObject[] = []
+function refreshMessagePreview(message: UTSJSONObject): void {
+	const parts = getMessageParts(message)
+	message['content'] = extractPlainText(parts)
+}
+
+function ensureStreamingAssistant(messages: UTSJSONObject[]): number {
+	const lastIdx = messages.length - 1
+	if (lastIdx >= 0 && isStreamingAssistant(messages[lastIdx]) == true) {
+		return lastIdx
+	}
+	const now = Date.now()
+	messages.push(createAssistantStreamingMessage([] as UTSJSONObject[], now))
+	return messages.length - 1
+}
+
+function findLastPartIndex(parts: UTSJSONObject[], type: string): number {
+	for (let i = parts.length - 1; i >= 0; i--) {
+		const partType = parts[i]['type'] as string | null
+		if (partType == type) {
+			return i
+		}
+	}
+	return -1
+}
+
+function hasPlainTextPart(parts: UTSJSONObject[]): boolean {
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		if ((part['type'] as string | null) == CHAT_PART_PLAIN) {
+			const text = part['text'] as string | null
+			if (text != null && text != '') {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+function hasThinkPart(parts: UTSJSONObject[]): boolean {
+	for (let i = 0; i < parts.length; i++) {
+		if ((parts[i]['type'] as string | null) == CHAT_PART_THINK) {
+			return true
+		}
+	}
+	return false
+}
+
+function hasToolCallPart(parts: UTSJSONObject[]): boolean {
+	for (let i = 0; i < parts.length; i++) {
+		if ((parts[i]['type'] as string | null) == CHAT_PART_TOOL_CALL) {
+			return true
+		}
+	}
+	return false
+}
+
+function appendPlainPart(parts: UTSJSONObject[], text: string): void {
+	if (text == '') { return }
+	const lastIdx = parts.length - 1
+	if (lastIdx >= 0 && (parts[lastIdx]['type'] as string | null) == CHAT_PART_PLAIN) {
+		const oldText = parts[lastIdx]['text'] as string | null
+		parts[lastIdx]['text'] = (oldText != null ? oldText : '') + text
+		return
+	}
+	parts.push(createPlainPart(text))
+}
+
+function ensurePlainPart(parts: UTSJSONObject[], text: string): void {
+	if (text == '') { return }
+	if (hasPlainTextPart(parts) == true) { return }
+	parts.push(createPlainPart(text))
+}
+
+function appendThinkPart(parts: UTSJSONObject[], text: string): void {
+	if (text == '') { return }
+	const lastIdx = parts.length - 1
+	if (lastIdx >= 0 && (parts[lastIdx]['type'] as string | null) == CHAT_PART_THINK) {
+		const oldThinking = parts[lastIdx]['think'] as string | null
+		parts[lastIdx]['think'] = (oldThinking != null ? oldThinking : '') + text
+		return
+	}
+	parts.push(createThinkPart(text))
+}
+
+function ensureThinkPart(parts: UTSJSONObject[], text: string): void {
+	if (text == '') { return }
+	if (hasThinkPart(parts) == true) { return }
+	parts.push(createThinkPart(text))
+}
+
+function buildOpenAIToolCall(item: UTSJSONObject): UTSJSONObject {
+	const id = item['id'] as string | null
+	const name = item['name'] as string | null
+	const rawArgs = item['arguments'] as string | null
+	return {
+		id: id != null ? id : '',
+		type: 'function',
+		function: {
+			name: name != null ? name : '',
+			arguments: rawArgs != null ? rawArgs : '{}',
+		} as UTSJSONObject,
+	} as UTSJSONObject
+}
+
+function buildOpenAIToolCallsFromParts(parts: UTSJSONObject[]): UTSJSONObject[] {
+	const list: UTSJSONObject[] = []
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		if ((part['type'] as string | null) != CHAT_PART_TOOL_CALL) { continue }
+		const calls = part['tool_calls'] as UTSJSONObject[] | null
+		if (calls == null) { continue }
+		for (let j = 0; j < calls.length; j++) {
+			const name = calls[j]['name'] as string | null
+			if (name != null && name != '') {
+				list.push(buildOpenAIToolCall(calls[j]))
+			}
+		}
+	}
+	return list
+}
+
+function makeAssistantFromExisting(existing: UTSJSONObject, parts: UTSJSONObject[], streaming: boolean): UTSJSONObject {
+	const timestamp = getMessageTimestamp(existing)
+	const msg = streaming == true ? createAssistantStreamingMessage(parts, timestamp) : createAssistantFinalMessage(parts, timestamp)
+	const toolCalls = buildOpenAIToolCallsFromParts(parts)
+	if (toolCalls.length > 0) {
+		msg['tool_calls'] = toolCalls
+	}
+	return msg
+}
+
+function buildToolCallItems(toolCalls: UTSJSONObject[] | null, timestamp: number): UTSJSONObject[] {
+	const items: UTSJSONObject[] = []
 	if (toolCalls == null) {
-		return blocks
+		return items
 	}
 	for (let i = 0; i < toolCalls.length; i++) {
 		const name = readToolName(toolCalls[i])
 		if (name == '') {
 			continue
 		}
-		blocks.push(createToolCallBlock(name, readToolArgs(toolCalls[i]), timestamp, TOOL_STATUS_PENDING))
+		items.push(createToolCallItem(readToolCallId(toolCalls[i]), name, readToolArgs(toolCalls[i]), timestamp, TOOL_STATUS_PENDING))
 	}
-	return blocks
+	return items
 }
 
-function filterDuplicateToolBlocks(existing: UTSJSONObject[], incoming: UTSJSONObject[]): UTSJSONObject[] {
-	const result: UTSJSONObject[] = []
-	for (let i = 0; i < incoming.length; i++) {
-		const incName = incoming[i]['name'] as string | null
-		let duplicated = false
-		for (let j = 0; j < existing.length; j++) {
-			const exType = existing[j]['type'] as string | null
-			const exName = existing[j]['name'] as string | null
-			if (exType == CHAT_BLOCK_TOOL_CALL && exName != null && incName != null && exName == incName) {
-				duplicated = true
-				break
+function mergeToolCallItem(target: UTSJSONObject, incoming: UTSJSONObject, appendArgs: boolean): void {
+	const id = incoming['id'] as string | null
+	if (id != null && id != '') { target['id'] = id }
+	const name = incoming['name'] as string | null
+	if (name != null && name != '') { target['name'] = name }
+	const incomingArgs = incoming['arguments'] as string | null
+	if (incomingArgs != null && incomingArgs != '') {
+		const oldArgs = target['arguments'] as string | null
+		target['arguments'] = appendArgs == true ? ((oldArgs != null ? oldArgs : '') + incomingArgs) : incomingArgs
+		target['args'] = target['arguments']
+	}
+	const incomingStatus = incoming['status'] as string | null
+	if (incomingStatus != null && incomingStatus != '') { target['status'] = incomingStatus }
+	const incomingResult = incoming['result'] as string | null
+	if (incomingResult != null && incomingResult != '') { target['result'] = incomingResult }
+	const incomingError = incoming['isError'] as boolean | null
+	if (incomingError != null) { target['isError'] = incomingError }
+}
+
+function matchToolItem(item: UTSJSONObject, id: string, name: string): boolean {
+	const itemId = item['id'] as string | null
+	const itemName = item['name'] as string | null
+	if (id != '' && itemId != null && itemId == id) { return true }
+	if (name != '' && itemName != null && itemName == name) { return true }
+	return false
+}
+
+
+function mergeTrailingToolDelta(parts: UTSJSONObject[], incoming: UTSJSONObject): boolean {
+	const incomingName = incoming['name'] as string | null
+	const name = incomingName != null ? incomingName : ''
+	if (name == '') { return false }
+	for (let i = parts.length - 1; i >= 0; i--) {
+		const part = parts[i]
+		if ((part['type'] as string | null) != CHAT_PART_TOOL_CALL) { continue }
+		const calls = part['tool_calls'] as UTSJSONObject[] | null
+		if (calls == null) { continue }
+		for (let j = calls.length - 1; j >= 0; j--) {
+			const item = calls[j]
+			const itemName = item['name'] as string | null
+			const itemId = item['id'] as string | null
+			if (itemName != null && itemName == name && itemId != null && itemId.startsWith('tool_delta_')) {
+				mergeToolCallItem(item, incoming, false)
+				return true
 			}
 		}
-		if (duplicated == false) {
-			result.push(incoming[i])
-		}
-	}
-	return result
-}
-
-function makeAssistantFromExisting(existing: UTSJSONObject, content: string, thinking: string, blocks: UTSJSONObject[] | null, streaming: boolean): UTSJSONObject {
-	const timestamp = getMessageTimestamp(existing)
-	if (streaming == true) {
-		return createAssistantStreamingMessage(content, thinking, blocks, timestamp)
-	}
-	return createAssistantFinalMessage(content, thinking, blocks, timestamp)
-}
-
-function isAppendableAssistant(message: UTSJSONObject): boolean {
-	return isStreamingAssistant(message)
-}
-
-function hasTextBlock(blocks: UTSJSONObject[]): boolean {
-	for (let i = 0; i < blocks.length; i++) {
-		if ((blocks[i]['type'] as string | null) == CHAT_BLOCK_TEXT) {
-			return true
-		}
 	}
 	return false
 }
 
-function hasToolCallBlock(blocks: UTSJSONObject[]): boolean {
-	for (let i = 0; i < blocks.length; i++) {
-		if ((blocks[i]['type'] as string | null) == CHAT_BLOCK_TOOL_CALL) {
-			return true
+function upsertToolCallPart(parts: UTSJSONObject[], incoming: UTSJSONObject, appendArgs: boolean): void {
+	const id = incoming['id'] as string | null
+	const name = incoming['name'] as string | null
+	const safeId = id != null ? id : ''
+	const safeName = name != null ? name : ''
+	if (safeId == '' && safeName == '') { return }
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		if ((part['type'] as string | null) != CHAT_PART_TOOL_CALL) { continue }
+		const calls = part['tool_calls'] as UTSJSONObject[] | null
+		if (calls == null) { continue }
+		for (let j = 0; j < calls.length; j++) {
+			if (matchToolItem(calls[j], safeId, safeName) == true) {
+				mergeToolCallItem(calls[j], incoming, appendArgs)
+				return
+			}
+		}
+	}
+	if (appendArgs == false && mergeTrailingToolDelta(parts, incoming) == true) {
+		return
+	}
+	const lastIdx = parts.length - 1
+	if (lastIdx >= 0 && (parts[lastIdx]['type'] as string | null) == CHAT_PART_TOOL_CALL) {
+		const calls = parts[lastIdx]['tool_calls'] as UTSJSONObject[] | null
+		if (calls != null) {
+			calls.push(incoming)
+			return
+		}
+	}
+	parts.push(createToolCallPart([incoming]))
+}
+
+function updateToolCallState(parts: UTSJSONObject[], toolCallId: string, toolName: string, result: string, isError: boolean, status: string): boolean {
+	for (let i = parts.length - 1; i >= 0; i--) {
+		const part = parts[i]
+		if ((part['type'] as string | null) != CHAT_PART_TOOL_CALL) { continue }
+		const calls = part['tool_calls'] as UTSJSONObject[] | null
+		if (calls == null) { continue }
+		for (let j = calls.length - 1; j >= 0; j--) {
+			const item = calls[j]
+			if (matchToolItem(item, toolCallId, toolName) == true) {
+				if (toolCallId != '') { item['id'] = toolCallId }
+				if (toolName != '') { item['name'] = toolName }
+				item['status'] = status
+				if (status == TOOL_STATUS_RUNNING) {
+					item['ts'] = Date.now()
+				}
+				if (status == TOOL_STATUS_COMPLETED || status == TOOL_STATUS_ERROR) {
+					item['finished_ts'] = Date.now()
+					item['result'] = result
+					item['isError'] = isError
+				}
+				return true
+			}
 		}
 	}
 	return false
-}
-
-function shouldKeepEmptyToolTurnOpen(message: UTSJSONObject): boolean {
-	if (getMessageContent(message) != '') {
-		return false
-	}
-	return hasToolCallBlock(cloneBlocks(message['blocks'] as UTSJSONObject[] | null))
 }
 
 export function pushUserTextMessage(messages: UTSJSONObject[], content: string): void {
@@ -160,8 +363,9 @@ export function updateChatMessageContent(messages: UTSJSONObject[], index: numbe
 	if (index < 0 || index >= messages.length) {
 		return
 	}
-	const msg = messages[index]
+	const msg = cloneMessage(messages[index])
 	msg['content'] = content
+	msg['message'] = [createPlainPart(content)]
 	replaceMessage(messages, index, msg)
 }
 
@@ -209,250 +413,118 @@ export function appendAssistantDelta(messages: UTSJSONObject[], text: string): v
 	if (text == '') {
 		return
 	}
-	const lastIdx = messages.length - 1
-	if (lastIdx >= 0 && isAppendableAssistant(messages[lastIdx]) == true) {
-		const existing = messages[lastIdx]
-		const newBlocks = cloneBlocks(existing['blocks'] as UTSJSONObject[] | null)
-		const lastBlockIdx = newBlocks.length - 1
-		if (lastBlockIdx >= 0 && (newBlocks[lastBlockIdx]['type'] as string | null) == CHAT_BLOCK_TEXT) {
-			const oldText = newBlocks[lastBlockIdx]['text'] as string | null
-			newBlocks[lastBlockIdx] = createTextBlock((oldText != null ? oldText : '') + text)
-		} else {
-			newBlocks.push(createTextBlock(text))
-		}
-		replaceMessage(messages, lastIdx, createAssistantStreamingMessage(
-			getMessageContent(existing) + text,
-			getMessageThinking(existing),
-			newBlocks,
-			Date.now()
-		))
-		return
-	}
-	messages.push(createAssistantStreamingMessage(text, '', [createTextBlock(text)], Date.now()))
+	const idx = ensureStreamingAssistant(messages)
+	const existing = messages[idx]
+	const parts = cloneParts(getMessageParts(existing))
+	appendPlainPart(parts, text)
+	replaceMessage(messages, idx, makeAssistantFromExisting(existing, parts, true))
 }
 
 export function finishAssistantMessage(messages: UTSJSONObject[], response: string): void {
-	const lastIdx = messages.length - 1
-	if (lastIdx >= 0 && isAppendableAssistant(messages[lastIdx]) == true) {
-		const existing = messages[lastIdx]
-		let finalContent = getMessageContent(existing)
-		if (finalContent == '' && response != '') {
-			finalContent = response
-		}
-		const newBlocks = cloneBlocks(existing['blocks'] as UTSJSONObject[] | null)
-		if (finalContent != '' && hasTextBlock(newBlocks) == false) {
-			newBlocks.push(createTextBlock(finalContent))
-		}
-		replaceMessage(messages, lastIdx, createAssistantStreamingMessage(
-			finalContent,
-			getMessageThinking(existing),
-			newBlocks,
-			Date.now()
-		))
-		return
+	let idx = findLastStreamingAssistantIndex(messages)
+	if (idx < 0) {
+		if (response == '') { return }
+		idx = ensureStreamingAssistant(messages)
 	}
-	if (response != '') {
-		messages.push(createAssistantStreamingMessage(response, '', [createTextBlock(response)], Date.now()))
-	}
+	const existing = messages[idx]
+	const parts = cloneParts(getMessageParts(existing))
+	ensurePlainPart(parts, response)
+	const next = makeAssistantFromExisting(existing, parts, true)
+	refreshMessagePreview(next)
+	replaceMessage(messages, idx, next)
 }
 
 export function appendThinkingDelta(messages: UTSJSONObject[], text: string): void {
 	if (text == '') {
 		return
 	}
-	const lastIdx = messages.length - 1
-	if (lastIdx >= 0 && isAppendableAssistant(messages[lastIdx]) == true) {
-		const existing = messages[lastIdx]
-		const newBlocks = cloneBlocks(existing['blocks'] as UTSJSONObject[] | null)
-		const lastBlockIdx = newBlocks.length - 1
-		if (lastBlockIdx >= 0 && (newBlocks[lastBlockIdx]['type'] as string | null) == CHAT_BLOCK_THINKING) {
-			const oldThinking = newBlocks[lastBlockIdx]['thinking'] as string | null
-			newBlocks[lastBlockIdx] = createThinkingBlock((oldThinking != null ? oldThinking : '') + text)
-		} else {
-			newBlocks.push(createThinkingBlock(text))
-		}
-		replaceMessage(messages, lastIdx, createAssistantStreamingMessage(
-			getMessageContent(existing),
-			getMessageThinking(existing) + text,
-			newBlocks,
-			Date.now()
-		))
-		return
-	}
-	messages.push(createAssistantStreamingMessage('', text, [createThinkingBlock(text)], Date.now()))
+	const idx = ensureStreamingAssistant(messages)
+	const existing = messages[idx]
+	const parts = cloneParts(getMessageParts(existing))
+	appendThinkPart(parts, text)
+	replaceMessage(messages, idx, makeAssistantFromExisting(existing, parts, true))
 }
 
 export function finishAssistantThinking(messages: UTSJSONObject[], text: string): void {
-	const lastIdx = messages.length - 1
-	if (lastIdx >= 0 && isAppendableAssistant(messages[lastIdx]) == true) {
-		const existing = messages[lastIdx]
-		replaceMessage(messages, lastIdx, createAssistantStreamingMessage(
-			getMessageContent(existing),
-			text,
-			existing['blocks'] as UTSJSONObject[] | null,
-			Date.now()
-		))
-	}
+	if (text == '') { return }
+	const idx = ensureStreamingAssistant(messages)
+	const existing = messages[idx]
+	const parts = cloneParts(getMessageParts(existing))
+	ensureThinkPart(parts, text)
+	replaceMessage(messages, idx, makeAssistantFromExisting(existing, parts, true))
 }
 
-export function appendToolCallBlockToAssistant(messages: UTSJSONObject[], name: string, args: string): void {
-	if (name == '') {
+export function appendToolCallBlockToAssistant(messages: UTSJSONObject[], name: string, args: string, toolCallId: string = ''): void {
+	if (name == '' && toolCallId == '') {
 		return
 	}
-	const now = Date.now()
-	const lastIdx = messages.length - 1
-	const block = createToolCallBlock(name, args, now, TOOL_STATUS_PENDING)
-	if (lastIdx < 0 || isAppendableAssistant(messages[lastIdx]) == false) {
-		messages.push(createAssistantStreamingMessage('', '', [block], now))
-		return
-	}
-	const existing = messages[lastIdx]
-	const newBlocks = cloneBlocks(existing['blocks'] as UTSJSONObject[] | null)
-	let merged = false
-	for (let i = newBlocks.length - 1; i >= 0; i--) {
-		const blockType = newBlocks[i]['type'] as string | null
-		const blockName = newBlocks[i]['name'] as string | null
-		if (blockType == CHAT_BLOCK_TOOL_CALL && blockName != null && blockName == name) {
-			const oldArgs = newBlocks[i]['arguments'] as string | null
-			const oldTs = newBlocks[i]['ts']
-			const oldStatus = newBlocks[i]['status']
-			newBlocks[i] = {
-				type: CHAT_BLOCK_TOOL_CALL,
-				name: name,
-				arguments: (oldArgs != null ? oldArgs : '') + args,
-				ts: oldTs != null ? oldTs : now,
-				status: oldStatus != null ? oldStatus : TOOL_STATUS_PENDING,
-				result: '',
-			} as UTSJSONObject
-			merged = true
-			break
-		}
-	}
-	if (merged == false) {
-		newBlocks.push(block)
-	}
-	replaceMessage(messages, lastIdx, makeAssistantFromExisting(
-		existing,
-		getMessageContent(existing),
-		getMessageThinking(existing),
-		newBlocks,
-		true
-	))
+	const idx = ensureStreamingAssistant(messages)
+	const existing = messages[idx]
+	const parts = cloneParts(getMessageParts(existing))
+	const item = createToolCallItem(toolCallId, name, args, Date.now(), TOOL_STATUS_PENDING)
+	upsertToolCallPart(parts, item, true)
+	replaceMessage(messages, idx, makeAssistantFromExisting(existing, parts, true))
 }
 
 export function addToolCallMessage(messages: UTSJSONObject[], fullText: string, toolCalls: UTSJSONObject[] | null): void {
-	if (toolCalls == null || toolCalls.length == 0) {
+	if ((toolCalls == null || toolCalls.length == 0) && fullText == '') {
 		return
 	}
+	const idx = ensureStreamingAssistant(messages)
+	const existing = messages[idx]
+	const parts = cloneParts(getMessageParts(existing))
+	ensurePlainPart(parts, fullText)
 	const now = Date.now()
-	const incoming = buildToolCallBlocks(toolCalls, now)
-	const lastIdx = messages.length - 1
-	if (lastIdx < 0 || isAppendableAssistant(messages[lastIdx]) == false) {
-		const msg = createAssistantStreamingMessage(fullText, '', incoming, now)
-		msg['tool_calls'] = toolCalls
-		messages.push(msg)
-		return
+	const items = buildToolCallItems(toolCalls, now)
+	for (let i = 0; i < items.length; i++) {
+		upsertToolCallPart(parts, items[i], false)
 	}
-	const existing = messages[lastIdx]
-	const newBlocks = cloneBlocks(existing['blocks'] as UTSJSONObject[] | null)
-	const deduped = filterDuplicateToolBlocks(newBlocks, incoming)
-	for (let i = 0; i < deduped.length; i++) {
-		newBlocks.push(deduped[i])
+	const next = makeAssistantFromExisting(existing, parts, true)
+	if (toolCalls != null && toolCalls.length > 0) {
+		next['tool_calls'] = toolCalls
 	}
-	let content = getMessageContent(existing)
-	if (content == '' && fullText != '') {
-		content = fullText
-	}
-	const next = makeAssistantFromExisting(existing, content, getMessageThinking(existing), newBlocks, true)
-	next['tool_calls'] = toolCalls
-	replaceMessage(messages, lastIdx, next)
+	refreshMessagePreview(next)
+	replaceMessage(messages, idx, next)
 }
 
-export function addToolExecutionStart(messages: UTSJSONObject[], toolName: string): void {
-	if (toolName == '') {
+export function addToolExecutionStart(messages: UTSJSONObject[], toolName: string, toolCallId: string = ''): void {
+	if (toolName == '' && toolCallId == '') {
 		return
 	}
-	const assistantIdx = findLastAssistantIndex(messages)
+	const assistantIdx = findLastStreamingAssistantIndex(messages)
 	if (assistantIdx < 0) {
 		return
 	}
 	const assistantMsg = messages[assistantIdx]
-	if (isAppendableAssistant(assistantMsg) == false) {
-		return
+	const parts = cloneParts(getMessageParts(assistantMsg))
+	const updated = updateToolCallState(parts, toolCallId, toolName, '', false, TOOL_STATUS_RUNNING)
+	if (updated == false && toolName != '') {
+		const item = createToolCallItem(toolCallId, toolName, '{}', Date.now(), TOOL_STATUS_RUNNING)
+		upsertToolCallPart(parts, item, false)
 	}
-	const existingBlocks = assistantMsg['blocks'] as UTSJSONObject[] | null
-	if (existingBlocks == null) {
-		return
-	}
-	for (let i = existingBlocks.length - 1; i >= 0; i--) {
-		const block = existingBlocks[i]
-		const blockType = block['type'] as string | null
-		const blockName = block['name'] as string | null
-		const blockStatus = block['status'] as string | null
-		if (blockType == CHAT_BLOCK_TOOL_CALL && blockName != null && blockName == toolName && blockStatus == TOOL_STATUS_PENDING) {
-			const newBlocks = cloneBlocks(existingBlocks)
-			newBlocks[i] = {
-				type: CHAT_BLOCK_TOOL_CALL,
-				name: toolName,
-				arguments: block['arguments'],
-				ts: Date.now(),
-				status: TOOL_STATUS_RUNNING,
-				result: '',
-			} as UTSJSONObject
-			replaceMessage(messages, assistantIdx, makeAssistantFromExisting(
-				assistantMsg,
-				getMessageContent(assistantMsg),
-				getMessageThinking(assistantMsg),
-				newBlocks,
-				(assistantMsg['isStreaming'] as boolean | null) == true
-			))
-			break
-		}
-	}
+	replaceMessage(messages, assistantIdx, makeAssistantFromExisting(assistantMsg, parts, true))
 }
 
-export function updateToolExecutionEnd(messages: UTSJSONObject[], toolName: string, result: string, isError: boolean, keepStreaming: boolean = true): void {
-	if (toolName == '') {
+export function updateToolExecutionEnd(messages: UTSJSONObject[], toolName: string, result: string, isError: boolean, keepStreaming: boolean = true, toolCallId: string = ''): void {
+	if (toolName == '' && toolCallId == '') {
 		return
 	}
-	const assistantIdx = findLastAssistantIndex(messages)
+	const assistantIdx = findLastStreamingAssistantIndex(messages)
 	if (assistantIdx < 0) {
 		return
 	}
 	const assistantMsg = messages[assistantIdx]
-	if (isAppendableAssistant(assistantMsg) == false) {
-		return
+	const parts = cloneParts(getMessageParts(assistantMsg))
+	const status = isError == true ? TOOL_STATUS_ERROR : TOOL_STATUS_COMPLETED
+	const updated = updateToolCallState(parts, toolCallId, toolName, result, isError, status)
+	if (updated == false && toolName != '') {
+		const item = createToolCallItem(toolCallId, toolName, '{}', Date.now(), status)
+		item['finished_ts'] = Date.now()
+		item['result'] = result
+		item['isError'] = isError
+		upsertToolCallPart(parts, item, false)
 	}
-	const existingBlocks = assistantMsg['blocks'] as UTSJSONObject[] | null
-	if (existingBlocks == null) {
-		return
-	}
-	for (let i = 0; i < existingBlocks.length; i++) {
-		const block = existingBlocks[i]
-		const blockType = block['type'] as string | null
-		const blockName = block['name'] as string | null
-		const blockStatus = block['status'] as string | null
-		if (blockType == CHAT_BLOCK_TOOL_CALL && blockName != null && blockName == toolName && (blockStatus == TOOL_STATUS_RUNNING || blockStatus == TOOL_STATUS_PENDING)) {
-			const newBlocks = cloneBlocks(existingBlocks)
-			newBlocks[i] = {
-				type: CHAT_BLOCK_TOOL_CALL,
-				name: toolName,
-				arguments: block['arguments'],
-				ts: block['ts'],
-				finished_ts: Date.now(),
-				status: isError ? TOOL_STATUS_ERROR : TOOL_STATUS_COMPLETED,
-				result: result,
-			} as UTSJSONObject
-			replaceMessage(messages, assistantIdx, makeAssistantFromExisting(
-				assistantMsg,
-				getMessageContent(assistantMsg),
-				getMessageThinking(assistantMsg),
-				newBlocks,
-				keepStreaming
-			))
-			break
-		}
-	}
+	replaceMessage(messages, assistantIdx, makeAssistantFromExisting(assistantMsg, parts, keepStreaming))
 }
 
 export function finalizeAssistantTurn(messages: UTSJSONObject[]): void {
@@ -464,13 +536,8 @@ export function finalizeAssistantTurn(messages: UTSJSONObject[]): void {
 	if ((assistantMsg['isStreaming'] as boolean | null) != true) {
 		return
 	}
-	replaceMessage(messages, assistantIdx, makeAssistantFromExisting(
-		assistantMsg,
-		getMessageContent(assistantMsg),
-		getMessageThinking(assistantMsg),
-		assistantMsg['blocks'] as UTSJSONObject[] | null,
-		false
-	))
+	const parts = cloneParts(getMessageParts(assistantMsg))
+	replaceMessage(messages, assistantIdx, makeAssistantFromExisting(assistantMsg, parts, false))
 }
 
 export function finalizeAgentLoopTurn(messages: UTSJSONObject[]): void {
@@ -482,7 +549,9 @@ export function finalizeAgentLoopTurn(messages: UTSJSONObject[]): void {
 	if ((assistantMsg['isStreaming'] as boolean | null) != true) {
 		return
 	}
-	if (shouldKeepEmptyToolTurnOpen(assistantMsg) == true) {
+	const parts = getMessageParts(assistantMsg)
+	// 空响应 + 工具调用是 AstrBot 的合法中间态：保持在同一个 thinking timeline。
+	if (hasPlainTextPart(parts) == false && hasToolCallPart(parts) == true) {
 		return
 	}
 	finalizeAssistantTurn(messages)
@@ -511,14 +580,23 @@ export function reduceAgentEvent(messages: UTSJSONObject[], event: AgentEvent): 
 	}
 	if (event.type == 'tool_call') {
 		if (event.toolName != null && event.toolCalls == null) {
-			appendToolCallBlockToAssistant(messages, event.toolName as string, event.toolArgs != null ? (event.toolArgs as string) : '{}')
+			appendToolCallBlockToAssistant(
+				messages,
+				event.toolName as string,
+				event.toolArgs != null ? (event.toolArgs as string) : '{}',
+				event.toolCallId != null ? (event.toolCallId as string) : ''
+			)
 		} else {
 			addToolCallMessage(messages, event.fullText != null ? (event.fullText as string) : '', event.toolCalls != null ? (event.toolCalls as UTSJSONObject[]) : null)
 		}
 		return true
 	}
 	if (event.type == 'tool_execution_start') {
-		addToolExecutionStart(messages, event.toolName != null ? (event.toolName as string) : '')
+		addToolExecutionStart(
+			messages,
+			event.toolName != null ? (event.toolName as string) : '',
+			event.toolCallId != null ? (event.toolCallId as string) : ''
+		)
 		return true
 	}
 	if (event.type == 'tool_execution_end') {
@@ -527,7 +605,8 @@ export function reduceAgentEvent(messages: UTSJSONObject[], event: AgentEvent): 
 			event.toolName != null ? (event.toolName as string) : '',
 			event.toolResult != null ? (event.toolResult as string) : '',
 			event.isError == true,
-			true
+			true,
+			event.toolCallId != null ? (event.toolCallId as string) : ''
 		)
 		return true
 	}

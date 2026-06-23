@@ -279,7 +279,66 @@ function appendAgentAvatarAssets(agents: UTSJSONObject[], assets: UTSJSONObject[
 	}
 }
 
-function appendMessageImageAssets(messages: UTSJSONObject[], assets: UTSJSONObject[], specs: UTSJSONObject[]): void {
+
+function readPartAssetPath(part: UTSJSONObject): string {
+	const url = part['url'] as string | null
+	if (url != null && url != '') {
+		return url
+	}
+	const path = part['path'] as string | null
+	if (path != null && path != '') {
+		return path
+	}
+	return ''
+}
+
+function readPartAssetName(part: UTSJSONObject, fallback: string): string {
+	const filename = part['filename'] as string | null
+	if (filename != null && filename != '') {
+		return sanitizeZipSegment(filename)
+	}
+	const name = part['name'] as string | null
+	if (name != null && name != '') {
+		return sanitizeZipSegment(name)
+	}
+	return fallback
+}
+
+function appendMessagePartAsset(messagesIdText: string, partIndex: number, part: UTSJSONObject, assets: UTSJSONObject[], specs: UTSJSONObject[]): void {
+	const type = part['type'] as string | null
+	if (type == null) {
+		return
+	}
+	const sourcePath = readPartAssetPath(part)
+	if (sourcePath == '') {
+		return
+	}
+	let kind = ''
+	let baseName = ''
+	if (type == 'image') {
+		kind = 'messageImage'
+		baseName = 'image'
+	} else if (type == 'file') {
+		kind = 'messageFile'
+		baseName = readPartAssetName(part, 'file')
+	} else if (type == 'record' || type == 'voice') {
+		kind = 'messageRecord'
+		baseName = 'record'
+	} else if (type == 'audio') {
+		kind = 'messageAudio'
+		baseName = 'audio'
+	} else if (type == 'video') {
+		kind = 'messageVideo'
+		baseName = 'video'
+	} else {
+		return
+	}
+	const ext = inferExtension(sourcePath, 'bin')
+	const zipPath = 'assets/messages/' + sanitizeZipSegment(messagesIdText) + '/part-' + partIndex + '-' + sanitizeZipSegment(baseName) + '.' + ext
+	appendAsset(assets, specs, kind, sourcePath, zipPath, 'messages.' + messagesIdText + '.message.' + partIndex + '.path')
+}
+
+function appendMessagePartAssets(messages: UTSJSONObject[], assets: UTSJSONObject[], specs: UTSJSONObject[]): void {
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i]
 		const rawId = msg['id'] as number | null
@@ -288,10 +347,16 @@ function appendMessageImageAssets(messages: UTSJSONObject[], assets: UTSJSONObje
 		if (extraText != null && extraText != '' && extraText != '{}') {
 			try {
 				const extra = JSON.parse(extraText) as UTSJSONObject
+				const parts = extra['message'] as UTSJSONObject[] | null
+				if (parts != null) {
+					for (let pi = 0; pi < parts.length; pi++) {
+						appendMessagePartAsset(idText, pi, parts[pi], assets, specs)
+					}
+				}
 				const imageUrl = extra['imageUrl'] as string | null
 				if (imageUrl != null && imageUrl != '') {
 					const ext = inferExtension(imageUrl, 'bin')
-					const zipPath = 'assets/messages/' + sanitizeZipSegment(idText) + '/image.' + ext
+					const zipPath = 'assets/messages/' + sanitizeZipSegment(idText) + '/legacy-image.' + ext
 					appendAsset(assets, specs, 'messageImage', imageUrl, zipPath, 'messages.' + idText + '.imageUrl')
 				}
 			} catch (_e: any) {
@@ -306,7 +371,7 @@ function collectAssets(storage: UTSJSONObject, agents: UTSJSONObject[], messages
 	appendStorageAsset(storage, assets, specs, 'crop_image_path', 'cropSource', 'crop-source')
 	appendStorageAsset(storage, assets, specs, 'crop_result', 'cropResult', 'crop-result')
 	appendAgentAvatarAssets(agents, assets, specs)
-	appendMessageImageAssets(messages, assets, specs)
+	appendMessagePartAssets(messages, assets, specs)
 	return assets
 }
 

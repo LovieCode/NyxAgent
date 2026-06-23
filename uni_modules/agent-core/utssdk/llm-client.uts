@@ -213,32 +213,190 @@ function clearMemoryCompactionRunning(agentId: string, conversationId: string): 
 	}
 }
 
+function getMessagePartsForLLM(msg: UTSJSONObject): UTSJSONObject[] {
+	const parts = msg['message'] as UTSJSONObject[] | null
+	if (parts != null) {
+		return parts
+	}
+	return [] as UTSJSONObject[]
+}
+
+function readPartString(part: UTSJSONObject, key: string): string {
+	const value = part[key] as string | null
+	return value != null ? value : ''
+}
+
+function getMessageApiText(msg: UTSJSONObject): string {
+	const overrideText = msg['agent_text_override'] as string | null
+	if (overrideText != null && overrideText != '') {
+		return overrideText
+	}
+	const parts = getMessagePartsForLLM(msg)
+	if (parts.length == 0) {
+		const rawContent = msg['content'] as string | null
+		return rawContent != null ? rawContent : ''
+	}
+	let text = ''
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		const type = part['type'] as string | null
+		if (type == 'plain' || type == 'text') {
+			const raw = readPartString(part, 'text')
+			if (raw != '') { text += raw }
+		} else if (type == 'location') {
+			const raw = readPartString(part, 'text')
+			if (raw != '') {
+				if (text != '') { text += '\n' }
+				text += raw
+			}
+		} else if (type == 'image') {
+			const url = readPartString(part, 'url') != '' ? readPartString(part, 'url') : readPartString(part, 'path')
+			if (text != '') { text += '\n' }
+			text += '[图片]' + (url != '' ? ' ' + url : '')
+		} else if (type == 'file') {
+			const filename = readPartString(part, 'filename') != '' ? readPartString(part, 'filename') : readPartString(part, 'name')
+			const path = readPartString(part, 'path')
+			if (text != '') { text += '\n' }
+			text += '[文件] ' + (filename != '' ? filename : path)
+		} else if (type == 'record' || type == 'voice' || type == 'audio') {
+			const path = readPartString(part, 'path') != '' ? readPartString(part, 'path') : readPartString(part, 'url')
+			if (text != '') { text += '\n' }
+			text += '[语音/音频] ' + path
+		} else if (type == 'video') {
+			const path = readPartString(part, 'path') != '' ? readPartString(part, 'path') : readPartString(part, 'url')
+			if (text != '') { text += '\n' }
+			text += '[视频] ' + path
+		}
+	}
+	return text
+}
+
+function getMessageReasoningText(msg: UTSJSONObject): string {
+	const parts = getMessagePartsForLLM(msg)
+	let text = ''
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		const type = part['type'] as string | null
+		if (type == 'think' || type == 'thinking') {
+			let raw = readPartString(part, 'think')
+			if (raw == '') { raw = readPartString(part, 'thinking') }
+			if (raw != '') {
+				if (text != '') { text += '\n' }
+				text += raw
+			}
+		}
+	}
+	return text
+}
+
+function getFirstImagePathFromParts(msg: UTSJSONObject): string {
+	const parts = getMessagePartsForLLM(msg)
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		const type = part['type'] as string | null
+		if (type == 'image') {
+			const url = readPartString(part, 'url')
+			if (url != '') { return url }
+			const path = readPartString(part, 'path')
+			if (path != '') { return path }
+		}
+	}
+	const msgType = msg['msgType'] as string | null
+	const imageUrl = msg['imageUrl'] as string | null
+	if (msgType == 'image' && imageUrl != null) {
+		return imageUrl
+	}
+	return ''
+}
+
+function buildApiToolCallFromItem(item: UTSJSONObject): UTSJSONObject | null {
+	let id = readPartString(item, 'id')
+	let name = readPartString(item, 'name')
+	let args = readPartString(item, 'arguments')
+	if (args == '') { args = readPartString(item, 'args') }
+	const fn = item['function'] as UTSJSONObject | null
+	if (fn != null) {
+		if (name == '') {
+			const rawName = fn['name'] as string | null
+			if (rawName != null) { name = rawName }
+		}
+		if (args == '') {
+			const rawArgs = fn['arguments'] as string | null
+			if (rawArgs != null) { args = rawArgs }
+		}
+	}
+	if (name == '') {
+		return null
+	}
+	if (args == '') { args = '{}' }
+	return {
+		id: id,
+		type: 'function',
+		function: {
+			name: name,
+			arguments: args,
+		} as UTSJSONObject,
+	} as UTSJSONObject
+}
+
+function collectApiToolCalls(msg: UTSJSONObject): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	const parts = getMessagePartsForLLM(msg)
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		const type = part['type'] as string | null
+		if (type != 'tool_call' && type != 'toolCall') { continue }
+		const calls = part['tool_calls'] as UTSJSONObject[] | null
+		if (calls != null) {
+			for (let j = 0; j < calls.length; j++) {
+				const apiCall = buildApiToolCallFromItem(calls[j])
+				if (apiCall != null) { result.push(apiCall) }
+			}
+		} else {
+			const single = buildApiToolCallFromItem(part)
+			if (single != null) { result.push(single) }
+		}
+	}
+	if (result.length > 0) {
+		return result
+	}
+	const oldCalls = msg['tool_calls'] as UTSJSONObject[] | null
+	if (oldCalls != null) {
+		for (let i = 0; i < oldCalls.length; i++) {
+			result.push(oldCalls[i])
+		}
+	}
+	return result
+}
+
+function hasAssistantToolCalls(msg: UTSJSONObject): boolean {
+	return collectApiToolCalls(msg).length > 0
+}
+
 function isMemoryTextCandidate(msg: UTSJSONObject): boolean {
 	const role = msg['role'] as string | null
 	if (role != 'user' && role != 'assistant') return false
-	if (role == 'assistant' && msg['tool_calls'] != null) return false
+	if (role == 'assistant' && hasAssistantToolCalls(msg) == true) return false
 	if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true) return false
-	const rawContent = msg['content'] as string | null
-	if (rawContent == null || rawContent.trim() == '') return false
+	const rawContent = getMessageApiText(msg)
+	if (rawContent.trim() == '') return false
 	return true
 }
 
 function buildMemoryCandidateMessage(msg: UTSJSONObject): UTSJSONObject {
 	const role = msg['role'] as string | null
-	const rawContent = msg['content'] as string | null
 	const rawTimestamp = msg['timestamp'] as number | null
 	return {
 		role: role != null ? role : '',
-		content: rawContent != null ? rawContent : '',
+		content: getMessageApiText(msg),
 		timestamp: rawTimestamp != null ? rawTimestamp : 0,
 	} as UTSJSONObject
 }
 
 function buildMemoryMessageKey(msg: UTSJSONObject): string {
 	const role = msg['role'] as string | null
-	const rawContent = msg['content'] as string | null
 	const rawTimestamp = msg['timestamp'] as number | null
-	const content = rawContent != null ? rawContent : ''
+	const content = getMessageApiText(msg)
 	const timestamp = rawTimestamp != null ? rawTimestamp : 0
 	let sample = content
 	if (sample.length > 160) {
@@ -370,6 +528,7 @@ function getModelReasoningEnabled(modelId: string): boolean {
 	return false
 }
 
+
 function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[], supportsVision: boolean): UTSJSONObject[] {
 	const apiMessages: UTSJSONObject[] = []
 	if (systemPrompt != '') {
@@ -382,54 +541,33 @@ function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[], su
 		const msg = messages[i]
 		const role = msg['role'] as string | null
 		if (role == null) continue
-		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
+		const apiToolCalls = collectApiToolCalls(msg)
+		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && apiToolCalls.length == 0) continue
 
 		if (role == 'tool' || role == 'toolResult') {
 			const rawToolCallId = msg['tool_call_id']
 			const tcId = rawToolCallId != null ? rawToolCallId : msg['toolCallId']
 			if (tcId == null || (tcId as string) == '') continue
-			const tcContent = msg['content']
 			apiMessages.push({
 				role: 'tool',
 				tool_call_id: tcId as string,
-				content: tcContent != null ? (tcContent as string) : '',
+				content: getMessageApiText(msg),
 			} as UTSJSONObject)
-		} else if (role == 'assistant' && msg['tool_calls'] != null) {
-			const msgContent = msg['content'] as string | null
+		} else if (role == 'assistant' && apiToolCalls.length > 0) {
 			const amsg: UTSJSONObject = {
 				role: 'assistant',
-				content: msgContent != null ? msgContent : '',
-				tool_calls: msg['tool_calls'],
+				content: getMessageApiText(msg),
+				tool_calls: apiToolCalls,
 			} as UTSJSONObject
-			// If assistant message has blocks, extract reasoning_content for history
-			const msgBlocks = msg['blocks'] as UTSJSONObject[] | null
-			if (msgBlocks != null && msgBlocks.length > 0) {
-				let reasoningHistory = ''
-				for (let bi = 0; bi < msgBlocks.length; bi++) {
-					const block = msgBlocks[bi]
-					const blockType = block['type'] as string | null
-					if (blockType == 'thinking') {
-						const thinkText = block['thinking'] as string | null
-						if (thinkText != null) {
-							if (reasoningHistory != '') { reasoningHistory += '\n' }
-							reasoningHistory += thinkText
-						}
-					}
-				}
-				if (reasoningHistory != '') {
-					amsg['reasoning_content'] = reasoningHistory
-				}
+			const reasoningHistory = getMessageReasoningText(msg)
+			if (reasoningHistory != '') {
+				amsg['reasoning_content'] = reasoningHistory
 			}
 			apiMessages.push(amsg)
 		} else {
-			const msgContent = msg['content'] as string | null
-			const textContent = msgContent != null ? msgContent : ''
-
-			// 图片消息：构建多段 content（文字 + 图片 base64）
-			const msgType = msg['msgType'] as string | null
-			const imageUrl = msg['imageUrl'] as string | null
-			if (role == 'user' && msgType == 'image' && imageUrl != null && imageUrl != '') {
-				// 模型不支持多模态 → 降级为纯文本
+			const textContent = getMessageApiText(msg)
+			const imagePath = getFirstImagePathFromParts(msg)
+			if (role == 'user' && imagePath != '') {
 				if (supportsVision == false) {
 					console.log('[LLM] 当前模型不支持多模态，图片消息降级为纯文本')
 					apiMessages.push({
@@ -438,11 +576,11 @@ function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[], su
 					} as UTSJSONObject)
 					continue
 				}
-				const imageResult = readImageAsBase64(imageUrl)
+				const imageResult = readImageAsBase64(imagePath)
 				if (imageResult != null) {
-					// 用 JSON 字符串构造多段 content，避免 UTSJSONObject 数组序列化问题
 					const dataUrl = 'data:' + imageResult.mimeType + ';base64,' + imageResult.data
-					const contentJsonStr = '[{"type":"text","text":""},{"type":"image_url","image_url":{"url":' + JSON.stringify(dataUrl) + ',"detail":"auto"}}]'
+					const safeText = textContent != '' ? textContent : '[图片]'
+					const contentJsonStr = '[{"type":"text","text":' + JSON.stringify(safeText) + '},{"type":"image_url","image_url":{"url":' + JSON.stringify(dataUrl) + ',"detail":"auto"}}]'
 					try {
 						const contentJson = JSON.parse(contentJsonStr)
 						apiMessages.push({
@@ -457,7 +595,7 @@ function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[], su
 						} as UTSJSONObject)
 					}
 				} else {
-					console.log('[LLM] 图片 base64 读取失败，回退纯文本 | path=' + imageUrl)
+					console.log('[LLM] 图片 base64 读取失败，回退纯文本 | path=' + imagePath)
 					apiMessages.push({
 						role: 'user',
 						content: textContent,
@@ -468,25 +606,10 @@ function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[], su
 					role: role,
 					content: textContent,
 				} as UTSJSONObject
-				// If assistant message has blocks, extract reasoning_content for history
 				if (role == 'assistant') {
-					const msgBlocks = msg['blocks'] as UTSJSONObject[] | null
-					if (msgBlocks != null && msgBlocks.length > 0) {
-						let reasoningHistory = ''
-						for (let bi = 0; bi < msgBlocks.length; bi++) {
-							const block = msgBlocks[bi]
-							const blockType = block['type'] as string | null
-							if (blockType == 'thinking') {
-								const thinkText = block['thinking'] as string | null
-								if (thinkText != null) {
-									if (reasoningHistory != '') { reasoningHistory += '\n' }
-									reasoningHistory += thinkText
-								}
-							}
-						}
-						if (reasoningHistory != '') {
-							apiMsg['reasoning_content'] = reasoningHistory
-						}
+					const reasoningHistory = getMessageReasoningText(msg)
+					if (reasoningHistory != '') {
+						apiMsg['reasoning_content'] = reasoningHistory
 					}
 				}
 				apiMessages.push(apiMsg)
@@ -495,7 +618,6 @@ function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[], su
 	}
 	return apiMessages
 }
-
 
 function buildUserPrefixContextBlocks(msg: UTSJSONObject): AgentContextBlock[] {
 	const blocks: AgentContextBlock[] = []
@@ -517,17 +639,16 @@ function buildUserPrefixContextBlocks(msg: UTSJSONObject): AgentContextBlock[] {
 }
 
 function buildUserMessageForAgent(msg: UTSJSONObject, suffixBlocks: AgentContextBlock[]): UTSJSONObject {
-	const msgContent = msg['content'] as string | null
-	const baseContent = msgContent != null ? msgContent : ''
+	const baseContent = getMessageApiText(msg)
 	const prefixBlocks = buildUserPrefixContextBlocks(msg)
 	if (prefixBlocks.length == 0 && suffixBlocks.length == 0) {
 		return msg
 	}
-	// 保留原消息的所有字段（如 msgType、imageUrl 等），再覆盖 role 和 content
 	const raw = JSON.stringify(msg)
 	const cloned = JSON.parse(raw) as UTSJSONObject
 	cloned['role'] = 'user'
-	cloned['content'] = wrapUserContentForAgent(baseContent, prefixBlocks, suffixBlocks)
+	cloned['agent_text_override'] = wrapUserContentForAgent(baseContent, prefixBlocks, suffixBlocks)
+	cloned['content'] = cloned['agent_text_override']
 	return cloned
 }
 
@@ -535,7 +656,7 @@ function getContextMessageScore(msg: UTSJSONObject): number {
 	const role = msg['role'] as string | null
 	if (role == 'user') return 1
 	if (role == 'assistant') {
-		if (msg['tool_calls'] == null) return 0.3
+		if (hasAssistantToolCalls(msg) == false) return 0.3
 		return 0.1
 	}
 	if (role == 'tool' || role == 'toolResult') return 0.1
@@ -708,8 +829,8 @@ function prepareAgentContext(
 			droppedCount++
 			droppedScore = droppedScore + msgScore
 			if (i == lastUserIndex) { lastUserIndex = -1 }
-			const rawContent = msg['content'] as string | null
-			if (rawContent != null && rawContent.trim() != '') {
+			const rawContent = getMessageApiText(msg)
+			if (rawContent.trim() != '') {
 				const rawTimestamp = msg['timestamp'] as number | null
 				droppedMessages.push({
 					role: role != null ? role : '',
@@ -720,7 +841,7 @@ function prepareAgentContext(
 			continue
 		}
 		if (role == null) continue
-		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && msg['tool_calls'] == null) continue
+		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && hasAssistantToolCalls(msg) == false) continue
 		if (role == 'user') {
 			const suffixBlocks: AgentContextBlock[] = []
 			if (i == lastUserIndex && bufferInjection != '') {
@@ -751,6 +872,116 @@ function prepareAgentContext(
 }
 
 
+
+function readPromptCacheHitTokens(usage: UTSJSONObject): number | null {
+	let hitTokens = usage['prompt_cache_hit_tokens'] as number | null
+	if (hitTokens == null) hitTokens = usage['cache_read_input_tokens'] as number | null
+	if (hitTokens == null) hitTokens = usage['prompt_cache_read_tokens'] as number | null
+	if (hitTokens == null) hitTokens = usage['cached_tokens'] as number | null
+	const promptDetails = usage['prompt_tokens_details'] as UTSJSONObject | null
+	if (hitTokens == null && promptDetails != null) {
+		hitTokens = promptDetails['cached_tokens'] as number | null
+	}
+	const inputDetails = usage['input_tokens_details'] as UTSJSONObject | null
+	if (hitTokens == null && inputDetails != null) {
+		hitTokens = inputDetails['cached_tokens'] as number | null
+		if (hitTokens == null) hitTokens = inputDetails['cache_read_tokens'] as number | null
+	}
+	return hitTokens
+}
+
+/** 标准化 Token 用量字段，兼容 OpenAI/Anthropic 命名。 */
+function normalizeTokenUsage(usage: UTSJSONObject): UTSJSONObject {
+	let promptTokens = usage['prompt_tokens'] as number | null
+	let completionTokens = usage['completion_tokens'] as number | null
+	let totalTokens = usage['total_tokens'] as number | null
+	const promptCacheHitTokens = readPromptCacheHitTokens(usage)
+	if (promptTokens == null) promptTokens = usage['input_tokens'] as number | null
+	if (completionTokens == null) completionTokens = usage['output_tokens'] as number | null
+	if (totalTokens == null && promptTokens != null && completionTokens != null) {
+		totalTokens = promptTokens + completionTokens
+	}
+	const obj: UTSJSONObject = {} as UTSJSONObject
+	if (promptTokens != null) obj['prompt_tokens'] = promptTokens
+	if (completionTokens != null) obj['completion_tokens'] = completionTokens
+	if (totalTokens != null) obj['total_tokens'] = totalTokens
+	if (promptCacheHitTokens != null) {
+		obj['prompt_cache_hit_tokens'] = promptCacheHitTokens
+		obj['prompt_cache_hit_tokens_reported'] = true
+	}
+	return obj
+}
+
+/** 保存最近一次 API 调用的 Token 用量。 */
+function saveLastTokenUsage(usage: UTSJSONObject): UTSJSONObject {
+	const obj = normalizeTokenUsage(usage)
+	const json = JSON.stringify(obj)
+	uni.setStorageSync(LAST_TOKEN_USAGE_KEY, json)
+	console.log('[LLM] Token 用量已保存: ' + json)
+	return obj
+}
+
+function clearLastTokenUsage(): void {
+	uni.setStorageSync(LAST_TOKEN_USAGE_KEY, '')
+}
+
+function readLastTokenUsageForCall(): UTSJSONObject | null {
+	try {
+		const rawUsage = uni.getStorageSync(LAST_TOKEN_USAGE_KEY) as string | null
+		if (rawUsage != null && rawUsage != '') {
+			return JSON.parse(rawUsage) as UTSJSONObject
+		}
+	} catch (_e: any) {}
+	return null
+}
+
+function saveLastLLMCall(
+	success: boolean,
+	streamEnabled: boolean,
+	model: string,
+	baseUrl: string,
+	statusCode: number,
+	errorMessage: string,
+	usage: UTSJSONObject | null,
+	messageCount: number,
+	toolCount: number,
+	textLength: number,
+	hasToolCalls: boolean,
+	conversationId: string = ''
+): void {
+	const now = Date.now()
+	const obj: UTSJSONObject = {
+		success: success,
+		stream: streamEnabled,
+		model: model,
+		baseUrl: baseUrl,
+		statusCode: statusCode,
+		errorMessage: errorMessage,
+		messageCount: messageCount,
+		toolCount: toolCount,
+		textLength: textLength,
+		hasToolCalls: hasToolCalls,
+		timestamp: now,
+		timeText: formatMemoryMessageTime(now),
+	} as UTSJSONObject
+	if (usage != null) {
+		obj['usage'] = usage
+		const cacheReported = usage['prompt_cache_hit_tokens_reported'] as boolean | null
+		if (success == true && cacheReported == true && conversationId != '') {
+			const promptTokens = usage['prompt_tokens'] as number | null
+			const cacheHitTokens = usage['prompt_cache_hit_tokens'] as number | null
+			try {
+				addConversationTokenUsage(
+					conversationId,
+					promptTokens != null ? promptTokens : 0,
+					cacheHitTokens != null ? cacheHitTokens : 0
+				)
+			} catch (_e: any) {}
+		}
+	}
+	const json = JSON.stringify(obj)
+	uni.setStorageSync(LAST_LLM_CALL_KEY, json)
+}
 
 /**
  * 调用 OpenAI 兼容的 Chat Completions API（核心函数）
@@ -1056,116 +1287,6 @@ function processSSELine(
 			}
 		}
 	} catch (_) {}
-}
-
-function readPromptCacheHitTokens(usage: UTSJSONObject): number | null {
-	let hitTokens = usage['prompt_cache_hit_tokens'] as number | null
-	if (hitTokens == null) hitTokens = usage['cache_read_input_tokens'] as number | null
-	if (hitTokens == null) hitTokens = usage['prompt_cache_read_tokens'] as number | null
-	if (hitTokens == null) hitTokens = usage['cached_tokens'] as number | null
-	const promptDetails = usage['prompt_tokens_details'] as UTSJSONObject | null
-	if (hitTokens == null && promptDetails != null) {
-		hitTokens = promptDetails['cached_tokens'] as number | null
-	}
-	const inputDetails = usage['input_tokens_details'] as UTSJSONObject | null
-	if (hitTokens == null && inputDetails != null) {
-		hitTokens = inputDetails['cached_tokens'] as number | null
-		if (hitTokens == null) hitTokens = inputDetails['cache_read_tokens'] as number | null
-	}
-	return hitTokens
-}
-
-/** 标准化 Token 用量字段，兼容 OpenAI/Anthropic 命名。 */
-function normalizeTokenUsage(usage: UTSJSONObject): UTSJSONObject {
-	let promptTokens = usage['prompt_tokens'] as number | null
-	let completionTokens = usage['completion_tokens'] as number | null
-	let totalTokens = usage['total_tokens'] as number | null
-	const promptCacheHitTokens = readPromptCacheHitTokens(usage)
-	if (promptTokens == null) promptTokens = usage['input_tokens'] as number | null
-	if (completionTokens == null) completionTokens = usage['output_tokens'] as number | null
-	if (totalTokens == null && promptTokens != null && completionTokens != null) {
-		totalTokens = promptTokens + completionTokens
-	}
-	const obj: UTSJSONObject = {} as UTSJSONObject
-	if (promptTokens != null) obj['prompt_tokens'] = promptTokens
-	if (completionTokens != null) obj['completion_tokens'] = completionTokens
-	if (totalTokens != null) obj['total_tokens'] = totalTokens
-	if (promptCacheHitTokens != null) {
-		obj['prompt_cache_hit_tokens'] = promptCacheHitTokens
-		obj['prompt_cache_hit_tokens_reported'] = true
-	}
-	return obj
-}
-
-/** 保存最近一次 API 调用的 Token 用量。 */
-function saveLastTokenUsage(usage: UTSJSONObject): UTSJSONObject {
-	const obj = normalizeTokenUsage(usage)
-	const json = JSON.stringify(obj)
-	uni.setStorageSync(LAST_TOKEN_USAGE_KEY, json)
-	console.log('[LLM] Token 用量已保存: ' + json)
-	return obj
-}
-
-function clearLastTokenUsage(): void {
-	uni.setStorageSync(LAST_TOKEN_USAGE_KEY, '')
-}
-
-function readLastTokenUsageForCall(): UTSJSONObject | null {
-	try {
-		const rawUsage = uni.getStorageSync(LAST_TOKEN_USAGE_KEY) as string | null
-		if (rawUsage != null && rawUsage != '') {
-			return JSON.parse(rawUsage) as UTSJSONObject
-		}
-	} catch (_e: any) {}
-	return null
-}
-
-function saveLastLLMCall(
-	success: boolean,
-	streamEnabled: boolean,
-	model: string,
-	baseUrl: string,
-	statusCode: number,
-	errorMessage: string,
-	usage: UTSJSONObject | null,
-	messageCount: number,
-	toolCount: number,
-	textLength: number,
-	hasToolCalls: boolean,
-	conversationId: string = ''
-): void {
-	const now = Date.now()
-	const obj: UTSJSONObject = {
-		success: success,
-		stream: streamEnabled,
-		model: model,
-		baseUrl: baseUrl,
-		statusCode: statusCode,
-		errorMessage: errorMessage,
-		messageCount: messageCount,
-		toolCount: toolCount,
-		textLength: textLength,
-		hasToolCalls: hasToolCalls,
-		timestamp: now,
-		timeText: formatMemoryMessageTime(now),
-	} as UTSJSONObject
-	if (usage != null) {
-		obj['usage'] = usage
-		const cacheReported = usage['prompt_cache_hit_tokens_reported'] as boolean | null
-		if (success == true && cacheReported == true && conversationId != '') {
-			const promptTokens = usage['prompt_tokens'] as number | null
-			const cacheHitTokens = usage['prompt_cache_hit_tokens'] as number | null
-			try {
-				addConversationTokenUsage(
-					conversationId,
-					promptTokens != null ? promptTokens : 0,
-					cacheHitTokens != null ? cacheHitTokens : 0
-				)
-			} catch (_e: any) {}
-		}
-	}
-	const json = JSON.stringify(obj)
-	uni.setStorageSync(LAST_LLM_CALL_KEY, json)
 }
 
 /**
@@ -1517,10 +1638,10 @@ function runAgentLoop(
 				stream.push({ type: 'thinking_delta', thinkingText: text })
 			}
 			toolCallDeltaHandler = (index: number, name: string | null, args: string | null): void => {
-				const argsStr = args != null ? args : '{}'
+				const argsStr = args != null ? args : ''
 				stream.push({
 					type: 'tool_call',
-					toolCallId: '',
+					toolCallId: 'tool_delta_' + index,
 					toolName: name != null ? name : '',
 					toolArgs: argsStr
 				})
@@ -1551,30 +1672,16 @@ function runAgentLoop(
 				// 有工具调用
 				stream.push({ type: 'text_end', fullText: text != null ? text : '' })
 
-				// 构建包含 tool_calls 的 assistant 消息
-				// Build interleaved content blocks (thinking → text → toolCalls order)
-				const contentBlocks: UTSJSONObject[] = []
+				// 构建包含 tool_calls 的 assistant 消息：运行时也统一写 message parts。
+				const assistantParts: UTSJSONObject[] = []
 				if (thinking != null && thinking != '') {
-					contentBlocks.push({ type: 'thinking', thinking: thinking } as UTSJSONObject)
+					assistantParts.push({ type: 'think', think: thinking } as UTSJSONObject)
 				}
 				if (text != null && text != '') {
-					contentBlocks.push({ type: 'text', text: text } as UTSJSONObject)
+					assistantParts.push({ type: 'plain', text: text } as UTSJSONObject)
 				}
-				for (let bi = 0; bi < toolCalls.length; bi++) {
-					const tc = toolCalls[bi]
-					contentBlocks.push({
-						type: 'toolCall',
-						id: tc.id,
-						name: tc.name,
-						arguments: tc.arguments,
-					} as UTSJSONObject)
-				}
-				const assistantMsg: UTSJSONObject = {
-					role: 'assistant',
-					content: text != null ? text : '',
-					blocks: contentBlocks,
-				} as UTSJSONObject
 				const tcArray: UTSJSONObject[] = []
+				const tcItems: UTSJSONObject[] = []
 				for (let i = 0; i < toolCalls.length; i++) {
 					tcArray.push({
 						id: toolCalls[i].id,
@@ -1584,8 +1691,25 @@ function runAgentLoop(
 							arguments: toolCalls[i].arguments,
 						},
 					} as UTSJSONObject)
+					tcItems.push({
+						id: toolCalls[i].id,
+						name: toolCalls[i].name,
+						arguments: toolCalls[i].arguments,
+						args: toolCalls[i].arguments,
+						status: 'pending',
+						result: '',
+						isError: false,
+					} as UTSJSONObject)
 				}
-				assistantMsg['tool_calls'] = tcArray
+				if (tcItems.length > 0) {
+					assistantParts.push({ type: 'tool_call', tool_calls: tcItems } as UTSJSONObject)
+				}
+				const assistantMsg: UTSJSONObject = {
+					role: 'assistant',
+					content: text != null ? text : '',
+					message: assistantParts,
+					tool_calls: tcArray,
+				} as UTSJSONObject
 				workingMessages.push(assistantMsg)
 				stream.push({
 					type: 'tool_call',

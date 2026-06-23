@@ -1,20 +1,18 @@
 <template>
 	<view :class="bubbleClass">
-		<!-- 工具名称标签（在内容上方） -->
-		<view v-if="role == 'toolResult'" class="tool-badge">
-			<text class="tool-badge-text">{{toolName}}</text>
-		</view>
-
-		<!-- 用户消息：单气泡（保留换行符） -->
 		<view v-if="role == 'user'" class="user-row">
 			<view class="user-bubble" :class="isPressed ? 'bubble-pressed' : ''"
 				@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
 				@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
 				@touchend="onBubbleTouchEnd">
-				<!-- 图片消息 -->
-				<image v-if="msgType == 'image' && imageUrl != ''" :src="imageUrl" class="bubble-image" mode="widthFix" />
-				<!-- 文本消息（保留换行） -->
-				<text v-if="msgType != 'image' && content != ''" class="text-user">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
+				<view v-for="(part, pi) in contentParts" :key="'user-part-' + pi" class="part-wrap">
+					<image v-if="part.type == 'image' && part.url != ''" :src="part.url" class="bubble-image" mode="widthFix" />
+					<text v-else-if="part.type == 'plain' || part.type == 'location'" class="text-user">{{part.text}}<text v-if="isStreaming == true && isLastContentPart(pi) == true" class="cursor">|</text></text>
+					<view v-else class="media-chip user-media-chip">
+						<text class="media-chip-text user-media-text">{{getPartLabel(part)}}</text>
+					</view>
+				</view>
+				<text v-if="contentParts.length == 0 && content != ''" class="text-user">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
 			</view>
 			<image v-if="userAvatar != ''" :src="userAvatar" class="chat-avatar user-avatar-image" mode="aspectFill" />
 			<view v-else class="chat-avatar user-avatar">
@@ -22,8 +20,7 @@
 			</view>
 		</view>
 
-		<!-- 交错思维链时间线（blocks 模式） -->
-		<view v-if="role == 'assistant' && displayBlocks.length > 0" class="ai-row">
+		<view v-else-if="role == 'assistant'" class="ai-row">
 			<image v-if="agentAvatar != ''" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" />
 			<view v-else class="chat-avatar ai-avatar">
 				<text class="chat-avatar-text">AI</text>
@@ -32,10 +29,9 @@
 				@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
 				@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
 				@touchend="onBubbleTouchEnd">
-				<!-- 思考过程：thinking + toolCall 统一收进一个容器 -->
-				<view v-if="reasoningBlocks.length > 0" class="reasoning-panel">
+				<view v-if="reasoningBlocks.length > 0 && hideThinking == false" class="reasoning-panel">
 					<view class="reasoning-header" @click.stop="thinkingExpanded = !thinkingExpanded">
-						<text class="thinking-step-icon">{{thinkingExpanded ? '▾' : '▸'}}</text>
+						<text class="thinking-step-icon">{{thinkingExpanded ? '收起' : '展开'}}</text>
 						<text class="thinking-step-label">思考过程</text>
 					</view>
 					<view v-if="thinkingExpanded == true" class="reasoning-body">
@@ -45,11 +41,12 @@
 								<view class="tool-call-card">
 									<view class="tool-call-card-header">
 										<view class="tool-call-card-left">
+											<text class="tool-call-status">{{getToolStatusText(block)}}</text>
 											<text class="tool-call-card-name">{{getToolDisplayName(block.name)}}</text>
 										</view>
 										<view class="tool-call-card-right">
-											<text v-if="block.ts != null && block.ts > 0 && (_renderSwitch == true || _renderSwitch == false)" :key="'elapsed-' + bi + '-' + timerTick + '-' + _renderSwitch" class="tool-call-elapsed">{{getToolElapsed(block)}}</text>
-											<text class="tool-call-chevron">{{getToolCallExpanded(bi) ? '▾' : '▸'}}</text>
+											<text v-if="block.ts > 0 && (_renderSwitch == true || _renderSwitch == false)" :key="'elapsed-' + bi + '-' + timerTick + '-' + _renderSwitch" class="tool-call-elapsed">{{getToolElapsed(block)}}</text>
+											<text class="tool-call-chevron">{{getToolCallExpanded(bi) ? '收起' : '详情'}}</text>
 										</view>
 									</view>
 									<view v-if="getToolCallExpanded(bi) == true" class="tool-call-card-detail">
@@ -57,7 +54,7 @@
 											<text class="tool-detail-label">参数</text>
 											<text class="tool-detail-value">{{block.args}}</text>
 										</view>
-										<view v-if="block.status == 'completed' && block.result != null && block.result != ''" class="tool-detail-section">
+										<view v-if="block.result != ''" class="tool-detail-section">
 											<text class="tool-detail-label">结果</text>
 											<text class="tool-detail-value">{{block.result}}</text>
 										</view>
@@ -67,68 +64,35 @@
 						</view>
 					</view>
 				</view>
-				<text v-if="timelineAnswerText != ''" class="text-assistant-pre">{{timelineAnswerText}}<text v-if="showTimelineCursor == true" class="cursor">|</text></text>
-			</view>
-		</view>
 
-		<!-- AI 分段模式：每段独立一行带头像（无 blocks 时） -->
-		<template v-for="(segment, si) in contentLines" v-if="role == 'assistant' && displayBlocks.length == 0 && msgSegmentation == true && msgType != 'image'">
-			<view class="ai-row">
-				<image v-if="agentAvatar != ''" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" />
-				<view v-else class="chat-avatar ai-avatar">
-					<text class="chat-avatar-text">AI</text>
-				</view>
-				<view class="ai-content" :class="isPressed ? 'bubble-pressed' : ''"
-					@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
-					@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
-					@touchend="onBubbleTouchEnd">
-					<!-- 思考内容——仅首段显示 -->
-<view v-if="si == 0 && thinking != '' && hideThinking == false" class="thinking-wrap" @click.stop="thinkingExpanded = !thinkingExpanded">
-						<text class="thinking-toggle">{{thinkingExpanded ? '▾' : '▸'}} 思考过程</text>
-						<text v-if="thinkingExpanded == true" class="thinking-text">{{thinking}}</text>
+				<view v-for="(part, pi) in contentParts" :key="'assistant-part-' + pi" class="part-wrap">
+					<image v-if="part.type == 'image' && part.url != ''" :src="part.url" class="bubble-image" mode="widthFix" />
+					<text v-else-if="part.type == 'plain' || part.type == 'location'" class="text-assistant-pre">{{part.text}}<text v-if="isStreaming == true && isLastContentPart(pi) == true" class="cursor">|</text></text>
+					<view v-else class="media-chip">
+						<text class="media-chip-text">{{getPartLabel(part)}}</text>
 					</view>
-					<text class="text-assistant">{{segment.text}}<text v-if="isStreaming && segment.isLast" class="cursor">|</text></text>
 				</view>
-			</view>
-		</template>
-
-		<!-- AI 非分段模式：单行头像 + 气泡（含图片/思考，无 blocks 时） -->
-		<view v-if="role == 'assistant' && displayBlocks.length == 0 && (msgSegmentation == false || msgType == 'image')" class="ai-row">
-			<image v-if="agentAvatar != ''" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" />
-			<view v-else class="chat-avatar ai-avatar">
-				<text class="chat-avatar-text">AI</text>
-			</view>
-			<view class="ai-content" :class="isPressed ? 'bubble-pressed' : ''"
-				@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
-				@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
-				@touchend="onBubbleTouchEnd">
-				<!-- 思考内容——默认折叠 -->
-				<view v-if="thinking != '' && hideThinking == false" class="thinking-wrap" @click.stop="thinkingExpanded = !thinkingExpanded">
-					<text class="thinking-toggle">{{thinkingExpanded ? '▾' : '▸'}} 思考过程</text>
-					<text v-if="thinkingExpanded == true" class="thinking-text">{{thinking}}</text>
-				</view>
-				<!-- 图片消息（独占一个气泡） -->
-				<view v-if="msgType == 'image' && imageUrl != ''" class="ai-content-no-bg">
-					<image :src="imageUrl" class="bubble-image" mode="widthFix" />
-				</view>
-				<!-- 非分段文本 -->
-				<text v-if="msgType != 'image'" class="text-assistant-pre">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
+				<text v-if="contentParts.length == 0 && content != ''" class="text-assistant-pre">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
+				<text v-if="contentParts.length == 0 && content == '' && isStreaming == true" class="text-assistant-pre"><text class="cursor">|</text></text>
 			</view>
 		</view>
 
-		<!-- 工具消息：纯文本 -->
-		<text v-if="role == 'toolResult'" :class="textClass">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
+		<view v-else-if="role == 'toolResult'" class="tool-fallback">
+			<view v-if="toolName != ''" class="tool-badge">
+				<text class="tool-badge-text">{{toolName}}</text>
+			</view>
+			<text :class="textClass">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
+		</view>
 	</view>
 </template>
 
 <script lang="uts">
-	/**
-	 * ChatBubble 组件 - 聊天气泡
-	 * 扁平化粉白主题
-	 */
-	type ContentSegment = {
+	type ContentPartView = {
+		type: string
 		text: string
-		isLast: boolean
+		url: string
+		path: string
+		filename: string
 	}
 	type DisplayBlock = {
 		type: string
@@ -151,6 +115,10 @@
 				type: String,
 				default: ''
 			},
+			parts: {
+				type: Array,
+				default: () => []
+			},
 			msgType: {
 				type: String,
 				default: 'text'
@@ -166,10 +134,6 @@
 			thinking: {
 				type: String,
 				default: ''
-			},
-			blocks: {
-				type: Array,
-				default: () => []
 			},
 			msgSegmentation: {
 				type: Boolean,
@@ -206,22 +170,16 @@
 		},
 		data() {
 			return {
-				/** 长按检测 */
 				touchStartX: 0 as number,
 				touchStartY: 0 as number,
 				longpressTick: 0 as number,
 				longpressTimer: -1 as number,
 				longpressTriggered: false as boolean,
-				/** 长按按下态（视觉反馈） */
 				isPressed: false as boolean,
-				/** 思考内容折叠态 */
 				thinkingExpanded: false as boolean,
 				toolCallExpanded: [] as boolean[],
-				/** 计时器是否在运行（递归 setTimeout 控制） */
 				timerRunning: false as boolean,
-				/** 渲染开关 — setInterval 里 toggle 触发 v-if 重渲染 */
 				_renderSwitch: false as boolean,
-				/** 计时器 tick 计数器，用于触发耗时重新渲染 */
 				timerTick: 0 as number,
 			}
 		},
@@ -231,49 +189,19 @@
 					this.cancelLongpress()
 				}
 			},
-			thinking(newVal: string, oldVal: string) {
-				// thinking 从空变为非空 + 正在流式 → 自动展开
-				if (oldVal == '' && newVal != '' && this.isStreaming == true) {
-					this.thinkingExpanded = true
-				}
-				// thinking 从非空变为空 → 自动折叠
-				if (oldVal != '' && newVal == '') {
-					this.thinkingExpanded = false
-				}
-			},
-			blocks: {
-				handler(newBlocks: UTSJSONObject[]) {
-					if (this.isStreaming == true && newBlocks.length > 0) {
-						// 流式阶段只要出现 thinking，就展开统一的思考过程容器
-						const lastBlock = newBlocks[newBlocks.length - 1]
-						if (lastBlock != null && (lastBlock['type'] as string) == 'thinking') {
-							this.thinkingExpanded = true
-						}
+			parts: {
+				handler(_newParts: UTSJSONObject[]) {
+					if (this.isStreaming == true && this.reasoningBlocks.length > 0) {
+						this.thinkingExpanded = true
 					}
-					// 启动/停止工具调用耗时计时器
-				let hasRunning = false
-				for (let i = 0; i < this.displayBlocks.length; i++) {
-					if (this.displayBlocks[i].status == 'running') {
-						hasRunning = true
-						break
-					}
-				}
-				if (hasRunning == true && this.timerRunning == false) {
-					this.timerRunning = true
-					this.tick()
-				}
-				if (hasRunning == false && this.timerRunning == true) {
-					this.timerRunning = false
-				}
+					this.syncToolTimer()
 				},
 				deep: true
 			},
 			isStreaming(newVal: boolean, oldVal: boolean) {
-				// 开始流式 + thinking 不为空 → 自动展开
-				if (newVal == true && oldVal == false && this.thinking != '') {
+				if (newVal == true && oldVal == false && this.reasoningBlocks.length > 0) {
 					this.thinkingExpanded = true
 				}
-				// 流式结束 → 自动折叠 + 停止计时
 				if (newVal == false && oldVal == true) {
 					this.thinkingExpanded = false
 					this.timerRunning = false
@@ -284,70 +212,50 @@
 			this.timerRunning = false
 		},
 		computed: {
-			/** 将 blocks (UTSJSONObject[]) 转为有类型的 DisplayBlock[]，避免模板中类型推断问题 */
+			messageParts(): UTSJSONObject[] {
+				const raw = this.parts as UTSJSONObject[]
+				if (raw != null && raw.length > 0) {
+					return raw
+				}
+				const fallback: UTSJSONObject[] = []
+				if (this.thinking != '') {
+					fallback.push({ type: 'think', think: this.thinking } as UTSJSONObject)
+				}
+				if (this.msgType == 'image' && this.imageUrl != '') {
+					fallback.push({ type: 'image', url: this.imageUrl, path: this.imageUrl } as UTSJSONObject)
+				} else if (this.content != '') {
+					fallback.push({ type: 'plain', text: this.content } as UTSJSONObject)
+				}
+				return fallback
+			},
 			displayBlocks(): DisplayBlock[] {
-				const _tick = this.timerTick  // 强制依赖 timerTick，每秒刷新 UI
-				const now = Date.now()
+				const _tick = this.timerTick
 				const result: DisplayBlock[] = []
-				for (let i = 0; i < this.blocks.length; i++) {
-					const b = this.blocks[i] as UTSJSONObject
-					const bt = b['type'] as string
-					const blockType = bt != null ? bt : ''
-					let blockText = ''
-					let blockThinking = ''
-					let blockName = ''
-					let blockArgs = ''
-					let blockTs = 0
-					let blockFt = 0
-					let blockSt = ''
-					let blockResult = ''
-					if (blockType == 'text') {
-						const txt = b['text'] as string
-						blockText = txt != null ? txt : ''
-					} else if (blockType == 'thinking') {
-						const thk = b['thinking'] as string
-						blockThinking = thk != null ? thk : ''
-					} else if (blockType == 'toolCall') {
-						const nm = b['name'] as string
-						const ag = b['arguments'] as string
-						const rawTs = b['ts']
-						let tTs = 0
-						if (rawTs != null) { tTs = rawTs as number }
-						const rawFt = b['finished_ts']
-						let tFt = 0
-						if (rawFt != null) { tFt = rawFt as number }
-						const rawSt = b['status']
-						let tSt = ''
-						if (rawSt != null) { tSt = rawSt as string }
-						const rawResult = b['result']
-						let tResult = ''
-						if (rawResult != null) { tResult = rawResult as string }
-						blockName = nm != null ? nm : ''
-						blockArgs = ag != null ? ag : ''
-						blockTs = tTs
-						blockFt = tFt
-						blockSt = tSt
-						blockResult = tResult
+				const source = this.messageParts
+				for (let i = 0; i < source.length; i++) {
+					const part = source[i]
+					const typeRaw = part['type'] as string | null
+					const partType = typeRaw != null ? typeRaw : ''
+					if (partType == 'plain' || partType == 'text') {
+						const txt = part['text'] as string | null
+						result.push({ type: 'text', text: txt != null ? txt : '', thinking: '', name: '', args: '', ts: 0, finished_ts: 0, status: '', result: '' } as DisplayBlock)
+					} else if (partType == 'think' || partType == 'thinking') {
+						const thk = part['think'] as string | null
+						const oldThk = part['thinking'] as string | null
+						result.push({ type: 'thinking', text: '', thinking: thk != null ? thk : (oldThk != null ? oldThk : ''), name: '', args: '', ts: 0, finished_ts: 0, status: '', result: '' } as DisplayBlock)
+					} else if (partType == 'tool_call' || partType == 'toolCall') {
+						const calls = part['tool_calls'] as UTSJSONObject[] | null
+						if (calls != null) {
+							for (let j = 0; j < calls.length; j++) {
+								result.push(this.buildToolBlock(calls[j]))
+							}
+						} else {
+							result.push(this.buildToolBlock(part))
+						}
 					}
-					// 过滤无名的 toolCall 块
-					if (blockType == 'toolCall' && blockName == '') {
-						continue
-					}
-					result.push({
-						type: blockType,
-						text: blockText,
-						thinking: blockThinking,
-						name: blockName,
-						args: blockArgs,
-						ts: blockTs != null ? blockTs : 0,
-						finished_ts: blockFt != null ? blockFt : 0,
-						status: blockSt != null ? blockSt : '',
-						result: blockResult != null ? blockResult : '',
-					} as DisplayBlock)
 				}
 				return result
 			},
-			/** 思考过程块：thinking 与 toolCall 都属于同一个推理容器 */
 			reasoningBlocks(): DisplayBlock[] {
 				const result: DisplayBlock[] = []
 				for (let i = 0; i < this.displayBlocks.length; i++) {
@@ -358,75 +266,41 @@
 				}
 				return result
 			},
-			/** 正文块：只汇总 text，避免 thinking 被“思考1/2”割裂 */
-			timelineAnswerText(): string {
-				let text = ''
-				for (let i = 0; i < this.displayBlocks.length; i++) {
-					const block = this.displayBlocks[i]
-					if (block.type == 'text' && block.text != '') {
-						text += block.text
+			contentParts(): ContentPartView[] {
+				const result: ContentPartView[] = []
+				const source = this.messageParts
+				for (let i = 0; i < source.length; i++) {
+					const part = source[i]
+					const typeRaw = part['type'] as string | null
+					const partType = typeRaw != null ? typeRaw : ''
+					if (partType == 'think' || partType == 'thinking' || partType == 'tool_call' || partType == 'toolCall') {
+						continue
 					}
-				}
-				return text
-			},
-			showTimelineCursor(): boolean {
-				if (this.isStreaming != true) {
-					return false
-				}
-				if (this.displayBlocks.length == 0) {
-					return false
-				}
-				const last = this.displayBlocks[this.displayBlocks.length - 1]
-				return last.type == 'text'
-			},
-			/** 按段落分段（连续空行分隔），单换行保留在段落内 */
-			contentLines(): ContentSegment[] {
-				const text = this.content as string
-				if (text == '') {
-					return []
-				}
-				const lines = text.split('\n')
-				const result: ContentSegment[] = []
-				let para = ''
-				for (let i = 0; i < lines.length; i++) {
-					const raw = lines[i]
-					if (raw.trim() == '') {
-						// 空行 = 段落分隔符
-						if (para != '') {
-							result.push({
-								text: para.trim(),
-								isLast: false
-							} as ContentSegment)
-							para = ''
-						}
-					} else {
-						if (para != '') {
-							para += '\n'
-						}
-						para += raw
+					let text = ''
+					let url = ''
+					let path = ''
+					let filename = ''
+					const rawText = part['text'] as string | null
+					if (rawText != null) { text = rawText }
+					const rawUrl = part['url'] as string | null
+					if (rawUrl != null) { url = rawUrl }
+					const rawPath = part['path'] as string | null
+					if (rawPath != null) { path = rawPath }
+					if (url == '' && path != '') { url = path }
+					const rawFile = part['filename'] as string | null
+					const rawName = part['name'] as string | null
+					if (rawFile != null && rawFile != '') {
+						filename = rawFile
+					} else if (rawName != null) {
+						filename = rawName
 					}
-				}
-				if (para != '') {
-					result.push({
-						text: para.trim(),
-						isLast: false
-					} as ContentSegment)
-				}
-				if (result.length > 0) {
-					result[result.length - 1].isLast = true
+					result.push({ type: partType == 'text' ? 'plain' : partType, text: text, url: url, path: path, filename: filename } as ContentPartView)
 				}
 				return result
 			},
-
-			/** 将 any 类型转 boolean */
 			isErrorBool(): boolean {
 				return this.isError == true
 			},
-			isStreamingBool(): boolean {
-				return this.isStreaming == true
-			},
-
-			/** 用户头像首字母 */
 			userInitial(): string {
 				const name = this.userNickname as string
 				if (name != null && name != '') {
@@ -434,8 +308,7 @@
 				}
 				return 'U'
 			},
-
-			bubbleClass() : string {
+			bubbleClass(): string {
 				if (this.role == 'user') {
 					return 'bubble-user'
 				}
@@ -450,26 +323,60 @@
 				}
 				return 'bubble-user'
 			},
-			textClass() : string {
-				if (this.role == 'user') {
-					return 'text-user'
+			textClass(): string {
+				if (this.role == 'toolResult') {
+					return 'text-tool'
 				}
 				if (this.role == 'assistant') {
 					return 'text-assistant'
-				}
-				if (this.role == 'toolResult') {
-					return 'text-tool'
 				}
 				return 'text-user'
 			}
 		},
 		methods: {
-			/** 递归计时 —— 每秒自检，running 停止则终止递归 */
+			buildToolBlock(item: UTSJSONObject): DisplayBlock {
+				const name = item['name'] as string | null
+				const args1 = item['arguments'] as string | null
+				const args2 = item['args'] as string | null
+				const rawTs = item['ts'] as number | null
+				const rawFt = item['finished_ts'] as number | null
+				const status = item['status'] as string | null
+				const result = item['result'] as string | null
+				return {
+					type: 'toolCall',
+					text: '',
+					thinking: '',
+					name: name != null ? name : '',
+					args: args1 != null ? args1 : (args2 != null ? args2 : ''),
+					ts: rawTs != null ? rawTs : 0,
+					finished_ts: rawFt != null ? rawFt : 0,
+					status: status != null ? status : '',
+					result: result != null ? result : '',
+				} as DisplayBlock
+			},
+			isLastContentPart(index: number): boolean {
+				return index == this.contentParts.length - 1
+			},
+			syncToolTimer() {
+				let hasRunning = false
+				for (let i = 0; i < this.displayBlocks.length; i++) {
+					if (this.displayBlocks[i].status == 'running') {
+						hasRunning = true
+						break
+					}
+				}
+				if (hasRunning == true && this.timerRunning == false) {
+					this.timerRunning = true
+					this.tick()
+				}
+				if (hasRunning == false && this.timerRunning == true) {
+					this.timerRunning = false
+				}
+			},
 			tick() {
 				if (this.timerRunning == false) return
 				this.timerTick = this.timerTick + 1
 				this._renderSwitch = !this._renderSwitch
-				// 自检：没有 running 状态的工具则停止
 				let anyRunning = false
 				for (let i = 0; i < this.displayBlocks.length; i++) {
 					if (this.displayBlocks[i].status == 'running') {
@@ -483,13 +390,12 @@
 				}
 				setTimeout(() => { this.tick() }, 1000)
 			},
-			/** 格式化工具调用耗时 */
 			getToolElapsed(block: DisplayBlock): string {
-				const _tick = this.timerTick  // bind reactivity for live timing
+				const _tick = this.timerTick
 				const ts = block.ts
 				const finished = block.finished_ts
-				if (ts == null || ts == 0) return ''
-				if (finished != null && finished > 0) {
+				if (ts == 0) return ''
+				if (finished > 0) {
 					const elapsed = ((finished - ts) / 1000)
 					return elapsed.toFixed(1) + 's'
 				}
@@ -497,36 +403,13 @@
 				const elapsed = ((now - ts) / 1000)
 				return elapsed.toFixed(1) + 's'
 			},
-			/** 获取工具状态图标 */
-			getToolStatus(block: DisplayBlock): string {
-				const status = block.status
-				if (status == 'running') return '⏳'
-				if (status == 'completed') return '✅'
-				if (status == 'error') return '❌'
-				if (status == 'pending') return '🔧'
-				return '🔧'
+			getToolStatusText(block: DisplayBlock): string {
+				if (block.status == 'running') return '运行中'
+				if (block.status == 'completed') return '完成'
+				if (block.status == 'error') return '失败'
+				if (block.status == 'pending') return '等待'
+				return '工具'
 			},
-			/** 获取时间线节点 dot 样式类 */
-			getDotClass(block: DisplayBlock): string {
-				if (block.type == 'thinking') return 'dot-thinking'
-				if (block.type == 'text') return 'dot-text'
-				if (block.type == 'toolCall') {
-					if (block.status == 'running') return 'dot-running'
-					if (block.status == 'completed') return 'dot-completed'
-					if (block.status == 'error') return 'dot-error'
-					return 'dot-pending'
-				}
-				return 'dot-default'
-			},
-			/** 工具图标 */
-			getToolIcon(block: DisplayBlock): string {
-				const name = block.name
-				if (name == 'file_read' || name == 'file_write' || name == 'file_delete' || name == 'file_list' || name == 'file_info' || name == 'directory_create') return '📁'
-				if (name == 'memory_search' || name == 'memory_buffer_write' || name == 'memory_core_list' || name == 'memory_core_save' || name == 'memory_core_forget') return '🧠'
-				if (name == 'web_search') return '🌐'
-				return '🔧'
-			},
-			/** 工具名友好显示 */
 			getToolDisplayName(name: string): string {
 				if (name == 'file_read') return '读取文件'
 				if (name == 'file_write') return '写入文件'
@@ -542,19 +425,31 @@
 				if (name == 'web_search') return '网络搜索'
 				return name
 			},
-			/** 切换工具调用的展开/折叠 */
+			getPartLabel(part: ContentPartView): string {
+				if (part.type == 'file') {
+					return '[文件] ' + (part.filename != '' ? part.filename : (part.path != '' ? part.path : '未命名文件'))
+				}
+				if (part.type == 'record' || part.type == 'voice') {
+					return '[语音] ' + (part.path != '' ? part.path : part.url)
+				}
+				if (part.type == 'audio') {
+					return '[音频] ' + (part.filename != '' ? part.filename : (part.path != '' ? part.path : part.url))
+				}
+				if (part.type == 'video') {
+					return '[视频] ' + (part.filename != '' ? part.filename : (part.path != '' ? part.path : part.url))
+				}
+				return '[' + part.type + '] ' + (part.text != '' ? part.text : part.path)
+			},
 			toggleToolCallExpand(index: number) {
 				while (this.toolCallExpanded.length <= index) {
 					this.toolCallExpanded.push(false)
 				}
 				this.toolCallExpanded[index] = !(this.toolCallExpanded[index] == true)
 			},
-			/** 获取工具调用展开状态 */
 			getToolCallExpanded(index: number): boolean {
 				if (index >= this.toolCallExpanded.length) return false
 				return this.toolCallExpanded[index] == true
 			},
-			/** 取消长按状态 */
 			cancelLongpress() {
 				if (this.longpressTimer != -1) {
 					clearInterval(this.longpressTimer)
@@ -563,8 +458,6 @@
 				this.longpressTriggered = false
 				this.isPressed = false
 			},
-
-			/** 触摸开始 — 启动长按计时 */
 			onBubbleTouchStart(e: UniTouchEvent) {
 				this.touchStartX = e.touches[0].screenX
 				this.touchStartY = e.touches[0].screenY
@@ -587,8 +480,6 @@
 					}
 				}, 100)
 			},
-
-			/** 触摸移动 — 距离过大取消长按 */
 			onBubbleTouchMove(e: UniTouchEvent) {
 				if (this.longpressTimer == -1) { return }
 				const dx = e.touches[0].screenX - this.touchStartX
@@ -597,8 +488,6 @@
 					this.cancelLongpress()
 				}
 			},
-
-			/** 触摸结束 — 清理状态 */
 			onBubbleTouchEnd() {
 				this.cancelLongpress()
 				this.longpressTriggered = false
@@ -609,7 +498,6 @@
 </script>
 
 <style>
-	/* 用户气泡 - 右对齐粉色 */
 	.bubble-user {
 		flex-direction: column;
 		align-items: flex-end;
@@ -618,16 +506,12 @@
 		margin-top: 16rpx;
 		margin-bottom: 16rpx;
 	}
-
-	/* 用户行：气泡 + 头像，顶部对齐 */
 	.user-row {
 		flex-direction: row;
 		align-items: flex-start;
 		justify-content: flex-end;
 		width: 100%;
 	}
-
-	/* 用户气泡 - 粉色渐变背景 */
 	.user-bubble {
 		background-color: var(--rice-primary-color);
 		border-radius: 32rpx;
@@ -635,25 +519,14 @@
 		max-width: 1000rpx;
 		flex-shrink: 1;
 	}
-
-	/* 用户气泡按压效果 */
 	.user-bubble:active {
 		opacity: 0.75;
 	}
-
-	/* AI 行：头像 + 内容，顶部对齐 */
 	.ai-row {
 		flex-direction: row;
 		align-items: flex-start;
 		width: 100%;
 	}
-
-	/* AI 气泡容器（分段气泡纵向排列） */
-	.ai-bubbles {
-		flex-direction: column;
-		align-items: flex-start;
-	}
-
 	.ai-content {
 		flex-shrink: 1;
 		background-color: var(--rice-background-2);
@@ -662,13 +535,9 @@
 		max-width: 1000rpx;
 		margin-bottom: 20rpx;
 	}
-
-	/* AI 气泡按压效果 */
 	.ai-content:active {
 		background-color: #E5E7EB;
 	}
-
-	/* 通用头像 - 小圆形 */
 	.chat-avatar {
 		width: 56rpx;
 		height: 56rpx;
@@ -676,40 +545,29 @@
 		flex-shrink: 0;
 		margin-top: 4rpx;
 	}
-
 	.chat-avatar-text {
 		font-size: 24rpx;
 		color: var(--rice-background-2);
 		font-weight: bold;
 	}
-
-	/* 用户头像 - 粉色渐变 */
 	.user-avatar {
 		background-color: var(--rice-primary-color);
 		margin-left: 16rpx;
 		justify-content: center;
 		align-items: center;
 	}
-
-	/* 用户头像 - 自定义图片 */
 	.user-avatar-image {
 		margin-left: 16rpx;
 	}
-
-	/* AI 头像 - 灰色 */
 	.ai-avatar {
 		background-color: var(--rice-text-color-3);
 		margin-right: 16rpx;
 		justify-content: center;
 		align-items: center;
 	}
-
-	/* AI 头像 - 自定义图片 */
 	.ai-avatar-image {
 		margin-right: 16rpx;
 	}
-
-	/* AI 气泡容器 - 只提供外边距 */
 	.bubble-assistant {
 		flex-direction: column;
 		align-items: flex-start;
@@ -718,8 +576,6 @@
 		margin-top: 16rpx;
 		margin-bottom: 16rpx;
 	}
-
-	/* 工具气泡 - 浅灰背景 */
 	.bubble-tool {
 		flex-direction: column;
 		align-items: flex-start;
@@ -731,8 +587,6 @@
 		border-radius: 16rpx;
 		padding: 20rpx;
 	}
-
-	/* 工具错误气泡 */
 	.bubble-tool-error {
 		flex-direction: column;
 		align-items: flex-start;
@@ -746,8 +600,9 @@
 		border-width: 2rpx;
 		border-color: #EF4444;
 	}
-
-	/* 工具标签 */
+	.tool-fallback {
+		flex-direction: column;
+	}
 	.tool-badge {
 		background-color: #E5E7EB;
 		border-radius: 8rpx;
@@ -757,84 +612,69 @@
 		padding-bottom: 4rpx;
 		margin-bottom: 12rpx;
 	}
-
 	.tool-badge-text {
 		font-size: 20rpx;
 		color: var(--rice-text-color-2);
 		font-weight: bold;
 	}
-
-	/* 气泡内的图片 */
+	.part-wrap {
+		margin-bottom: 8rpx;
+	}
 	.bubble-image {
 		width: 400rpx;
 		max-height: 600rpx;
 		border-radius: 20rpx;
 		margin-bottom: 8rpx;
 	}
-
-	/* 用户文字 - 白色字，粉底由父容器提供 */
+	.media-chip {
+		background-color: rgba(31, 41, 55, 0.06);
+		border-radius: 18rpx;
+		padding: 14rpx 18rpx;
+		border-width: 1rpx;
+		border-color: rgba(31, 41, 55, 0.08);
+	}
+	.user-media-chip {
+		background-color: rgba(255, 255, 255, 0.18);
+		border-color: rgba(255, 255, 255, 0.25);
+	}
+	.media-chip-text {
+		font-size: 26rpx;
+		color: var(--rice-text-color-2);
+		line-height: 38rpx;
+	}
+	.user-media-text {
+		color: #FFFFFF;
+	}
 	.text-user {
 		font-size: 30rpx;
 		color: var(--rice-background-2);
 		line-height: 44rpx;
 		white-space: pre-wrap;
 	}
-
-	/* AI 文字 - 深色字，白底由父容器提供 */
 	.text-assistant {
 		font-size: 30rpx;
 		color: var(--rice-text-color);
 		line-height: 44rpx;
 		white-space: pre-wrap;
 	}
-
-	/* AI 文字（非分段模式，保留换行符） */
 	.text-assistant-pre {
 		font-size: 30rpx;
 		color: var(--rice-text-color);
 		line-height: 44rpx;
 		white-space: pre-wrap;
 	}
-
-	/* 工具文字 */
 	.text-tool {
 		font-size: 26rpx;
 		color: var(--rice-text-color-2);
 		line-height: 40rpx;
 	}
-
-	/* 流式光标 - 粉色 */
 	.cursor {
 		color: #FB8FAB;
 		font-weight: bold;
 	}
-
-	/* 长按按下态 */
 	.bubble-pressed {
 		opacity: 0.65;
 	}
-
-	/* 思考内容折叠区 */
-	.thinking-wrap {
-	}
-	.thinking-toggle {
-		font-size: 22rpx;
-		color: #D1D5DB;
-	}
-	.thinking-text {
-		font-size: 24rpx;
-		color: #9CA3AF;
-		line-height: 36rpx;
-		margin-top: 4rpx;
-		white-space: pre-wrap;
-		padding-left: 16rpx;
-		border-left-width: 2rpx;
-		border-left-color: #E5E7EB;
-		border-left-style: solid;
-	}
-
-	/* ======== 交错思维链 blocks 样式 ======== */
-
 	.reasoning-panel {
 		margin-bottom: 16rpx;
 		padding: 14rpx 16rpx;
@@ -852,23 +692,13 @@
 		border-left-color: #E5E7EB;
 		border-left-style: solid;
 	}
-
 	.block-entry {
 		margin-bottom: 12rpx;
-	}
-
-	/* ======== 思考块 ======== */
-	.thinking-step {
-		padding-top: 4rpx;
-	}
-	.thinking-step-header {
-		flex-direction: row;
-		align-items: center;
 	}
 	.thinking-step-icon {
 		font-size: 22rpx;
 		color: #9CA3AF;
-		margin-right: 6rpx;
+		margin-right: 12rpx;
 		flex-shrink: 0;
 	}
 	.thinking-step-label {
@@ -882,8 +712,6 @@
 		margin-top: 8rpx;
 		white-space: pre-wrap;
 	}
-
-	/* ======== 工具调用卡片 ======== */
 	.tool-call-step {
 		padding-top: 4rpx;
 	}
@@ -909,9 +737,10 @@
 		align-items: center;
 		flex-shrink: 0;
 	}
-	.tool-call-icon {
-		font-size: 26rpx;
-		margin-right: 8rpx;
+	.tool-call-status {
+		font-size: 20rpx;
+		color: #FB8FAB;
+		margin-right: 10rpx;
 	}
 	.tool-call-card-name {
 		font-size: 24rpx;
@@ -924,11 +753,9 @@
 		margin-right: 8rpx;
 	}
 	.tool-call-chevron {
-		font-size: 24rpx;
+		font-size: 22rpx;
 		color: #AAAAAA;
 	}
-
-	/* 展开区域 */
 	.tool-call-card-detail {
 		padding: 4rpx 14rpx 14rpx 14rpx;
 	}

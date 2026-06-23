@@ -19,14 +19,7 @@
 		<!-- 消息列表 -->
 		<scroll-view class="message-list" :scroll-y="true" :scroll-top="scrollTop" @scroll="onMsgScroll" @touchmove="onMsgTouchMove">
 			<view v-for="(msg, index) in messages" :key="index">
-				<!-- 旧 toolResult 消息不渲染（工具调用已内联到 assistant 的 blocks 时间线） -->
-				<view v-if="msg.role == 'toolResult'" style="display:none;">
-				</view>
-				<!-- 跳过空内容且带 tool_calls 的旧格式 assistant 消息 -->
-				<view v-else-if="msg.role == 'assistant' && msg.tool_calls != null && msg.blocks == null && (msg.content == null || msg.content == '')">
-				</view>
-				<!-- 行内编辑模式 -->
-				<view v-else-if="editingIndex == index" class="inline-edit-wrap" :class="msg.role == 'user' ? 'inline-edit-user' : 'inline-edit-ai'">
+				<view v-if="editingIndex == index" class="inline-edit-wrap" :class="msg.role == 'user' ? 'inline-edit-user' : 'inline-edit-ai'">
 					<textarea class="inline-edit-input" v-model="editBuffer" auto-height />
 					<view class="inline-edit-actions">
 						<text class="inline-edit-cancel" @click="cancelEdit">取消</text>
@@ -34,36 +27,16 @@
 						<text class="inline-edit-send" @click="saveAndSend">发送</text>
 					</view>
 				</view>
-				<ChatBubble v-else-if="msg.blocks != null"
-					:role="msg.role"
-					:content="msg.content"
-					:msgType="msg.msgType != null ? msg.msgType : 'text'"
-					:imageUrl="msg.imageUrl != null ? msg.imageUrl : ''"
-					:agentAvatar="currentAgentAvatar"
-					:userNickname="userNickname"
-					:userAvatar="userAvatar"
-					:toolName="msg.toolName != null ? msg.toolName : ''"
-					:thinking="msg.thinking != null ? msg.thinking : ''"
-					:blocks="msg.blocks"
-					:hideThinking="hideThinking"
-				:msgSegmentation="msgSegmentation"
-					:isError="msg.isError == true"
-					:isStreaming="msg.isStreaming == true"
-					:cancelToken="longpressCancelToken"
-					@bubbleLongpress="onMessageLongpress(index)"
-				/>
 				<ChatBubble v-else
 					:role="msg.role"
-					:content="msg.content"
-					:msgType="msg.msgType != null ? msg.msgType : 'text'"
-					:imageUrl="msg.imageUrl != null ? msg.imageUrl : ''"
+					:content="msg.content != null ? msg.content : ''"
+					:parts="getMessagePartsForView(msg)"
 					:agentAvatar="currentAgentAvatar"
 					:userNickname="userNickname"
 					:userAvatar="userAvatar"
 					:toolName="msg.toolName != null ? msg.toolName : ''"
-					:thinking="msg.thinking != null ? msg.thinking : ''"
 					:hideThinking="hideThinking"
-				:msgSegmentation="msgSegmentation"
+					:msgSegmentation="msgSegmentation"
 					:isError="msg.isError == true"
 					:isStreaming="msg.isStreaming == true"
 					:cancelToken="longpressCancelToken"
@@ -160,6 +133,7 @@
 		createFileMessage,
 		createLocationMessage,
 		createVoiceMessage,
+		createTextMessage,
 	} from '@/utils/chat-models.uts'
 	import {
 		pushUserTextMessage,
@@ -283,6 +257,14 @@
 		methods: {
 			/** 加载当前智能体信息 */
 			/** 加载用户昵称 */
+			getMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] {
+				const parts = msg['message'] as UTSJSONObject[] | null
+				if (parts != null) {
+					return parts
+				}
+				return [] as UTSJSONObject[]
+			},
+
 			loadUserNickname() {
 				const profile = loadChatUserProfile()
 				this.userNickname = profile.nickname
@@ -523,12 +505,20 @@
 				}
 			},
 
+			startGenerationForMedia(prompt: string) {
+				if (this.isGenerating == true) {
+					return
+				}
+				this.savedFlag = false
+				this.simulateAIResponse(prompt)
+			},
+
 			/** 添加文本消息 */
 			addTextMessage(role: string, content: string) {
 				if (role == 'user') {
 					pushUserTextMessage(this.messages, content)
 				} else {
-					this.messages.push({ role: role, content: content, msgType: 'text', timestamp: Date.now() } as UTSJSONObject)
+					this.messages.push(createTextMessage(role, content))
 				}
 			},
 
@@ -547,6 +537,7 @@
 				const path = rawPath != null ? rawPath : ''
 				this.messages.push(createFileMessage(name, path))
 				this.scrollToBottom()
+				this.startGenerationForMedia('[文件] ' + name)
 			},
 
 			/** 添加位置消息 */
@@ -562,6 +553,7 @@
 				const content = '📍 ' + name + (addr != '' ? ' - ' + addr : '') + ' (' + lat + ', ' + lng + ')'
 				this.messages.push(createLocationMessage(content))
 				this.scrollToBottom()
+				this.startGenerationForMedia(content)
 			},
 
 			/** 添加语音消息 */
@@ -569,6 +561,7 @@
 				if (tempPath == '') { return }
 				this.messages.push(createVoiceMessage(tempPath))
 				this.scrollToBottom()
+				this.startGenerationForMedia('[语音消息] ' + tempPath)
 			},
 
 			// ===== 工具栏 =====
@@ -601,7 +594,7 @@
 						if (paths != null && paths.length > 0) {
 							this.addImageMessage(paths[0])
 							// 发完图片后调用 AI
-							this.simulateAIResponse('用户发送了一张图片')
+							this.startGenerationForMedia('用户发送了一张图片')
 						}
 					}
 				})
@@ -621,7 +614,7 @@
 						const paths = parsed['tempFilePaths'] as string[]
 						if (paths != null && paths.length > 0) {
 							this.addImageMessage(paths[0])
-							this.simulateAIResponse('用户拍摄了一张照片')
+							this.startGenerationForMedia('用户拍摄了一张照片')
 						}
 					}
 				})

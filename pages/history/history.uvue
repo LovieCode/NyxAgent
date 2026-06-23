@@ -84,6 +84,71 @@
 			this.loadHistory()
 		},
 		methods: {
+			renderMessagePartsMarkdown(msg: UTSJSONObject): string {
+				const parts = msg['message'] as UTSJSONObject[] | null
+				if (parts == null || parts.length == 0) {
+					const contentRaw = msg['content'] as string | null
+					return contentRaw != null ? contentRaw : ''
+				}
+				let text = ''
+				for (let i = 0; i < parts.length; i++) {
+					const part = parts[i]
+					const typeRaw = part['type'] as string | null
+					const type = typeRaw != null ? typeRaw : ''
+					if (type == 'plain' || type == 'text') {
+						const raw = part['text'] as string | null
+						if (raw != null && raw != '') { text += raw + '\n\n' }
+					} else if (type == 'think' || type == 'thinking') {
+						let raw = part['think'] as string | null
+						if (raw == null || raw == '') { raw = part['thinking'] as string | null }
+						if (raw != null && raw != '') { text += '<details><summary>思考过程</summary>\n\n' + raw + '\n\n</details>\n\n' }
+					} else if (type == 'tool_call' || type == 'toolCall') {
+						const calls = part['tool_calls'] as UTSJSONObject[] | null
+						if (calls != null) {
+							for (let j = 0; j < calls.length; j++) {
+								text += this.renderToolCallMarkdown(calls[j])
+							}
+						} else {
+							text += this.renderToolCallMarkdown(part)
+						}
+					} else if (type == 'image') {
+						const url = this.readPartPath(part)
+						text += '![图片](' + url + ')\n\n'
+					} else if (type == 'file') {
+						const filename = part['filename'] as string | null
+						const path = this.readPartPath(part)
+						text += '[文件] ' + (filename != null && filename != '' ? filename : path) + '\n\n'
+					} else if (type == 'record' || type == 'voice' || type == 'audio') {
+						text += '[语音/音频] ' + this.readPartPath(part) + '\n\n'
+					} else if (type == 'location') {
+						const raw = part['text'] as string | null
+						text += '[位置] ' + (raw != null ? raw : '') + '\n\n'
+					}
+				}
+				return text.trim()
+			},
+
+			readPartPath(part: UTSJSONObject): string {
+				const url = part['url'] as string | null
+				if (url != null && url != '') { return url }
+				const path = part['path'] as string | null
+				return path != null ? path : ''
+			},
+
+			renderToolCallMarkdown(item: UTSJSONObject): string {
+				const nameRaw = item['name'] as string | null
+				const argsRaw = item['arguments'] as string | null
+				const resultRaw = item['result'] as string | null
+				let text = '**Tool:** ' + (nameRaw != null ? nameRaw : 'tool') + '\n\n'
+				if (argsRaw != null && argsRaw != '') {
+					text += '```json\n' + argsRaw + '\n```\n\n'
+				}
+				if (resultRaw != null && resultRaw != '') {
+					text += '```text\n' + resultRaw + '\n```\n\n'
+				}
+				return text
+			},
+
 			loadHistory() {
 				try {
 					const list = getConversations()
@@ -263,17 +328,16 @@
 				for (let i = 0; i < msgs.length; i++) {
 					const msg = msgs[i]
 					const roleRaw = msg['role'] as string | null
-					const contentRaw = msg['content'] as string | null
 					const role = roleRaw != null ? roleRaw : ''
-					const content = contentRaw != null ? contentRaw : ''
+					const rendered = this.renderMessagePartsMarkdown(msg)
 					if (role == 'user') {
-						markdown += '## User\n\n' + content + '\n\n'
+						markdown += '## User\n\n' + rendered + '\n\n'
 					} else if (role == 'assistant') {
-						markdown += '## Assistant\n\n' + content + '\n\n'
+						markdown += '## Assistant\n\n' + rendered + '\n\n'
 					} else if (role == 'toolResult') {
 						const toolNameRaw = msg['toolName'] as string | null
 						const toolName = toolNameRaw != null ? toolNameRaw : 'tool'
-						markdown += '## Tool: ' + toolName + '\n\n```text\n' + content + '\n```\n\n'
+						markdown += '## Tool: ' + toolName + '\n\n```text\n' + rendered + '\n```\n\n'
 					}
 				}
 				uni.setClipboardData({
