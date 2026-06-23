@@ -20,15 +20,15 @@
 				</view>
 				<text v-if="contentParts.length == 0 && content != ''" class="text-user">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
 			</view>
-			<image v-if="userAvatar != ''" :src="userAvatar" class="chat-avatar user-avatar-image" mode="aspectFill" />
-			<view v-else class="chat-avatar user-avatar">
+			<image v-if="userAvatar != ''" :src="userAvatar" class="chat-avatar user-avatar-image" mode="aspectFill" @click.stop="onAvatarClick" />
+			<view v-else class="chat-avatar user-avatar" @click.stop="onAvatarClick">
 				<text class="chat-avatar-text">{{userInitial}}</text>
 			</view>
 		</view>
 
 		<view v-else-if="role == 'assistant'" class="ai-row">
-			<image v-if="agentAvatar != ''" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" />
-			<view v-else class="chat-avatar ai-avatar">
+			<image v-if="agentAvatar != ''" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" @click.stop="onAvatarClick" />
+			<view v-else class="chat-avatar ai-avatar" @click.stop="onAvatarClick">
 				<text class="chat-avatar-text">AI</text>
 			</view>
 			<view class="ai-content timeline-content" :class="isPressed ? 'bubble-pressed' : ''"
@@ -350,6 +350,9 @@
 			}
 		},
 		methods: {
+			onAvatarClick() {
+				this.$emit('avatarClick')
+			},
 			buildToolBlock(item: UTSJSONObject): DisplayBlock {
 				const name = item['name'] as string | null
 				const args1 = item['arguments'] as string | null

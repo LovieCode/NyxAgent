@@ -1,0 +1,821 @@
+/**
+ * 群聊数据模型与服务
+ *
+ * AstrBot 风格：持久化记录和 UI 展示解耦。
+ * 群聊复用私聊 Agent 设置，群会话拥有独立共享工作区。
+ */
+
+import { getAgentById, getAgents } from '@/utils/agent.uts'
+import {
+	getInternalFilesDir,
+	joinPath,
+	createDir,
+	exists,
+	copyItem,
+	deleteItem,
+	normalizePath,
+} from '@/utils/file-manager.uts'
+import {
+	CHAT_ROLE_ASSISTANT,
+	CHAT_ROLE_USER,
+	cloneParts,
+	createAssistantFinalMessage,
+	createAssistantStreamingMessage,
+	createPlainPart,
+	createTextMessage,
+	getMessageContent,
+	getMessageParts,
+} from '@/utils/chat-models.uts'
+
+export const GROUP_CHAT_LIST_KEY = 'group_chat_list'
+export const ACTIVE_GROUP_CHAT_ID_KEY = 'active_group_chat_id'
+export const ACTIVE_GROUP_SESSION_ID_KEY = 'active_group_session_id'
+
+export const GROUP_MESSAGE_SENDER_USER = 'user'
+export const GROUP_MESSAGE_SENDER_AGENT = 'agent'
+export const GROUP_MESSAGE_SENDER_SCHEDULER = 'scheduler'
+export const GROUP_MESSAGE_SENDER_SYSTEM = 'system'
+
+export type GroupChat = {
+	id: string
+	name: string
+	avatar: string
+	schedulerAgentId: string
+	schedulerPrompt: string
+	sharedPrompt: string
+	activeSessionId: string
+	createdAt: number
+	updatedAt: number
+}
+
+export type GroupChatMember = {
+	id: string
+	groupId: string
+	agentId: string
+	active: boolean
+	joinedAt: number
+	leftAt: number
+	order: number
+}
+
+export type GroupChatSession = {
+	id: string
+	groupId: string
+	title: string
+	workspacePath: string
+	forkedFromSessionId: string
+	titleLocked: boolean
+	createdAt: number
+	updatedAt: number
+}
+
+export type GroupChatMessage = {
+	id: string
+	groupId: string
+	sessionId: string
+	role: string
+	senderType: string
+	senderAgentId: string
+	senderName: string
+	senderAvatar: string
+	content: string
+	message: UTSJSONObject[]
+	visible: boolean
+	revoked: boolean
+	isStreaming: boolean
+	timestamp: number
+}
+
+function storageMembersKey(groupId: string): string {
+	return 'group_chat_members_' + groupId
+}
+
+function storageSessionsKey(groupId: string): string {
+	return 'group_chat_sessions_' + groupId
+}
+
+function storageMessagesKey(groupId: string, sessionId: string): string {
+	return 'group_chat_messages_' + groupId + '_' + sessionId
+}
+
+function safeJsonText(raw: string | null): string {
+	return raw != null ? raw : ''
+}
+
+function parseGroupChats(raw: string): GroupChat[] {
+	if (raw == '') { return [] as GroupChat[] }
+	try {
+		const list = JSON.parse(raw) as GroupChat[]
+		if (list != null) { return list }
+	} catch (_e: any) {
+	}
+	return [] as GroupChat[]
+}
+
+function parseGroupMembers(raw: string): GroupChatMember[] {
+	if (raw == '') { return [] as GroupChatMember[] }
+	try {
+		const list = JSON.parse(raw) as GroupChatMember[]
+		if (list != null) { return list }
+	} catch (_e: any) {
+	}
+	return [] as GroupChatMember[]
+}
+
+function parseGroupSessions(raw: string): GroupChatSession[] {
+	if (raw == '') { return [] as GroupChatSession[] }
+	try {
+		const list = JSON.parse(raw) as GroupChatSession[]
+		if (list != null) { return list }
+	} catch (_e: any) {
+	}
+	return [] as GroupChatSession[]
+}
+
+function parseGroupMessages(raw: string): UTSJSONObject[] {
+	if (raw == '') { return [] as UTSJSONObject[] }
+	try {
+		const list = JSON.parse(raw) as UTSJSONObject[]
+		if (list != null) { return list }
+	} catch (_e: any) {
+	}
+	return [] as UTSJSONObject[]
+}
+
+function createId(prefix: string): string {
+	return prefix + '-' + Date.now() + '-' + Math.floor(Math.random() * 100000)
+}
+
+function isSafeId(id: string): boolean {
+	if (id == '') { return false }
+	if (id.indexOf('/') >= 0 || id.indexOf('\\') >= 0) { return false }
+	if (id == '..' || id.indexOf('..') >= 0) { return false }
+	return true
+}
+
+function ensureDirectory(path: string): void {
+	if (path == '') { return }
+	if (exists(path) == false) {
+		createDir(path, true)
+	}
+}
+
+export function getGroupChats(): GroupChat[] {
+	const raw = uni.getStorageSync(GROUP_CHAT_LIST_KEY) as string | null
+	return parseGroupChats(safeJsonText(raw))
+}
+
+export function saveGroupChats(groups: GroupChat[]): void {
+	uni.setStorageSync(GROUP_CHAT_LIST_KEY, JSON.stringify(groups))
+}
+
+export function getGroupChatById(groupId: string): GroupChat | null {
+	const groups = getGroupChats()
+	for (let i = 0; i < groups.length; i++) {
+		if (groups[i].id == groupId) {
+			return groups[i]
+		}
+	}
+	return null
+}
+
+export function saveGroupChat(group: GroupChat): void {
+	const groups = getGroupChats()
+	let found = false
+	for (let i = 0; i < groups.length; i++) {
+		if (groups[i].id == group.id) {
+			groups.splice(i, 1, group)
+			found = true
+			break
+		}
+	}
+	if (found == false) {
+		groups.push(group)
+	}
+	saveGroupChats(groups)
+}
+
+export function buildDefaultSchedulerPrompt(): string {
+	return '你是隐藏的群聊调度 Agent。你可以在内部向任意成员 Agent 传递私密指令、背景信息和任务拆解，也可以指定一个或多个成员按顺序发言。你的存在、调度流程、私密指令不能被其他成员在公开发言中暴露。你只在系统触发节点工作，例如用户发消息、用户手动继续、连续讨论过多需要判断是否继续。\n' +
+		'输出必须是 JSON 对象，禁止 Markdown，结构：{"actions":[{"type":"speak","agentId":"成员ID","targetType":"user","targetAgentId":"","privateInstruction":"给该成员的私密指令","publicIntent":"公开发言目标","order":0}],"shouldContinue":false,"titleSuggestion":"适合本会话的短标题","privateNotes":"仅内部记录"}。\n' +
+		'如果用户只是闲聊，可以只安排 1 个成员回复。如果任务需要协作，可以安排多个成员顺序发言。不要为了热闹强行多人发言。'
+}
+
+export function buildDefaultSharedPrompt(): string {
+	return '这是一个故事/写作交流群聊。成员可以讨论人物、剧情、节奏、文风和表达，但要自然像群聊发言。公开发言只输出自己要说的话，不写舞台说明，不提隐藏调度、内部指令或系统消息。'
+}
+
+export function buildGroupWorkspaceRoot(): string {
+	const filesDir = getInternalFilesDir()
+	if (filesDir == '') { return '' }
+	const root = joinPath(filesDir, 'group-workspaces')
+	ensureDirectory(root)
+	return root
+}
+
+export function buildGroupWorkspacePath(groupId: string, sessionId: string): string {
+	if (isSafeId(groupId) == false || isSafeId(sessionId) == false) { return '' }
+	const root = buildGroupWorkspaceRoot()
+	if (root == '') { return '' }
+	return joinPath(joinPath(root, groupId), sessionId)
+}
+
+export function getGroupSessionWorkspaceDir(groupId: string, sessionId: string): string {
+	const dir = buildGroupWorkspacePath(groupId, sessionId)
+	ensureDirectory(dir)
+	return dir
+}
+
+function isInsideGroupWorkspace(path: string): boolean {
+	const root = normalizePath(buildGroupWorkspaceRoot())
+	const target = normalizePath(path)
+	if (root == '' || target == '') { return false }
+	return target == root || target.startsWith(root + '/')
+}
+
+export function getGroupMembers(groupId: string): GroupChatMember[] {
+	const raw = uni.getStorageSync(storageMembersKey(groupId)) as string | null
+	return parseGroupMembers(safeJsonText(raw))
+}
+
+export function saveGroupMembers(groupId: string, members: GroupChatMember[]): void {
+	uni.setStorageSync(storageMembersKey(groupId), JSON.stringify(members))
+}
+
+export function getActiveGroupMembers(groupId: string): GroupChatMember[] {
+	const members = getGroupMembers(groupId)
+	const result: GroupChatMember[] = []
+	for (let i = 0; i < members.length; i++) {
+		if (members[i].active == true) {
+			result.push(members[i])
+		}
+	}
+	result.sort((a: GroupChatMember, b: GroupChatMember): number => {
+		if (a.order < b.order) { return -1 }
+		if (a.order > b.order) { return 1 }
+		return 0
+	})
+	return result
+}
+
+export function isAgentInGroup(groupId: string, agentId: string): boolean {
+	const members = getGroupMembers(groupId)
+	for (let i = 0; i < members.length; i++) {
+		if (members[i].agentId == agentId && members[i].active == true) {
+			return true
+		}
+	}
+	return false
+}
+
+export function addGroupMember(groupId: string, agentId: string): void {
+	if (groupId == '' || agentId == '') { return }
+	const members = getGroupMembers(groupId)
+	for (let i = 0; i < members.length; i++) {
+		if (members[i].agentId == agentId) {
+			members[i].active = true
+			members[i].leftAt = 0
+			saveGroupMembers(groupId, members)
+			return
+		}
+	}
+	members.push({
+		id: createId('gmember'),
+		groupId: groupId,
+		agentId: agentId,
+		active: true,
+		joinedAt: Date.now(),
+		leftAt: 0,
+		order: members.length,
+	} as GroupChatMember)
+	saveGroupMembers(groupId, members)
+}
+
+export function removeGroupMember(groupId: string, agentId: string): void {
+	const members = getGroupMembers(groupId)
+	for (let i = 0; i < members.length; i++) {
+		if (members[i].agentId == agentId && members[i].active == true) {
+			members[i].active = false
+			members[i].leftAt = Date.now()
+			break
+		}
+	}
+	saveGroupMembers(groupId, members)
+}
+
+export function getGroupSessions(groupId: string): GroupChatSession[] {
+	const raw = uni.getStorageSync(storageSessionsKey(groupId)) as string | null
+	return parseGroupSessions(safeJsonText(raw))
+}
+
+export function saveGroupSessions(groupId: string, sessions: GroupChatSession[]): void {
+	uni.setStorageSync(storageSessionsKey(groupId), JSON.stringify(sessions))
+}
+
+export function displaySessionTitle(session: GroupChatSession | null): string {
+	if (session == null) { return '未命名会话' }
+	const title = session.title.trim()
+	if (title != '') { return title }
+	return '未命名会话'
+}
+
+export function getGroupSessionById(groupId: string, sessionId: string): GroupChatSession | null {
+	const sessions = getGroupSessions(groupId)
+	for (let i = 0; i < sessions.length; i++) {
+		if (sessions[i].id == sessionId) {
+			return sessions[i]
+		}
+	}
+	return null
+}
+
+export function saveGroupSession(session: GroupChatSession): void {
+	const sessions = getGroupSessions(session.groupId)
+	let found = false
+	for (let i = 0; i < sessions.length; i++) {
+		if (sessions[i].id == session.id) {
+			sessions.splice(i, 1, session)
+			found = true
+			break
+		}
+	}
+	if (found == false) {
+		sessions.push(session)
+	}
+	saveGroupSessions(session.groupId, sessions)
+}
+
+export function createGroupSession(groupId: string, title: string = ''): GroupChatSession {
+	const sessionId = createId('gsession')
+	const sessionTitle = title.trim() != '' ? title.trim() : '故事会话'
+	const workspace = getGroupSessionWorkspaceDir(groupId, sessionId)
+	const session: GroupChatSession = {
+		id: sessionId,
+		groupId: groupId,
+		title: sessionTitle,
+		workspacePath: workspace,
+		forkedFromSessionId: '',
+		titleLocked: false,
+		createdAt: Date.now(),
+		updatedAt: Date.now(),
+	}
+	const sessions = getGroupSessions(groupId)
+	sessions.push(session)
+	saveGroupSessions(groupId, sessions)
+	return session
+}
+
+export function ensureGroupActiveSession(group: GroupChat): GroupChatSession {
+	let session = getGroupSessionById(group.id, group.activeSessionId)
+	if (session != null) {
+		getGroupSessionWorkspaceDir(group.id, session.id)
+		return session
+	}
+	const sessions = getGroupSessions(group.id)
+	if (sessions.length > 0) {
+		session = sessions[0]
+		group.activeSessionId = session.id
+		group.updatedAt = Date.now()
+		saveGroupChat(group)
+		getGroupSessionWorkspaceDir(group.id, session.id)
+		return session
+	}
+	session = createGroupSession(group.id, '故事会话')
+	group.activeSessionId = session.id
+	group.updatedAt = Date.now()
+	saveGroupChat(group)
+	return session
+}
+
+export function setActiveGroupSession(groupId: string, sessionId: string): void {
+	const group = getGroupChatById(groupId)
+	if (group == null) { return }
+	const session = getGroupSessionById(groupId, sessionId)
+	if (session == null) { return }
+	group.activeSessionId = sessionId
+	group.updatedAt = Date.now()
+	saveGroupChat(group)
+	uni.setStorageSync(ACTIVE_GROUP_CHAT_ID_KEY, groupId)
+	uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, sessionId)
+}
+
+export function updateGroupSessionTitle(groupId: string, sessionId: string, title: string): void {
+	const session = getGroupSessionById(groupId, sessionId)
+	if (session == null) { return }
+	const safeTitle = title.trim()
+	if (safeTitle == '') { return }
+	session.title = safeTitle
+	session.titleLocked = true
+	session.updatedAt = Date.now()
+	saveGroupSession(session)
+}
+
+export function applyGroupSessionTitleSuggestion(groupId: string, sessionId: string, title: string): void {
+	const session = getGroupSessionById(groupId, sessionId)
+	if (session == null) { return }
+	const safeTitle = title.trim()
+	if (safeTitle == '') { return }
+	if (session.titleLocked == true) { return }
+	if (session.title != '' && session.title != '故事会话' && session.title != '新会话') { return }
+	session.title = safeTitle
+	session.updatedAt = Date.now()
+	saveGroupSession(session)
+}
+
+export function getGroupMessages(groupId: string, sessionId: string): UTSJSONObject[] {
+	const raw = uni.getStorageSync(storageMessagesKey(groupId, sessionId)) as string | null
+	return parseGroupMessages(safeJsonText(raw))
+}
+
+export function saveGroupMessages(groupId: string, sessionId: string, messages: UTSJSONObject[]): void {
+	uni.setStorageSync(storageMessagesKey(groupId, sessionId), JSON.stringify(messages))
+	const session = getGroupSessionById(groupId, sessionId)
+	if (session != null) {
+		session.updatedAt = Date.now()
+		saveGroupSession(session)
+	}
+	const group = getGroupChatById(groupId)
+	if (group != null) {
+		group.updatedAt = Date.now()
+		saveGroupChat(group)
+	}
+}
+
+export function appendGroupMessage(groupId: string, sessionId: string, message: UTSJSONObject): void {
+	const messages = getGroupMessages(groupId, sessionId)
+	messages.push(message)
+	saveGroupMessages(groupId, sessionId, messages)
+}
+
+function decorateGroupMessage(base: UTSJSONObject, groupId: string, sessionId: string, senderType: string, agentId: string, agentName: string, agentAvatar: string, visible: boolean): UTSJSONObject {
+	base['id'] = createId('gmsg')
+	base['groupId'] = groupId
+	base['sessionId'] = sessionId
+	base['senderType'] = senderType
+	base['senderAgentId'] = agentId
+	base['senderName'] = agentName
+	base['senderAvatar'] = agentAvatar
+	base['visible'] = visible
+	base['revoked'] = false
+	base['timestamp'] = Date.now()
+	return base
+}
+
+export function createGroupUserMessage(groupId: string, sessionId: string, content: string): UTSJSONObject {
+	const base = createTextMessage(CHAT_ROLE_USER, content)
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', '用户', '', true)
+}
+
+export function createGroupHiddenMessage(groupId: string, sessionId: string, senderType: string, content: string): UTSJSONObject {
+	const base = createTextMessage('system', content)
+	return decorateGroupMessage(base, groupId, sessionId, senderType, '', senderType, '', false)
+}
+
+
+export function readAgentName(agent: UTSJSONObject | null): string {
+	if (agent == null) { return 'Agent' }
+	const raw = agent['name'] as string | null
+	return raw != null && raw != '' ? raw : 'Agent'
+}
+
+export function readAgentAvatar(agent: UTSJSONObject | null): string {
+	if (agent == null) { return '' }
+	const raw = agent['avatar'] as string | null
+	return raw != null ? raw : ''
+}
+
+export function readAgentModel(agent: UTSJSONObject | null): string {
+	if (agent == null) { return '' }
+	const raw = agent['model'] as string | null
+	return raw != null ? raw : ''
+}
+
+export function readAgentSystemPrompt(agent: UTSJSONObject | null): string {
+	if (agent == null) { return '' }
+	const raw = agent['systemPrompt'] as string | null
+	return raw != null ? raw : ''
+}
+
+export function createGroupAgentStreamingMessage(groupId: string, sessionId: string, agentId: string): UTSJSONObject {
+	const agent = getAgentById(agentId)
+	const name = readAgentName(agent)
+	const avatar = readAgentAvatar(agent)
+	const base = createAssistantStreamingMessage([] as UTSJSONObject[], Date.now())
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true)
+}
+
+export function createGroupAgentFinalMessage(groupId: string, sessionId: string, agentId: string, parts: UTSJSONObject[], content: string): UTSJSONObject {
+	const agent = getAgentById(agentId)
+	const name = readAgentName(agent)
+	const avatar = readAgentAvatar(agent)
+	const base = createAssistantFinalMessage(cloneParts(parts), Date.now())
+	base['content'] = content
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true)
+}
+
+export function revokeGroupAgentMessage(groupId: string, sessionId: string, messageId: string): void {
+	const messages = getGroupMessages(groupId, sessionId)
+	for (let i = 0; i < messages.length; i++) {
+		const id = messages[i]['id'] as string | null
+		const senderType = messages[i]['senderType'] as string | null
+		if (id == messageId && senderType == GROUP_MESSAGE_SENDER_AGENT) {
+			messages[i]['revoked'] = true
+			messages[i]['content'] = '消息已撤回'
+			messages[i]['message'] = [createPlainPart('消息已撤回')]
+			messages[i]['isStreaming'] = false
+			break
+		}
+	}
+	saveGroupMessages(groupId, sessionId, messages)
+}
+
+export function getVisibleGroupMessages(messages: UTSJSONObject[]): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < messages.length; i++) {
+		const visible = messages[i]['visible'] as boolean | null
+		if (visible != false) {
+			result.push(messages[i])
+		}
+	}
+	return result
+}
+
+export function deleteGroupSession(groupId: string, sessionId: string, clearFiles: boolean): void {
+	const sessions = getGroupSessions(groupId)
+	const next: GroupChatSession[] = []
+	let targetWorkspace = ''
+	for (let i = 0; i < sessions.length; i++) {
+		if (sessions[i].id == sessionId) {
+			targetWorkspace = sessions[i].workspacePath
+		} else {
+			next.push(sessions[i])
+		}
+	}
+	uni.removeStorageSync(storageMessagesKey(groupId, sessionId))
+	if (clearFiles == true && targetWorkspace != '' && isInsideGroupWorkspace(targetWorkspace) == true && exists(targetWorkspace) == true) {
+		deleteItem(targetWorkspace, true)
+	}
+	saveGroupSessions(groupId, next)
+	const group = getGroupChatById(groupId)
+	if (group != null && group.activeSessionId == sessionId) {
+		if (next.length > 0) {
+			group.activeSessionId = next[0].id
+		} else {
+			const fresh = createGroupSession(groupId, '故事会话')
+			group.activeSessionId = fresh.id
+		}
+		group.updatedAt = Date.now()
+		saveGroupChat(group)
+		uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, group.activeSessionId)
+	}
+}
+
+export function forkGroupSession(groupId: string, sessionId: string): GroupChatSession | null {
+	const source = getGroupSessionById(groupId, sessionId)
+	if (source == null) { return null }
+	const forkId = createId('gsession')
+	const sourceTitle = displaySessionTitle(source)
+	const destWorkspace = buildGroupWorkspacePath(groupId, forkId)
+	if (source.workspacePath != '' && destWorkspace != '' && exists(source.workspacePath) == true && isInsideGroupWorkspace(source.workspacePath) == true && isInsideGroupWorkspace(destWorkspace) == true) {
+		copyItem(source.workspacePath, destWorkspace)
+	} else {
+		ensureDirectory(destWorkspace)
+	}
+	const forked: GroupChatSession = {
+		id: forkId,
+		groupId: groupId,
+		title: sourceTitle + ' · 分支',
+		workspacePath: destWorkspace,
+		forkedFromSessionId: sessionId,
+		titleLocked: false,
+		createdAt: Date.now(),
+		updatedAt: Date.now(),
+	}
+	const sessions = getGroupSessions(groupId)
+	sessions.push(forked)
+	saveGroupSessions(groupId, sessions)
+	const oldMessages = getGroupMessages(groupId, sessionId)
+	const copiedMessages: UTSJSONObject[] = []
+	for (let i = 0; i < oldMessages.length; i++) {
+		const copied = JSON.parse(JSON.stringify(oldMessages[i])) as UTSJSONObject
+		copied['id'] = createId('gmsg')
+		copied['sessionId'] = forkId
+		copied['isStreaming'] = false
+		copiedMessages.push(copied)
+	}
+	saveGroupMessages(groupId, forkId, copiedMessages)
+	return forked
+}
+
+export function createDefaultWritingGroupChat(): GroupChat {
+	const agents = getAgents()
+	let schedulerId = ''
+	let firstMember = ''
+	let secondMember = ''
+	if (agents.length > 0) {
+		const firstId = agents[0]['id'] as string | null
+		schedulerId = firstId != null ? firstId : ''
+		firstMember = schedulerId
+	}
+	for (let i = 0; i < agents.length; i++) {
+		const aid = agents[i]['id'] as string | null
+		if (aid == 'writing-helper') { firstMember = aid }
+		if (aid == 'idea-lab') { secondMember = aid }
+	}
+	if (secondMember == '' && agents.length > 1) {
+		const fallbackId = agents[1]['id'] as string | null
+		secondMember = fallbackId != null ? fallbackId : ''
+	}
+	const groupId = createId('gchat')
+	const group: GroupChat = {
+		id: groupId,
+		name: '故事工坊',
+		avatar: '',
+		schedulerAgentId: schedulerId,
+		schedulerPrompt: buildDefaultSchedulerPrompt(),
+		sharedPrompt: buildDefaultSharedPrompt(),
+		activeSessionId: '',
+		createdAt: Date.now(),
+		updatedAt: Date.now(),
+	}
+	saveGroupChat(group)
+	if (firstMember != '') { addGroupMember(groupId, firstMember) }
+	if (secondMember != '' && secondMember != firstMember) { addGroupMember(groupId, secondMember) }
+	const session = createGroupSession(groupId, '故事会话')
+	group.activeSessionId = session.id
+	saveGroupChat(group)
+	return group
+}
+
+
+export function buildSchedulerSystemPrompt(group: GroupChat): string {
+	let prompt = group.schedulerPrompt.trim()
+	if (prompt == '') {
+		prompt = buildDefaultSchedulerPrompt()
+	}
+	return prompt + '\n\n群聊共享规则：\n' + group.sharedPrompt
+}
+
+function formatMemberList(groupId: string): string {
+	const members = getActiveGroupMembers(groupId)
+	const lines: string[] = []
+	for (let i = 0; i < members.length; i++) {
+		const agent = getAgentById(members[i].agentId)
+		lines.push('- id=' + members[i].agentId + ' name=' + readAgentName(agent))
+	}
+	return lines.join('\n')
+}
+
+export function buildGroupTranscript(messages: UTSJSONObject[], limit: number = 30): string {
+	const visible = getVisibleGroupMessages(messages)
+	const start = visible.length > limit ? visible.length - limit : 0
+	const lines: string[] = []
+	for (let i = start; i < visible.length; i++) {
+		const msg = visible[i]
+		const role = msg['role'] as string | null
+		const senderType = msg['senderType'] as string | null
+		const senderName = msg['senderName'] as string | null
+		let name = senderName != null && senderName != '' ? senderName : '用户'
+		if (senderType == GROUP_MESSAGE_SENDER_USER || role == CHAT_ROLE_USER) {
+			name = '用户'
+		}
+		const content = getMessageContent(msg)
+		if (content.trim() != '') {
+			lines.push(name + '：' + content)
+		}
+	}
+	if (lines.length == 0) { return '(暂无公开发言)' }
+	return lines.join('\n')
+}
+
+export function buildSchedulerRuntimeMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], reason: string, loopTurns: number): UTSJSONObject[] {
+	const content = '触发原因：' + reason + '\n' +
+		'当前会话名：' + displaySessionTitle(session) + '\n' +
+		'连续讨论轮数：' + loopTurns + '\n\n' +
+		'可调度成员：\n' + formatMemberList(group.id) + '\n\n' +
+		'最近公开群聊记录：\n' + buildGroupTranscript(messages, 40) + '\n\n' +
+		'请判断下一步是否需要成员发言、由谁发言、是否顺序发言，并生成短会话标题 titleSuggestion。只输出 JSON。'
+	return [createTextMessage(CHAT_ROLE_USER, content)]
+}
+
+export function parseSchedulerDecision(raw: string, groupId: string): UTSJSONObject {
+	let jsonText = raw.trim()
+	const first = jsonText.indexOf('{')
+	const last = jsonText.lastIndexOf('}')
+	if (first >= 0 && last > first) {
+		jsonText = jsonText.substring(first, last + 1)
+	}
+	try {
+		const parsed = JSON.parse(jsonText) as UTSJSONObject
+		const actions = parsed['actions'] as UTSJSONObject[] | null
+		if (actions != null) {
+			actions.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
+				const ao = a['order'] as number | null
+				const bo = b['order'] as number | null
+				const av = ao != null ? ao : 0
+				const bv = bo != null ? bo : 0
+				if (av < bv) { return -1 }
+				if (av > bv) { return 1 }
+				return 0
+			})
+			parsed['actions'] = actions
+			return parsed
+		}
+	} catch (_e: any) {
+	}
+	return buildFallbackSchedulerDecision(groupId)
+}
+
+export function buildFallbackSchedulerDecision(groupId: string): UTSJSONObject {
+	const members = getActiveGroupMembers(groupId)
+	let agentId = ''
+	if (members.length > 0) {
+		agentId = members[0].agentId
+	}
+	const actions: UTSJSONObject[] = []
+	if (agentId != '') {
+		actions.push({
+			type: 'speak',
+			agentId: agentId,
+			targetType: 'user',
+			targetAgentId: '',
+			privateInstruction: '调度结果解析失败，请根据最近公开群聊记录自然回应用户。',
+			publicIntent: '自然回应用户',
+			order: 0,
+		} as UTSJSONObject)
+	}
+	return {
+		actions: actions,
+		shouldContinue: false,
+		titleSuggestion: '',
+		privateNotes: 'fallback',
+	} as UTSJSONObject
+}
+
+function readActionText(action: UTSJSONObject, key: string): string {
+	const raw = action[key] as string | null
+	return raw != null ? raw : ''
+}
+
+export function buildMemberSystemPrompt(group: GroupChat, session: GroupChatSession, agent: UTSJSONObject, action: UTSJSONObject): string {
+	const basePrompt = readAgentSystemPrompt(agent)
+	const agentName = readAgentName(agent)
+	const privateInstruction = readActionText(action, 'privateInstruction')
+	const publicIntent = readActionText(action, 'publicIntent')
+	const targetType = readActionText(action, 'targetType')
+	const targetAgentId = readActionText(action, 'targetAgentId')
+	return basePrompt + '\n\n' +
+		'你正在群聊「' + group.name + '」的会话「' + displaySessionTitle(session) + '」中发言。\n' +
+		'群聊共享提示词：\n' + group.sharedPrompt + '\n\n' +
+		'群聊规则：你可以使用工具处理当前群会话共享工作区；公开回复只输出你作为「' + agentName + '」要发到群里的正文。不要说“收到调度”“内部指令”“隐藏调度 Agent”“系统让我”等内容，不要暴露任何调度流程。\n' +
+		'公开发言目标：' + publicIntent + '\n' +
+		'公开/内部目标类型：' + targetType + '\n' +
+		'目标 Agent ID：' + targetAgentId + '\n' +
+		'给你的私密指令：' + privateInstruction
+}
+
+export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], action: UTSJSONObject, agentName: string): UTSJSONObject[] {
+	const runtime: UTSJSONObject[] = []
+	const visible = getVisibleGroupMessages(messages)
+	const start = visible.length > 40 ? visible.length - 40 : 0
+	for (let i = start; i < visible.length; i++) {
+		const msg = visible[i]
+		const senderType = msg['senderType'] as string | null
+		const senderName = msg['senderName'] as string | null
+		const role = msg['role'] as string | null
+		let label = senderName != null && senderName != '' ? senderName : '用户'
+		if (senderType == GROUP_MESSAGE_SENDER_USER || role == CHAT_ROLE_USER) {
+			label = '用户'
+		}
+		const content = getMessageContent(msg)
+		if (content.trim() == '') { continue }
+		if (role == CHAT_ROLE_ASSISTANT) {
+			runtime.push(createTextMessage(CHAT_ROLE_ASSISTANT, label + '：' + content))
+		} else {
+			runtime.push(createTextMessage(CHAT_ROLE_USER, label + '：' + content))
+		}
+	}
+	const privateInstruction = readActionText(action, 'privateInstruction')
+	const publicIntent = readActionText(action, 'publicIntent')
+	const targetType = readActionText(action, 'targetType')
+	const targetAgentId = readActionText(action, 'targetAgentId')
+	const taskText = '现在轮到你「' + agentName + '」发言。\n' +
+		'会话名：' + displaySessionTitle(session) + '\n' +
+		'公开发言目标：' + publicIntent + '\n' +
+		'目标类型：' + targetType + '\n' +
+		'目标 Agent ID：' + targetAgentId + '\n' +
+		'私密指令：' + privateInstruction + '\n' +
+		'只输出要发到群聊里的正文，不要暴露调度和内部信息。'
+	runtime.push(createTextMessage(CHAT_ROLE_USER, taskText))
+	return runtime
+}
+
+export function syncGroupStreamingMessage(target: UTSJSONObject, source: UTSJSONObject): void {
+	target['content'] = getMessageContent(source)
+	target['message'] = cloneParts(getMessageParts(source))
+	target['isStreaming'] = source['isStreaming'] as boolean | null
+	const toolCalls = source['tool_calls'] as UTSJSONObject[] | null
+	if (toolCalls != null) {
+		target['tool_calls'] = toolCalls
+	}
+}

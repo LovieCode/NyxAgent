@@ -17,6 +17,37 @@
 			}
 		},
 		{
+			"path": "pages/group-chats/group-chats",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/group-chat/group-chat",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white",
+				"disableScroll": true,
+				"softinputMode": "adjustResize"
+			}
+		},
+		{
+			"path": "pages/group-chat-settings/group-chat-settings",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white",
+				"softinputMode": "adjustResize"
+			}
+		},
+		{
+			"path": "pages/group-chat-sessions/group-chat-sessions",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
 			"path": "pages/todo/todo",
 			"style": {
 				"navigationStyle": "custom"

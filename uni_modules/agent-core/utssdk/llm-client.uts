@@ -891,7 +891,8 @@ function prepareAgentContext(
 	agentId: string,
 	conversationId: string,
 	allowCoreMemoryWrite: boolean = false,
-	enableContextTruncation: boolean = true
+	enableContextTruncation: boolean = true,
+	workspaceRoot: string = ''
 ): PreparedAgentContext {
 	const workingMessages: UTSJSONObject[] = []
 	const droppedMessages: UTSJSONObject[] = []
@@ -1012,7 +1013,7 @@ function prepareAgentContext(
 		workingMessages.push(msg)
 	}
 
-	const tools = createAgentTools(agentId, conversationId, personId, allowCoreMemoryWrite)
+	const tools = createAgentTools(agentId, conversationId, personId, allowCoreMemoryWrite, workspaceRoot)
 	return {
 		workingMessages,
 		toolDefs: buildOpenAIToolDefs(tools),
@@ -1806,7 +1807,8 @@ function runAgentLoop(
 	stream: AgentEventStream,
 	conversationId: string,
 	allowCoreMemoryWrite: boolean = false,
-	enableMemoryManager: boolean = true
+	enableMemoryManager: boolean = true,
+	workspaceRoot: string = ''
 ): void {
 	const config = resolveLLMConfig(providerId, model)
 	if (config == null) {
@@ -1827,10 +1829,10 @@ function runAgentLoop(
 	baseUrl = normalizeBaseUrl(baseUrl)
 
 	// 上下文截断和记忆管理递归开关解耦：管理 Agent 不递归整理，但仍需要正常截断。
-	const prepared = prepareAgentContext(messages, systemPrompt, agentId, conversationId, allowCoreMemoryWrite, true)
+	const prepared = prepareAgentContext(messages, systemPrompt, agentId, conversationId, allowCoreMemoryWrite, true, workspaceRoot)
 	const workingMessages = prepared.workingMessages
 	const personId = 'default'
-	const tools = createAgentTools(agentId, conversationId, personId, allowCoreMemoryWrite)
+	const tools = createAgentTools(agentId, conversationId, personId, allowCoreMemoryWrite, workspaceRoot)
 	const toolDefs = prepared.toolDefs
 
 	if (enableMemoryManager == true && getMemoryEnabled() == true && prepared.droppedScore > 0 && prepared.truncateDropScore > 0 && isMemoryCompactionRunning(agentId, conversationId) == false) {
@@ -2170,7 +2172,7 @@ startMemoryManagerLoop = (allMessages: UTSJSONObject[], providerId: string, mode
 		}
 	})
 	setTimeout(() => {
-		runAgentLoop(managerMessages, managerSystemPrompt, managerProviderId, managerModel, agentId, settings, managerStream, conversationId, true, false)
+		runAgentLoop(managerMessages, managerSystemPrompt, managerProviderId, managerModel, agentId, settings, managerStream, conversationId, true, false, '')
 	}, 0)
 	return true
 }
@@ -2365,7 +2367,8 @@ export function agentChat(
 	model: string,
 	agentId: string,
 	maxIterations: number = 0,
-	conversationId: string = ''
+	conversationId: string = '',
+	workspaceRoot: string = ''
 ): AgentEventStream {
 	const stream = new AgentEventStream()
 	const agent = getAgentById(agentId)
@@ -2376,7 +2379,7 @@ export function agentChat(
 
 	// 异步执行 Agent 循环
 	setTimeout(() => {
-		runAgentLoop(messages, systemPrompt, providerId, model, agentId, settings, stream, conversationId)
+		runAgentLoop(messages, systemPrompt, providerId, model, agentId, settings, stream, conversationId, false, true, workspaceRoot)
 	}, 0)
 
 	return stream

@@ -1,0 +1,131 @@
+<template>
+	<view class="page-shell rice-theme-light">
+		<NavBar title="群聊">
+			<template #right>
+				<view class="add-btn" @click="createWritingGroup">
+					<oui-icon-unix name="plus" size="44rpx" color="#FFFFFF" />
+				</view>
+			</template>
+		</NavBar>
+
+		<scroll-view class="group-scroll" :scroll-y="true">
+			<view class="hero-card" @click="createWritingGroup">
+				<view class="hero-icon">
+					<oui-icon-unix name="edit" size="56rpx" color="#FFFFFF" />
+				</view>
+				<view class="hero-info">
+					<text class="hero-title">故事 / 写作交流群</text>
+					<text class="hero-desc">默认模板：多 Agent 互相接话，一个隐藏调度负责控场。</text>
+				</view>
+				<text class="hero-action">创建</text>
+			</view>
+
+			<view class="list-content">
+				<view v-for="(group, index) in groupList" :key="group.id" class="group-item" @click="openGroup(group)">
+					<view class="group-avatar" :class="'avatar-' + ((index % 5) + 1)">
+						<oui-icon-unix name="robot" size="48rpx" color="#FFFFFF" />
+					</view>
+					<view class="group-info">
+						<view class="group-top">
+							<text class="group-name">{{group.name}}</text>
+							<text class="group-time">{{formatTime(group.updatedAt)}}</text>
+						</view>
+						<text class="group-desc">{{getGroupSummary(group)}}</text>
+					</view>
+					<text class="group-arrow">›</text>
+				</view>
+				<view v-if="groupList.length == 0" class="empty-state">
+					<text class="empty-title">还没有群聊</text>
+					<text class="empty-desc">点上面的模板开一个故事工坊。</text>
+				</view>
+			</view>
+		</scroll-view>
+
+		<TabBar current="pages/group-chats/group-chats" />
+	</view>
+</template>
+
+<script lang="uts">
+	import {
+		ACTIVE_GROUP_CHAT_ID_KEY,
+		ACTIVE_GROUP_SESSION_ID_KEY,
+		GroupChat,
+		createDefaultWritingGroupChat,
+		displaySessionTitle,
+		ensureGroupActiveSession,
+		getActiveGroupMembers,
+		getGroupChats,
+	} from '@/utils/group-chat-service.uts'
+
+	export default {
+		data() {
+			return {
+				groupList: [] as GroupChat[],
+			}
+		},
+		onLoad() {
+			this.loadGroups()
+		},
+		onShow() {
+			this.loadGroups()
+		},
+		methods: {
+			loadGroups(): void {
+				this.groupList = getGroupChats()
+			},
+			createWritingGroup(): void {
+				const group = createDefaultWritingGroupChat()
+				this.loadGroups()
+				this.openGroup(group)
+			},
+			openGroup(group: GroupChat): void {
+				const session = ensureGroupActiveSession(group)
+				uni.setStorageSync(ACTIVE_GROUP_CHAT_ID_KEY, group.id)
+				uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, session.id)
+				uni.navigateTo({ url: '/pages/group-chat/group-chat' })
+			},
+			getGroupSummary(group: GroupChat): string {
+				const members = getActiveGroupMembers(group.id)
+				const session = ensureGroupActiveSession(group)
+				return members.length.toString() + ' 个成员 · 当前会话：' + displaySessionTitle(session)
+			},
+			formatTime(timestamp: number): string {
+				if (timestamp <= 0) { return '' }
+				const d = new Date(timestamp)
+				const month = (d.getMonth() + 1).toString()
+				const day = d.getDate().toString()
+				const hour = d.getHours() < 10 ? '0' + d.getHours().toString() : d.getHours().toString()
+				const minute = d.getMinutes() < 10 ? '0' + d.getMinutes().toString() : d.getMinutes().toString()
+				return month + '/' + day + ' ' + hour + ':' + minute
+			}
+		}
+	}
+</script>
+
+<style>
+	.add-btn { width: 80rpx; height: 80rpx; justify-content: center; align-items: center; }
+	.group-scroll { flex: 1; }
+	.hero-card { flex-direction: row; align-items: center; margin: 20rpx 24rpx 8rpx; padding: 28rpx; border-radius: 36rpx; background-color: var(--rice-primary-color); }
+	.hero-icon { width: 104rpx; height: 104rpx; border-radius: 32rpx; background-color: rgba(255,255,255,0.18); justify-content: center; align-items: center; margin-right: 24rpx; }
+	.hero-info { flex: 1; flex-direction: column; }
+	.hero-title { font-size: 34rpx; color: #FFFFFF; font-weight: bold; }
+	.hero-desc { font-size: 24rpx; color: rgba(255,255,255,0.78); margin-top: 8rpx; lines: 2; }
+	.hero-action { color: #FFFFFF; font-size: 26rpx; font-weight: bold; margin-left: 18rpx; }
+	.list-content { flex-direction: column; background-color: var(--rice-background-2); margin: 16rpx 24rpx 24rpx; border-radius: 36rpx; overflow: hidden; }
+	.group-item { flex-direction: row; align-items: center; padding: 28rpx 32rpx; border-bottom-width: 0.10rpx; border-bottom-color: var(--rice-border-color); border-bottom-style: solid; }
+	.group-avatar { width: 96rpx; height: 96rpx; border-radius: 28rpx; justify-content: center; align-items: center; margin-right: 28rpx; }
+	.avatar-1 { background-color: var(--rice-primary-color); }
+	.avatar-2 { background-color: #60A5FA; }
+	.avatar-3 { background-color: #34D399; }
+	.avatar-4 { background-color: #FBBF24; }
+	.avatar-5 { background-color: #A78BFA; }
+	.group-info { flex: 1; flex-direction: column; }
+	.group-top { flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 8rpx; }
+	.group-name { font-size: 32rpx; font-weight: bold; color: var(--rice-text-color); }
+	.group-time { font-size: 22rpx; color: var(--rice-text-color-3); }
+	.group-desc { font-size: 26rpx; color: var(--rice-text-color-3); lines: 1; text-overflow: ellipsis; }
+	.group-arrow { font-size: 44rpx; color: var(--rice-text-color-3); margin-left: 16rpx; }
+	.empty-state { padding: 80rpx 32rpx; align-items: center; justify-content: center; flex-direction: column; }
+	.empty-title { font-size: 30rpx; font-weight: bold; color: var(--rice-text-color); }
+	.empty-desc { margin-top: 8rpx; font-size: 24rpx; color: var(--rice-text-color-3); }
+</style>

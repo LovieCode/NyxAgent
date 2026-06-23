@@ -460,7 +460,7 @@ export function listRootContents(): FileItem[] {
 	// 第 2 组：内部存储精选目录
 	const filesDir = getInternalFilesDir()
 	if (filesDir != '') {
-		const knownDirs = ['sessions', 'exports', 'imports', 'laoqianjunzi-sqlite-snapshots']
+		const knownDirs = ['sessions', 'group-workspaces', 'exports', 'imports', 'laoqianjunzi-sqlite-snapshots']
 		for (let k = 0; k < knownDirs.length; k++) {
 			const subPath = filesDir + '/' + knownDirs[k]
 			if (exists(subPath)) {

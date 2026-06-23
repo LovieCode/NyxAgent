@@ -1,0 +1,403 @@
+<template>
+	<view class="page-shell rice-theme-light">
+		<NavBar :title="headerTitle" showBack @back="goBack">
+			<template #right>
+				<view style="flex-direction:row;align-items:center;">
+					<view class="nav-icon-btn" @click="goSessions">
+						<oui-icon-unix name="time-circle" size="40rpx" color="#FFFFFF" />
+					</view>
+					<view class="nav-icon-btn" @click="goSettings" style="margin-left:8rpx;">
+						<oui-icon-unix name="setting" size="40rpx" color="#FFFFFF" />
+					</view>
+				</view>
+			</template>
+		</NavBar>
+
+		<scroll-view class="message-list" :scroll-y="true" :scroll-top="scrollTop" @scroll="onMsgScroll">
+			<view v-for="(msg, index) in visibleMessages" :key="msg.id != null ? msg.id : index">
+				<view v-if="isAgentMessage(msg)" class="agent-name-row">
+					<text class="agent-name-text">{{msg.senderName != null ? msg.senderName : 'Agent'}}</text>
+				</view>
+				<ChatBubble
+					:role="msg.role"
+					:content="msg.content != null ? msg.content : ''"
+					:parts="getMessagePartsForView(msg)"
+					:agentAvatar="msg.senderAvatar != null ? msg.senderAvatar : ''"
+					:userNickname="userNickname"
+					:userAvatar="userAvatar"
+					:toolName="msg.toolName != null ? msg.toolName : ''"
+					:hideThinking="false"
+					:msgSegmentation="true"
+					:isError="msg.isError == true"
+					:isStreaming="msg.isStreaming == true"
+					:cancelToken="longpressCancelToken"
+					@bubbleLongpress="onMessageLongpress(msg)"
+					@avatarClick="openAgentPrivateChat(msg)"
+				/>
+			</view>
+			<view v-if="visibleMessages.length == 0" class="empty-state">
+				<text class="empty-text">{{emptyTitle}}</text>
+				<text class="empty-hint">发一句话，调度 Agent 会在幕后安排成员接招。</text>
+			</view>
+		</scroll-view>
+
+		<view class="chat-bottom">
+			<view v-if="showToolPanel" class="toolbar-panel">
+				<view class="toolbar-grid">
+					<view class="toolbar-grid-item" @click="stopDiscussion">
+						<view class="toolbar-grid-icon danger-icon"><oui-icon-unix name="stop" size="52rpx" color="#EF4444" /></view>
+						<text class="toolbar-grid-label">停止讨论</text>
+					</view>
+					<view class="toolbar-grid-item" @click="continueDiscussion">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="plus-circle" size="52rpx" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">继续讨论</text>
+					</view>
+					<view class="toolbar-grid-item" @click="goSessions">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="time-circle" size="52rpx" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">会话分支</text>
+					</view>
+					<view class="toolbar-grid-item" @click="goSettings">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="setting" size="52rpx" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">群聊设置</text>
+					</view>
+				</view>
+			</view>
+			<view class="input-bar">
+				<view class="toolbar-toggle" @click="toggleToolPanel">
+					<oui-icon-unix name="plus" size="36rpx" color="#374151" />
+				</view>
+				<view class="input-wrap">
+					<textarea class="text-input" v-model="inputText" :style="{ height: inputHeight + 'px' }" placeholder="给群里发消息..." placeholder-style="color:var(--rice-text-color-3)" @linechange="onInputLineChange" :disabled="isGenerating == true" />
+				</view>
+				<rice-button v-if="isGenerating == false" type="primary" text="发送" size="small" shape="round" @click="sendMessage" style="margin-left:12rpx" />
+				<rice-button v-else type="primary" text="停止" size="small" shape="round" @click="stopDiscussion" style="margin-left:12rpx" />
+			</view>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	import { agentChat, chatWithLLM } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
+	import { getAgentById } from '@/utils/agent.uts'
+	import { loadChatUserProfile } from '@/utils/chat-conversation-service.uts'
+	import { CHAT_ROLE_ASSISTANT, getMessageParts } from '@/utils/chat-models.uts'
+	import { reduceAgentEvent, finalizeAssistantTurn } from '@/utils/chat-message-reducer.uts'
+	import {
+		ACTIVE_GROUP_CHAT_ID_KEY,
+		ACTIVE_GROUP_SESSION_ID_KEY,
+		GROUP_MESSAGE_SENDER_AGENT,
+		GroupChat,
+		GroupChatSession,
+		applyGroupSessionTitleSuggestion,
+		buildGroupWorkspacePath,
+		buildMemberRuntimeMessages,
+		buildMemberSystemPrompt,
+		buildSchedulerRuntimeMessages,
+		buildSchedulerSystemPrompt,
+		createDefaultWritingGroupChat,
+		createGroupAgentStreamingMessage,
+		createGroupHiddenMessage,
+		createGroupUserMessage,
+		displaySessionTitle,
+		ensureGroupActiveSession,
+		getActiveGroupMembers,
+		getGroupChatById,
+		getGroupMessages,
+		getGroupSessionById,
+		getVisibleGroupMessages,
+		parseSchedulerDecision,
+		isAgentInGroup,
+		readAgentModel,
+		readAgentName,
+		revokeGroupAgentMessage,
+		saveGroupMessages,
+		syncGroupStreamingMessage,
+	} from '@/utils/group-chat-service.uts'
+
+	export default {
+		data() {
+			return {
+				groupId: '' as string,
+				sessionId: '' as string,
+				group: null as GroupChat | null,
+				session: null as GroupChatSession | null,
+				messages: [] as UTSJSONObject[],
+				inputText: '' as string,
+				inputHeight: 40 as number,
+				isGenerating: false as boolean,
+				showToolPanel: false as boolean,
+				scrollTop: 0 as number,
+				longpressCancelToken: 0 as number,
+				currentStream: null as AgentEventStream | null,
+				loopTurns: 0 as number,
+				discussionStopped: false as boolean,
+				userNickname: '' as string,
+				userAvatar: '' as string,
+			}
+		},
+		computed: {
+			headerTitle(): string {
+				const session = this.session
+				return session != null ? displaySessionTitle(session) : '群聊'
+			},
+			emptyTitle(): string {
+				const group = this.group
+				return group != null ? group.name : '群聊'
+			},
+			visibleMessages(): UTSJSONObject[] {
+				return getVisibleGroupMessages(this.messages)
+			}
+		},
+		onLoad() {
+			this.loadUserProfile()
+			this.loadGroup()
+		},
+		onShow() {
+			this.loadUserProfile()
+			this.loadGroup()
+		},
+		methods: {
+			loadUserProfile(): void {
+				const profile = loadChatUserProfile()
+				this.userNickname = profile.nickname
+				this.userAvatar = profile.avatar
+			},
+			loadGroup(): void {
+				let groupId = uni.getStorageSync(ACTIVE_GROUP_CHAT_ID_KEY) as string | null
+				if (groupId == null || groupId == '') {
+					const group = createDefaultWritingGroupChat()
+					groupId = group.id
+					uni.setStorageSync(ACTIVE_GROUP_CHAT_ID_KEY, group.id)
+				}
+				let group = getGroupChatById(groupId)
+				if (group == null) {
+					group = createDefaultWritingGroupChat()
+					groupId = group.id
+					uni.setStorageSync(ACTIVE_GROUP_CHAT_ID_KEY, group.id)
+				}
+				const session = ensureGroupActiveSession(group)
+				this.groupId = group.id
+				this.sessionId = session.id
+				this.group = group
+				this.session = session
+				uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, session.id)
+				this.messages = getGroupMessages(group.id, session.id)
+				this.scrollToBottom()
+			},
+			goBack(): void { uni.navigateBack() },
+			goSettings(): void { uni.navigateTo({ url: '/pages/group-chat-settings/group-chat-settings' }) },
+			goSessions(): void { uni.navigateTo({ url: '/pages/group-chat-sessions/group-chat-sessions' }) },
+			toggleToolPanel(): void { this.showToolPanel = !this.showToolPanel },
+			onMsgScroll(): void { this.longpressCancelToken++ },
+			onInputLineChange(e: any): void {
+				const detail = e.detail as UTSJSONObject
+				const h = detail['height'] as number | null
+				if (h != null) {
+					let next = h
+					if (next < 40) { next = 40 }
+					if (next > 120) { next = 120 }
+					this.inputHeight = next
+				}
+			},
+			getMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] { return getMessageParts(msg) },
+			isAgentMessage(msg: UTSJSONObject): boolean {
+				const senderType = msg['senderType'] as string | null
+				return senderType == GROUP_MESSAGE_SENDER_AGENT
+			},
+			scrollToBottom(): void {
+				setTimeout(() => { this.scrollTop = this.scrollTop + 999999 }, 80)
+			},
+			findLastAssistantMessage(list: UTSJSONObject[]): UTSJSONObject | null {
+				for (let i = list.length - 1; i >= 0; i--) {
+					const role = list[i]['role'] as string | null
+					if (role == CHAT_ROLE_ASSISTANT) {
+						return list[i]
+					}
+				}
+				return null
+			},
+			saveMessages(): void {
+				if (this.groupId == '' || this.sessionId == '') { return }
+				saveGroupMessages(this.groupId, this.sessionId, this.messages)
+			},
+			sendMessage(): void {
+				const text = this.inputText.trim()
+				if (text == '') { return }
+				if (this.isGenerating == true) { return }
+				this.inputText = ''
+				this.showToolPanel = false
+				const msg = createGroupUserMessage(this.groupId, this.sessionId, text)
+				this.messages.push(msg)
+				this.saveMessages()
+				this.scrollToBottom()
+				this.runScheduler('用户发送消息')
+			},
+			continueDiscussion(): void {
+				if (this.isGenerating == true) { return }
+				this.showToolPanel = false
+				this.runScheduler('用户要求继续讨论')
+			},
+			stopDiscussion(): void {
+				this.discussionStopped = true
+				const stream = this.currentStream
+				if (stream != null) {
+					stream.abort()
+				}
+				this.currentStream = null
+				this.isGenerating = false
+				const note = createGroupHiddenMessage(this.groupId, this.sessionId, 'system', '用户请求暂停本轮讨论。仍在 loop 的成员不要继续发言。')
+				this.messages.push(note)
+				this.saveMessages()
+				uni.showToast({ position: 'bottom', title: '已停止讨论', icon: 'none' })
+			},
+			onMessageLongpress(msg: UTSJSONObject): void {
+				const senderType = msg['senderType'] as string | null
+				if (senderType != GROUP_MESSAGE_SENDER_AGENT) { return }
+				const id = msg['id'] as string | null
+				if (id == null || id == '') { return }
+				uni.showActionSheet({
+					itemList: ['撤回这条 Agent 消息', '跳转私聊'],
+					success: (res) => {
+						if (res.tapIndex == 0) {
+							revokeGroupAgentMessage(this.groupId, this.sessionId, id)
+							this.messages = getGroupMessages(this.groupId, this.sessionId)
+						} else if (res.tapIndex == 1) {
+							this.openAgentPrivateChat(msg)
+						}
+					}
+				})
+			},
+			openAgentPrivateChat(msg: UTSJSONObject): void {
+				const agentId = msg['senderAgentId'] as string | null
+				if (agentId == null || agentId == '') { return }
+				uni.setStorageSync('active_agent_id', agentId)
+				uni.navigateTo({ url: '/pages/chat/chat' })
+			},
+			runScheduler(reason: string): void {
+				const group = this.group
+				const session = this.session
+				if (group == null || session == null) { return }
+				const members = getActiveGroupMembers(group.id)
+				if (members.length == 0) {
+					uni.showToast({ position: 'bottom', title: '群里还没有成员', icon: 'none' })
+					return
+				}
+				this.discussionStopped = false
+				this.isGenerating = true
+				const schedulerMessages = buildSchedulerRuntimeMessages(group, session, this.messages, reason, this.loopTurns)
+				chatWithLLM(schedulerMessages, buildSchedulerSystemPrompt(group), '', readAgentModel(getAgentById(group.schedulerAgentId))).then((raw: string | null) => {
+					const text = raw != null ? raw : ''
+					const decision = parseSchedulerDecision(text, group.id)
+					const title = decision['titleSuggestion'] as string | null
+					if (title != null && title.trim() != '') {
+						applyGroupSessionTitleSuggestion(group.id, session.id, title)
+						const freshSession = getGroupSessionById(group.id, session.id)
+						this.session = freshSession != null ? freshSession : session
+					}
+					const hidden = createGroupHiddenMessage(group.id, session.id, 'scheduler', text)
+					this.messages.push(hidden)
+					this.saveMessages()
+					this.runDecisionActions(decision)
+				})
+			},
+			runDecisionActions(decision: UTSJSONObject): void {
+				const actions = decision['actions'] as UTSJSONObject[] | null
+				if (actions == null || actions.length == 0) {
+					this.isGenerating = false
+					return
+				}
+				this.runActionAt(actions, 0)
+			},
+			runActionAt(actions: UTSJSONObject[], index: number): void {
+				if (this.discussionStopped == true) {
+					this.isGenerating = false
+					this.currentStream = null
+					this.saveMessages()
+					return
+				}
+				if (index >= actions.length) {
+					this.isGenerating = false
+					this.currentStream = null
+					this.loopTurns++
+					this.saveMessages()
+					if (this.loopTurns >= 10) {
+						this.loopTurns = 0
+						this.runScheduler('连续讨论轮数过多，判断是否继续')
+					}
+					return
+				}
+				const action = actions[index]
+				const actionType = action['type'] as string | null
+				const agentId = action['agentId'] as string | null
+				if (actionType != 'speak' || agentId == null || agentId == '' || isAgentInGroup(this.groupId, agentId) == false) {
+					this.runActionAt(actions, index + 1)
+					return
+				}
+				this.runMemberSpeak(agentId, action, () => { this.runActionAt(actions, index + 1) })
+			},
+			runMemberSpeak(agentId: string, action: UTSJSONObject, done: () => void): void {
+				const group = this.group
+				const session = this.session
+				if (group == null || session == null) {
+					done()
+					return
+				}
+				const agent = getAgentById(agentId)
+				if (agent == null) {
+					done()
+					return
+				}
+				const streamingMsg = createGroupAgentStreamingMessage(group.id, session.id, agentId)
+				this.messages.push(streamingMsg)
+				const tempMessages = buildMemberRuntimeMessages(group, session, this.messages, action, readAgentName(agent))
+				const systemPrompt = buildMemberSystemPrompt(group, session, agent, action)
+				const workspaceRoot = buildGroupWorkspacePath(group.id, session.id)
+				const stream = agentChat(tempMessages, systemPrompt, '', readAgentModel(agent), agentId, 0, session.id, workspaceRoot)
+				this.currentStream = stream
+				stream.on((event: AgentEvent) => {
+					if (event.type == 'agent_end') {
+						finalizeAssistantTurn(tempMessages)
+						const lastAssistant = this.findLastAssistantMessage(tempMessages)
+						if (lastAssistant != null) {
+							syncGroupStreamingMessage(streamingMsg, lastAssistant)
+						} else {
+							streamingMsg['visible'] = false
+						}
+						streamingMsg['isStreaming'] = false
+						this.currentStream = null
+						this.saveMessages()
+						this.scrollToBottom()
+						done()
+						return
+					}
+					reduceAgentEvent(tempMessages, event)
+					const lastAssistant = this.findLastAssistantMessage(tempMessages)
+					if (lastAssistant != null) { syncGroupStreamingMessage(streamingMsg, lastAssistant) }
+					this.scrollToBottom()
+				})
+			}
+		}
+	}
+</script>
+
+<style>
+	.nav-icon-btn { width: 72rpx; height: 72rpx; justify-content: center; align-items: center; }
+	.message-list { flex: 1; padding-top: 12rpx; }
+	.agent-name-row { margin-left: 96rpx; margin-top: 8rpx; margin-bottom: -8rpx; }
+	.agent-name-text { font-size: 22rpx; color: var(--rice-text-color-3); }
+	.empty-state { flex: 1; align-items: center; justify-content: center; padding-top: 180rpx; flex-direction: column; }
+	.empty-text { font-size: 32rpx; color: var(--rice-text-color); font-weight: bold; }
+	.empty-hint { margin-top: 12rpx; font-size: 24rpx; color: var(--rice-text-color-3); }
+	.chat-bottom { background-color: var(--rice-background-2); padding: 16rpx 20rpx 24rpx; border-top-left-radius: 32rpx; border-top-right-radius: 32rpx; }
+	.input-bar { flex-direction: row; align-items: flex-end; }
+	.toolbar-toggle { width: 72rpx; height: 72rpx; border-radius: 36rpx; background-color: var(--rice-background); justify-content: center; align-items: center; margin-right: 12rpx; }
+	.input-wrap { flex: 1; min-height: 72rpx; max-height: 168rpx; border-radius: 28rpx; background-color: var(--rice-background); padding: 14rpx 20rpx; }
+	.text-input { width: 100%; min-height: 40px; font-size: 30rpx; color: var(--rice-text-color); }
+	.toolbar-panel { background-color: #FFFFFF; border-radius: 28rpx; padding: 20rpx 12rpx; margin-bottom: 12rpx; }
+	.toolbar-grid { flex-direction: row; flex-wrap: wrap; }
+	.toolbar-grid-item { width: 25%; align-items: center; justify-content: center; padding: 16rpx 0; }
+	.toolbar-grid-icon { width: 88rpx; height: 88rpx; border-radius: 28rpx; background-color: var(--rice-background); justify-content: center; align-items: center; }
+	.danger-icon { background-color: #FEF2F2; }
+	.toolbar-grid-label { margin-top: 10rpx; font-size: 22rpx; color: var(--rice-text-color-2); }
+</style>

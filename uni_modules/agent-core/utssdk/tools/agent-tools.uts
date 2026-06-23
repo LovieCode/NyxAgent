@@ -60,9 +60,9 @@ export interface AgentTool {
  * @param agentId 智能体 ID
  * @returns AgentTool 数组
  */
-export function createAgentTools(agentId: string, conversationId: string = '', personId: string = '', allowCoreMemoryWrite: boolean = false): AgentTool[] {
+export function createAgentTools(agentId: string, conversationId: string = '', personId: string = '', allowCoreMemoryWrite: boolean = false, workspaceRoot: string = ''): AgentTool[] {
 	const tools: AgentTool[] = [
-		new WorkspaceFileTool(agentId) as AgentTool,
+		new WorkspaceFileTool(agentId, workspaceRoot) as AgentTool,
 		new MemorySearchTool(agentId, conversationId, personId) as AgentTool,
 		new MemoryBufferWriteTool(agentId, conversationId, personId) as AgentTool,
 		new WebSearchTool() as AgentTool,
@@ -79,8 +79,8 @@ export function createAgentTools(agentId: string, conversationId: string = '', p
 // ========== 工具定义 ==========
 
 /** 拼接 agent 沙箱绝对路径，自动裁剪 LLM 可能带的 agents/<id>/ 前缀 */
-function resolveAgentPath(agentId: string, relPath: string): string {
-	const dir = getAgentDir(agentId)
+function resolveAgentPath(agentId: string, relPath: string, workspaceRoot: string = ''): string {
+	const dir = workspaceRoot != '' ? workspaceRoot : getAgentDir(agentId)
 	if (dir == '') return ''
 	if (relPath == '') return dir
 	// 裁剪 agents/<agentId>/ 前缀（LLM 可能沿用旧习惯传完整路径）
@@ -183,7 +183,7 @@ function formatWorkspaceList(path: string, absPath: string, detail: boolean): st
 
 class WorkspaceFileTool implements AgentTool {
 	name: string = 'workspace_file'
-	description: string = '统一操作当前 Agent 私有工作区文件。所有 path 都相对于当前 Agent 私有目录，禁止绝对路径和 ".."。action=list/read/write/delete/info。路径语义：todo.md 是待办文件，write 时会规范为 - [ ] / - [x]；notes/<名称>.md 是笔记，write 时会规范为带标题/元信息的 Markdown；其他路径是普通文件，按原文读写。write + is_directory=true 创建目录。read 时 render=true 会把 todo/notes Markdown 转为可读文本；普通文件 render 无效果。list 空路径列根目录，path=notes 列笔记目录。delete 可删除文件或目录，谨慎使用。'
+	description: string = '统一操作当前工作区文件。私聊时是 Agent 私有工作区，群聊时是群会话共享工作区。所有 path 都相对于当前工作区，禁止绝对路径和 ".."。action=list/read/write/delete/info。路径语义：todo.md 是待办文件，write 时会规范为 - [ ] / - [x]；notes/<名称>.md 是笔记，write 时会规范为带标题/元信息的 Markdown；其他路径是普通文件，按原文读写。write + is_directory=true 创建目录。read 时 render=true 会把 todo/notes Markdown 转为可读文本；普通文件 render 无效果。list 空路径列根目录，path=notes 列笔记目录。delete 可删除文件或目录，谨慎使用。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
@@ -216,9 +216,11 @@ class WorkspaceFileTool implements AgentTool {
 	} as UTSJSONObject
 
 	private agentId: string
+	private workspaceRoot: string
 
-	constructor(agentId: string) {
+	constructor(agentId: string, workspaceRoot: string = '') {
 		this.agentId = agentId
+		this.workspaceRoot = workspaceRoot
 	}
 
 	execute(args: UTSJSONObject): Promise<ToolResult> {
@@ -244,10 +246,10 @@ class WorkspaceFileTool implements AgentTool {
 				resolve({ content: '非法路径：只能使用当前 Agent 工作区内的相对路径，不能使用绝对路径或 ".."', isError: true } as ToolResult)
 				return
 			}
-			const absPath = resolveAgentPath(this.agentId, path)
+			const absPath = resolveAgentPath(this.agentId, path, this.workspaceRoot)
 			if (action == 'list') {
 				const listPath = path == '' ? '' : path
-				const finalAbsPath = resolveAgentPath(this.agentId, listPath)
+				const finalAbsPath = resolveAgentPath(this.agentId, listPath, this.workspaceRoot)
 				if (listPath != '' && !exists(finalAbsPath)) {
 					resolve({ content: '路径不存在: ' + listPath, isError: true } as ToolResult)
 					return
@@ -339,8 +341,8 @@ class WorkspaceFileTool implements AgentTool {
  * @param agentId 智能体 ID
  * @returns ToolDefinition 数组
  */
-export function getToolDefinitions(agentId: string, allowCoreMemoryWrite: boolean = false): ToolDefinition[] {
-	const tools = createAgentTools(agentId, '', '', allowCoreMemoryWrite)
+export function getToolDefinitions(agentId: string, allowCoreMemoryWrite: boolean = false, workspaceRoot: string = ''): ToolDefinition[] {
+	const tools = createAgentTools(agentId, '', '', allowCoreMemoryWrite, workspaceRoot)
 	const defs: ToolDefinition[] = []
 	for (let i = 0; i < tools.length; i++) {
 		defs.push({
