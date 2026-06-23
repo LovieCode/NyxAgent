@@ -31,7 +31,7 @@
 				@touchend="onBubbleTouchEnd">
 				<view v-if="reasoningBlocks.length > 0 && hideThinking == false" class="reasoning-panel">
 					<view class="reasoning-header" @click.stop="thinkingExpanded = !thinkingExpanded">
-						<text class="thinking-step-icon">{{thinkingExpanded ? '收起' : '展开'}}</text>
+						<text class="thinking-step-icon">{{thinkingExpanded ? '↑' : '↓'}}</text>
 						<text class="thinking-step-label">思考过程</text>
 					</view>
 					<view v-if="thinkingExpanded == true" class="reasoning-body">
