@@ -29,6 +29,7 @@ import {
 	getMessageRole,
 	getMessageThinking,
 	getMessageTimestamp,
+	isStreamingAssistant,
 } from '@/utils/chat-models.uts'
 
 function replaceMessage(messages: UTSJSONObject[], index: number, message: UTSJSONObject): void {
@@ -116,7 +117,16 @@ function makeAssistantFromExisting(existing: UTSJSONObject, content: string, thi
 }
 
 function isAppendableAssistant(message: UTSJSONObject): boolean {
-	return getMessageRole(message) == CHAT_ROLE_ASSISTANT
+	return isStreamingAssistant(message)
+}
+
+function hasTextBlock(blocks: UTSJSONObject[]): boolean {
+	for (let i = 0; i < blocks.length; i++) {
+		if ((blocks[i]['type'] as string | null) == CHAT_BLOCK_TEXT) {
+			return true
+		}
+	}
+	return false
 }
 
 export function pushUserTextMessage(messages: UTSJSONObject[], content: string): void {
@@ -213,16 +223,20 @@ export function finishAssistantMessage(messages: UTSJSONObject[], response: stri
 		if (finalContent == '' && response != '') {
 			finalContent = response
 		}
-		replaceMessage(messages, lastIdx, createAssistantFinalMessage(
+		const newBlocks = cloneBlocks(existing['blocks'] as UTSJSONObject[] | null)
+		if (finalContent != '' && hasTextBlock(newBlocks) == false) {
+			newBlocks.push(createTextBlock(finalContent))
+		}
+		replaceMessage(messages, lastIdx, createAssistantStreamingMessage(
 			finalContent,
 			getMessageThinking(existing),
-			existing['blocks'] as UTSJSONObject[] | null,
+			newBlocks,
 			Date.now()
 		))
 		return
 	}
 	if (response != '') {
-		messages.push(createAssistantFinalMessage(response, '', null, Date.now()))
+		messages.push(createAssistantStreamingMessage(response, '', [createTextBlock(response)], Date.now()))
 	}
 }
 
@@ -272,7 +286,7 @@ export function appendToolCallBlockToAssistant(messages: UTSJSONObject[], name: 
 	const now = Date.now()
 	const lastIdx = messages.length - 1
 	const block = createToolCallBlock(name, args, now, TOOL_STATUS_PENDING)
-	if (lastIdx < 0 || getMessageRole(messages[lastIdx]) != CHAT_ROLE_ASSISTANT) {
+	if (lastIdx < 0 || isAppendableAssistant(messages[lastIdx]) == false) {
 		messages.push(createAssistantStreamingMessage('', '', [block], now))
 		return
 	}
@@ -317,7 +331,7 @@ export function addToolCallMessage(messages: UTSJSONObject[], fullText: string, 
 	const now = Date.now()
 	const incoming = buildToolCallBlocks(toolCalls, now)
 	const lastIdx = messages.length - 1
-	if (lastIdx < 0 || getMessageRole(messages[lastIdx]) != CHAT_ROLE_ASSISTANT) {
+	if (lastIdx < 0 || isAppendableAssistant(messages[lastIdx]) == false) {
 		const msg = createAssistantStreamingMessage(fullText, '', incoming, now)
 		msg['tool_calls'] = toolCalls
 		messages.push(msg)
@@ -347,6 +361,9 @@ export function addToolExecutionStart(messages: UTSJSONObject[], toolName: strin
 		return
 	}
 	const assistantMsg = messages[assistantIdx]
+	if (isAppendableAssistant(assistantMsg) == false) {
+		return
+	}
 	const existingBlocks = assistantMsg['blocks'] as UTSJSONObject[] | null
 	if (existingBlocks == null) {
 		return
@@ -387,6 +404,9 @@ export function updateToolExecutionEnd(messages: UTSJSONObject[], toolName: stri
 		return
 	}
 	const assistantMsg = messages[assistantIdx]
+	if (isAppendableAssistant(assistantMsg) == false) {
+		return
+	}
 	const existingBlocks = assistantMsg['blocks'] as UTSJSONObject[] | null
 	if (existingBlocks == null) {
 		return
@@ -438,6 +458,10 @@ export function finalizeAssistantTurn(messages: UTSJSONObject[]): void {
 }
 
 export function reduceAgentEvent(messages: UTSJSONObject[], event: AgentEvent): boolean {
+	if (event.type == 'turn_start') {
+		finalizeAssistantTurn(messages)
+		return true
+	}
 	if (event.type == 'text_delta') {
 		appendAssistantDelta(messages, event.text != null ? (event.text as string) : '')
 		return true
@@ -474,6 +498,10 @@ export function reduceAgentEvent(messages: UTSJSONObject[], event: AgentEvent): 
 			event.isError == true,
 			true
 		)
+		return true
+	}
+	if (event.type == 'turn_end') {
+		finalizeAssistantTurn(messages)
 		return true
 	}
 	if (event.type == 'error') {
