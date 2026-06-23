@@ -29,7 +29,6 @@ import {
 	getMessageRole,
 	getMessageThinking,
 	getMessageTimestamp,
-	isStreamingAssistant,
 } from '@/utils/chat-models.uts'
 
 function replaceMessage(messages: UTSJSONObject[], index: number, message: UTSJSONObject): void {
@@ -116,6 +115,10 @@ function makeAssistantFromExisting(existing: UTSJSONObject, content: string, thi
 	return createAssistantFinalMessage(content, thinking, blocks, timestamp)
 }
 
+function isAppendableAssistant(message: UTSJSONObject): boolean {
+	return getMessageRole(message) == CHAT_ROLE_ASSISTANT
+}
+
 export function pushUserTextMessage(messages: UTSJSONObject[], content: string): void {
 	messages.push(createTextMessage(CHAT_ROLE_USER, content))
 }
@@ -181,7 +184,7 @@ export function appendAssistantDelta(messages: UTSJSONObject[], text: string): v
 		return
 	}
 	const lastIdx = messages.length - 1
-	if (lastIdx >= 0 && isStreamingAssistant(messages[lastIdx]) == true) {
+	if (lastIdx >= 0 && isAppendableAssistant(messages[lastIdx]) == true) {
 		const existing = messages[lastIdx]
 		const newBlocks = cloneBlocks(existing['blocks'] as UTSJSONObject[] | null)
 		const lastBlockIdx = newBlocks.length - 1
@@ -204,7 +207,7 @@ export function appendAssistantDelta(messages: UTSJSONObject[], text: string): v
 
 export function finishAssistantMessage(messages: UTSJSONObject[], response: string): void {
 	const lastIdx = messages.length - 1
-	if (lastIdx >= 0 && isStreamingAssistant(messages[lastIdx]) == true) {
+	if (lastIdx >= 0 && isAppendableAssistant(messages[lastIdx]) == true) {
 		const existing = messages[lastIdx]
 		let finalContent = getMessageContent(existing)
 		if (finalContent == '' && response != '') {
@@ -228,7 +231,7 @@ export function appendThinkingDelta(messages: UTSJSONObject[], text: string): vo
 		return
 	}
 	const lastIdx = messages.length - 1
-	if (lastIdx >= 0 && isStreamingAssistant(messages[lastIdx]) == true) {
+	if (lastIdx >= 0 && isAppendableAssistant(messages[lastIdx]) == true) {
 		const existing = messages[lastIdx]
 		const newBlocks = cloneBlocks(existing['blocks'] as UTSJSONObject[] | null)
 		const lastBlockIdx = newBlocks.length - 1
@@ -251,7 +254,7 @@ export function appendThinkingDelta(messages: UTSJSONObject[], text: string): vo
 
 export function finishAssistantThinking(messages: UTSJSONObject[], text: string): void {
 	const lastIdx = messages.length - 1
-	if (lastIdx >= 0 && isStreamingAssistant(messages[lastIdx]) == true) {
+	if (lastIdx >= 0 && isAppendableAssistant(messages[lastIdx]) == true) {
 		const existing = messages[lastIdx]
 		replaceMessage(messages, lastIdx, createAssistantStreamingMessage(
 			getMessageContent(existing),
@@ -375,7 +378,7 @@ export function addToolExecutionStart(messages: UTSJSONObject[], toolName: strin
 	}
 }
 
-export function updateToolExecutionEnd(messages: UTSJSONObject[], toolName: string, result: string, isError: boolean): void {
+export function updateToolExecutionEnd(messages: UTSJSONObject[], toolName: string, result: string, isError: boolean, keepStreaming: boolean = true): void {
 	if (toolName == '') {
 		return
 	}
@@ -409,11 +412,29 @@ export function updateToolExecutionEnd(messages: UTSJSONObject[], toolName: stri
 				getMessageContent(assistantMsg),
 				getMessageThinking(assistantMsg),
 				newBlocks,
-				false
+				keepStreaming
 			))
 			break
 		}
 	}
+}
+
+export function finalizeAssistantTurn(messages: UTSJSONObject[]): void {
+	const assistantIdx = findLastAssistantIndex(messages)
+	if (assistantIdx < 0) {
+		return
+	}
+	const assistantMsg = messages[assistantIdx]
+	if ((assistantMsg['isStreaming'] as boolean | null) != true) {
+		return
+	}
+	replaceMessage(messages, assistantIdx, makeAssistantFromExisting(
+		assistantMsg,
+		getMessageContent(assistantMsg),
+		getMessageThinking(assistantMsg),
+		assistantMsg['blocks'] as UTSJSONObject[] | null,
+		false
+	))
 }
 
 export function reduceAgentEvent(messages: UTSJSONObject[], event: AgentEvent): boolean {
@@ -450,7 +471,8 @@ export function reduceAgentEvent(messages: UTSJSONObject[], event: AgentEvent): 
 			messages,
 			event.toolName != null ? (event.toolName as string) : '',
 			event.toolResult != null ? (event.toolResult as string) : '',
-			event.isError == true
+			event.isError == true,
+			true
 		)
 		return true
 	}

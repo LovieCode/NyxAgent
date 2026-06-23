@@ -169,6 +169,7 @@
 		truncateFromMessage,
 		buildRuntimeMessages as buildRuntimeChatMessages,
 		finishAssistantMessage as reduceFinishAssistantMessage,
+		finalizeAssistantTurn,
 		reduceAgentEvent,
 	} from '@/utils/chat-message-reducer.uts'
 
@@ -740,6 +741,7 @@
 					this.currentStream = null
 				}
 				reduceFinishAssistantMessage(this.messages, '')
+				finalizeAssistantTurn(this.messages)
 				this.scrollToBottom()
 				this.isGenerating = false
 				this.saveCurrentConversation()
@@ -855,6 +857,7 @@
 						icon: 'none'
 					})
 				} else if (event.type == 'agent_end') {
+					finalizeAssistantTurn(this.messages)
 					this.isGenerating = false
 					this.currentStream = null
 					this.saveCurrentConversation()
