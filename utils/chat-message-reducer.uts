@@ -129,6 +129,22 @@ function hasTextBlock(blocks: UTSJSONObject[]): boolean {
 	return false
 }
 
+function hasToolCallBlock(blocks: UTSJSONObject[]): boolean {
+	for (let i = 0; i < blocks.length; i++) {
+		if ((blocks[i]['type'] as string | null) == CHAT_BLOCK_TOOL_CALL) {
+			return true
+		}
+	}
+	return false
+}
+
+function shouldKeepEmptyToolTurnOpen(message: UTSJSONObject): boolean {
+	if (getMessageContent(message) != '') {
+		return false
+	}
+	return hasToolCallBlock(cloneBlocks(message['blocks'] as UTSJSONObject[] | null))
+}
+
 export function pushUserTextMessage(messages: UTSJSONObject[], content: string): void {
 	messages.push(createTextMessage(CHAT_ROLE_USER, content))
 }
@@ -457,9 +473,24 @@ export function finalizeAssistantTurn(messages: UTSJSONObject[]): void {
 	))
 }
 
+export function finalizeAgentLoopTurn(messages: UTSJSONObject[]): void {
+	const assistantIdx = findLastAssistantIndex(messages)
+	if (assistantIdx < 0) {
+		return
+	}
+	const assistantMsg = messages[assistantIdx]
+	if ((assistantMsg['isStreaming'] as boolean | null) != true) {
+		return
+	}
+	if (shouldKeepEmptyToolTurnOpen(assistantMsg) == true) {
+		return
+	}
+	finalizeAssistantTurn(messages)
+}
+
 export function reduceAgentEvent(messages: UTSJSONObject[], event: AgentEvent): boolean {
 	if (event.type == 'turn_start') {
-		finalizeAssistantTurn(messages)
+		finalizeAgentLoopTurn(messages)
 		return true
 	}
 	if (event.type == 'text_delta') {
@@ -501,7 +532,7 @@ export function reduceAgentEvent(messages: UTSJSONObject[], event: AgentEvent): 
 		return true
 	}
 	if (event.type == 'turn_end') {
-		finalizeAssistantTurn(messages)
+		finalizeAgentLoopTurn(messages)
 		return true
 	}
 	if (event.type == 'error') {
