@@ -676,24 +676,21 @@
 		opacity: 0.65;
 	}
 	.reasoning-panel {
-		margin-bottom: 16rpx;
-		padding: 14rpx 16rpx;
-		border-radius: 16rpx;
-		background-color: rgba(156, 163, 175, 0.08);
+		margin-bottom: 6rpx;
 	}
 	.reasoning-header {
 		flex-direction: row;
 		align-items: center;
 	}
 	.reasoning-body {
-		margin-top: 12rpx;
-		padding-left: 14rpx;
+		margin-top: 6rpx;
+		padding-left: 10rpx;
 		border-left-width: 2rpx;
 		border-left-color: #E5E7EB;
 		border-left-style: solid;
 	}
 	.block-entry {
-		margin-bottom: 12rpx;
+		margin-bottom: 6rpx;
 	}
 	.thinking-step-icon {
 		font-size: 22rpx;
@@ -708,24 +705,24 @@
 	.thinking-step-text {
 		font-size: 24rpx;
 		color: #6B7280;
-		line-height: 36rpx;
-		margin-top: 8rpx;
+		line-height: 34rpx;
+		margin-top: 4rpx;
 		white-space: pre-wrap;
 	}
 	.tool-call-step {
-		padding-top: 4rpx;
+		padding-top: 0;
 	}
 	.tool-call-card {
-		border-radius: 12rpx;
+		border-radius: 8rpx;
 		border-width: 1rpx;
-		border-color: #E5E7EB;
+		border-color: #EEF0F3;
 		overflow: hidden;
 	}
 	.tool-call-card-header {
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		padding: 12rpx 14rpx;
+		padding: 6rpx 8rpx;
 	}
 	.tool-call-card-left {
 		flex-direction: row;
@@ -740,7 +737,7 @@
 	.tool-call-status {
 		font-size: 20rpx;
 		color: #FB8FAB;
-		margin-right: 10rpx;
+		margin-right: 6rpx;
 	}
 	.tool-call-card-name {
 		font-size: 24rpx;
@@ -757,10 +754,10 @@
 		color: #AAAAAA;
 	}
 	.tool-call-card-detail {
-		padding: 4rpx 14rpx 14rpx 14rpx;
+		padding: 2rpx 8rpx 8rpx 8rpx;
 	}
 	.tool-detail-section {
-		margin-top: 10rpx;
+		margin-top: 6rpx;
 	}
 	.tool-detail-label {
 		font-size: 20rpx;
