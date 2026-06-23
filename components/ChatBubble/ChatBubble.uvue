@@ -43,7 +43,7 @@
 						@touchend="onBubbleTouchEnd">
 						<view v-if="pi == 0 && reasoningBlocks.length > 0 && hideThinking == false" class="reasoning-panel">
 							<view class="reasoning-header" @click.stop="thinkingExpanded = !thinkingExpanded">
-								<text class="thinking-step-icon">{{thinkingExpanded ? '↑' : '↓'}}</text>
+								<text class="thinking-step-icon">{{thinkingExpanded ? '⌄' : '›'}}</text>
 								<text class="thinking-step-label">思考过程</text>
 							</view>
 							<view v-if="thinkingExpanded == true" class="reasoning-body">
@@ -105,7 +105,7 @@
 					@touchend="onBubbleTouchEnd">
 					<view v-if="reasoningBlocks.length > 0 && hideThinking == false" class="reasoning-panel">
 						<view class="reasoning-header" @click.stop="thinkingExpanded = !thinkingExpanded">
-							<text class="thinking-step-icon">{{thinkingExpanded ? '↑' : '↓'}}</text>
+							<text class="thinking-step-icon">{{thinkingExpanded ? '⌄' : '›'}}</text>
 							<text class="thinking-step-label">思考过程</text>
 						</view>
 						<view v-if="thinkingExpanded == true" class="reasoning-body">
@@ -901,44 +901,44 @@
 		opacity: 0.65;
 	}
 	.reasoning-panel {
-		margin-bottom: 6rpx;
+		margin-bottom: 4rpx;
 	}
 	.reasoning-header {
 		flex-direction: row;
 		align-items: center;
 	}
 	.reasoning-body {
-		margin-top: 6rpx;
-		padding-left: 10rpx;
+		margin-top: 4rpx;
+		padding-left: 8rpx;
 		border-left-width: 2rpx;
 		border-left-color: #E5E7EB;
 		border-left-style: solid;
 	}
 	.block-entry {
-		margin-bottom: 6rpx;
+		margin-bottom: 4rpx;
 	}
 	.thinking-step-icon {
-		font-size: 22rpx;
+		font-size: 20rpx;
 		color: #9CA3AF;
-		margin-right: 12rpx;
+		margin-right: 8rpx;
 		flex-shrink: 0;
 	}
 	.thinking-step-label {
-		font-size: 22rpx;
+		font-size: 20rpx;
 		color: #9CA3AF;
 	}
 	.thinking-step-text {
-		font-size: 24rpx;
+		font-size: 22rpx;
 		color: #6B7280;
-		line-height: 34rpx;
-		margin-top: 4rpx;
+		line-height: 30rpx;
+		margin-top: 2rpx;
 		white-space: pre-wrap;
 	}
 	.tool-call-step {
 		padding-top: 0;
 	}
 	.tool-call-card {
-		border-radius: 8rpx;
+		border-radius: 6rpx;
 		border-width: 1rpx;
 		border-color: #EEF0F3;
 		overflow: hidden;
@@ -947,7 +947,7 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		padding: 6rpx 8rpx;
+		padding: 4rpx 6rpx;
 	}
 	.tool-call-card-left {
 		flex-direction: row;
@@ -960,26 +960,26 @@
 		flex-shrink: 0;
 	}
 	.tool-call-status {
-		font-size: 20rpx;
+		font-size: 18rpx;
 		color: #FB8FAB;
 		margin-right: 6rpx;
 	}
 	.tool-call-card-name {
-		font-size: 24rpx;
+		font-size: 22rpx;
 		color: var(--rice-text-color-2);
 		flex-shrink: 1;
 	}
 	.tool-call-elapsed {
-		font-size: 22rpx;
+		font-size: 20rpx;
 		color: #9CA3AF;
 		margin-right: 8rpx;
 	}
 	.tool-call-chevron {
-		font-size: 22rpx;
+		font-size: 20rpx;
 		color: #AAAAAA;
 	}
 	.tool-call-card-detail {
-		padding: 2rpx 8rpx 8rpx 8rpx;
+		padding: 2rpx 6rpx 6rpx 6rpx;
 	}
 	.tool-detail-section {
 		margin-top: 6rpx;
