@@ -717,13 +717,11 @@ export function forkGroupSession(groupId: string, sessionId: string): GroupChatS
 
 export function createDefaultWritingGroupChat(): GroupChat {
 	const agents = getAgents()
-	let schedulerId = ''
 	let firstMember = ''
 	let secondMember = ''
 	if (agents.length > 0) {
 		const firstId = agents[0]['id'] as string | null
-		schedulerId = firstId != null ? firstId : ''
-		firstMember = schedulerId
+		firstMember = firstId != null ? firstId : ''
 	}
 	for (let i = 0; i < agents.length; i++) {
 		const aid = agents[i]['id'] as string | null
@@ -739,7 +737,7 @@ export function createDefaultWritingGroupChat(): GroupChat {
 		id: groupId,
 		name: '故事工坊',
 		avatar: '',
-		schedulerAgentId: schedulerId,
+		schedulerAgentId: '',
 		schedulerPrompt: buildDefaultSchedulerPrompt(),
 		sharedPrompt: buildDefaultSharedPrompt(),
 		activeSessionId: '',

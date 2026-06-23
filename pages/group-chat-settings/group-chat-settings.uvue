@@ -5,10 +5,14 @@
 			<view class="card">
 				<text class="card-title">基础信息</text>
 				<input class="text-input" v-model="groupName" placeholder="群聊名称" placeholder-style="color:var(--rice-text-color-3)" />
-				<text class="field-label">调度 Agent</text>
-				<view class="agent-select-list">
-					<view v-for="(agent, index) in agentList" :key="agent['id']" class="agent-pill" :class="schedulerAgentId == (agent['id'] as string) ? 'agent-pill-active' : ''" @click="selectScheduler(agent)">
-						<text class="agent-pill-text" :class="schedulerAgentId == (agent['id'] as string) ? 'agent-pill-text-active' : ''">{{agent['name']}}</text>
+				<text class="field-label">隐藏调度器</text>
+				<view class="scheduler-card">
+					<view class="scheduler-icon">
+						<oui-icon-unix name="robot" size="40rpx" color="var(--rice-primary-color)" />
+					</view>
+					<view class="scheduler-info">
+						<text class="scheduler-title">群聊内部调度 Agent</text>
+						<text class="scheduler-desc">不复用私聊 Agent，不出现在成员列表；模型走设置里的默认 Chat 模型。</text>
 					</view>
 				</view>
 			</view>
@@ -52,7 +56,7 @@
 	import { getAgents } from '@/utils/agent.uts'
 	import {
 		ACTIVE_GROUP_CHAT_ID_KEY,
-		GroupChat,
+		type GroupChat,
 		addGroupMember,
 		buildDefaultSchedulerPrompt,
 		buildDefaultSharedPrompt,
@@ -69,14 +73,24 @@
 				group: null as GroupChat | null,
 				agentList: [] as UTSJSONObject[],
 				groupName: '' as string,
-				schedulerAgentId: '' as string,
 				schedulerPrompt: '' as string,
 				sharedPrompt: '' as string,
+				savedGroupName: '' as string,
+				savedSchedulerPrompt: '' as string,
+				savedSharedPrompt: '' as string,
+				isConfirmingLeave: false as boolean,
 				refreshToken: 0 as number,
 			}
 		},
 		onLoad() { this.loadData() },
 		onShow() { this.loadData() },
+		onBackPress(): boolean {
+			if (this.hasUnsavedChanges() == false) {
+				return false
+			}
+			this.confirmLeave()
+			return true
+		},
 		methods: {
 			loadData(): void {
 				this.agentList = getAgents()
@@ -86,18 +100,54 @@
 				if (group == null) { return }
 				this.group = group
 				this.groupName = group.name
-				this.schedulerAgentId = group.schedulerAgentId
 				this.schedulerPrompt = group.schedulerPrompt != '' ? group.schedulerPrompt : buildDefaultSchedulerPrompt()
 				this.sharedPrompt = group.sharedPrompt != '' ? group.sharedPrompt : buildDefaultSharedPrompt()
+				this.captureSavedState()
 			},
-			goBack(): void { uni.navigateBack() },
+			captureSavedState(): void {
+				this.savedGroupName = this.groupName.trim()
+				this.savedSchedulerPrompt = this.schedulerPrompt.trim()
+				this.savedSharedPrompt = this.sharedPrompt.trim()
+			},
+			hasUnsavedChanges(): boolean {
+				if (this.groupName.trim() != this.savedGroupName) { return true }
+				if (this.schedulerPrompt.trim() != this.savedSchedulerPrompt) { return true }
+				if (this.sharedPrompt.trim() != this.savedSharedPrompt) { return true }
+				return false
+			},
+			goBack(): void {
+				if (this.hasUnsavedChanges() == false) {
+					uni.navigateBack()
+					return
+				}
+				this.confirmLeave()
+			},
+			confirmLeave(): void {
+				if (this.isConfirmingLeave == true) { return }
+				this.isConfirmingLeave = true
+				uni.showModal({
+					title: '有未保存修改',
+					content: '要保存后退出吗？',
+					cancelText: '不保存',
+					confirmText: '保存',
+					success: (res) => {
+						this.isConfirmingLeave = false
+						if (res.confirm == true) {
+							if (this.saveSettings() == true) {
+								uni.navigateBack()
+							}
+							return
+						}
+						uni.navigateBack()
+					},
+					fail: () => {
+						this.isConfirmingLeave = false
+					}
+				})
+			},
 			getAgentAvatar(agent: UTSJSONObject): string {
 				const avatar = agent['avatar'] as string | null
 				return avatar != null ? avatar : ''
-			},
-			selectScheduler(agent: UTSJSONObject): void {
-				const id = agent['id'] as string | null
-				if (id != null) { this.schedulerAgentId = id }
 			},
 			isMember(agent: UTSJSONObject): boolean {
 				const group = this.group
@@ -124,21 +174,27 @@
 				}
 				this.refreshToken++
 			},
-			saveSettings(): void {
+			saveSettings(): boolean {
 				const group = this.group
-				if (group == null) { return }
+				if (group == null) { return false }
 				const name = this.groupName.trim()
 				if (name == '') {
 					uni.showToast({ position: 'bottom', title: '群名不能为空', icon: 'none' })
-					return
+					return false
 				}
 				group.name = name
-				group.schedulerAgentId = this.schedulerAgentId
+				group.schedulerAgentId = ''
 				group.schedulerPrompt = this.schedulerPrompt.trim() != '' ? this.schedulerPrompt.trim() : buildDefaultSchedulerPrompt()
 				group.sharedPrompt = this.sharedPrompt.trim() != '' ? this.sharedPrompt.trim() : buildDefaultSharedPrompt()
 				group.updatedAt = Date.now()
 				saveGroupChat(group)
+				this.group = group
+				this.groupName = group.name
+				this.schedulerPrompt = group.schedulerPrompt
+				this.sharedPrompt = group.sharedPrompt
+				this.captureSavedState()
 				uni.showToast({ position: 'bottom', title: '已保存', icon: 'success' })
+				return true
 			}
 		}
 	}
@@ -152,11 +208,11 @@
 	.card-desc { font-size: 24rpx; color: var(--rice-text-color-3); margin-bottom: 18rpx; }
 	.text-input { height: 78rpx; border-radius: 24rpx; background-color: var(--rice-background); padding: 0 22rpx; font-size: 28rpx; color: var(--rice-text-color); }
 	.field-label { font-size: 24rpx; color: var(--rice-text-color-3); margin-top: 24rpx; margin-bottom: 14rpx; }
-	.agent-select-list { flex-direction: row; flex-wrap: wrap; }
-	.agent-pill { padding: 14rpx 22rpx; border-radius: 999rpx; background-color: var(--rice-background); margin-right: 14rpx; margin-bottom: 14rpx; }
-	.agent-pill-active { background-color: var(--rice-primary-color); }
-	.agent-pill-text { font-size: 24rpx; color: var(--rice-text-color-2); }
-	.agent-pill-text-active { color: #FFFFFF; font-weight: bold; }
+	.scheduler-card { flex-direction: row; align-items: center; border-radius: 24rpx; background-color: var(--rice-background); padding: 20rpx; }
+	.scheduler-icon { width: 76rpx; height: 76rpx; border-radius: 24rpx; background-color: rgba(251,143,171,0.12); justify-content: center; align-items: center; margin-right: 18rpx; }
+	.scheduler-info { flex: 1; flex-direction: column; }
+	.scheduler-title { font-size: 28rpx; color: var(--rice-text-color); font-weight: bold; }
+	.scheduler-desc { margin-top: 6rpx; font-size: 22rpx; color: var(--rice-text-color-3); line-height: 32rpx; }
 	.member-row { flex-direction: row; align-items: center; padding: 18rpx 0; border-bottom-width: 0.10rpx; border-bottom-color: var(--rice-border-color); border-bottom-style: solid; }
 	.member-avatar { width: 76rpx; height: 76rpx; border-radius: 24rpx; justify-content: center; align-items: center; margin-right: 18rpx; overflow: hidden; }
 	.member-avatar-img { width: 76rpx; height: 76rpx; border-radius: 24rpx; }
