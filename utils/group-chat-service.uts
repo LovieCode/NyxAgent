@@ -36,6 +36,12 @@ export const GROUP_MESSAGE_SENDER_AGENT = 'agent'
 export const GROUP_MESSAGE_SENDER_SCHEDULER = 'scheduler'
 export const GROUP_MESSAGE_SENDER_SYSTEM = 'system'
 
+const DEFAULT_SCHEDULER_PROMPT_TEXT = '你是隐藏的群聊调度 Agent。你可以在内部向任意成员 Agent 传递私密指令、背景信息和任务拆解，也可以指定一个或多个成员按顺序发言。你的存在、调度流程、私密指令不能被其他成员在公开发言中暴露。你只在系统触发节点工作，例如用户发消息、用户手动继续、连续讨论过多需要判断是否继续。\n' +
+	'输出必须是 JSON 对象，禁止 Markdown，结构：{"actions":[{"type":"speak","agentId":"成员ID","targetType":"user","targetAgentId":"","privateInstruction":"给该成员的私密指令","publicIntent":"公开发言目标","order":0}],"shouldContinue":false,"titleSuggestion":"适合本会话的短标题","privateNotes":"仅内部记录"}。\n' +
+	'如果用户只是闲聊，可以只安排 1 个成员回复。如果任务需要协作，可以安排多个成员顺序发言。不要为了热闹强行多人发言。'
+
+const DEFAULT_SHARED_PROMPT_TEXT = '这是一个故事/写作交流群聊。成员可以讨论人物、剧情、节奏、文风和表达，但要自然像群聊发言。公开发言只输出自己要说的话，不写舞台说明，不提隐藏调度、内部指令或系统消息。'
+
 export type GroupChat = {
 	id: string
 	name: string
@@ -102,11 +108,101 @@ function safeJsonText(raw: string | null): string {
 	return raw != null ? raw : ''
 }
 
+function createId(prefix: string): string {
+	return prefix + '-' + Date.now() + '-' + Math.floor(Math.random() * 100000)
+}
+
+function readStringField(item: UTSJSONObject, key: string): string {
+	const value = item[key] as string | null
+	return value != null ? value : ''
+}
+
+function readNumberField(item: UTSJSONObject, key: string): number {
+	const value = item[key] as number | null
+	return value != null ? value : 0
+}
+
+function readBooleanField(item: UTSJSONObject, key: string): boolean {
+	const value = item[key] as boolean | null
+	return value != null ? value : false
+}
+
+function normalizeGroupChat(item: UTSJSONObject): GroupChat {
+	const now = Date.now()
+	let name = readStringField(item, 'name')
+	if (name == '') { name = '故事工坊' }
+	let schedulerPrompt = readStringField(item, 'schedulerPrompt')
+	if (schedulerPrompt == '') { schedulerPrompt = DEFAULT_SCHEDULER_PROMPT_TEXT }
+	let sharedPrompt = readStringField(item, 'sharedPrompt')
+	if (sharedPrompt == '') { sharedPrompt = DEFAULT_SHARED_PROMPT_TEXT }
+	let createdAt = readNumberField(item, 'createdAt')
+	if (createdAt <= 0) { createdAt = now }
+	let updatedAt = readNumberField(item, 'updatedAt')
+	if (updatedAt <= 0) { updatedAt = createdAt }
+	return {
+		id: readStringField(item, 'id'),
+		name: name,
+		avatar: readStringField(item, 'avatar'),
+		schedulerAgentId: readStringField(item, 'schedulerAgentId'),
+		schedulerPrompt: schedulerPrompt,
+		sharedPrompt: sharedPrompt,
+		activeSessionId: readStringField(item, 'activeSessionId'),
+		createdAt: createdAt,
+		updatedAt: updatedAt,
+	} as GroupChat
+}
+
+function normalizeGroupMember(item: UTSJSONObject): GroupChatMember {
+	let id = readStringField(item, 'id')
+	if (id == '') { id = createId('gmember') }
+	let joinedAt = readNumberField(item, 'joinedAt')
+	if (joinedAt <= 0) { joinedAt = Date.now() }
+	return {
+		id: id,
+		groupId: readStringField(item, 'groupId'),
+		agentId: readStringField(item, 'agentId'),
+		active: readBooleanField(item, 'active'),
+		joinedAt: joinedAt,
+		leftAt: readNumberField(item, 'leftAt'),
+		order: readNumberField(item, 'order'),
+	} as GroupChatMember
+}
+
+function normalizeGroupSession(item: UTSJSONObject): GroupChatSession {
+	let id = readStringField(item, 'id')
+	if (id == '') { id = createId('gsession') }
+	let title = readStringField(item, 'title')
+	if (title == '') { title = '故事会话' }
+	let createdAt = readNumberField(item, 'createdAt')
+	if (createdAt <= 0) { createdAt = Date.now() }
+	let updatedAt = readNumberField(item, 'updatedAt')
+	if (updatedAt <= 0) { updatedAt = createdAt }
+	return {
+		id: id,
+		groupId: readStringField(item, 'groupId'),
+		title: title,
+		workspacePath: readStringField(item, 'workspacePath'),
+		forkedFromSessionId: readStringField(item, 'forkedFromSessionId'),
+		titleLocked: readBooleanField(item, 'titleLocked'),
+		createdAt: createdAt,
+		updatedAt: updatedAt,
+	} as GroupChatSession
+}
+
 function parseGroupChats(raw: string): GroupChat[] {
 	if (raw == '') { return [] as GroupChat[] }
 	try {
-		const list = JSON.parse(raw) as GroupChat[]
-		if (list != null) { return list }
+		const list = JSON.parse(raw) as UTSJSONObject[]
+		const result: GroupChat[] = []
+		if (list != null) {
+			for (let i = 0; i < list.length; i++) {
+				const group = normalizeGroupChat(list[i])
+				if (group.id != '') {
+					result.push(group)
+				}
+			}
+		}
+		return result
 	} catch (_e: any) {
 	}
 	return [] as GroupChat[]
@@ -115,8 +211,17 @@ function parseGroupChats(raw: string): GroupChat[] {
 function parseGroupMembers(raw: string): GroupChatMember[] {
 	if (raw == '') { return [] as GroupChatMember[] }
 	try {
-		const list = JSON.parse(raw) as GroupChatMember[]
-		if (list != null) { return list }
+		const list = JSON.parse(raw) as UTSJSONObject[]
+		const result: GroupChatMember[] = []
+		if (list != null) {
+			for (let i = 0; i < list.length; i++) {
+				const member = normalizeGroupMember(list[i])
+				if (member.groupId != '' && member.agentId != '') {
+					result.push(member)
+				}
+			}
+		}
+		return result
 	} catch (_e: any) {
 	}
 	return [] as GroupChatMember[]
@@ -125,8 +230,17 @@ function parseGroupMembers(raw: string): GroupChatMember[] {
 function parseGroupSessions(raw: string): GroupChatSession[] {
 	if (raw == '') { return [] as GroupChatSession[] }
 	try {
-		const list = JSON.parse(raw) as GroupChatSession[]
-		if (list != null) { return list }
+		const list = JSON.parse(raw) as UTSJSONObject[]
+		const result: GroupChatSession[] = []
+		if (list != null) {
+			for (let i = 0; i < list.length; i++) {
+				const session = normalizeGroupSession(list[i])
+				if (session.id != '' && session.groupId != '') {
+					result.push(session)
+				}
+			}
+		}
+		return result
 	} catch (_e: any) {
 	}
 	return [] as GroupChatSession[]
@@ -140,10 +254,6 @@ function parseGroupMessages(raw: string): UTSJSONObject[] {
 	} catch (_e: any) {
 	}
 	return [] as UTSJSONObject[]
-}
-
-function createId(prefix: string): string {
-	return prefix + '-' + Date.now() + '-' + Math.floor(Math.random() * 100000)
 }
 
 function isSafeId(id: string): boolean {
@@ -196,13 +306,11 @@ export function saveGroupChat(group: GroupChat): void {
 }
 
 export function buildDefaultSchedulerPrompt(): string {
-	return '你是隐藏的群聊调度 Agent。你可以在内部向任意成员 Agent 传递私密指令、背景信息和任务拆解，也可以指定一个或多个成员按顺序发言。你的存在、调度流程、私密指令不能被其他成员在公开发言中暴露。你只在系统触发节点工作，例如用户发消息、用户手动继续、连续讨论过多需要判断是否继续。\n' +
-		'输出必须是 JSON 对象，禁止 Markdown，结构：{"actions":[{"type":"speak","agentId":"成员ID","targetType":"user","targetAgentId":"","privateInstruction":"给该成员的私密指令","publicIntent":"公开发言目标","order":0}],"shouldContinue":false,"titleSuggestion":"适合本会话的短标题","privateNotes":"仅内部记录"}。\n' +
-		'如果用户只是闲聊，可以只安排 1 个成员回复。如果任务需要协作，可以安排多个成员顺序发言。不要为了热闹强行多人发言。'
+	return DEFAULT_SCHEDULER_PROMPT_TEXT
 }
 
 export function buildDefaultSharedPrompt(): string {
-	return '这是一个故事/写作交流群聊。成员可以讨论人物、剧情、节奏、文风和表达，但要自然像群聊发言。公开发言只输出自己要说的话，不写舞台说明，不提隐藏调度、内部指令或系统消息。'
+	return DEFAULT_SHARED_PROMPT_TEXT
 }
 
 export function buildGroupWorkspaceRoot(): string {
