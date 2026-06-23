@@ -680,14 +680,15 @@
 	.user-stack {
 		flex-direction: column;
 		align-items: flex-end;
+		flex: 1;
 		flex-shrink: 1;
-		max-width: 1000rpx;
+		width: 0;
 	}
 	.user-bubble {
 		background-color: var(--rice-primary-color);
 		border-radius: 32rpx;
 		padding: 12rpx 24rpx;
-		max-width: 1000rpx;
+		max-width: 100%;
 		flex-shrink: 1;
 	}
 	.user-bubble:active {
@@ -703,7 +704,7 @@
 		background-color: var(--rice-background-2);
 		border-radius: 32rpx;
 		padding: 20rpx;
-		max-width: 1000rpx;
+		max-width: 100%;
 		margin-bottom: 20rpx;
 	}
 	.ai-content:active {
@@ -712,8 +713,9 @@
 	.ai-stack {
 		flex-direction: column;
 		align-items: flex-start;
+		flex: 1;
 		flex-shrink: 1;
-		max-width: 1000rpx;
+		width: 0;
 	}
 	.speaker-name {
 		font-size: 26rpx;
@@ -761,6 +763,7 @@
 	.assistant-segment-list {
 		flex-direction: column;
 		align-items: flex-start;
+		width: 100%;
 	}
 	.bubble-assistant {
 		flex-direction: column;
@@ -875,18 +878,21 @@
 		color: var(--rice-background-2);
 		line-height: 44rpx;
 		white-space: pre-wrap;
+		word-break: break-word;
 	}
 	.text-assistant {
 		font-size: 30rpx;
 		color: var(--rice-text-color);
 		line-height: 44rpx;
 		white-space: pre-wrap;
+		word-break: break-word;
 	}
 	.text-assistant-pre {
 		font-size: 30rpx;
 		color: var(--rice-text-color);
 		line-height: 44rpx;
 		white-space: pre-wrap;
+		word-break: break-word;
 	}
 	.text-tool {
 		font-size: 26rpx;

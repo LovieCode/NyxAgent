@@ -53,45 +53,59 @@
 			</view>
 			<view v-if="showToolPanel" class="toolbar-panel">
 				<view class="toolbar-grid">
-					<view class="toolbar-grid-item" @click="pickImage">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="image" size="52rpx" color="var(--rice-primary-color)" /></view>
-						<text class="toolbar-grid-label">图片</text>
+					<template v-if="toolbarPageIndex == 0">
+						<view class="toolbar-grid-item" @click="pickImage">
+							<view class="toolbar-grid-icon"><oui-icon-unix name="image" size="52rpx" color="var(--rice-primary-color)" /></view>
+							<text class="toolbar-grid-label">图片</text>
+						</view>
+						<view class="toolbar-grid-item" @click="takePhoto">
+							<view class="toolbar-grid-icon"><oui-icon-unix name="camera" size="52rpx" color="var(--rice-primary-color)" /></view>
+							<text class="toolbar-grid-label">拍照</text>
+						</view>
+						<view class="toolbar-grid-item" @click="pickFile">
+							<view class="toolbar-grid-icon"><oui-icon-unix name="file" size="52rpx" color="var(--rice-primary-color)" /></view>
+							<text class="toolbar-grid-label">文件</text>
+						</view>
+						<view class="toolbar-grid-item" @click="chooseAgentForMemory">
+							<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="52rpx" color="var(--rice-primary-color)" /></view>
+							<text class="toolbar-grid-label">记忆管理</text>
+						</view>
+						<view class="toolbar-grid-item" @click="chooseAgentForContext">
+							<view class="toolbar-grid-icon"><oui-icon-unix name="eye" size="52rpx" color="var(--rice-primary-color)" /></view>
+							<text class="toolbar-grid-label">原始上下文</text>
+						</view>
+						<view class="toolbar-grid-item" @click="openGroupWorkspace">
+							<view class="toolbar-grid-icon"><oui-icon-unix name="folder" size="52rpx" color="var(--rice-primary-color)" /></view>
+							<text class="toolbar-grid-label">工作区</text>
+						</view>
+						<view class="toolbar-grid-item" @click="stopDiscussion">
+							<view class="toolbar-grid-icon"><oui-icon-unix name="stop" size="52rpx" color="#EF4444" /></view>
+							<text class="toolbar-grid-label">停止讨论</text>
+						</view>
+						<view class="toolbar-grid-item" @click="continueDiscussion">
+							<view class="toolbar-grid-icon"><oui-icon-unix name="plus-circle" size="52rpx" color="var(--rice-primary-color)" /></view>
+							<text class="toolbar-grid-label">继续讨论</text>
+						</view>
+					</template>
+					<template v-if="toolbarPageIndex == 1">
+						<view class="toolbar-grid-item" @click="goSessions">
+							<view class="toolbar-grid-icon"><oui-icon-unix name="time-circle" size="52rpx" color="var(--rice-primary-color)" /></view>
+							<text class="toolbar-grid-label">会话分支</text>
+						</view>
+						<view class="toolbar-grid-item" @click="goSettings">
+							<view class="toolbar-grid-icon"><oui-icon-unix name="setting" size="52rpx" color="var(--rice-primary-color)" /></view>
+							<text class="toolbar-grid-label">群聊设置</text>
+						</view>
+					</template>
+				</view>
+				<view class="toolbar-pager">
+					<view class="toolbar-page-arrow" :class="toolbarPageIndex == 0 ? 'toolbar-page-arrow-disabled' : ''" @click="prevToolbarPage">
+						<text class="toolbar-page-arrow-text">‹</text>
 					</view>
-					<view class="toolbar-grid-item" @click="takePhoto">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="camera" size="52rpx" color="var(--rice-primary-color)" /></view>
-						<text class="toolbar-grid-label">拍照</text>
-					</view>
-					<view class="toolbar-grid-item" @click="pickFile">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="file" size="52rpx" color="var(--rice-primary-color)" /></view>
-						<text class="toolbar-grid-label">文件</text>
-					</view>
-					<view class="toolbar-grid-item" @click="chooseAgentForMemory">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="52rpx" color="var(--rice-primary-color)" /></view>
-						<text class="toolbar-grid-label">记忆管理</text>
-					</view>
-					<view class="toolbar-grid-item" @click="chooseAgentForContext">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="eye" size="52rpx" color="var(--rice-primary-color)" /></view>
-						<text class="toolbar-grid-label">原始上下文</text>
-					</view>
-					<view class="toolbar-grid-item" @click="openGroupWorkspace">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="folder" size="52rpx" color="var(--rice-primary-color)" /></view>
-						<text class="toolbar-grid-label">工作区</text>
-					</view>
-					<view class="toolbar-grid-item" @click="stopDiscussion">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="stop" size="52rpx" color="#EF4444" /></view>
-						<text class="toolbar-grid-label">停止讨论</text>
-					</view>
-					<view class="toolbar-grid-item" @click="continueDiscussion">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="plus-circle" size="52rpx" color="var(--rice-primary-color)" /></view>
-						<text class="toolbar-grid-label">继续讨论</text>
-					</view>
-					<view class="toolbar-grid-item" @click="goSessions">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="time-circle" size="52rpx" color="var(--rice-primary-color)" /></view>
-						<text class="toolbar-grid-label">会话分支</text>
-					</view>
-					<view class="toolbar-grid-item" @click="goSettings">
-						<view class="toolbar-grid-icon"><oui-icon-unix name="setting" size="52rpx" color="var(--rice-primary-color)" /></view>
-						<text class="toolbar-grid-label">群聊设置</text>
+					<view class="toolbar-page-dot" :class="toolbarPageIndex == 0 ? 'toolbar-page-dot-active' : ''" @click="setToolbarPage(0)" />
+					<view class="toolbar-page-dot" :class="toolbarPageIndex == 1 ? 'toolbar-page-dot-active' : ''" @click="setToolbarPage(1)" />
+					<view class="toolbar-page-arrow" :class="toolbarPageIndex == 1 ? 'toolbar-page-arrow-disabled' : ''" @click="nextToolbarPage">
+						<text class="toolbar-page-arrow-text">›</text>
 					</view>
 				</view>
 			</view>
@@ -111,6 +125,7 @@
 		ACTIVE_GROUP_CHAT_ID_KEY,
 		ACTIVE_GROUP_SESSION_ID_KEY,
 		GROUP_MESSAGE_SENDER_AGENT,
+		GROUP_MESSAGE_SENDER_SCHEDULER,
 		GROUP_MESSAGE_SENDER_USER,
 		type GroupChat,
 		type GroupChatSession,
@@ -158,6 +173,7 @@
 				inputHeight: 40 as number,
 				isGenerating: false as boolean,
 				showToolPanel: false as boolean,
+				toolbarPageIndex: 0 as number,
 				scrollTop: 0 as number,
 				longpressCancelToken: 0 as number,
 				currentStream: null as AgentEventStream | null,
@@ -221,7 +237,22 @@
 			goBack(): void { uni.navigateBack() },
 			goSettings(): void { uni.navigateTo({ url: '/pages/group-chat-settings/group-chat-settings' }) },
 			goSessions(): void { uni.navigateTo({ url: '/pages/group-chat-sessions/group-chat-sessions' }) },
-			toggleToolPanel(): void { this.showToolPanel = !this.showToolPanel },
+			toggleToolPanel(): void {
+				this.showToolPanel = !this.showToolPanel
+				if (this.showToolPanel == true) { this.toolbarPageIndex = 0 }
+			},
+			setToolbarPage(index: number): void {
+				if (index < 0 || index > 1) { return }
+				this.toolbarPageIndex = index
+			},
+			prevToolbarPage(): void {
+				if (this.toolbarPageIndex <= 0) { return }
+				this.toolbarPageIndex--
+			},
+			nextToolbarPage(): void {
+				if (this.toolbarPageIndex >= 1) { return }
+				this.toolbarPageIndex++
+			},
 			onMsgScroll(): void { this.longpressCancelToken++ },
 			onInputLineChange(e: UniTextareaLineChangeEvent): void {
 				const lineCount = e.detail.lineCount
@@ -548,6 +579,7 @@
 				}
 				this.discussionStopped = false
 				this.isGenerating = true
+				const schedulerStartedAt = Date.now()
 				const schedulerMessages = buildSchedulerRuntimeMessages(group, session, this.messages, reason, this.loopTurns)
 				chatWithLLM(schedulerMessages, buildSchedulerSystemPrompt(), '', '').then((raw: string | null) => {
 					const text = raw != null ? raw : ''
@@ -558,7 +590,16 @@
 						const freshSession = getGroupSessionById(group.id, session.id)
 						this.session = freshSession != null ? freshSession : session
 					}
-					const hidden = createGroupHiddenMessage(group.id, session.id, 'scheduler', text)
+					const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, text)
+					const schedulerSnapshot = readLastLLMRequestSnapshot('', '')
+					if (schedulerSnapshot != null) {
+						const capturedAt = schedulerSnapshot['capturedAt'] as number | null
+						if (capturedAt != null && capturedAt >= schedulerStartedAt) {
+							hidden['requestSnapshot'] = schedulerSnapshot
+						}
+					}
+					hidden['triggerReason'] = reason
+					hidden['runtimeMessages'] = JSON.parse(JSON.stringify(schedulerMessages)) as UTSJSONObject[]
 					this.messages.push(hidden)
 					this.saveMessages()
 					this.runDecisionActions(decision)
@@ -671,4 +712,10 @@
 	.toolbar-grid-item { width: 25%; align-items: center; margin-bottom: 24rpx; }
 	.toolbar-grid-icon { width: 104rpx; height: 104rpx; border-radius: 28rpx; background-color: var(--rice-background-2); justify-content: center; align-items: center; margin-bottom: 8rpx; }
 	.toolbar-grid-label { font-size: 24rpx; color: var(--rice-text-color-2); }
+	.toolbar-pager { flex-direction: row; align-items: center; justify-content: center; height: 42rpx; }
+	.toolbar-page-arrow { width: 56rpx; height: 42rpx; justify-content: center; align-items: center; margin-left: 8rpx; margin-right: 8rpx; }
+	.toolbar-page-arrow-disabled { opacity: 0.25; }
+	.toolbar-page-arrow-text { font-size: 34rpx; color: var(--rice-text-color-2); line-height: 38rpx; }
+	.toolbar-page-dot { width: 10rpx; height: 10rpx; border-radius: 5rpx; background-color: #D1D5DB; margin-left: 8rpx; margin-right: 8rpx; }
+	.toolbar-page-dot-active { width: 28rpx; background-color: var(--rice-primary-color); }
 </style>

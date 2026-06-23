@@ -180,6 +180,23 @@ export function getAgentDir(agentId: string): string {
 }
 
 /**
+ * 获取指定 Agent 的单个私聊会话工作区（不存在则创建）。
+ * 目录结构：files/agents/{agentId}/{conversationId}
+ */
+export function getAgentConversationDir(agentId: string, conversationId: string): string {
+	if (conversationId == '' || conversationId.indexOf('/') >= 0 || conversationId.indexOf('\\') >= 0 || conversationId.indexOf('..') >= 0) {
+		return ''
+	}
+	const agentDir = getAgentDir(agentId)
+	if (agentDir == '') { return '' }
+	const dir = agentDir + '/' + conversationId
+	if (!exists(dir)) {
+		createDir(dir)
+	}
+	return dir
+}
+
+/**
  * 获取内部存储 cache 目录。
  * - Android：/data/data/<pkg>/cache/（临时文件、下载缓存等）
  * - 其他平台：uni.env.CACHE_PATH
@@ -429,6 +446,7 @@ export function listRootContents(): FileItem[] {
 	const userRootItems: FileItem[] = []
 	const sandboxItems: FileItem[] = []
 	const internalItems: FileItem[] = []
+	const groupItems: FileItem[] = []
 	const agentItems: FileItem[] = []
 	const userDir = getUserDir()
 
@@ -460,7 +478,7 @@ export function listRootContents(): FileItem[] {
 	// 第 2 组：内部存储精选目录
 	const filesDir = getInternalFilesDir()
 	if (filesDir != '') {
-		const knownDirs = ['sessions', 'group-workspaces', 'exports', 'imports', 'laoqianjunzi-sqlite-snapshots']
+		const knownDirs = ['sessions', 'exports', 'imports', 'laoqianjunzi-sqlite-snapshots']
 		for (let k = 0; k < knownDirs.length; k++) {
 			const subPath = filesDir + '/' + knownDirs[k]
 			if (exists(subPath)) {
@@ -475,7 +493,42 @@ export function listRootContents(): FileItem[] {
 			}
 		}
 
-		// 第 3 组：Agent 子目录（用智能体显示名替代 ID 文件夹名）
+		// 第 3 组：群聊工作区（用群聊显示名替代 ID 文件夹名）
+		// 直接读 storage 避免和 group-chat-service.uts 形成循环引用。
+		const groupDisplayNames: Map<string, string> = new Map<string, string>()
+		const groupListJson = uni.getStorageSync('group_chat_list') as string
+		if (groupListJson != null && groupListJson != '') {
+			try {
+				const groupList = JSON.parse(groupListJson) as UTSJSONObject[]
+				for (let j = 0; j < (groupList as any[]).length; j++) {
+					const item = groupList[j] as UTSJSONObject
+					const gid = item['id'] as string
+					const gname = item['name'] as string
+					if (gid != null && gid != '' && gname != null && gname != '') {
+						groupDisplayNames.set(gid, gname)
+					}
+				}
+			} catch (_e: any) { /* 解析失败则用文件夹名 */ }
+		}
+		const groupWorkspaceRoot = filesDir + '/group-workspaces'
+		const groupList = listDir(groupWorkspaceRoot)
+		for (let i = 0; i < groupList.length; i++) {
+			const group = groupList[i]
+			if (group.isDirectory) {
+				const groupId = group.name
+				const displayName = groupDisplayNames.get(groupId)
+				const label = displayName != null ? displayName : groupId
+				groupItems.push({
+					name: '[Group] ' + label,
+					path: group.path,
+					isDirectory: true,
+					size: 0,
+					lastModified: group.lastModified,
+				})
+			}
+		}
+
+		// 第 4 组：Agent 子目录（用智能体显示名替代 ID 文件夹名）
 		// 直接读 storage 避免循环引用 agent.uts
 		const agentDisplayNames: Map<string, string> = new Map<string, string>()
 		const agentListJson = uni.getStorageSync('agent_list') as string
@@ -532,9 +585,10 @@ export function listRootContents(): FileItem[] {
 	sortGroup(userRootItems)
 	sortGroup(sandboxItems)
 	sortGroup(internalItems)
+	sortGroup(groupItems)
 	sortGroup(agentItems)
 
-	// 按顺序拼接：用户目录 → 沙盒 → 内部目录 → Agent
+	// 按顺序拼接：用户目录 → 沙盒 → 内部目录 → 群聊 → Agent
 	const result: FileItem[] = []
 	for (let i = 0; i < userRootItems.length; i++) {
 		result.push(userRootItems[i])
@@ -544,6 +598,9 @@ export function listRootContents(): FileItem[] {
 	}
 	for (let i = 0; i < internalItems.length; i++) {
 		result.push(internalItems[i])
+	}
+	for (let i = 0; i < groupItems.length; i++) {
+		result.push(groupItems[i])
 	}
 	for (let i = 0; i < agentItems.length; i++) {
 		result.push(agentItems[i])

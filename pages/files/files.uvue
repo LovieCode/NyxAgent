@@ -45,7 +45,7 @@
 								/>
 							</view>
 							<view class="file-info">
-								<text class="file-name">{{ item.name }}</text>
+								<text class="file-name">{{ getDisplayItemName(item) }}</text>
 							<view class="file-meta">
 								<text v-if="item.isDirectory" class="file-meta-text">文件夹</text>
 								<text v-else class="file-meta-text">{{ fmtFileSize(item.size) }}</text>
@@ -100,6 +100,8 @@
 
 <script lang="uts">
 	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, parentPath, basename, joinPath, normalizePath, getUserDir, getInternalFilesDir, getExternalFilesDir, getAgentsRoot, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
+	import { getConversationsByAgent } from '@/utils/database.uts'
+	import { displaySessionTitle, getGroupChats, getGroupSessions } from '@/utils/group-chat-service.uts'
 
 	/** 虚拟根路径标记（合并视图用） */
 	const VIRTUAL_ROOT = '__FILE_ROOT__'
@@ -167,8 +169,8 @@
 				const parts: PathSegment[] = []
 				for (let i = startIndex - 1; i >= 0; i--) {
 					let displayName = stack[i].name
-					// 跳过 agents 容器目录本身
-					if (displayName == 'agents') {
+					// 跳过技术容器目录本身
+					if (displayName == 'agents' || displayName == 'group-workspaces') {
 						continue
 					}
 					// 用户目录固定显示中文名
@@ -180,6 +182,29 @@
 						const agentName = this.lookupAgentName(displayName)
 						if (agentName != '') {
 							displayName = agentName
+						}
+					}
+					// 祖父级是 agents → 当前段是 conversation ID，替换为会话标题
+					if (i + 2 < stack.length && stack[i + 2].name == 'agents') {
+						const agentId = stack[i + 1].name
+						const conversationName = this.lookupAgentConversationName(agentId, displayName)
+						if (conversationName != '') {
+							displayName = conversationName
+						}
+					}
+					// 父级是 group-workspaces → 当前段是 group ID，替换为群聊名
+					if (i + 1 < stack.length && stack[i + 1].name == 'group-workspaces') {
+						const groupName = this.lookupGroupName(displayName)
+						if (groupName != '') {
+							displayName = groupName
+						}
+					}
+					// 祖父级是 group-workspaces → 当前段是 session ID，替换为会话名
+					if (i + 2 < stack.length && stack[i + 2].name == 'group-workspaces') {
+						const groupId = stack[i + 1].name
+						const sessionName = this.lookupGroupSessionName(groupId, displayName)
+						if (sessionName != '') {
+							displayName = sessionName
 						}
 					}
 					parts.push({ name: displayName, path: stack[i].path })
@@ -207,6 +232,7 @@
 				parent == getInternalFilesDir() ||
 				parent == getExternalFilesDir() ||
 				parent == getAgentsRoot() ||
+				parent == this.getGroupWorkspacesRootPath() ||
 				parent == getUserDir()
 			)
 			if (isRootLevel) {
@@ -540,6 +566,9 @@
 				if (item.name.startsWith('[User]')) {
 					return 'user'
 				}
+				if (item.name.startsWith('[Group]')) {
+					return 'group'
+				}
 				if (item.name.startsWith('[Agent]')) {
 					return 'agent'
 				}
@@ -563,10 +592,51 @@
 				if (item.name.startsWith('[User]')) {
 					return '用户目录'
 				}
+				if (item.name.startsWith('[Group]')) {
+					return '群聊目录'
+				}
 				if (item.name.startsWith('[Agent]')) {
 					return 'Agent 目录'
 				}
 				return '文件目录'
+			},
+
+			getGroupWorkspacesRootPath(): string {
+				const filesDir = getInternalFilesDir()
+				if (filesDir == '') { return '' }
+				return joinPath(filesDir, 'group-workspaces')
+			},
+
+			getDisplayItemName(item : FileItem) : string {
+				if (item.name.startsWith('[User] ')) {
+					return item.name.substring(7)
+				}
+				if (item.name.startsWith('[Agent] ')) {
+					return item.name.substring(8)
+				}
+				if (item.name.startsWith('[Group] ')) {
+					return item.name.substring(8)
+				}
+				if (item.isDirectory == true) {
+					const parent = parentPath(item.path)
+					const groupRoot = this.getGroupWorkspacesRootPath()
+					if (normalizePath(parentPath(parent)) == normalizePath(getAgentsRoot())) {
+						const agentId = basename(parent)
+						const conversationName = this.lookupAgentConversationName(agentId, item.name)
+						if (conversationName != '') { return conversationName }
+					}
+					if (groupRoot != '' && normalizePath(parent) == normalizePath(groupRoot)) {
+						const groupName = this.lookupGroupName(item.name)
+						if (groupName != '') { return groupName }
+					}
+					const groupParent = parentPath(parent)
+					if (groupRoot != '' && normalizePath(groupParent) == normalizePath(groupRoot)) {
+						const groupId = basename(parent)
+						const sessionName = this.lookupGroupSessionName(groupId, item.name)
+						if (sessionName != '') { return sessionName }
+					}
+				}
+				return item.name
 			},
 
 			/** 查智能体显示名（agentId → name），无匹配返回空 */
@@ -588,6 +658,47 @@
 						}
 					}
 				} catch (_e: any) { /* 解析失败则返回空 */ }
+				return ''
+			},
+
+			lookupAgentConversationName(agentId : string, conversationId : string) : string {
+				if (agentId == '' || conversationId == '') { return '' }
+				try {
+					const conversations = getConversationsByAgent(agentId)
+					for (let i = 0; i < conversations.length; i++) {
+						const item = conversations[i]
+						const rawId = item['id'] as string | null
+						if (rawId == conversationId) {
+							const rawTitle = item['title'] as string | null
+							if (rawTitle != null && rawTitle != '') { return rawTitle }
+							return '未命名会话'
+						}
+					}
+				} catch (_e: any) { /* 数据库不可用时显示原 ID */ }
+				return ''
+			},
+
+			lookupGroupName(groupId : string) : string {
+				if (groupId == '') { return '' }
+				const groups = getGroupChats()
+				for (let i = 0; i < groups.length; i++) {
+					if (groups[i].id == groupId) {
+						const name = groups[i].name
+						if (name != '') { return name }
+						return ''
+					}
+				}
+				return ''
+			},
+
+			lookupGroupSessionName(groupId : string, sessionId : string) : string {
+				if (groupId == '' || sessionId == '') { return '' }
+				const sessions = getGroupSessions(groupId)
+				for (let i = 0; i < sessions.length; i++) {
+					if (sessions[i].id == sessionId) {
+						return displaySessionTitle(sessions[i])
+					}
+				}
 				return ''
 			},
 

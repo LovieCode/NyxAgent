@@ -63,7 +63,7 @@
 				<view v-else class="empty-state">
 					<oui-icon-unix name="time-circle" size="96rpx" color="#D1D5DB" />
 					<text class="empty-text">暂无历史记录</text>
-					<text class="empty-hint">{{activeTab == 'group' ? '这个智能体在群聊中收到上下文后，会记录在这里' : '开始对话后，记录将自动保存在这里'}}</text>
+					<text class="empty-hint">{{activeTab == 'group' ? '调度器和成员 Agent 的群聊上下文会记录在这里' : '开始对话后，记录将自动保存在这里'}}</text>
 				</view>
 			</scroll-view>
 		</view>
@@ -102,11 +102,14 @@
 	import { getConversations, getMessages, deleteConversation } from '@/utils/database.uts'
 	import {
 		deleteGroupAgentContextRecord,
+		displaySessionTitle,
 		getGroupAgentContextRecord,
 		getGroupChats,
 		getGroupMessages,
 		getGroupSessions,
+		GROUP_MESSAGE_SENDER_SCHEDULER,
 		listGroupAgentContextRecords,
+		saveGroupMessages,
 	} from '@/utils/group-chat-service.uts'
 
 	export default {
@@ -302,48 +305,101 @@
 				}
 			},
 
+			appendSchedulerContextItems(result: UTSJSONObject[]): void {
+				const groups = getGroupChats()
+				for (let gi = 0; gi < groups.length; gi++) {
+					const group = groups[gi]
+					const sessions = getGroupSessions(group.id)
+					for (let si = 0; si < sessions.length; si++) {
+						const session = sessions[si]
+						const messages = getGroupMessages(group.id, session.id)
+						for (let mi = 0; mi < messages.length; mi++) {
+							const msg = messages[mi]
+							const senderType = msg['senderType'] as string | null
+							if (senderType != GROUP_MESSAGE_SENDER_SCHEDULER) { continue }
+							const messageIdRaw = msg['id'] as string | null
+							const messageId = messageIdRaw != null && messageIdRaw != '' ? messageIdRaw : 'index-' + mi.toString()
+							const timestampRaw = msg['timestamp'] as number | null
+							const contentRaw = msg['content'] as string | null
+							const triggerRaw = msg['triggerReason'] as string | null
+							const requestSnapshot = msg['requestSnapshot'] as UTSJSONObject | null
+							const runtimeMessages = msg['runtimeMessages'] as UTSJSONObject[] | null
+							let messageCount = 0
+							if (requestSnapshot != null) {
+								const rawCount = requestSnapshot['messageCount'] as number | null
+								messageCount = rawCount != null ? rawCount : 0
+							} else if (runtimeMessages != null) {
+								messageCount = runtimeMessages.length
+							}
+							let preview = triggerRaw != null && triggerRaw != '' ? triggerRaw : ''
+							if (preview == '') {
+								preview = contentRaw != null ? contentRaw : ''
+							}
+							if (preview == '') { preview = '查看隐藏调度 Agent 的真实上下文' }
+							if (preview.length > 50) { preview = preview.substring(0, 50) + '...' }
+							result.push({
+								id: 'scheduler:' + group.id + ':' + session.id + ':' + messageId,
+								type: 'scheduler_context',
+								agent_id: '__scheduler__',
+								group_id: group.id,
+								group_name: group.name,
+								session_id: session.id,
+								session_title: displaySessionTitle(session),
+								message_id: messageId,
+								message_index: mi,
+								title: group.name + ' / ' + displaySessionTitle(session) + ' / 调度器',
+								created_at: timestampRaw != null ? timestampRaw : session.updatedAt,
+								updated_at: timestampRaw != null ? timestampRaw : session.updatedAt,
+								message_count: messageCount,
+								preview: preview,
+								model: requestSnapshot != null ? '调度器真实请求' : '调度器记录',
+							} as UTSJSONObject)
+						}
+					}
+				}
+			},
+
 			loadGroupHistory(): void {
 				const result: UTSJSONObject[] = []
-				if (this.activeAgentId == '') {
-					this.groupHistoryList = result
-					return
-				}
-				const records = listGroupAgentContextRecords(this.activeAgentId)
-				for (let i = 0; i < records.length; i++) {
-					const record = records[i]
-					const recordId = record['id'] as string | null
-					if (recordId == null || recordId == '') { continue }
-					const groupNameRaw = record['groupName'] as string | null
-					const sessionTitleRaw = record['sessionTitle'] as string | null
-					const publicIntentRaw = record['publicIntent'] as string | null
-					const privateInstructionRaw = record['privateInstruction'] as string | null
-					const createdAtRaw = record['createdAt'] as number | null
-					const groupName = groupNameRaw != null && groupNameRaw != '' ? groupNameRaw : '群聊'
-					const sessionTitle = sessionTitleRaw != null && sessionTitleRaw != '' ? sessionTitleRaw : '会话'
-					const publicIntent = publicIntentRaw != null ? publicIntentRaw : ''
-					const privateInstruction = privateInstructionRaw != null ? privateInstructionRaw : ''
-					let preview = publicIntent != '' ? publicIntent : privateInstruction
-					if (preview == '') { preview = '查看该智能体在群聊中实际收到的上下文' }
-					if (preview.length > 50) { preview = preview.substring(0, 50) + '...' }
-					const requestSnapshot = record['requestSnapshot'] as UTSJSONObject | null
-					let messageCount = 0
-					if (requestSnapshot != null) {
-						const rawCount = requestSnapshot['messageCount'] as number | null
-						messageCount = rawCount != null ? rawCount : 0
+				if (this.activeAgentId != '') {
+					const records = listGroupAgentContextRecords(this.activeAgentId)
+					for (let i = 0; i < records.length; i++) {
+						const record = records[i]
+						const recordId = record['id'] as string | null
+						if (recordId == null || recordId == '') { continue }
+						const groupNameRaw = record['groupName'] as string | null
+						const sessionTitleRaw = record['sessionTitle'] as string | null
+						const publicIntentRaw = record['publicIntent'] as string | null
+						const privateInstructionRaw = record['privateInstruction'] as string | null
+						const createdAtRaw = record['createdAt'] as number | null
+						const groupName = groupNameRaw != null && groupNameRaw != '' ? groupNameRaw : '群聊'
+						const sessionTitle = sessionTitleRaw != null && sessionTitleRaw != '' ? sessionTitleRaw : '会话'
+						const publicIntent = publicIntentRaw != null ? publicIntentRaw : ''
+						const privateInstruction = privateInstructionRaw != null ? privateInstructionRaw : ''
+						let preview = publicIntent != '' ? publicIntent : privateInstruction
+						if (preview == '') { preview = '查看该智能体在群聊中实际收到的上下文' }
+						if (preview.length > 50) { preview = preview.substring(0, 50) + '...' }
+						const requestSnapshot = record['requestSnapshot'] as UTSJSONObject | null
+						let messageCount = 0
+						if (requestSnapshot != null) {
+							const rawCount = requestSnapshot['messageCount'] as number | null
+							messageCount = rawCount != null ? rawCount : 0
+						}
+						result.push({
+							id: recordId,
+							type: 'group_context',
+							agent_id: this.activeAgentId,
+							title: groupName + ' / ' + sessionTitle,
+							created_at: createdAtRaw != null ? createdAtRaw : 0,
+							updated_at: createdAtRaw != null ? createdAtRaw : 0,
+							message_count: messageCount,
+							preview: preview,
+							model: requestSnapshot != null ? '真实请求快照' : '旧上下文记录',
+						} as UTSJSONObject)
 					}
-					result.push({
-						id: recordId,
-						type: 'group_context',
-						agent_id: this.activeAgentId,
-						title: groupName + ' / ' + sessionTitle,
-						created_at: createdAtRaw != null ? createdAtRaw : 0,
-						updated_at: createdAtRaw != null ? createdAtRaw : 0,
-						message_count: messageCount,
-						preview: preview,
-						model: requestSnapshot != null ? '真实请求快照' : '旧上下文记录',
-					} as UTSJSONObject)
+					this.appendLegacyGroupContextItems(result)
 				}
-				this.appendLegacyGroupContextItems(result)
+				this.appendSchedulerContextItems(result)
 				result.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
 					const at = a['updated_at'] as number | null
 					const bt = b['updated_at'] as number | null
@@ -368,6 +424,31 @@
 					if (visible != false) { count++ }
 				}
 				return count
+			},
+
+			findSchedulerMessage(item: UTSJSONObject): UTSJSONObject | null {
+				const groupId = item['group_id'] as string | null
+				const sessionId = item['session_id'] as string | null
+				if (groupId == null || groupId == '' || sessionId == null || sessionId == '') { return null }
+				const messages = getGroupMessages(groupId, sessionId)
+				const messageId = item['message_id'] as string | null
+				if (messageId != null && messageId != '') {
+					for (let i = 0; i < messages.length; i++) {
+						const msg = messages[i]
+						const senderType = msg['senderType'] as string | null
+						const rawId = msg['id'] as string | null
+						if (senderType == GROUP_MESSAGE_SENDER_SCHEDULER && rawId == messageId) {
+							return msg
+						}
+					}
+				}
+				const messageIndexRaw = item['message_index'] as number | null
+				if (messageIndexRaw != null && messageIndexRaw >= 0 && messageIndexRaw < messages.length) {
+					const msg = messages[messageIndexRaw]
+					const senderType = msg['senderType'] as string | null
+					if (senderType == GROUP_MESSAGE_SENDER_SCHEDULER) { return msg }
+				}
+				return null
 			},
 
 			resolveGroupPreviewSenderName(senderName: string | null, senderType: string | null, role: string | null): string {
@@ -651,7 +732,34 @@
 				let subtitle = ''
 				if (tab == 'group') {
 					const itemType = item['type'] as string | null
-					if (itemType == 'legacy_group_message') {
+					if (itemType == 'scheduler_context') {
+						const schedulerMsg = this.findSchedulerMessage(item)
+						if (schedulerMsg != null) {
+							const requestSnapshot = schedulerMsg['requestSnapshot'] as UTSJSONObject | null
+							if (requestSnapshot != null) {
+								const requestBody = requestSnapshot['requestBody'] as UTSJSONObject | null
+								if (requestBody != null) {
+									previewJson = JSON.stringify(requestBody, null, 2)
+								} else {
+									previewJson = JSON.stringify(requestSnapshot, null, 2)
+								}
+								const messageCount = requestSnapshot['messageCount'] as number | null
+								subtitle = '隐藏调度 Agent 真实发送瞬间的请求体 · ' + (messageCount != null ? messageCount : 0) + ' 条 messages'
+							} else {
+								const runtimeMessages = schedulerMsg['runtimeMessages'] as UTSJSONObject[] | null
+								const contentRaw = schedulerMsg['content'] as string | null
+								const triggerRaw = schedulerMsg['triggerReason'] as string | null
+								previewJson = JSON.stringify({
+									type: 'scheduler_context',
+									note: '旧调度记录没有保存真实 request body 快照；以下为可恢复的调度上下文和输出。',
+									triggerReason: triggerRaw != null ? triggerRaw : '',
+									runtimeMessages: runtimeMessages != null ? runtimeMessages : [],
+									response: contentRaw != null ? contentRaw : '',
+								} as UTSJSONObject, null, 2)
+								subtitle = '隐藏调度 Agent 记录：没有真实请求快照'
+							}
+						}
+					} else if (itemType == 'legacy_group_message') {
 						const groupId = item['group_id'] as string | null
 						const sessionId = item['session_id'] as string | null
 						const messageIndexRaw = item['message_index'] as number | null
@@ -734,8 +842,35 @@
 
 
 			deleteGroupHistoryById(id: string): void {
-				if (this.activeAgentId == '' || id == '') { return }
+				if (id == '') { return }
+				if (id.startsWith('scheduler:')) {
+					this.deleteSchedulerHistoryById(id)
+					return
+				}
+				if (this.activeAgentId == '') { return }
 				deleteGroupAgentContextRecord(this.activeAgentId, id)
+			},
+
+			deleteSchedulerHistoryById(id: string): void {
+				const parts = id.split(':')
+				if (parts.length < 4) { return }
+				const groupId = parts[1]
+				const sessionId = parts[2]
+				const messageKey = parts[3]
+				if (groupId == '' || sessionId == '' || messageKey == '') { return }
+				const messages = getGroupMessages(groupId, sessionId)
+				const next: UTSJSONObject[] = []
+				for (let i = 0; i < messages.length; i++) {
+					const msg = messages[i]
+					const senderType = msg['senderType'] as string | null
+					const rawId = msg['id'] as string | null
+					const fallbackId = 'index-' + i.toString()
+					if (senderType == GROUP_MESSAGE_SENDER_SCHEDULER && (rawId == messageKey || fallbackId == messageKey)) {
+						continue
+					}
+					next.push(msg)
+				}
+				saveGroupMessages(groupId, sessionId, next)
 			},
 
 			/** 导出对话为 Markdown，并复制到剪贴板 */

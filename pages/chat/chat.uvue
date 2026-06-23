@@ -148,6 +148,7 @@
 		finalizeAssistantTurn,
 		reduceAgentEvent,
 	} from '@/utils/chat-message-reducer.uts'
+	import { getAgentConversationDir } from '@/utils/file-manager.uts'
 
 	export default {
 		data() {
@@ -819,6 +820,7 @@
 
 				// 使用 ReAct Agent Loop（带沙箱文件工具）
 				const runtimeMessages = this.buildRuntimeMessages()
+				const workspaceRoot = getAgentConversationDir(this.currentAgentId, this.conversationId)
 				const stream: AgentEventStream = agentChat(
 					runtimeMessages,
 					this.getCurrentSystemPrompt(),
@@ -826,7 +828,8 @@
 					this.currentAgentModel,
 					this.currentAgentId,
 					0,
-					this.conversationId
+					this.conversationId,
+					workspaceRoot
 				)
 				this.currentStream = stream
 				stream.on((event: AgentEvent) => {

@@ -10,6 +10,7 @@ import {
 	exists,
 	joinPath,
 	getAgentDir,
+	basename,
 	formatFileSize,
 	formatTime,
 } from '@/utils/file-manager.uts'
@@ -90,11 +91,19 @@ function resolveAgentPath(agentId: string, relPath: string, workspaceRoot: strin
 	} else if (relPath == 'agents/' + agentId) {
 		return dir
 	}
+	if (workspaceRoot != '') {
+		const conversationId = basename(workspaceRoot)
+		if (conversationId != '' && relPath.startsWith(conversationId + '/')) {
+			relPath = relPath.substring(conversationId.length + 1)
+		} else if (conversationId != '' && relPath == conversationId) {
+			return dir
+		}
+	}
 	if (relPath == '') return dir
 	return joinPath(dir, relPath)
 }
 
-function normalizeWorkspacePath(agentId: string, rawPath: string): string {
+function normalizeWorkspacePath(agentId: string, rawPath: string, workspaceRoot: string = ''): string {
 	let path = rawPath.trim().replace(/\\/g, '/')
 	const prefix = 'agents/' + agentId + '/'
 	if (path.startsWith(prefix)) {
@@ -107,6 +116,14 @@ function normalizeWorkspacePath(agentId: string, rawPath: string): string {
 	}
 	while (path.endsWith('/') && path.length > 1) {
 		path = path.substring(0, path.length - 1)
+	}
+	if (workspaceRoot != '') {
+		const conversationId = basename(workspaceRoot)
+		if (conversationId != '' && path.startsWith(conversationId + '/')) {
+			path = path.substring(conversationId.length + 1)
+		} else if (conversationId != '' && path == conversationId) {
+			path = ''
+		}
 	}
 	return path
 }
@@ -183,7 +200,7 @@ function formatWorkspaceList(path: string, absPath: string, detail: boolean): st
 
 class WorkspaceFileTool implements AgentTool {
 	name: string = 'workspace_file'
-	description: string = '统一操作当前工作区文件。私聊时是 Agent 私有工作区，群聊时是群会话共享工作区。所有 path 都相对于当前工作区，禁止绝对路径和 ".."。action=list/read/write/delete/info。路径语义：todo.md 是待办文件，write 时会规范为 - [ ] / - [x]；notes/<名称>.md 是笔记，write 时会规范为带标题/元信息的 Markdown；其他路径是普通文件，按原文读写。write + is_directory=true 创建目录。read 时 render=true 会把 todo/notes Markdown 转为可读文本；普通文件 render 无效果。list 空路径列根目录，path=notes 列笔记目录。delete 可删除文件或目录，谨慎使用。'
+	description: string = '统一操作当前工作区文件。私聊时是当前 Agent 会话工作区，群聊时是群会话共享工作区。所有 path 都相对于当前工作区，禁止绝对路径和 ".."。action=list/read/write/delete/info。路径语义：todo.md 是待办文件，write 时会规范为 - [ ] / - [x]；notes/<名称>.md 是笔记，write 时会规范为带标题/元信息的 Markdown；其他路径是普通文件，按原文读写。write + is_directory=true 创建目录。read 时 render=true 会把 todo/notes Markdown 转为可读文本；普通文件 render 无效果。list 空路径列根目录，path=notes 列笔记目录。delete 可删除文件或目录，谨慎使用。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
@@ -237,7 +254,7 @@ class WorkspaceFileTool implements AgentTool {
 				resolve({ content: '非法路径：只能使用当前 Agent 工作区内的相对路径，不能使用绝对路径或 ".."', isError: true } as ToolResult)
 				return
 			}
-			const path = normalizeWorkspacePath(this.agentId, rawPathText)
+			const path = normalizeWorkspacePath(this.agentId, rawPathText, this.workspaceRoot)
 			if (action == '') {
 				resolve({ content: '缺少必要参数: action，可用 list/read/write/delete/info', isError: true } as ToolResult)
 				return
