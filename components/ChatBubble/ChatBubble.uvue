@@ -880,10 +880,6 @@
 		color: #6B7280;
 		line-height: 36rpx;
 		margin-top: 8rpx;
-		padding-left: 16rpx;
-		border-left-width: 2rpx;
-		border-left-color: #E5E7EB;
-		border-left-style: solid;
 		white-space: pre-wrap;
 	}
 
