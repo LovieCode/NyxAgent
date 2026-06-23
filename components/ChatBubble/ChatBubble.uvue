@@ -32,42 +32,42 @@
 				@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
 				@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
 				@touchend="onBubbleTouchEnd">
-				<view v-for="(block, bi) in displayBlocks" :key="bi" class="block-entry">
-					<!-- 思考块 -->
-					<view v-if="block.type == 'thinking'" class="thinking-step" @click.stop="toggleBlockExpand(bi)">
-						<view class="thinking-step-header">
-							<text class="thinking-step-icon">{{getBlockExpanded(bi) ? '▾' : '▸'}}</text>
-							<text class="thinking-step-label">{{getThinkingLabel(bi)}}</text>
-						</view>
-						<text v-if="getBlockExpanded(bi) == true" class="thinking-step-text">{{block.thinking}}</text>
+				<!-- 思考过程：thinking + toolCall 统一收进一个容器 -->
+				<view v-if="reasoningBlocks.length > 0" class="reasoning-panel">
+					<view class="reasoning-header" @click.stop="thinkingExpanded = !thinkingExpanded">
+						<text class="thinking-step-icon">{{thinkingExpanded ? '▾' : '▸'}}</text>
+						<text class="thinking-step-label">思考过程</text>
 					</view>
-					<!-- 文本块 -->
-					<text v-else-if="block.type == 'text'" class="text-assistant-pre">{{block.text}}<text v-if="isStreaming && bi == displayBlocks.length - 1 && displayBlocks[displayBlocks.length - 1].type == 'text'" class="cursor">|</text></text>
-					<!-- 工具调用块 -->
-					<view v-else-if="block.type == 'toolCall'" class="tool-call-step" @click.stop="toggleToolCallExpand(bi)">
-						<view class="tool-call-card">
-							<view class="tool-call-card-header">
-								<view class="tool-call-card-left">
-									<text class="tool-call-card-name">{{getToolDisplayName(block.name)}}</text>
-								</view>
-								<view class="tool-call-card-right">
-									<text v-if="block.ts != null && block.ts > 0 && (_renderSwitch == true || _renderSwitch == false)" :key="'elapsed-' + bi + '-' + timerTick + '-' + _renderSwitch" class="tool-call-elapsed">{{getToolElapsed(block)}}</text>
-									<text class="tool-call-chevron">{{getToolCallExpanded(bi) ? '▾' : '▸'}}</text>
-								</view>
-							</view>
-							<view v-if="getToolCallExpanded(bi) == true" class="tool-call-card-detail">
-								<view class="tool-detail-section">
-									<text class="tool-detail-label">参数</text>
-									<text class="tool-detail-value">{{block.args}}</text>
-								</view>
-								<view v-if="block.status == 'completed' && block.result != null && block.result != ''" class="tool-detail-section">
-									<text class="tool-detail-label">结果</text>
-									<text class="tool-detail-value">{{block.result}}</text>
+					<view v-if="thinkingExpanded == true" class="reasoning-body">
+						<view v-for="(block, bi) in reasoningBlocks" :key="'reasoning-' + bi" class="block-entry">
+							<text v-if="block.type == 'thinking'" class="thinking-step-text">{{block.thinking}}</text>
+							<view v-else-if="block.type == 'toolCall'" class="tool-call-step" @click.stop="toggleToolCallExpand(bi)">
+								<view class="tool-call-card">
+									<view class="tool-call-card-header">
+										<view class="tool-call-card-left">
+											<text class="tool-call-card-name">{{getToolDisplayName(block.name)}}</text>
+										</view>
+										<view class="tool-call-card-right">
+											<text v-if="block.ts != null && block.ts > 0 && (_renderSwitch == true || _renderSwitch == false)" :key="'elapsed-' + bi + '-' + timerTick + '-' + _renderSwitch" class="tool-call-elapsed">{{getToolElapsed(block)}}</text>
+											<text class="tool-call-chevron">{{getToolCallExpanded(bi) ? '▾' : '▸'}}</text>
+										</view>
+									</view>
+									<view v-if="getToolCallExpanded(bi) == true" class="tool-call-card-detail">
+										<view class="tool-detail-section">
+											<text class="tool-detail-label">参数</text>
+											<text class="tool-detail-value">{{block.args}}</text>
+										</view>
+										<view v-if="block.status == 'completed' && block.result != null && block.result != ''" class="tool-detail-section">
+											<text class="tool-detail-label">结果</text>
+											<text class="tool-detail-value">{{block.result}}</text>
+										</view>
+									</view>
 								</view>
 							</view>
 						</view>
 					</view>
 				</view>
+				<text v-if="timelineAnswerText != ''" class="text-assistant-pre">{{timelineAnswerText}}<text v-if="showTimelineCursor == true" class="cursor">|</text></text>
 			</view>
 		</view>
 
@@ -216,8 +216,6 @@
 				isPressed: false as boolean,
 				/** 思考内容折叠态 */
 				thinkingExpanded: false as boolean,
-		/** 每个 thinking block 的展开状态（按块索引） */
-			blocksExpanded: [] as boolean[],
 				toolCallExpanded: [] as boolean[],
 				/** 计时器是否在运行（递归 setTimeout 控制） */
 				timerRunning: false as boolean,
@@ -246,13 +244,10 @@
 			blocks: {
 				handler(newBlocks: UTSJSONObject[]) {
 					if (this.isStreaming == true && newBlocks.length > 0) {
-						// Auto-expand new thinking blocks during streaming
+						// 流式阶段只要出现 thinking，就展开统一的思考过程容器
 						const lastBlock = newBlocks[newBlocks.length - 1]
 						if (lastBlock != null && (lastBlock['type'] as string) == 'thinking') {
-							while (this.blocksExpanded.length < newBlocks.length) {
-								this.blocksExpanded.push(false)
-							}
-							this.blocksExpanded[newBlocks.length - 1] = true
+							this.thinkingExpanded = true
 						}
 					}
 					// 启动/停止工具调用耗时计时器
@@ -281,7 +276,6 @@
 				// 流式结束 → 自动折叠 + 停止计时
 				if (newVal == false && oldVal == true) {
 					this.thinkingExpanded = false
-					this.blocksExpanded = []
 					this.timerRunning = false
 				}
 			}
@@ -353,15 +347,37 @@
 				}
 				return result
 			},
-			/** 统计 thinking 块数量，用于单块/多块标签切换 */
-			thinkingCount(): number {
-				let count = 0
+			/** 思考过程块：thinking 与 toolCall 都属于同一个推理容器 */
+			reasoningBlocks(): DisplayBlock[] {
+				const result: DisplayBlock[] = []
 				for (let i = 0; i < this.displayBlocks.length; i++) {
-					if (this.displayBlocks[i].type == 'thinking') {
-						count++
+					const block = this.displayBlocks[i]
+					if (block.type == 'thinking' || block.type == 'toolCall') {
+						result.push(block)
 					}
 				}
-				return count
+				return result
+			},
+			/** 正文块：只汇总 text，避免 thinking 被“思考1/2”割裂 */
+			timelineAnswerText(): string {
+				let text = ''
+				for (let i = 0; i < this.displayBlocks.length; i++) {
+					const block = this.displayBlocks[i]
+					if (block.type == 'text' && block.text != '') {
+						text += block.text
+					}
+				}
+				return text
+			},
+			showTimelineCursor(): boolean {
+				if (this.isStreaming != true) {
+					return false
+				}
+				if (this.displayBlocks.length == 0) {
+					return false
+				}
+				const last = this.displayBlocks[this.displayBlocks.length - 1]
+				return last.type == 'text'
 			},
 			/** 按段落分段（连续空行分隔），单换行保留在段落内 */
 			contentLines(): ContentSegment[] {
@@ -467,18 +483,6 @@
 				}
 				setTimeout(() => { this.tick() }, 1000)
 			},
-			/** 切换 block 展开/折叠 */
-			toggleBlockExpand(index: number) {
-				while (this.blocksExpanded.length <= index) {
-					this.blocksExpanded.push(false)
-				}
-				this.blocksExpanded[index] = !(this.blocksExpanded[index] == true)
-			},
-			/** 获取 block 展开状态 */
-			getBlockExpanded(index: number): boolean {
-				if (index >= this.blocksExpanded.length) return false
-				return this.blocksExpanded[index] == true
-			},
 			/** 格式化工具调用耗时 */
 			getToolElapsed(block: DisplayBlock): string {
 				const _tick = this.timerTick  // bind reactivity for live timing
@@ -513,23 +517,6 @@
 					return 'dot-pending'
 				}
 				return 'dot-default'
-			},
-			/** 获取 thinking block 在全部 blocks 中的序号（从 0 开始） */
-			getThinkingIndex(blockIdx: number): number {
-				let count = 0
-				for (let i = 0; i <= blockIdx; i++) {
-					if (i < this.displayBlocks.length && this.displayBlocks[i].type == 'thinking') {
-						if (i < blockIdx) count++
-					}
-				}
-				return count
-			},
-			/** 获取思考块标签文本 */
-			getThinkingLabel(blockIdx: number): string {
-				if (this.thinkingCount > 1) {
-					return '思考 ' + (this.getThinkingIndex(blockIdx) + 1)
-				}
-				return '思考过程'
 			},
 			/** 工具图标 */
 			getToolIcon(block: DisplayBlock): string {
@@ -847,6 +834,24 @@
 	}
 
 	/* ======== 交错思维链 blocks 样式 ======== */
+
+	.reasoning-panel {
+		margin-bottom: 16rpx;
+		padding: 14rpx 16rpx;
+		border-radius: 16rpx;
+		background-color: rgba(156, 163, 175, 0.08);
+	}
+	.reasoning-header {
+		flex-direction: row;
+		align-items: center;
+	}
+	.reasoning-body {
+		margin-top: 12rpx;
+		padding-left: 14rpx;
+		border-left-width: 2rpx;
+		border-left-color: #E5E7EB;
+		border-left-style: solid;
+	}
 
 	.block-entry {
 		margin-bottom: 12rpx;
