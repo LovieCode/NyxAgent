@@ -27,12 +27,26 @@
 						<text class="session-desc">{{session.forkedFromSessionId != '' ? '从旧会话 fork' : '独立会话'}} · {{formatTime(session.updatedAt)}}</text>
 					</view>
 					<view class="session-actions" @click.stop>
+						<text class="session-action" @click="showSessionJson(session)">查看</text>
 						<text class="session-action" @click="forkSession(session)">分支</text>
 						<text class="session-action danger" @click="askDeleteSession(session)">删除</text>
 					</view>
 				</view>
 			</view>
 		</scroll-view>
+
+		<view v-if="previewVisible" class="preview-overlay">
+			<view class="preview-card">
+				<view class="preview-header">
+					<view class="preview-title-wrap">
+						<text class="preview-title">{{previewTitle}}</text>
+						<text class="preview-subtitle">群聊完整原始 JSON，包含隐藏调度记录</text>
+					</view>
+					<view class="preview-close" @click="closePreview"><text class="preview-close-text">×</text></view>
+				</view>
+				<scroll-view class="preview-scroll" :scroll-y="true"><text class="preview-json-text">{{previewJson}}</text></scroll-view>
+			</view>
+		</view>
 	</view>
 </template>
 
@@ -48,6 +62,7 @@
 		ensureGroupActiveSession,
 		forkGroupSession,
 		getGroupChatById,
+		getGroupMessages,
 		getGroupSessions,
 		setActiveGroupSession,
 	} from '@/utils/group-chat-service.uts'
@@ -59,6 +74,9 @@
 				activeSessionId: '' as string,
 				group: null as GroupChat | null,
 				sessionList: [] as GroupChatSession[],
+				previewVisible: false as boolean,
+				previewTitle: '' as string,
+				previewJson: '[]' as string,
 			}
 		},
 		onLoad() { this.loadData() },
@@ -75,7 +93,13 @@
 				this.activeSessionId = session.id
 				this.sessionList = getGroupSessions(group.id)
 			},
-			goBack(): void { uni.navigateBack() },
+			goBack(): void {
+				if (this.previewVisible == true) {
+					this.closePreview()
+					return
+				}
+				uni.navigateBack()
+			},
 			displayTitle(session: GroupChatSession): string { return displaySessionTitle(session) },
 			createSession(): void {
 				if (this.groupId == '') { return }
@@ -90,6 +114,15 @@
 				uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, session.id)
 				this.loadData()
 				uni.showToast({ position: 'bottom', title: '已切换：' + displaySessionTitle(session), icon: 'none' })
+			},
+			showSessionJson(session: GroupChatSession): void {
+				const messages = getGroupMessages(this.groupId, session.id)
+				this.previewTitle = displaySessionTitle(session)
+				this.previewJson = JSON.stringify(messages, null, 2)
+				this.previewVisible = true
+			},
+			closePreview(): void {
+				this.previewVisible = false
 			},
 			forkSession(session: GroupChatSession): void {
 				const forked = forkGroupSession(this.groupId, session.id)
@@ -147,4 +180,14 @@
 	.session-actions { flex-direction: row; align-items: center; margin-left: 10rpx; }
 	.session-action { font-size: 24rpx; color: var(--rice-primary-color); padding: 10rpx; }
 	.danger { color: #EF4444; }
+	.preview-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(17,24,39,0.38); z-index: 1000; justify-content: flex-end; }
+	.preview-card { width: 100%; flex: 1; background-color: #FFFFFF; padding: 28rpx 32rpx 36rpx; flex-direction: column; }
+	.preview-header { flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 22rpx; flex-shrink: 0; }
+	.preview-title-wrap { flex: 1; flex-direction: column; margin-right: 20rpx; }
+	.preview-title { font-size: 34rpx; font-weight: bold; color: var(--rice-text-color); }
+	.preview-subtitle { font-size: 24rpx; color: var(--rice-text-color-3); margin-top: 8rpx; }
+	.preview-close { width: 64rpx; height: 64rpx; border-radius: 32rpx; background-color: var(--rice-background-2); align-items: center; justify-content: center; }
+	.preview-close-text { font-size: 42rpx; line-height: 50rpx; color: var(--rice-text-color-2); }
+	.preview-scroll { flex: 1; background-color: #111827; border-radius: 24rpx; padding: 24rpx; }
+	.preview-json-text { font-size: 24rpx; line-height: 36rpx; color: #E5E7EB; }
 </style>

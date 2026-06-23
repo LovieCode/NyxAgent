@@ -94,6 +94,7 @@
 		buildMemberRuntimeMessages,
 		buildMemberSystemPrompt,
 		buildSchedulerRuntimeMessages,
+		createGroupAgentContextRecord,
 		buildSchedulerSystemPrompt,
 		createDefaultWritingGroupChat,
 		createGroupAgentStreamingMessage,
@@ -111,6 +112,7 @@
 		readAgentModel,
 		readAgentName,
 		revokeGroupAgentMessage,
+		saveGroupAgentContextRecord,
 		saveGroupMessages,
 		syncGroupStreamingMessage,
 	} from '@/utils/group-chat-service.uts'
@@ -386,8 +388,12 @@
 				}
 				const streamingMsg = createGroupAgentStreamingMessage(group.id, session.id, agentId)
 				this.messages.push(streamingMsg)
-				const tempMessages = buildMemberRuntimeMessages(group, session, this.messages, action, readAgentName(agent))
+				const agentName = readAgentName(agent)
+				const tempMessages = buildMemberRuntimeMessages(group, session, this.messages, action, agentName)
 				const systemPrompt = buildMemberSystemPrompt(group, session, agent, action)
+				const contextRecord = createGroupAgentContextRecord(group, session, agentId, agentName, action, tempMessages, systemPrompt)
+				saveGroupAgentContextRecord(contextRecord)
+				streamingMsg['contextRecordId'] = contextRecord['id'] as string | null
 				const workspaceRoot = buildGroupWorkspacePath(group.id, session.id)
 				const stream = agentChat(tempMessages, systemPrompt, '', readAgentModel(agent), agentId, 0, session.id, workspaceRoot)
 				this.currentStream = stream

@@ -19,7 +19,7 @@
 					<text class="history-tab-text" :class="activeTab == 'agent' ? 'history-tab-text-active' : ''">私聊</text>
 				</view>
 				<view class="history-tab" :class="activeTab == 'group' ? 'history-tab-active' : ''" @click="switchTab('group')">
-					<text class="history-tab-text" :class="activeTab == 'group' ? 'history-tab-text-active' : ''">群聊</text>
+					<text class="history-tab-text" :class="activeTab == 'group' ? 'history-tab-text-active' : ''">群聊上下文</text>
 				</view>
 			</view>
 
@@ -63,7 +63,7 @@
 				<view v-else class="empty-state">
 					<oui-icon-unix name="time-circle" size="96rpx" color="#D1D5DB" />
 					<text class="empty-text">暂无历史记录</text>
-					<text class="empty-hint">{{activeTab == 'group' ? '群聊讨论后，会话记录会出现在这里' : '开始对话后，记录将自动保存在这里'}}</text>
+					<text class="empty-hint">{{activeTab == 'group' ? '这个智能体在群聊中收到上下文后，会记录在这里' : '开始对话后，记录将自动保存在这里'}}</text>
 				</view>
 			</scroll-view>
 		</view>
@@ -83,10 +83,10 @@
 					<text class="preview-json-text">{{previewJson}}</text>
 				</scroll-view>
 				<view class="preview-actions">
-					<view class="preview-secondary-btn" @click="closePreview">
+					<view class="preview-secondary-btn" :class="previewTab == 'group' ? 'preview-secondary-btn-full' : ''" @click="closePreview">
 						<text class="preview-secondary-text">返回列表</text>
 					</view>
-					<view class="preview-primary-btn" @click="switchPreviewConversation">
+					<view v-if="previewTab != 'group'" class="preview-primary-btn" @click="switchPreviewConversation">
 						<text class="preview-primary-text">切换到对话</text>
 					</view>
 				</view>
@@ -101,13 +101,9 @@
 	 */
 	import { getConversations, getMessages, deleteConversation } from '@/utils/database.uts'
 	import {
-		ACTIVE_GROUP_CHAT_ID_KEY,
-		ACTIVE_GROUP_SESSION_ID_KEY,
-		deleteGroupSession,
-		displaySessionTitle,
-		getGroupChats,
-		getGroupMessages,
-		getGroupSessions,
+		deleteGroupAgentContextRecord,
+		getGroupAgentContextRecord,
+		listGroupAgentContextRecords,
 	} from '@/utils/group-chat-service.uts'
 
 	export default {
@@ -115,6 +111,7 @@
 			return {
 				historyList: [] as UTSJSONObject[],
 				groupHistoryList: [] as UTSJSONObject[],
+				activeAgentId: '' as string,
 				activeTab: 'agent' as string,
 				editMode: false as boolean,
 				/** 选中的对话 id 列表 */
@@ -208,9 +205,20 @@
 			},
 
 			loadHistory() {
+				const rawAgentId = uni.getStorageSync('active_agent_id') as string | null
+				this.activeAgentId = rawAgentId != null ? rawAgentId : ''
 				try {
 					const list = getConversations()
-					this.historyList = list
+					if (this.activeAgentId == '') {
+						this.historyList = list
+					} else {
+						const filtered: UTSJSONObject[] = []
+						for (let i = 0; i < list.length; i++) {
+							const agentId = list[i]['agent_id'] as string | null
+							if (agentId == this.activeAgentId) { filtered.push(list[i]) }
+						}
+						this.historyList = filtered
+					}
 				} catch (_e: any) {
 					this.historyList = []
 				}
@@ -219,37 +227,41 @@
 
 			loadGroupHistory(): void {
 				const result: UTSJSONObject[] = []
-				const groups = getGroupChats()
-				for (let gi = 0; gi < groups.length; gi++) {
-					const group = groups[gi]
-					const sessions = getGroupSessions(group.id)
-					for (let si = 0; si < sessions.length; si++) {
-						const session = sessions[si]
-						const messages = getGroupMessages(group.id, session.id)
-						const visibleCount = this.countVisibleGroupMessages(messages)
-						if (visibleCount <= 0) { continue }
-						result.push({
-							id: group.id + ':' + session.id,
-							type: 'group',
-							group_id: group.id,
-							session_id: session.id,
-							title: group.name + ' / ' + displaySessionTitle(session),
-							created_at: session.createdAt,
-							updated_at: session.updatedAt,
-							message_count: visibleCount,
-							preview: this.buildGroupPreview(messages),
-							model: '群聊',
-						} as UTSJSONObject)
-					}
+				if (this.activeAgentId == '') {
+					this.groupHistoryList = result
+					return
 				}
-				result.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
-					const at = a['updated_at'] as number | null
-					const bt = b['updated_at'] as number | null
-					const av = at != null ? at : 0
-					const bv = bt != null ? bt : 0
-					if (av == bv) { return 0 }
-					return av > bv ? -1 : 1
-				})
+				const records = listGroupAgentContextRecords(this.activeAgentId)
+				for (let i = 0; i < records.length; i++) {
+					const record = records[i]
+					const recordId = record['id'] as string | null
+					if (recordId == null || recordId == '') { continue }
+					const groupNameRaw = record['groupName'] as string | null
+					const sessionTitleRaw = record['sessionTitle'] as string | null
+					const publicIntentRaw = record['publicIntent'] as string | null
+					const privateInstructionRaw = record['privateInstruction'] as string | null
+					const createdAtRaw = record['createdAt'] as number | null
+					const groupName = groupNameRaw != null && groupNameRaw != '' ? groupNameRaw : '群聊'
+					const sessionTitle = sessionTitleRaw != null && sessionTitleRaw != '' ? sessionTitleRaw : '会话'
+					const publicIntent = publicIntentRaw != null ? publicIntentRaw : ''
+					const privateInstruction = privateInstructionRaw != null ? privateInstructionRaw : ''
+					let preview = publicIntent != '' ? publicIntent : privateInstruction
+					if (preview == '') { preview = '查看该智能体在群聊中实际收到的上下文' }
+					if (preview.length > 50) { preview = preview.substring(0, 50) + '...' }
+					const runtimeMessages = record['runtimeMessages'] as UTSJSONObject[] | null
+					const messageCount = runtimeMessages != null ? runtimeMessages.length : 0
+					result.push({
+						id: recordId,
+						type: 'group_context',
+						agent_id: this.activeAgentId,
+						title: groupName + ' / ' + sessionTitle,
+						created_at: createdAtRaw != null ? createdAtRaw : 0,
+						updated_at: createdAtRaw != null ? createdAtRaw : 0,
+						message_count: messageCount,
+						preview: preview,
+						model: '群聊上下文',
+					} as UTSJSONObject)
+				}
 				this.groupHistoryList = result
 			},
 
@@ -479,7 +491,7 @@
 				}
 				uni.showModal({
 					title: '批量删除',
-					content: '确定要删除选中的 ' + this.selectedIds.length +  ' 条对话吗？',
+					content: '确定要删除选中的 ' + this.selectedIds.length +  ' 条记录吗？',
 					success: (res) => {
 						if (res.confirm == true) {
 							for (let i = 0; i < this.selectedIds.length; i++) {
@@ -545,23 +557,33 @@
 				const titleRaw = item['title'] as string | null
 				const title = titleRaw != null && titleRaw != '' ? titleRaw : '历史对话'
 				const tab = this.activeTab
-				let messages: UTSJSONObject[] = []
+				let previewJson = '[]'
+				let subtitle = ''
 				if (tab == 'group') {
-					const groupId = item['group_id'] as string | null
-					const sessionId = item['session_id'] as string | null
-					if (groupId != null && groupId != '' && sessionId != null && sessionId != '') {
-						messages = getGroupMessages(groupId, sessionId)
+					const recordId = item['id'] as string | null
+					const agentId = item['agent_id'] as string | null
+					if (recordId != null && recordId != '' && agentId != null && agentId != '') {
+						const record = getGroupAgentContextRecord(agentId, recordId)
+						if (record != null) {
+							previewJson = JSON.stringify(record, null, 2)
+							const runtimeMessages = record['runtimeMessages'] as UTSJSONObject[] | null
+							const count = runtimeMessages != null ? runtimeMessages.length : 0
+							subtitle = '该智能体实际收到的群聊上下文 · ' + count + ' 条 runtime messages'
+						}
 					}
 				} else {
 					const id = item['id'] as string | null
+					let messages: UTSJSONObject[] = []
 					if (id != null && id != '') { messages = getMessages(id) }
+					const clean = this.buildDialogJson(messages, false)
+					previewJson = JSON.stringify(clean, null, 2)
+					subtitle = '仅展示对话 JSON，已过滤思考过程、工具调用和工具结果 · ' + clean.length + ' 条'
 				}
-				const clean = this.buildDialogJson(messages, tab == 'group')
 				this.previewItem = item
 				this.previewTab = tab
 				this.previewTitle = title
-				this.previewSubtitle = '仅展示对话 JSON，已过滤思考过程、工具调用和工具结果 · ' + clean.length + ' 条'
-				this.previewJson = JSON.stringify(clean, null, 2)
+				this.previewSubtitle = subtitle
+				this.previewJson = previewJson
 				this.previewVisible = true
 			},
 
@@ -581,7 +603,7 @@
 
 			openConversationWithTab(item: UTSJSONObject, tab: string): void {
 				if (tab == 'group') {
-					this.openGroupConversation(item)
+					uni.showToast({ position: 'bottom', title: '这是群聊上下文快照，不是会话', icon: 'none' })
 					return
 				}
 				uni.setStorageSync('active_conversation_id', item['id'] as string)
@@ -590,31 +612,10 @@
 				})
 			},
 
-			openGroupConversation(item: UTSJSONObject): void {
-				const groupId = item['group_id'] as string | null
-				const sessionId = item['session_id'] as string | null
-				if (groupId == null || groupId == '' || sessionId == null || sessionId == '') {
-					uni.showToast({ position: 'bottom', title: '群聊会话不存在', icon: 'none' })
-					return
-				}
-				uni.setStorageSync(ACTIVE_GROUP_CHAT_ID_KEY, groupId)
-				uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, sessionId)
-				uni.redirectTo({ url: '/pages/group-chat/group-chat' })
-			},
 
 			deleteGroupHistoryById(id: string): void {
-				for (let i = 0; i < this.groupHistoryList.length; i++) {
-					const item = this.groupHistoryList[i]
-					const itemId = item['id'] as string | null
-					if (itemId == id) {
-						const groupId = item['group_id'] as string | null
-						const sessionId = item['session_id'] as string | null
-						if (groupId != null && groupId != '' && sessionId != null && sessionId != '') {
-							deleteGroupSession(groupId, sessionId, false)
-						}
-						return
-					}
-				}
+				if (this.activeAgentId == '' || id == '') { return }
+				deleteGroupAgentContextRecord(this.activeAgentId, id)
 			},
 
 			/** 导出对话为 Markdown，并复制到剪贴板 */
@@ -666,7 +667,7 @@
 			confirmClear() {
 				uni.showModal({
 					title: '清空历史记录',
-					content: this.activeTab == 'group' ? '确定要清空所有群聊会话历史吗？此操作无法撤销。' : '确定要清空所有对话历史吗？此操作无法撤销。',
+					content: this.activeTab == 'group' ? '确定要清空该智能体的群聊上下文快照吗？此操作无法撤销。' : '确定要清空所有对话历史吗？此操作无法撤销。',
 					success: (res) => {
 						if (res.confirm == true) {
 							const list = this.currentHistoryList
@@ -802,6 +803,10 @@
 		justify-content: center;
 		background-color: var(--rice-background-2);
 		margin-right: 16rpx;
+	}
+
+	.preview-secondary-btn-full {
+		margin-right: 0;
 	}
 
 	.preview-primary-btn {

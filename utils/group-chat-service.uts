@@ -104,6 +104,10 @@ function storageMessagesKey(groupId: string, sessionId: string): string {
 	return 'group_chat_messages_' + groupId + '_' + sessionId
 }
 
+function storageAgentContextKey(agentId: string): string {
+	return 'group_agent_context_records_' + agentId
+}
+
 function safeJsonText(raw: string | null): string {
 	return raw != null ? raw : ''
 }
@@ -247,6 +251,16 @@ function parseGroupSessions(raw: string): GroupChatSession[] {
 }
 
 function parseGroupMessages(raw: string): UTSJSONObject[] {
+	if (raw == '') { return [] as UTSJSONObject[] }
+	try {
+		const list = JSON.parse(raw) as UTSJSONObject[]
+		if (list != null) { return list }
+	} catch (_e: any) {
+	}
+	return [] as UTSJSONObject[]
+}
+
+function parseAgentContextRecords(raw: string): UTSJSONObject[] {
 	if (raw == '') { return [] as UTSJSONObject[] }
 	try {
 		const list = JSON.parse(raw) as UTSJSONObject[]
@@ -547,6 +561,94 @@ export function saveGroupMessages(groupId: string, sessionId: string, messages: 
 		group.updatedAt = Date.now()
 		saveGroupChat(group)
 	}
+}
+
+export function listGroupAgentContextRecords(agentId: string): UTSJSONObject[] {
+	const raw = uni.getStorageSync(storageAgentContextKey(agentId)) as string | null
+	const records = parseAgentContextRecords(safeJsonText(raw))
+	records.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
+		const at = a['createdAt'] as number | null
+		const bt = b['createdAt'] as number | null
+		const av = at != null ? at : 0
+		const bv = bt != null ? bt : 0
+		if (av == bv) { return 0 }
+		return av > bv ? -1 : 1
+	})
+	return records
+}
+
+export function getGroupAgentContextRecord(agentId: string, recordId: string): UTSJSONObject | null {
+	const records = listGroupAgentContextRecords(agentId)
+	for (let i = 0; i < records.length; i++) {
+		const id = records[i]['id'] as string | null
+		if (id == recordId) { return records[i] }
+	}
+	return null
+}
+
+export function deleteGroupAgentContextRecord(agentId: string, recordId: string): void {
+	const records = listGroupAgentContextRecords(agentId)
+	const next: UTSJSONObject[] = []
+	for (let i = 0; i < records.length; i++) {
+		const id = records[i]['id'] as string | null
+		if (id != recordId) { next.push(records[i]) }
+	}
+	uni.setStorageSync(storageAgentContextKey(agentId), JSON.stringify(next))
+}
+
+export function saveGroupAgentContextRecord(record: UTSJSONObject): void {
+	const agentId = record['agentId'] as string | null
+	if (agentId == null || agentId == '') { return }
+	const records = listGroupAgentContextRecords(agentId)
+	const id = record['id'] as string | null
+	let replaced = false
+	for (let i = 0; i < records.length; i++) {
+		const oldId = records[i]['id'] as string | null
+		if (id != null && id != '' && oldId == id) {
+			records.splice(i, 1, record)
+			replaced = true
+			break
+		}
+	}
+	if (replaced == false) { records.push(record) }
+	records.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
+		const at = a['createdAt'] as number | null
+		const bt = b['createdAt'] as number | null
+		const av = at != null ? at : 0
+		const bv = bt != null ? bt : 0
+		if (av == bv) { return 0 }
+		return av > bv ? -1 : 1
+	})
+	uni.setStorageSync(storageAgentContextKey(agentId), JSON.stringify(records))
+}
+
+function readActionText(action: UTSJSONObject, key: string): string {
+	const raw = action[key] as string | null
+	return raw != null ? raw : ''
+}
+
+export function createGroupAgentContextRecord(group: GroupChat, session: GroupChatSession, agentId: string, agentName: string, action: UTSJSONObject, runtimeMessages: UTSJSONObject[], systemPrompt: string): UTSJSONObject {
+	const privateInstruction = readActionText(action, 'privateInstruction')
+	const publicIntent = readActionText(action, 'publicIntent')
+	const targetType = readActionText(action, 'targetType')
+	const targetAgentId = readActionText(action, 'targetAgentId')
+	const now = Date.now()
+	return {
+		id: createId('gctx'),
+		agentId: agentId,
+		agentName: agentName,
+		groupId: group.id,
+		groupName: group.name,
+		sessionId: session.id,
+		sessionTitle: displaySessionTitle(session),
+		privateInstruction: privateInstruction,
+		publicIntent: publicIntent,
+		targetType: targetType,
+		targetAgentId: targetAgentId,
+		systemPrompt: systemPrompt,
+		runtimeMessages: JSON.parse(JSON.stringify(runtimeMessages)) as UTSJSONObject[],
+		createdAt: now,
+	} as UTSJSONObject
 }
 
 export function appendGroupMessage(groupId: string, sessionId: string, message: UTSJSONObject): void {
@@ -873,11 +975,6 @@ export function buildFallbackSchedulerDecision(groupId: string): UTSJSONObject {
 		titleSuggestion: '',
 		privateNotes: 'fallback',
 	} as UTSJSONObject
-}
-
-function readActionText(action: UTSJSONObject, key: string): string {
-	const raw = action[key] as string | null
-	return raw != null ? raw : ''
 }
 
 export function buildMemberSystemPrompt(group: GroupChat, session: GroupChatSession, agent: UTSJSONObject, action: UTSJSONObject): string {
