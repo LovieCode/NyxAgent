@@ -16,6 +16,7 @@ import {
 	normalizePath,
 } from '@/utils/file-manager.uts'
 import {
+	CHAT_PART_PLAIN,
 	CHAT_ROLE_ASSISTANT,
 	CHAT_ROLE_USER,
 	cloneParts,
@@ -25,6 +26,7 @@ import {
 	createImageMessage,
 	createPlainPart,
 	createTextMessage,
+	extractPlainText,
 	getMessageContent,
 	getMessageParts,
 } from '@/utils/chat-models.uts'
@@ -732,6 +734,50 @@ export function readAgentMsgSegmentation(agent: UTSJSONObject | null): boolean {
 	return raw != null ? raw : true
 }
 
+function stripLeadingSpaces(text: string): string {
+	let index = 0
+	while (index < text.length) {
+		const ch = text.charAt(index)
+		if (ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t') {
+			index++
+		} else {
+			break
+		}
+	}
+	return index > 0 ? text.substring(index) : text
+}
+
+function stripGroupAgentSpeakerPrefix(text: string, agentName: string): string {
+	const name = agentName.trim()
+	if (name == '' || text == '') { return text }
+	const body = stripLeadingSpaces(text)
+	const cnPrefix = name + '：'
+	const enPrefix = name + ':'
+	let stripped = body
+	if (body.startsWith(cnPrefix)) {
+		stripped = body.substring(cnPrefix.length)
+	} else if (body.startsWith(enPrefix)) {
+		stripped = body.substring(enPrefix.length)
+	} else {
+		return text
+	}
+	return stripLeadingSpaces(stripped)
+}
+
+function stripGroupAgentSpeakerPrefixFromParts(parts: UTSJSONObject[], agentName: string): void {
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		const type = part['type'] as string | null
+		if (type == CHAT_PART_PLAIN) {
+			const raw = part['text'] as string | null
+			if (raw != null && raw != '') {
+				part['text'] = stripGroupAgentSpeakerPrefix(raw, agentName)
+			}
+			return
+		}
+	}
+}
+
 export function createGroupAgentStreamingMessage(groupId: string, sessionId: string, agentId: string): UTSJSONObject {
 	const agent = getAgentById(agentId)
 	const name = readAgentName(agent)
@@ -746,8 +792,11 @@ export function createGroupAgentFinalMessage(groupId: string, sessionId: string,
 	const agent = getAgentById(agentId)
 	const name = readAgentName(agent)
 	const avatar = readAgentAvatar(agent)
-	const base = createAssistantFinalMessage(cloneParts(parts), Date.now())
-	base['content'] = content
+	const cleanParts = cloneParts(parts)
+	stripGroupAgentSpeakerPrefixFromParts(cleanParts, name)
+	const base = createAssistantFinalMessage(cleanParts, Date.now())
+	const cleanContent = extractPlainText(cleanParts)
+	base['content'] = cleanContent != '' ? cleanContent : stripGroupAgentSpeakerPrefix(content, name)
 	base['hideThinking'] = readAgentHideThinking(agent)
 	base['msgSegmentation'] = readAgentMsgSegmentation(agent)
 	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true)
@@ -1022,7 +1071,7 @@ export function buildMemberSystemPrompt(agent: UTSJSONObject): string {
 	const basePrompt = readAgentSystemPrompt(agent)
 	return basePrompt + '\n\n' +
 		'你正在一个群聊中发言。\n' +
-		'群聊规则：你可以使用工具处理当前群会话共享工作区；公开回复只输出你要发到群里的正文。不要说“收到调度”“内部指令”“隐藏调度 Agent”“系统让我”等内容，不要暴露任何调度流程。\n' +
+		'群聊规则：你可以使用工具处理当前群会话共享工作区；公开回复只输出你要发到群里的正文，不要在开头附加自己的名字或“成员名：”。不要说“收到调度”“内部指令”“隐藏调度 Agent”“系统让我”等内容，不要暴露任何调度流程。\n' +
 		'群聊共享提示词、成员名、动态会话名、公开发言目标、目标对象和私密指令会在最后一条用户消息中提供。'
 }
 
@@ -1058,7 +1107,7 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 		'目标类型：' + targetType + '\n' +
 		'目标 Agent ID：' + targetAgentId + '\n' +
 		'私密指令：' + privateInstruction + '\n' +
-		'只输出要发到群聊里的正文，不要暴露调度和内部信息。'
+		'只输出要发到群聊里的正文，不要加自己的名字前缀，不要暴露调度和内部信息。'
 	runtime.push(createTextMessage(CHAT_ROLE_USER, taskText))
 	return buildRuntimeChatMessages(runtime, {
 		injectDatetime: injectDatetime,
@@ -1067,8 +1116,13 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 }
 
 export function syncGroupStreamingMessage(target: UTSJSONObject, source: UTSJSONObject): void {
-	target['content'] = getMessageContent(source)
-	target['message'] = cloneParts(getMessageParts(source))
+	const senderName = target['senderName'] as string | null
+	const name = senderName != null ? senderName : ''
+	const cleanParts = cloneParts(getMessageParts(source))
+	stripGroupAgentSpeakerPrefixFromParts(cleanParts, name)
+	const cleanContent = extractPlainText(cleanParts)
+	target['content'] = cleanContent != '' ? cleanContent : stripGroupAgentSpeakerPrefix(getMessageContent(source), name)
+	target['message'] = cleanParts
 	target['isStreaming'] = source['isStreaming'] as boolean | null
 	const toolCalls = source['tool_calls'] as UTSJSONObject[] | null
 	if (toolCalls != null) {
