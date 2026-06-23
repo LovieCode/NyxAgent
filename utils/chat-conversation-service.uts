@@ -1,0 +1,168 @@
+/**
+ * 对话会话服务
+ *
+ * 负责 Agent 快照、历史加载、保存策略。页面别再直接知道 DB 细节。
+ */
+
+import { saveConversation, getMessages, getConversationsByAgent } from '@/utils/database.uts'
+import { getAgentById } from '@/utils/agent.uts'
+import { getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
+import {
+	type ChatAgentSnapshot,
+	type ChatConversationLoadResult,
+	type ChatUserProfile,
+	createEmptyAgentSnapshot,
+	getMessageContent,
+	getMessageRole,
+	CHAT_ROLE_USER,
+} from '@/utils/chat-models.uts'
+
+export function loadChatUserProfile(): ChatUserProfile {
+	const nicknameRaw = uni.getStorageSync('profile_nickname') as string | null
+	const avatarRaw = uni.getStorageSync('profile_avatar') as string | null
+	return {
+		nickname: (nicknameRaw != null && nicknameRaw != '') ? nicknameRaw : '用户',
+		avatar: avatarRaw != null ? avatarRaw : '',
+	} as ChatUserProfile
+}
+
+export function loadActiveAgentSnapshot(): ChatAgentSnapshot {
+	const id = uni.getStorageSync('active_agent_id') as string | null
+	if (id == null || id == '') {
+		return createEmptyAgentSnapshot()
+	}
+	const snapshot = createEmptyAgentSnapshot()
+	snapshot.id = id
+	const agent = getAgentById(id)
+	if (agent == null) {
+		return snapshot
+	}
+	const rawName = agent['name'] as string | null
+	const rawAvatar = agent['avatar'] as string | null
+	const rawPrompt = agent['systemPrompt'] as string | null
+	const rawModel = agent['model'] as string | null
+	const rawHideThinking = agent['hideThinking'] as boolean | null
+	const rawInjectDatetime = agent['injectDatetime'] as boolean | null
+	const rawMsgSeg = agent['msgSegmentation'] as boolean | null
+	snapshot.name = rawName != null ? rawName : ''
+	snapshot.avatar = rawAvatar != null ? rawAvatar : ''
+	snapshot.systemPrompt = rawPrompt != null ? rawPrompt : ''
+	snapshot.model = rawModel != null ? rawModel : ''
+	snapshot.hideThinking = rawHideThinking != null ? rawHideThinking : false
+	snapshot.injectDatetime = rawInjectDatetime != null ? rawInjectDatetime : true
+	snapshot.msgSegmentation = rawMsgSeg != null ? rawMsgSeg : true
+	return snapshot
+}
+
+export function loadInitialConversation(agentId: string): ChatConversationLoadResult {
+	const storedId = uni.getStorageSync('active_conversation_id') as string | null
+	if (storedId != null && storedId != '') {
+		uni.removeStorageSync('active_conversation_id')
+		try {
+			return {
+				conversationId: storedId,
+				messages: getMessages(storedId),
+				saved: true,
+			} as ChatConversationLoadResult
+		} catch (_e: any) {
+			return {
+				conversationId: storedId,
+				messages: [] as UTSJSONObject[],
+				saved: true,
+			} as ChatConversationLoadResult
+		}
+	}
+	if (agentId != '') {
+		try {
+			const convs = getConversationsByAgent(agentId)
+			if (convs.length > 0) {
+				const latest = convs[0]
+				const convId = latest['id'] as string | null
+				if (convId != null && convId != '') {
+					return {
+						conversationId: convId,
+						messages: getMessages(convId),
+						saved: true,
+					} as ChatConversationLoadResult
+				}
+			}
+		} catch (_e2: any) {
+		}
+	}
+	return {
+		conversationId: '' + Date.now(),
+		messages: [] as UTSJSONObject[],
+		saved: false,
+	} as ChatConversationLoadResult
+}
+
+export function buildConversationTitle(messages: UTSJSONObject[]): string {
+	let title = '新对话'
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		if (getMessageRole(msg) == CHAT_ROLE_USER) {
+			const content = getMessageContent(msg)
+			if (content != '') {
+				title = content.length > 20 ? content.substring(0, 20) + '...' : content
+			}
+			break
+		}
+	}
+	return title
+}
+
+function resolveDefaultChatModel(): string {
+	const config = getDefaultTaskModel('chat')
+	if (config != null) {
+		const rawModel = config['model'] as string | null
+		if (rawModel != null && rawModel != '') {
+			return rawModel
+		}
+	}
+	const globalModel = uni.getStorageSync('settings_model') as string | null
+	if (globalModel != null && globalModel != '') {
+		return globalModel
+	}
+	return 'deepseek-v4-flash'
+}
+
+export function resolveConversationModel(agentId: string): string {
+	if (agentId != '') {
+		const agent = getAgentById(agentId)
+		if (agent != null) {
+			const rawModel = agent['model'] as string | null
+			if (rawModel != null && rawModel != '') {
+				return rawModel
+			}
+		}
+	}
+	return resolveDefaultChatModel()
+}
+
+export function getCurrentAgentSystemPrompt(agentId: string): string {
+	if (agentId == '') {
+		return ''
+	}
+	const agent = getAgentById(agentId)
+	if (agent != null) {
+		const raw = agent['systemPrompt'] as string | null
+		if (raw != null) {
+			return raw
+		}
+	}
+	return ''
+}
+
+export function saveChatConversation(conversationId: string, agentId: string, systemPrompt: string, messages: UTSJSONObject[]): void {
+	if (messages.length == 0) {
+		return
+	}
+	saveConversation(
+		conversationId,
+		buildConversationTitle(messages),
+		resolveConversationModel(agentId),
+		agentId,
+		systemPrompt,
+		messages
+	)
+}
