@@ -1,24 +1,27 @@
 <template>
 	<view :class="bubbleClass">
 		<view v-if="role == 'user'" class="user-row">
-			<view class="user-bubble" :class="isPressed ? 'bubble-pressed' : ''"
-				@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
-				@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
-				@touchend="onBubbleTouchEnd">
-				<view v-for="(part, pi) in contentParts" :key="'user-part-' + pi" class="part-wrap">
-					<view v-if="part.type == 'image' && part.url != ''" class="image-part">
-						<image :src="part.url" class="bubble-image" mode="widthFix" />
-						<view v-if="part.caption != ''" class="caption-card user-caption-card">
-							<text class="caption-label user-caption-label">图片转述</text>
-							<text class="caption-text user-caption-text">{{part.caption}}</text>
+			<view class="user-stack">
+				<text v-if="userDisplayName != ''" class="speaker-name user-speaker-name">{{userDisplayName}}</text>
+				<view class="user-bubble" :class="isPressed ? 'bubble-pressed' : ''"
+					@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
+					@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
+					@touchend="onBubbleTouchEnd">
+					<view v-for="(part, pi) in contentParts" :key="'user-part-' + pi" class="part-wrap">
+						<view v-if="part.type == 'image' && part.url != ''" class="image-part">
+							<image :src="part.url" class="bubble-image" mode="widthFix" />
+							<view v-if="part.caption != ''" class="caption-card user-caption-card">
+								<text class="caption-label user-caption-label">图片转述</text>
+								<text class="caption-text user-caption-text">{{part.caption}}</text>
+							</view>
+						</view>
+						<text v-else-if="part.type == 'plain' || part.type == 'location'" class="text-user">{{part.text}}<text v-if="isStreaming == true && isLastContentPart(pi) == true" class="cursor">|</text></text>
+						<view v-else class="media-chip user-media-chip">
+							<text class="media-chip-text user-media-text">{{getPartLabel(part)}}</text>
 						</view>
 					</view>
-					<text v-else-if="part.type == 'plain' || part.type == 'location'" class="text-user">{{part.text}}<text v-if="isStreaming == true && isLastContentPart(pi) == true" class="cursor">|</text></text>
-					<view v-else class="media-chip user-media-chip">
-						<text class="media-chip-text user-media-text">{{getPartLabel(part)}}</text>
-					</view>
+					<text v-if="contentParts.length == 0 && content != ''" class="text-user">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
 				</view>
-				<text v-if="contentParts.length == 0 && content != ''" class="text-user">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
 			</view>
 			<image v-if="userAvatar != ''" :src="userAvatar" class="chat-avatar user-avatar-image" mode="aspectFill" @click.stop="onAvatarClick" />
 			<view v-else class="chat-avatar user-avatar" @click.stop="onAvatarClick">
@@ -32,7 +35,7 @@
 				<text class="chat-avatar-text">AI</text>
 			</view>
 			<view class="ai-stack">
-				<text v-if="assistantName != ''" class="assistant-name">{{assistantName}}</text>
+				<text v-if="assistantName != ''" class="speaker-name assistant-name">{{assistantName}}</text>
 				<view class="ai-content timeline-content" :class="isPressed ? 'bubble-pressed' : ''"
 					@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
 					@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
@@ -168,6 +171,10 @@
 				default: false
 			},
 			userNickname: {
+				type: String,
+				default: ''
+			},
+			userDisplayName: {
 				type: String,
 				default: ''
 			},
@@ -538,6 +545,12 @@
 		justify-content: flex-end;
 		width: 100%;
 	}
+	.user-stack {
+		flex-direction: column;
+		align-items: flex-end;
+		flex-shrink: 1;
+		max-width: 1000rpx;
+	}
 	.user-bubble {
 		background-color: var(--rice-primary-color);
 		border-radius: 32rpx;
@@ -570,13 +583,18 @@
 		flex-shrink: 1;
 		max-width: 1000rpx;
 	}
-	.assistant-name {
-		font-size: 22rpx;
+	.speaker-name {
+		font-size: 26rpx;
 		color: var(--rice-text-color-3);
 		margin-top: 4rpx;
-		margin-bottom: 4rpx;
+		margin-bottom: 8rpx;
+		line-height: 32rpx;
+	}
+	.assistant-name {
 		margin-left: 8rpx;
-		line-height: 28rpx;
+	}
+	.user-speaker-name {
+		margin-right: 8rpx;
 	}
 	.chat-avatar {
 		width: 56rpx;

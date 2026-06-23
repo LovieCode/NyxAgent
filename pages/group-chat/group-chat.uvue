@@ -22,6 +22,7 @@
 					:agentAvatar="msg.senderAvatar != null ? msg.senderAvatar : ''"
 					:assistantName="isAgentMessage(msg) ? readMessageSenderName(msg) : ''"
 					:userNickname="userNickname"
+					:userDisplayName="isUserMessage(msg) ? readMessageSenderName(msg) : ''"
 					:userAvatar="userAvatar"
 					:toolName="msg.toolName != null ? msg.toolName : ''"
 					:hideThinking="false"
@@ -85,6 +86,7 @@
 		ACTIVE_GROUP_CHAT_ID_KEY,
 		ACTIVE_GROUP_SESSION_ID_KEY,
 		GROUP_MESSAGE_SENDER_AGENT,
+		GROUP_MESSAGE_SENDER_USER,
 		type GroupChat,
 		type GroupChatSession,
 		applyGroupSessionTitleSuggestion,
@@ -200,6 +202,10 @@
 			isAgentMessage(msg: UTSJSONObject): boolean {
 				const senderType = msg['senderType'] as string | null
 				return senderType == GROUP_MESSAGE_SENDER_AGENT
+			},
+			isUserMessage(msg: UTSJSONObject): boolean {
+				const senderType = msg['senderType'] as string | null
+				return senderType == GROUP_MESSAGE_SENDER_USER
 			},
 			readMessageSenderName(msg: UTSJSONObject): string {
 				const raw = msg['senderName'] as string | null
