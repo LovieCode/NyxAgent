@@ -118,7 +118,7 @@
 	 * 对话页面 - AI Agent 主聊天界面
 	 * 扁平化粉白主题
 	 */
-	import { agentChat, buildAgentContextPreview, organizeAgentMemory, captionImage } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+	import { agentChat, readLastLLMRequestSnapshot, organizeAgentMemory, captionImage } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
 	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
 	import { getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { buildChatDatetimePrefix } from '@/utils/datetime-context.uts'
@@ -725,16 +725,11 @@
 
 			openContextPreview() {
 				this.showToolPanel = false
-				const runtimeMessages = this.buildRuntimeMessages()
-				const preview = buildAgentContextPreview(
-					runtimeMessages,
-					this.getCurrentSystemPrompt(),
-					'',
-					this.currentAgentModel,
-					this.currentAgentId,
-					0,
-					this.conversationId
-				)
+				const preview = readLastLLMRequestSnapshot(this.currentAgentId, this.conversationId)
+				if (preview == null) {
+					uni.showToast({ position: 'bottom', title: '还没有真实请求快照', icon: 'none' })
+					return
+				}
 				let previewText = ''
 				try {
 					previewText = JSON.stringify(preview, null, 2)

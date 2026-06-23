@@ -100,7 +100,7 @@
 </template>
 
 <script lang="uts">
-	import { agentChat, buildAgentContextPreview, captionImage, chatWithLLM } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+	import { agentChat, readLastLLMRequestSnapshot, captionImage, chatWithLLM } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
 	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
 	import { getAgentById } from '@/utils/agent.uts'
 	import { loadChatUserProfile } from '@/utils/chat-conversation-service.uts'
@@ -485,32 +485,13 @@
 				uni.navigateTo({ url: '/pages/memory/memory' })
 			},
 			openContextForAgent(agentId: string): void {
-				const group = this.group
 				const session = this.session
-				if (group == null || session == null) { return }
-				const agent = getAgentById(agentId)
-				if (agent == null) { return }
-				const agentName = readAgentName(agent)
-				const action = {
-					type: 'speak',
-					agentId: agentId,
-					targetType: 'user',
-					targetAgentId: '',
-					privateInstruction: '用户手动查看原始上下文预览，本条不会实际发送。',
-					publicIntent: '上下文预览',
-					order: 0,
-				} as UTSJSONObject
-				const runtimeMessages = buildMemberRuntimeMessages(group, session, this.messages, action, agentName, readAgentInjectDatetime(agent), buildChatDatetimePrefix())
-				const preview = buildAgentContextPreview(
-					runtimeMessages,
-					buildMemberSystemPrompt(agent),
-					'',
-					readAgentModel(agent),
-					agentId,
-					0,
-					session.id,
-					getGroupSessionWorkspaceDir(group.id, session.id)
-				)
+				if (session == null) { return }
+				const preview = readLastLLMRequestSnapshot(agentId, session.id)
+				if (preview == null) {
+					uni.showToast({ position: 'bottom', title: '该 Agent 还没有真实请求快照', icon: 'none' })
+					return
+				}
 				let previewText = ''
 				try {
 					previewText = JSON.stringify(preview, null, 2)
@@ -646,6 +627,11 @@
 				stream.on((event: AgentEvent) => {
 					if (event.type == 'agent_end') {
 						finalizeAssistantTurn(tempMessages, msgSegmentation)
+						const requestSnapshot = readLastLLMRequestSnapshot(agentId, session.id)
+						if (requestSnapshot != null) {
+							contextRecord['requestSnapshot'] = requestSnapshot
+							saveGroupAgentContextRecord(contextRecord)
+						}
 						const lastAssistant = this.findLastAssistantMessage(tempMessages)
 						if (lastAssistant != null) {
 							syncGroupStreamingMessage(streamingMsg, lastAssistant)

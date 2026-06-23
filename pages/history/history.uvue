@@ -325,8 +325,12 @@
 					let preview = publicIntent != '' ? publicIntent : privateInstruction
 					if (preview == '') { preview = '查看该智能体在群聊中实际收到的上下文' }
 					if (preview.length > 50) { preview = preview.substring(0, 50) + '...' }
-					const runtimeMessages = record['runtimeMessages'] as UTSJSONObject[] | null
-					const messageCount = runtimeMessages != null ? runtimeMessages.length : 0
+					const requestSnapshot = record['requestSnapshot'] as UTSJSONObject | null
+					let messageCount = 0
+					if (requestSnapshot != null) {
+						const rawCount = requestSnapshot['messageCount'] as number | null
+						messageCount = rawCount != null ? rawCount : 0
+					}
 					result.push({
 						id: recordId,
 						type: 'group_context',
@@ -336,7 +340,7 @@
 						updated_at: createdAtRaw != null ? createdAtRaw : 0,
 						message_count: messageCount,
 						preview: preview,
-						model: '群聊上下文',
+						model: requestSnapshot != null ? '真实请求快照' : '旧上下文记录',
 					} as UTSJSONObject)
 				}
 				this.appendLegacyGroupContextItems(result)
@@ -667,10 +671,23 @@
 						if (recordId != null && recordId != '' && agentId != null && agentId != '') {
 							const record = getGroupAgentContextRecord(agentId, recordId)
 							if (record != null) {
-								previewJson = JSON.stringify(record, null, 2)
-								const runtimeMessages = record['runtimeMessages'] as UTSJSONObject[] | null
-								const count = runtimeMessages != null ? runtimeMessages.length : 0
-								subtitle = '该智能体实际收到的群聊上下文 · ' + count + ' 条 runtime messages'
+								const requestSnapshot = record['requestSnapshot'] as UTSJSONObject | null
+								if (requestSnapshot != null) {
+									const requestBody = requestSnapshot['requestBody'] as UTSJSONObject | null
+									if (requestBody != null) {
+										previewJson = JSON.stringify(requestBody, null, 2)
+									} else {
+										previewJson = JSON.stringify(requestSnapshot, null, 2)
+									}
+									const messageCount = requestSnapshot['messageCount'] as number | null
+									subtitle = '该智能体上次真实发送瞬间的请求体 · ' + (messageCount != null ? messageCount : 0) + ' 条 messages'
+								} else {
+									previewJson = JSON.stringify({
+										type: 'legacy_group_context_record',
+										note: '旧记录没有保存真实 request body 快照；请让该 Agent 再发言一次后查看。',
+									} as UTSJSONObject, null, 2)
+									subtitle = '旧群聊上下文记录：没有真实请求快照'
+								}
 							}
 						}
 					}

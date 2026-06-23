@@ -9,8 +9,8 @@
 			<scroll-view id="context-scroll" class="container" :scroll-y="true" :scroll-with-animation="false" :show-scrollbar="false" :scroll-top="scrollTop" @scroll="onPageScroll">
 			<view id="anchor-top" class="anchor-spacer"></view>
 			<view class="hero-card">
-				<text class="hero-title">发送前完整上下文</text>
-				<text class="hero-desc">这里展示本轮真正会发给 agent 的首轮原始上下文，包含系统提示词、记忆动态注入、消息重写结果、工具定义与请求体。不会显示 API Key。</text>
+				<text class="hero-title">上次真实请求上下文</text>
+				<text class="hero-desc">这里展示上次发送瞬间真实写入 API request body 的上下文快照。不会显示 API Key，也不会重新模拟上下文。</text>
 			</view>
 
 			<view id="section-summary" class="card summary-card">
@@ -22,12 +22,16 @@
 						<text class="summary-value summary-value-strong">{{model != '' ? model : '未解析'}}</text>
 					</view>
 					<view class="summary-row">
-						<text class="summary-label">Provider</text>
-						<text class="summary-value">{{providerId != '' ? providerId : '未解析'}}</text>
+						<text class="summary-label">请求 URL</text>
+						<text class="summary-value summary-url">{{requestUrl != '' ? requestUrl : '未解析'}}</text>
 					</view>
 					<view class="summary-row">
 						<text class="summary-label">Base URL</text>
 						<text class="summary-value summary-url">{{baseUrl != '' ? baseUrl : '未解析'}}</text>
+					</view>
+					<view class="summary-row">
+						<text class="summary-label">消息数</text>
+						<text class="summary-value">{{messageCount}} 条</text>
 					</view>
 					<view class="summary-row">
 						<text class="summary-label">工具定义</text>
@@ -57,39 +61,11 @@
 					</view>
 				</view>
 
-				<view class="summary-section">
-					<text class="summary-section-title">上下文规模（Token 估算）</text>
-					<view class="summary-main-metrics">
-						<view class="summary-metric">
-							<text class="summary-metric-value">{{totalMessages}}</text>
-							<text class="summary-metric-label">原始消息</text>
-						</view>
-						<view class="summary-metric">
-							<text class="summary-metric-value">{{messageCount}}</text>
-							<text class="summary-metric-label">发送消息</text>
-						</view>
-						<view class="summary-metric">
-							<text class="summary-metric-value">{{droppedCount}}</text>
-							<text class="summary-metric-label">已截断 / {{droppedScoreText}} 分</text>
-						</view>
-						<view class="summary-metric summary-metric-last">
-							<text class="summary-metric-value">≈ {{totalTokens}}</text>
-							<text class="summary-metric-label">Token 估算</text>
-						</view>
-					</view>
-					<view class="summary-role-list">
-						<text class="summary-role-text">user：{{userMsgCount}} 条 / {{userCharCount}} 字</text>
-						<text class="summary-role-text">assistant：{{assistantMsgCount}} 条 / {{assistantCharCount}} 字</text>
-						<text class="summary-role-text">system：{{systemMsgCount}} 条 / {{systemCharCount}} 字</text>
-						<text class="summary-role-text">tool：{{toolMsgCount}} 条 / {{toolCharCount}} 字</text>
-					</view>
-				</view>
-
 				<view class="summary-section summary-section-last">
-					<text class="summary-section-title">上次调用</text>
+					<text class="summary-section-title">快照信息</text>
 					<view class="last-call-panel">
 						<view class="last-call-head">
-							<text class="last-call-title">调用结果</text>
+							<text class="last-call-title">真实请求</text>
 							<text class="last-call-badge" :class="lastCallBadgeClass">{{lastCallStatus}}</text>
 						</view>
 						<view class="summary-row">
@@ -97,39 +73,20 @@
 							<text class="summary-value">{{lastCallTime}}</text>
 						</view>
 						<view class="summary-row">
-							<text class="summary-label">模式 / 状态码</text>
-							<text class="summary-value">{{lastCallMode}} · {{lastCallStatusCode}}</text>
+							<text class="summary-label">模式</text>
+							<text class="summary-value">{{lastCallMode}}</text>
 						</view>
 						<view class="summary-row">
 							<text class="summary-label">模型</text>
 							<text class="summary-value summary-url">{{lastCallModel}}</text>
 						</view>
 						<view class="summary-row">
-							<text class="summary-label">地址</text>
-							<text class="summary-value summary-url">{{lastCallBaseUrl}}</text>
+							<text class="summary-label">缓存键</text>
+							<text class="summary-value summary-url">{{snapshotCacheKey}}</text>
 						</view>
 						<view class="summary-row">
 							<text class="summary-label">请求规模</text>
 							<text class="summary-value">{{lastCallMessageCount}} 消息 · {{lastCallToolCount}} 工具</text>
-						</view>
-						<view class="summary-row">
-							<text class="summary-label">输出</text>
-							<text class="summary-value">{{lastCallTextLength}} 字 · 工具调用 {{lastCallHasToolCalls}}</text>
-						</view>
-						<view class="last-usage-panel">
-							<text class="last-usage-title">用量</text>
-							<view class="last-usage-line">
-								<text class="last-usage-label">Token</text>
-								<text class="last-usage-value">输入 {{lastPromptTokensText}} · 输出 {{lastCompletionTokensText}} · 合计 {{lastTotalTokensText}}</text>
-							</view>
-							<view class="last-usage-line">
-								<text class="last-usage-label">缓存</text>
-								<text class="last-usage-value">命中 {{lastPromptCacheHitTokensText}} · 上次 {{lastPromptCacheHitRateText}} · 会话 {{conversationPromptCacheHitRateText}}</text>
-							</view>
-							<view class="last-usage-line last-usage-line-last">
-								<text class="last-usage-label">累计</text>
-								<text class="last-usage-value">{{conversationPromptCacheHitTokensText}} / {{conversationPromptTokensText}} · {{conversationUsageCallCountText}} 次</text>
-							</view>
 						</view>
 						<view v-if="lastCallError != ''" class="last-call-error">
 							<text class="last-call-error-text">{{lastCallError}}</text>
@@ -163,46 +120,18 @@
 				scrollTop: 0 as number,
 				scrollRequestSeq: 0 as number,
 				layoutTopMap: {} as UTSJSONObject,
-				providerId: '' as string,
 				baseUrl: '' as string,
+				requestUrl: '' as string,
 				model: '' as string,
 				messageCount: 0 as number,
-				totalMessages: 0 as number,
-				droppedCount: 0 as number,
-				droppedScoreText: '0' as string,
-				userMsgCount: 0 as number,
-				userCharCount: 0 as number,
-				assistantMsgCount: 0 as number,
-				assistantCharCount: 0 as number,
-				systemMsgCount: 0 as number,
-				systemCharCount: 0 as number,
-				toolMsgCount: 0 as number,
-				toolCharCount: 0 as number,
-				totalCharCount: 0 as number,
-				totalTokens: 0 as number,
-				lastPromptTokens: 0 as number,
-				lastCompletionTokens: 0 as number,
-				lastTotalTokens: 0 as number,
-				lastPromptTokensText: '—' as string,
-				lastCompletionTokensText: '—' as string,
-				lastTotalTokensText: '—' as string,
-				lastPromptCacheHitTokensText: '—' as string,
-				lastPromptCacheHitRateText: '—' as string,
-				conversationPromptCacheHitRateText: '—' as string,
-				conversationPromptCacheHitTokensText: '—' as string,
-				conversationPromptTokensText: '—' as string,
-				conversationUsageCallCountText: '—' as string,
 				lastCallStatus: '未知' as string,
 				lastCallTime: '—' as string,
 				lastCallMode: '—' as string,
-				lastCallStatusCode: '—' as string,
 				lastCallModel: '—' as string,
-				lastCallBaseUrl: '—' as string,
 				lastCallMessageCount: '—' as string,
 				lastCallToolCount: '—' as string,
-				lastCallTextLength: '—' as string,
-				lastCallHasToolCalls: '—' as string,
 				lastCallError: '' as string,
+				snapshotCacheKey: '—' as string,
 				toolCount: 0 as number,
 				settingsTemperature: '—' as string,
 				settingsMaxTokens: '—' as string,
@@ -240,7 +169,7 @@
 			},
 
 			lastCallBadgeClass(): string {
-				if (this.lastCallStatus == '成功') return 'last-call-badge-ok'
+				if (this.lastCallStatus == '成功' || this.lastCallStatus == '已捕获') return 'last-call-badge-ok'
 				if (this.lastCallStatus == '失败') return 'last-call-badge-error'
 				return 'last-call-badge-unknown'
 			},
@@ -257,70 +186,53 @@
 			this.fullJsonText = this.previewDisplayText
 			try {
 				const parsed = JSON.parse(raw) as UTSJSONObject
-				const providerId = parsed['providerId'] as string | null
 				const baseUrl = parsed['baseUrl'] as string | null
+				const requestUrl = parsed['url'] as string | null
 				const model = parsed['model'] as string | null
-				const settings = parsed['settings'] as UTSJSONObject | null
-				const openaiMessages = parsed['openaiMessages'] as UTSJSONObject[] | null
-				const openaiTools = parsed['openaiTools'] as UTSJSONObject[] | null
 				const requestBody = parsed['requestBody'] as UTSJSONObject | null
-				const lastCallInfo = parsed['lastCallInfo'] as UTSJSONObject | null
-				const conversationTokenUsageStats = parsed['conversationTokenUsageStats'] as UTSJSONObject | null
-				this.providerId = providerId != null ? providerId : ''
 				this.baseUrl = baseUrl != null ? baseUrl : ''
+				this.requestUrl = requestUrl != null ? requestUrl : ''
 				this.model = model != null ? model : ''
-				this.messageCount = openaiMessages != null ? openaiMessages.length : 0
-				const rawTotal = parsed['totalMessages'] as number | null
-				this.totalMessages = rawTotal != null ? rawTotal : this.messageCount
-				const rawDropped = parsed['droppedCount'] as number | null
-				this.droppedCount = rawDropped != null ? rawDropped : 0
-				const rawDroppedScore = parsed['droppedScore'] as number | null
-				this.droppedScoreText = rawDroppedScore != null ? this.formatScoreText(rawDroppedScore) : '0'
-				// 按角色统计消息数和字数
-				if (openaiMessages != null) {
-					let uc = 0; let ucc = 0; let ac = 0; let acc = 0
-					let sc = 0; let scc = 0; let tc = 0; let tcc = 0
-					let allChars = 0
-					for (let i = 0; i < openaiMessages.length; i++) {
-						const msg = openaiMessages[i]
-						const role = msg['role'] as string | null
-						const content = msg['content'] as string | null
-						const clen = content != null ? content.length : 0
-						allChars += clen
-						if (role == 'user') { uc++; ucc += clen }
-						else if (role == 'assistant') { ac++; acc += clen }
-						else if (role == 'system') { sc++; scc += clen }
-						else if (role == 'tool') { tc++; tcc += clen }
+				const streamEnabled = parsed['stream'] as boolean | null
+				if (streamEnabled == true) {
+					this.lastCallMode = '流式'
+				} else if (streamEnabled == false) {
+					this.lastCallMode = '非流式'
+				}
+				const timeText = parsed['timeText'] as string | null
+				this.lastCallTime = timeText != null && timeText != '' ? timeText : '—'
+				const cacheKey = parsed['cacheKey'] as string | null
+				this.snapshotCacheKey = cacheKey != null && cacheKey != '' ? cacheKey : '—'
+				const rawMessageCount = parsed['messageCount'] as number | null
+				this.messageCount = rawMessageCount != null ? rawMessageCount : 0
+				const rawToolCount = parsed['toolCount'] as number | null
+				this.toolCount = rawToolCount != null ? rawToolCount : 0
+				this.lastCallStatus = '已捕获'
+				if (requestBody != null) {
+					const bodyText = JSON.stringify(requestBody, null, 2)
+					this.fullJsonText = bodyText
+					this.previewText = bodyText
+					const bodyMessages = requestBody['messages'] as UTSJSONObject[] | null
+					if (bodyMessages != null) {
+						this.messageCount = bodyMessages.length
 					}
-					this.userMsgCount = uc; this.userCharCount = ucc
-					this.assistantMsgCount = ac; this.assistantCharCount = acc
-					this.systemMsgCount = sc; this.systemCharCount = scc
-					this.toolMsgCount = tc; this.toolCharCount = tcc
-					this.totalCharCount = allChars
-					this.totalTokens = Math.round(allChars / 2)
-				}
-				this.toolCount = openaiTools != null ? openaiTools.length : 0
-				// 上次调用信息
-				const ltu = parsed['lastTokenUsage'] as UTSJSONObject | null
-				if (ltu != null) {
-					this.applyLastTokenUsage(ltu)
-				}
-				if (lastCallInfo != null) {
-					this.applyLastCallInfo(lastCallInfo)
-				}
-				if (conversationTokenUsageStats != null) {
-					this.applyConversationTokenUsageStats(conversationTokenUsageStats)
-				}
-				if (settings != null) {
-					const temp = settings['temperature'] as number | null
-					const mt = settings['maxTokens'] as number | null
-					const mi = settings['maxIterations'] as number | null
-					const se = settings['streamEnabled'] as boolean | null
+					const bodyTools = requestBody['tools'] as UTSJSONObject[] | null
+					if (bodyTools != null) {
+						this.toolCount = bodyTools.length
+					}
+					const temp = requestBody['temperature'] as number | null
+					const mt = requestBody['max_tokens'] as number | null
+					const se = requestBody['stream'] as boolean | null
+					const bodyModel = requestBody['model'] as string | null
+					if (bodyModel != null && bodyModel != '') { this.model = bodyModel }
 					if (temp != null) { this.settingsTemperature = '' + temp }
 					if (mt != null) { this.settingsMaxTokens = '' + mt }
-					if (mi != null) { this.settingsMaxIterations = '' + mi }
 					if (se != null) { this.settingsStreamEnabled = se }
 				}
+				this.settingsMaxIterations = '—'
+				this.lastCallModel = this.model != '' ? this.model : '—'
+				this.lastCallMessageCount = '' + this.messageCount
+				this.lastCallToolCount = '' + this.toolCount
 			} catch (_e: any) {
 			}
 			this.scheduleLayoutCache()
@@ -328,114 +240,6 @@
 			setTimeout(() => { this.measureScrollSize() }, 800)
 		},
 		methods: {
-			formatScoreText(score: number): string {
-				const fixed = Math.round(score * 10) / 10
-				return '' + fixed
-			},
-
-			formatPercentText(hitTokens: number, promptTokens: number): string {
-				if (promptTokens <= 0) {
-					return '—'
-				}
-				const basis = Math.round(hitTokens * 10000 / promptTokens)
-				const whole = Math.floor(basis / 100)
-				const fraction = basis - whole * 100
-				if (fraction <= 0) {
-					return '' + whole + '%'
-				}
-				if (fraction < 10) {
-					return '' + whole + '.0' + fraction + '%'
-				}
-				if (fraction % 10 == 0) {
-					return '' + whole + '.' + (fraction / 10) + '%'
-				}
-				return '' + whole + '.' + fraction + '%'
-			},
-
-			applyLastTokenUsage(usage: UTSJSONObject): void {
-				const pt = usage['prompt_tokens'] as number | null
-				const ct = usage['completion_tokens'] as number | null
-				const tt = usage['total_tokens'] as number | null
-				const cacheHit = usage['prompt_cache_hit_tokens'] as number | null
-				const cacheReported = usage['prompt_cache_hit_tokens_reported'] as boolean | null
-				if (pt != null) {
-					this.lastPromptTokens = pt
-					this.lastPromptTokensText = '' + pt
-				}
-				if (ct != null) {
-					this.lastCompletionTokens = ct
-					this.lastCompletionTokensText = '' + ct
-				}
-				if (tt != null) {
-					this.lastTotalTokens = tt
-					this.lastTotalTokensText = '' + tt
-				}
-				if (cacheReported == true && cacheHit != null) {
-					this.lastPromptCacheHitTokensText = '' + cacheHit
-					this.lastPromptCacheHitRateText = this.formatPercentText(cacheHit, pt != null ? pt : 0)
-				}
-			},
-
-			applyConversationTokenUsageStats(stats: UTSJSONObject): void {
-				const promptTokens = stats['prompt_tokens'] as number | null
-				const cacheHitTokens = stats['prompt_cache_hit_tokens'] as number | null
-				const callCount = stats['call_count'] as number | null
-				const pt = promptTokens != null ? promptTokens : 0
-				const hit = cacheHitTokens != null ? cacheHitTokens : 0
-				this.conversationPromptTokensText = pt > 0 ? ('' + pt) : '—'
-				this.conversationPromptCacheHitTokensText = pt > 0 ? ('' + hit) : '—'
-				const calls = callCount != null ? callCount : 0
-				this.conversationUsageCallCountText = calls > 0 ? ('' + calls) : '—'
-				this.conversationPromptCacheHitRateText = this.formatPercentText(hit, pt)
-			},
-
-			applyLastCallInfo(info: UTSJSONObject): void {
-				const success = info['success'] as boolean | null
-				if (success == true) {
-					this.lastCallStatus = '成功'
-				} else if (success == false) {
-					this.lastCallStatus = '失败'
-				} else {
-					this.lastCallStatus = '未知'
-				}
-				const timeText = info['timeText'] as string | null
-				this.lastCallTime = timeText != null && timeText != '' ? timeText : '—'
-				const streamEnabled = info['stream'] as boolean | null
-				if (streamEnabled == true) {
-					this.lastCallMode = '流式'
-				} else if (streamEnabled == false) {
-					this.lastCallMode = '非流式'
-				} else {
-					this.lastCallMode = '—'
-				}
-				const statusCode = info['statusCode'] as number | null
-				this.lastCallStatusCode = statusCode != null ? ('' + statusCode) : '—'
-				const model = info['model'] as string | null
-				this.lastCallModel = model != null && model != '' ? model : '—'
-				const baseUrl = info['baseUrl'] as string | null
-				this.lastCallBaseUrl = baseUrl != null && baseUrl != '' ? baseUrl : '—'
-				const messageCount = info['messageCount'] as number | null
-				this.lastCallMessageCount = messageCount != null ? ('' + messageCount) : '—'
-				const toolCount = info['toolCount'] as number | null
-				this.lastCallToolCount = toolCount != null ? ('' + toolCount) : '—'
-				const textLength = info['textLength'] as number | null
-				this.lastCallTextLength = textLength != null ? ('' + textLength) : '—'
-				const hasToolCalls = info['hasToolCalls'] as boolean | null
-				if (hasToolCalls == true) {
-					this.lastCallHasToolCalls = '有'
-				} else if (hasToolCalls == false) {
-					this.lastCallHasToolCalls = '无'
-				} else {
-					this.lastCallHasToolCalls = '—'
-				}
-				const errorMessage = info['errorMessage'] as string | null
-				this.lastCallError = errorMessage != null ? errorMessage : ''
-				const usage = info['usage'] as UTSJSONObject | null
-				if (usage != null) {
-					this.applyLastTokenUsage(usage)
-				}
-			},
-
 			scheduleLayoutCache(): void {
 				setTimeout(() => {
 					this.cacheLayoutMetrics()
@@ -843,44 +647,6 @@
 		margin-top: 4rpx;
 	}
 
-	.summary-main-metrics {
-		flex-direction: row;
-	}
-
-	.summary-metric {
-		flex: 1;
-		background-color: #F8FAFC;
-		border-radius: 18rpx;
-		padding: 18rpx 8rpx;
-		margin-right: 8rpx;
-	}
-
-	.summary-metric-last {
-		margin-right: 0;
-	}
-
-	.summary-metric-value {
-		font-size: 30rpx;
-		font-weight: bold;
-		color: var(--rice-primary-color);
-	}
-
-	.summary-metric-label {
-		font-size: 20rpx;
-		line-height: 28rpx;
-		color: #6B7280;
-		margin-top: 6rpx;
-	}
-
-	.summary-role-list {
-		margin-top: 16rpx;
-	}
-
-	.summary-role-text {
-		font-size: 23rpx;
-		line-height: 34rpx;
-		color: #4B5563;
-	}
 
 	.last-call-panel {
 		background-color: #F9FAFB;
@@ -935,44 +701,6 @@
 		font-size: 23rpx;
 		line-height: 34rpx;
 		color: #B91C1C;
-	}
-
-	.last-usage-panel {
-		padding: 12rpx 0 0;
-		margin-top: 10rpx;
-	}
-
-	.last-usage-title {
-		font-size: 24rpx;
-		font-weight: bold;
-		color: #6B7280;
-		margin-bottom: 6rpx;
-	}
-
-	.last-usage-line {
-		flex-direction: row;
-		align-items: flex-start;
-		padding: 8rpx 0;
-	}
-
-	.last-usage-line-last {
-		padding-bottom: 0;
-	}
-
-	.last-usage-label {
-		width: 78rpx;
-		font-size: 22rpx;
-		line-height: 34rpx;
-		color: #9CA3AF;
-		flex-shrink: 0;
-	}
-
-	.last-usage-value {
-		flex: 1;
-		font-size: 24rpx;
-		line-height: 34rpx;
-		color: #374151;
-		text-align: right;
 	}
 
 	.code-text {

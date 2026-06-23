@@ -60,6 +60,7 @@ import { addConversationTokenUsage, getConversationTokenUsageStats } from '@/uti
 
 const LAST_TOKEN_USAGE_KEY = 'last_token_usage'
 const LAST_LLM_CALL_KEY = 'last_llm_call'
+const LAST_LLM_REQUEST_SNAPSHOT_KEY = 'last_llm_request_snapshot'
 
 function pad2(value: number): string {
 	if (value < 10) return '0' + value.toString()
@@ -1092,6 +1093,71 @@ function readLastTokenUsageForCall(): UTSJSONObject | null {
 	return null
 }
 
+function buildScopedLLMStorageKey(baseKey: string, agentId: string, conversationId: string): string {
+	const aid = agentId.trim()
+	const cid = conversationId.trim()
+	if (aid == '' && cid == '') {
+		return baseKey
+	}
+	return baseKey + '_' + aid + '_' + cid
+}
+
+function cloneJsonObject(obj: UTSJSONObject): UTSJSONObject {
+	return JSON.parse(JSON.stringify(obj)) as UTSJSONObject
+}
+
+function saveLastLLMRequestSnapshot(
+	baseUrl: string,
+	url: string,
+	model: string,
+	body: UTSJSONObject,
+	messageCount: number,
+	toolCount: number,
+	streamEnabled: boolean,
+	cacheKey: string,
+	agentId: string,
+	conversationId: string,
+	workspaceRoot: string
+): void {
+	const now = Date.now()
+	const snapshot: UTSJSONObject = {
+		type: 'real_llm_request_snapshot',
+		capturedAt: now,
+		timeText: formatMemoryMessageTime(now),
+		agentId: agentId,
+		conversationId: conversationId,
+		workspaceRoot: workspaceRoot,
+		baseUrl: baseUrl,
+		url: url,
+		model: model,
+		stream: streamEnabled,
+		messageCount: messageCount,
+		toolCount: toolCount,
+		cacheKey: cacheKey,
+		requestBody: cloneJsonObject(body),
+	} as UTSJSONObject
+	const json = JSON.stringify(snapshot)
+	uni.setStorageSync(LAST_LLM_REQUEST_SNAPSHOT_KEY, json)
+	const scopedKey = buildScopedLLMStorageKey(LAST_LLM_REQUEST_SNAPSHOT_KEY, agentId, conversationId)
+	if (scopedKey != LAST_LLM_REQUEST_SNAPSHOT_KEY) {
+		uni.setStorageSync(scopedKey, json)
+	}
+}
+
+export function readLastLLMRequestSnapshot(agentId: string = '', conversationId: string = ''): UTSJSONObject | null {
+	try {
+		const scopedKey = buildScopedLLMStorageKey(LAST_LLM_REQUEST_SNAPSHOT_KEY, agentId, conversationId)
+		const raw = uni.getStorageSync(scopedKey) as string | null
+		if (raw != null && raw != '') {
+			return JSON.parse(raw) as UTSJSONObject
+		}
+		if (scopedKey == LAST_LLM_REQUEST_SNAPSHOT_KEY) {
+			return null
+		}
+	} catch (_e: any) {}
+	return null
+}
+
 function saveLastLLMCall(
 	success: boolean,
 	streamEnabled: boolean,
@@ -1301,7 +1367,10 @@ function callChatAPI(
 	tools: UTSJSONObject[],
 	settings: GenerationSettings,
 	reasoningEnabled: boolean,
-	done: (text: string | null, toolCalls: ToolCallInfo[] | null) => void
+	done: (text: string | null, toolCalls: ToolCallInfo[] | null) => void,
+	agentId: string = '',
+	conversationId: string = '',
+	workspaceRoot: string = ''
 ): void {
 	const apiMessages = buildOpenAIMessages(systemPrompt, messages, true)
 	clearLastTokenUsage()
@@ -1344,6 +1413,7 @@ function callChatAPI(
 			body['reasoning_effort'] = 'medium'
 		}
 	}
+	saveLastLLMRequestSnapshot(baseUrl, url, model, body, apiMessages.length, tools.length, false, '', agentId, conversationId, workspaceRoot)
 
 	console.log('[LLM] ====== REQUEST ======')
 	console.log('[LLM] URL: ' + url)
@@ -1462,7 +1532,7 @@ function callChatAPI(
 			)) {
 				console.log('[LLM] 模型不支持 function calling，去除 tools 后重试')
 				uni.showToast({ position: 'bottom', title: '当前模型不支持工具调用，已自动忽略', icon: 'none' })
-				callChatAPI(baseUrl, apiKey, model, systemPrompt, messages, [], settings, reasoningEnabled, done)
+				callChatAPI(baseUrl, apiKey, model, systemPrompt, messages, [], settings, reasoningEnabled, done, agentId, conversationId, workspaceRoot)
 				return
 			}
 			saveLastLLMCall(false, false, model, baseUrl, -1, '网络请求失败: ' + _err, null, apiMessages.length, tools.length, 0, false)
@@ -1615,7 +1685,9 @@ function callChatAPIStream(
 	onThinking: ((text: string) => void) | null = null,
 	onToolCallDelta: ((index: number, name: string | null, args: string | null) => void) | null = null,
 	conversationId: string = '',
-	supportsVision: boolean = true
+	supportsVision: boolean = true,
+	agentId: string = '',
+	workspaceRoot: string = ''
 ): RequestTask {
 	const apiMessages = buildOpenAIMessages(systemPrompt, messages, supportsVision)
 	clearLastTokenUsage()
@@ -1660,6 +1732,7 @@ function callChatAPIStream(
 			body['reasoning_effort'] = 'medium'
 		}
 	}
+	saveLastLLMRequestSnapshot(baseUrl, url, model, body, apiMessages.length, tools.length, true, cacheKey, agentId, conversationId, workspaceRoot)
 
 	console.log('[LLM] ====== STREAM REQUEST ======')
 	console.log('[LLM] URL: ' + url)
@@ -1768,7 +1841,7 @@ function callChatAPIStream(
 			)) {
 				console.log('[LLM] 模型不支持 function calling，去除 tools 后重试')
 				uni.showToast({ position: 'bottom', title: '当前模型不支持工具调用，已自动忽略', icon: 'none' })
-				callChatAPIStream(baseUrl, apiKey, model, systemPrompt, messages, [], settings, reasoningEnabled, onChunk, done, cacheKey, onThinking, null, conversationId, supportsVision)
+				callChatAPIStream(baseUrl, apiKey, model, systemPrompt, messages, [], settings, reasoningEnabled, onChunk, done, cacheKey, onThinking, null, conversationId, supportsVision, agentId, workspaceRoot)
 				return
 			}
 			saveLastLLMCall(false, true, model, baseUrl, -1, '网络请求失败: ' + _err, null, apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
@@ -2097,7 +2170,9 @@ function runAgentLoop(
 			thinkingHandler,
 			toolCallDeltaHandler,
 			conversationId,
-			currentModelVision
+			currentModelVision,
+			allowCoreMemoryWrite == true ? '' : agentId,
+			workspaceRoot
 		)
 	}
 	continueLoop()
