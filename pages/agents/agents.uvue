@@ -1,37 +1,68 @@
 <template>
 	<view class="page-shell rice-theme-light" ref="shellRef">
-		<NavBar title="智能体">
+		<NavBar title="聊天">
 			<template #right>
-				<view class="add-btn" @click="openCreateDialog">
+				<view class="add-btn" @click.stop="toggleCreateMenu">
 					<oui-icon-unix name="plus" size="44rpx" color="#FFFFFF" />
 				</view>
 			</template>
 		</NavBar>
 
-		<!-- 智能体列表 -->
+		<view v-if="showCreateMenu" class="create-menu-mask" @click="closeCreateMenu"></view>
+		<view v-if="showCreateMenu" class="create-menu-card">
+			<view class="create-menu-item" @click="createAgentFromMenu">
+				<view class="create-menu-icon">
+					<oui-icon-unix name="robot" size="36rpx" color="var(--rice-primary-color)" />
+				</view>
+				<view class="create-menu-info">
+					<text class="create-menu-title">新建智能体</text>
+					<text class="create-menu-desc">单人私聊，独立记忆和设置</text>
+				</view>
+			</view>
+			<view class="create-menu-line"></view>
+			<view class="create-menu-item" @click="createWritingGroup">
+				<view class="create-menu-icon">
+					<oui-icon-unix name="edit" size="36rpx" color="var(--rice-primary-color)" />
+				</view>
+				<view class="create-menu-info">
+					<text class="create-menu-title">新建群聊</text>
+					<text class="create-menu-desc">故事 / 写作交流模板</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 会话列表：私聊 + 群聊混排 -->
 		<scroll-view class="agent-scroll" :scroll-y="true">
 			<share-element share-key="agent-list">
 				<view class="list-content">
 					<view
-						v-for="(agent, index) in agentList"
-						:key="index"
+						v-for="(item, index) in chatList"
+						:key="getChatKey(item)"
 						class="agent-item"
-						@click="openAgent(agent)"
+						@click="openChatItem(item)"
 					>
-						<!-- 左侧头像：有自定义头像则显示图片，否则显示图标色块 -->
-						<image v-if="getAgentAvatar(agent) != ''" :src="getAgentAvatar(agent)" class="agent-avatar-img" mode="aspectFill" />
+						<!-- 左侧头像：私聊可显示自定义头像，群聊使用模板图标 -->
+						<image v-if="getChatAvatar(item) != ''" :src="getChatAvatar(item)" class="agent-avatar-img" mode="aspectFill" />
 						<view v-else :class="'agent-avatar avatar-' + ((index % 5) + 1)">
-							<oui-icon-unix :name="agent['icon']" size="48rpx" color="var(--rice-background-2)" />
+							<oui-icon-unix :name="getChatIcon(item)" size="48rpx" color="var(--rice-background-2)" />
 						</view>
 						<!-- 中间文字 -->
 						<view class="agent-info">
 							<view class="agent-top">
-								<text class="agent-name">{{ agent['name'] }}</text>
+								<view class="agent-title-row">
+									<text class="agent-name">{{ getChatName(item) }}</text>
+									<text v-if="isGroupItem(item)" class="chat-type-badge">群聊</text>
+								</view>
+								<text class="agent-time">{{ formatChatTime(item) }}</text>
 							</view>
-							<text class="agent-desc">{{ getAgentStatus(agent) }}</text>
+							<text class="agent-desc">{{ getChatDesc(item) }}</text>
 						</view>
 						<!-- 右侧箭头 -->
 						<text class="agent-arrow">›</text>
+					</view>
+					<view v-if="chatList.length == 0" class="empty-state">
+						<text class="empty-title">还没有会话</text>
+						<text class="empty-desc">点右上角 +，新建智能体或群聊。</text>
 					</view>
 				</view>
 			</share-element>
@@ -144,8 +175,18 @@
 	 * 扁平化粉白主题
 	 */
 	import { getAgents, saveAgents, MINXI_BASE_STYLE } from '@/utils/agent.uts'
-	import { getAgentDir, deleteItem } from '@/utils/file-manager.uts'
+	import { getAgentDir } from '@/utils/file-manager.uts'
 	import { getConversationsByAgent } from '@/utils/database.uts'
+	import {
+		ACTIVE_GROUP_CHAT_ID_KEY,
+		ACTIVE_GROUP_SESSION_ID_KEY,
+		type GroupChat,
+		createDefaultWritingGroupChat,
+		displaySessionTitle,
+		ensureGroupActiveSession,
+		getActiveGroupMembers,
+		getGroupChats,
+	} from '@/utils/group-chat-service.uts'
 
 	/** 可用图标列表 */
 	const AVAILABLE_ICONS: string[] = [
@@ -202,6 +243,9 @@
 		data() {
 			return {
 				agentList: [] as UTSJSONObject[],
+				groupList: [] as GroupChat[],
+				chatList: [] as UTSJSONObject[],
+				showCreateMenu: false as boolean,
 				showCreateDialog: false as boolean,
 				/** 创建表单数据 */
 				createData: {
@@ -236,10 +280,10 @@
 			}
 		},
 		onLoad() {
-			this.loadAgents()
+			this.loadChats()
 		},
 		onShow() {
-			this.loadAgents()
+			this.loadChats()
 			this.consumeCreateAvatarCropResult()
 		},
 		methods: {
@@ -344,6 +388,55 @@
 				this.agentList = getAgents()
 			},
 
+			loadGroups(): void {
+				this.groupList = getGroupChats()
+			},
+
+			loadChats(): void {
+				this.loadAgents()
+				this.loadGroups()
+				this.rebuildChatList()
+			},
+
+			rebuildChatList(): void {
+				const result: UTSJSONObject[] = []
+				for (let i = 0; i < this.agentList.length; i++) {
+					const agent = this.agentList[i]
+					const id = agent['id'] as string | null
+					if (id == null || id == '') { continue }
+					result.push({
+						type: 'agent',
+						id: id,
+						name: agent['name'] as string,
+						desc: this.getAgentStatus(agent),
+						icon: agent['icon'] as string,
+						avatar: this.getAgentAvatar(agent),
+						updatedAt: this.getAgentUpdatedAt(id),
+					} as UTSJSONObject)
+				}
+				for (let i = 0; i < this.groupList.length; i++) {
+					const group = this.groupList[i]
+					result.push({
+						type: 'group',
+						id: group.id,
+						name: group.name,
+						desc: this.getGroupSummary(group),
+						icon: 'robot',
+						avatar: '',
+						updatedAt: group.updatedAt,
+					} as UTSJSONObject)
+				}
+				result.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
+					const at = a['updatedAt'] as number | null
+					const bt = b['updatedAt'] as number | null
+					const av = at != null ? at : 0
+					const bv = bt != null ? bt : 0
+					if (av == bv) { return 0 }
+					return av > bv ? -1 : 1
+				})
+				this.chatList = result
+			},
+
 			/** 安全获取智能体头像路径 */
 			getAgentAvatar(agent: UTSJSONObject): string {
 				const avatar = agent['avatar']
@@ -372,11 +465,131 @@
 				return agent['desc'] as string
 			},
 
+			getAgentUpdatedAt(agentId: string): number {
+				try {
+					const convs = getConversationsByAgent(agentId)
+					if (convs != null && convs.length > 0) {
+						const latest = convs[0]
+						const rawTime = latest['updated_at'] as number | null
+						if (rawTime != null && rawTime > 0) {
+							return rawTime
+						}
+					}
+				} catch (_e: any) {
+				}
+				return 0
+			},
+
+			getGroupSummary(group: GroupChat): string {
+				const members = getActiveGroupMembers(group.id)
+				const session = ensureGroupActiveSession(group)
+				return members.length.toString() + ' 个成员 · 当前会话：' + displaySessionTitle(session)
+			},
+
+			getChatKey(item: UTSJSONObject): string {
+				const type = item['type'] as string | null
+				const id = item['id'] as string | null
+				return (type != null ? type : 'chat') + '-' + (id != null ? id : '')
+			},
+
+			isGroupItem(item: UTSJSONObject): boolean {
+				const type = item['type'] as string | null
+				return type == 'group'
+			},
+
+			getChatName(item: UTSJSONObject): string {
+				const name = item['name'] as string | null
+				return name != null && name != '' ? name : '未命名会话'
+			},
+
+			getChatDesc(item: UTSJSONObject): string {
+				const desc = item['desc'] as string | null
+				return desc != null && desc != '' ? desc : '点进去开始聊天'
+			},
+
+			getChatAvatar(item: UTSJSONObject): string {
+				const avatar = item['avatar'] as string | null
+				return avatar != null ? avatar : ''
+			},
+
+			getChatIcon(item: UTSJSONObject): string {
+				const type = item['type'] as string | null
+				if (type == 'group') { return 'robot' }
+				const icon = item['icon'] as string | null
+				return icon != null && icon != '' ? icon : 'robot'
+			},
+
+			formatChatTime(item: UTSJSONObject): string {
+				const raw = item['updatedAt'] as number | null
+				const timestamp = raw != null ? raw : 0
+				if (timestamp <= 0) { return '' }
+				const d = new Date(timestamp)
+				const month = (d.getMonth() + 1).toString()
+				const day = d.getDate().toString()
+				const hour = d.getHours() < 10 ? '0' + d.getHours().toString() : d.getHours().toString()
+				const minute = d.getMinutes() < 10 ? '0' + d.getMinutes().toString() : d.getMinutes().toString()
+				return month + '/' + day + ' ' + hour + ':' + minute
+			},
+
 			openAgent(agent: UTSJSONObject) {
 				uni.setStorageSync('active_agent_id', agent['id'] as string)
 				uni.navigateTo({
 					url: '/pages/chat/chat'
 				})
+			},
+
+			openGroup(group: GroupChat): void {
+				const session = ensureGroupActiveSession(group)
+				uni.setStorageSync(ACTIVE_GROUP_CHAT_ID_KEY, group.id)
+				uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, session.id)
+				uni.navigateTo({ url: '/pages/group-chat/group-chat' })
+			},
+
+			openChatItem(item: UTSJSONObject): void {
+				this.closeCreateMenu()
+				const type = item['type'] as string | null
+				if (type == 'group') {
+					const groupId = item['id'] as string | null
+					if (groupId == null || groupId == '') { return }
+					for (let i = 0; i < this.groupList.length; i++) {
+						if (this.groupList[i].id == groupId) {
+							this.openGroup(this.groupList[i])
+							return
+						}
+					}
+					return
+				}
+				const agentId = item['id'] as string | null
+				if (agentId == null || agentId == '') { return }
+				for (let i = 0; i < this.agentList.length; i++) {
+					const id = this.agentList[i]['id'] as string | null
+					if (id == agentId) {
+						this.openAgent(this.agentList[i])
+						return
+					}
+				}
+				uni.setStorageSync('active_agent_id', agentId)
+				uni.navigateTo({ url: '/pages/chat/chat' })
+			},
+
+			toggleCreateMenu(): void {
+				this.showCreateMenu = !this.showCreateMenu
+			},
+
+			closeCreateMenu(): void {
+				this.showCreateMenu = false
+			},
+
+			createAgentFromMenu(): void {
+				this.closeCreateMenu()
+				this.openCreateDialog()
+			},
+
+			createWritingGroup(): void {
+				this.closeCreateMenu()
+				const group = createDefaultWritingGroupChat()
+				this.loadChats()
+				this.openGroup(group)
 			},
 
 			goSettings() {
@@ -494,7 +707,7 @@
 				this.resetCreateData()
 
 				// 刷新列表
-				this.loadAgents()
+				this.loadChats()
 
 				uni.showToast({ position: 'bottom', 
 					title: '创建成功',
@@ -515,6 +728,71 @@
 		height: 80rpx;
 		justify-content: center;
 		align-items: center;
+	}
+
+	.create-menu-mask {
+		position: fixed;
+		left: 0;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		background-color: rgba(0, 0, 0, 0.01);
+		z-index: 20;
+	}
+
+	.create-menu-card {
+		position: fixed;
+		top: 104rpx;
+		right: 24rpx;
+		width: 392rpx;
+		background-color: #FFFFFF;
+		border-radius: 28rpx;
+		padding: 12rpx;
+		z-index: 21;
+		border-width: 1rpx;
+		border-color: rgba(31, 41, 55, 0.08);
+		border-style: solid;
+	}
+
+	.create-menu-item {
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx;
+		border-radius: 22rpx;
+	}
+
+	.create-menu-icon {
+		width: 72rpx;
+		height: 72rpx;
+		border-radius: 22rpx;
+		background-color: rgba(251, 143, 171, 0.12);
+		justify-content: center;
+		align-items: center;
+		margin-right: 18rpx;
+	}
+
+	.create-menu-info {
+		flex: 1;
+		flex-direction: column;
+	}
+
+	.create-menu-title {
+		font-size: 28rpx;
+		font-weight: bold;
+		color: var(--rice-text-color);
+	}
+
+	.create-menu-desc {
+		margin-top: 4rpx;
+		font-size: 22rpx;
+		color: var(--rice-text-color-3);
+	}
+
+	.create-menu-line {
+		height: 1rpx;
+		background-color: var(--rice-border-color);
+		margin-left: 20rpx;
+		margin-right: 20rpx;
 	}
 
 	/* 列表滚动区 */
@@ -584,6 +862,31 @@
 		color: var(--rice-text-color);
 	}
 
+	.agent-title-row {
+		flex-direction: row;
+		align-items: center;
+		flex: 1;
+	}
+
+	.agent-time {
+		font-size: 22rpx;
+		color: var(--rice-text-color-3);
+		margin-left: 16rpx;
+	}
+
+	.chat-type-badge {
+		margin-left: 12rpx;
+		padding-left: 10rpx;
+		padding-right: 10rpx;
+		padding-top: 4rpx;
+		padding-bottom: 4rpx;
+		border-radius: 999rpx;
+		background-color: rgba(251, 143, 171, 0.14);
+		color: var(--rice-primary-color);
+		font-size: 20rpx;
+		font-weight: bold;
+	}
+
 	.agent-desc {
 		font-size: 26rpx;
 		color: var(--rice-text-color-3);
@@ -596,6 +899,25 @@
 		font-size: 44rpx;
 		color: var(--rice-text-color-3);
 		margin-left: 16rpx;
+	}
+
+	.empty-state {
+		padding: 80rpx 32rpx;
+		align-items: center;
+		justify-content: center;
+		flex-direction: column;
+	}
+
+	.empty-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: var(--rice-text-color);
+	}
+
+	.empty-desc {
+		margin-top: 8rpx;
+		font-size: 24rpx;
+		color: var(--rice-text-color-3);
 	}
 
 	/* ===== 创建智能体弹窗 ===== */

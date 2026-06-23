@@ -17,13 +17,6 @@
 			}
 		},
 		{
-			"path": "pages/group-chats/group-chats",
-			"style": {
-				"navigationStyle": "custom",
-				"navigationBarTextStyle": "white"
-			}
-		},
-		{
 			"path": "pages/group-chat/group-chat",
 			"style": {
 				"navigationStyle": "custom",

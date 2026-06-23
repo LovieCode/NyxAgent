@@ -36,8 +36,7 @@
 		data() {
 			return {
 				tabs: [
-					{ pagePath: 'pages/agents/agents', text: '智能体', icon: 'robot' },
-						{ pagePath: 'pages/group-chats/group-chats', text: '群聊', icon: 'robot' },
+					{ pagePath: 'pages/agents/agents', text: '聊天', icon: 'robot' },
 					{ pagePath: 'pages/todo/todo', text: '待办', icon: 'check-circle' },
 					{ pagePath: 'pages/files/files', text: '文件', icon: 'folder' },
 					{ pagePath: 'pages/settings/settings', text: '设置', icon: 'setting' },
