@@ -527,7 +527,7 @@ export function updateToolExecutionEnd(messages: UTSJSONObject[], toolName: stri
 	replaceMessage(messages, assistantIdx, makeAssistantFromExisting(assistantMsg, parts, keepStreaming))
 }
 
-export function finalizeAssistantTurn(messages: UTSJSONObject[]): void {
+export function finalizeAssistantTurn(messages: UTSJSONObject[], _msgSegmentation: boolean = false): void {
 	const assistantIdx = findLastAssistantIndex(messages)
 	if (assistantIdx < 0) {
 		return

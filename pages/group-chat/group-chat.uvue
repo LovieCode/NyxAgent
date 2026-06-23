@@ -25,8 +25,8 @@
 					:userDisplayName="isUserMessage(msg) ? readUserMessageSenderName(msg) : ''"
 					:userAvatar="userAvatar"
 					:toolName="msg.toolName != null ? msg.toolName : ''"
-					:hideThinking="false"
-					:msgSegmentation="true"
+					:hideThinking="readMessageHideThinking(msg)"
+					:msgSegmentation="readMessageMsgSegmentation(msg)"
 					:isError="msg.isError == true"
 					:isStreaming="msg.isStreaming == true"
 					:cancelToken="longpressCancelToken"
@@ -53,6 +53,30 @@
 			</view>
 			<view v-if="showToolPanel" class="toolbar-panel">
 				<view class="toolbar-grid">
+					<view class="toolbar-grid-item" @click="pickImage">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="image" size="52rpx" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">图片</text>
+					</view>
+					<view class="toolbar-grid-item" @click="takePhoto">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="camera" size="52rpx" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">拍照</text>
+					</view>
+					<view class="toolbar-grid-item" @click="pickFile">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="file" size="52rpx" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">文件</text>
+					</view>
+					<view class="toolbar-grid-item" @click="chooseAgentForMemory">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="52rpx" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">记忆管理</text>
+					</view>
+					<view class="toolbar-grid-item" @click="chooseAgentForContext">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="eye" size="52rpx" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">原始上下文</text>
+					</view>
+					<view class="toolbar-grid-item" @click="openGroupWorkspace">
+						<view class="toolbar-grid-icon"><oui-icon-unix name="folder" size="52rpx" color="var(--rice-primary-color)" /></view>
+						<text class="toolbar-grid-label">工作区</text>
+					</view>
 					<view class="toolbar-grid-item" @click="stopDiscussion">
 						<view class="toolbar-grid-icon"><oui-icon-unix name="stop" size="52rpx" color="#EF4444" /></view>
 						<text class="toolbar-grid-label">停止讨论</text>
@@ -76,11 +100,12 @@
 </template>
 
 <script lang="uts">
-	import { agentChat, chatWithLLM } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+	import { agentChat, buildAgentContextPreview, captionImage, chatWithLLM } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
 	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
 	import { getAgentById } from '@/utils/agent.uts'
 	import { loadChatUserProfile } from '@/utils/chat-conversation-service.uts'
-	import { CHAT_ROLE_ASSISTANT, getMessageParts } from '@/utils/chat-models.uts'
+	import { buildChatDatetimePrefix } from '@/utils/datetime-context.uts'
+	import { CHAT_ROLE_ASSISTANT, getMessageParts, setImageMessageCaption } from '@/utils/chat-models.uts'
 	import { reduceAgentEvent, finalizeAssistantTurn } from '@/utils/chat-message-reducer.uts'
 	import {
 		ACTIVE_GROUP_CHAT_ID_KEY,
@@ -90,7 +115,6 @@
 		type GroupChat,
 		type GroupChatSession,
 		applyGroupSessionTitleSuggestion,
-		buildGroupWorkspacePath,
 		buildMemberRuntimeMessages,
 		buildMemberSystemPrompt,
 		buildSchedulerRuntimeMessages,
@@ -99,6 +123,8 @@
 		createDefaultWritingGroupChat,
 		createGroupAgentStreamingMessage,
 		createGroupHiddenMessage,
+		createGroupUserFileMessage,
+		createGroupUserImageMessage,
 		createGroupUserMessage,
 		displaySessionTitle,
 		ensureGroupActiveSession,
@@ -106,11 +132,14 @@
 		getGroupChatById,
 		getGroupMessages,
 		getGroupSessionById,
+		getGroupSessionWorkspaceDir,
 		getVisibleGroupMessages,
 		parseSchedulerDecision,
 		isAgentInGroup,
 		readAgentModel,
 		readAgentName,
+		readAgentInjectDatetime,
+		readAgentMsgSegmentation,
 		revokeGroupAgentMessage,
 		saveGroupAgentContextRecord,
 		saveGroupMessages,
@@ -136,6 +165,7 @@
 				discussionStopped: false as boolean,
 				userNickname: '' as string,
 				userAvatar: '' as string,
+				imageCaptionTaskId: 0 as number,
 			}
 		},
 		computed: {
@@ -202,6 +232,14 @@
 				}
 			},
 			getMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] { return getMessageParts(msg) },
+			readMessageHideThinking(msg: UTSJSONObject): boolean {
+				const raw = msg['hideThinking'] as boolean | null
+				return raw == true
+			},
+			readMessageMsgSegmentation(msg: UTSJSONObject): boolean {
+				const raw = msg['msgSegmentation'] as boolean | null
+				return raw != null ? raw : true
+			},
 			isAgentMessage(msg: UTSJSONObject): boolean {
 				const senderType = msg['senderType'] as string | null
 				return senderType == GROUP_MESSAGE_SENDER_AGENT
@@ -289,6 +327,212 @@
 				this.saveMessages()
 				uni.showToast({ position: 'bottom', title: '已停止讨论', icon: 'none' })
 			},
+			addGroupImageMessage(imagePath: string): number {
+				if (imagePath == '') { return -1 }
+				const profile = loadChatUserProfile()
+				this.userNickname = profile.nickname
+				this.userAvatar = profile.avatar
+				const msg = createGroupUserImageMessage(this.groupId, this.sessionId, imagePath, profile.nickname)
+				this.messages.push(msg)
+				this.saveMessages()
+				this.scrollToBottom()
+				return this.messages.length - 1
+			},
+			startGroupGenerationForMedia(reason: string): void {
+				if (this.isGenerating == true) { return }
+				this.runScheduler(reason)
+			},
+			startGenerationForImage(imagePath: string, fallbackReason: string, messageIndex: number): void {
+				if (this.isGenerating == true) { return }
+				this.isGenerating = true
+				this.imageCaptionTaskId++
+				const taskId = this.imageCaptionTaskId
+				captionImage(imagePath).then((caption: string | null) => {
+					if (taskId != this.imageCaptionTaskId) { return }
+					if (messageIndex >= 0 && messageIndex < this.messages.length && caption != null && caption != '') {
+						setImageMessageCaption(this.messages[messageIndex], caption)
+						this.messages.splice(messageIndex, 1, this.messages[messageIndex])
+						this.saveMessages()
+					}
+					this.isGenerating = false
+					if (caption == null || caption == '') {
+						uni.showToast({ position: 'bottom', title: '图片转述未配置或失败，已直接发送', icon: 'none' })
+					}
+					this.startGroupGenerationForMedia(fallbackReason)
+				})
+			},
+			pickImage(): void {
+				this.showToolPanel = false
+				if (this.isGenerating == true) { return }
+				uni.chooseImage({
+					count: 1,
+					sourceType: ['album'],
+					sizeType: ['compressed'],
+					success: (res: any) => {
+						const raw = JSON.stringify(res)
+						if (raw == null || raw == '') { return }
+						const parsed = JSON.parse(raw) as UTSJSONObject
+						const paths = parsed['tempFilePaths'] as string[] | null
+						if (paths != null && paths.length > 0) {
+							const msgIndex = this.addGroupImageMessage(paths[0])
+							this.startGenerationForImage(paths[0], '用户发送了一张图片', msgIndex)
+						}
+					}
+				})
+			},
+			takePhoto(): void {
+				this.showToolPanel = false
+				if (this.isGenerating == true) { return }
+				uni.chooseImage({
+					count: 1,
+					sourceType: ['camera'],
+					sizeType: ['compressed'],
+					success: (res: any) => {
+						const raw = JSON.stringify(res)
+						if (raw == null || raw == '') { return }
+						const parsed = JSON.parse(raw) as UTSJSONObject
+						const paths = parsed['tempFilePaths'] as string[] | null
+						if (paths != null && paths.length > 0) {
+							const msgIndex = this.addGroupImageMessage(paths[0])
+							this.startGenerationForImage(paths[0], '用户拍摄了一张照片', msgIndex)
+						}
+					}
+				})
+			},
+			pickFile(): void {
+				this.showToolPanel = false
+				if (this.isGenerating == true) { return }
+				uni.chooseFile({
+					count: 1,
+					success: (res: any) => {
+						const raw = JSON.stringify(res)
+						if (raw == null || raw == '') { return }
+						const parsed = JSON.parse(raw) as UTSJSONObject
+						this.addGroupFileMessage(parsed)
+					}
+				})
+			},
+			addGroupFileMessage(fileInfo: UTSJSONObject): void {
+				const rawName = fileInfo['name'] as string | null
+				const rawPath = fileInfo['path'] as string | null
+				const tempFiles = fileInfo['tempFiles'] as UTSJSONObject[] | null
+				let name = rawName != null ? rawName : '文件'
+				let path = rawPath != null ? rawPath : ''
+				if (tempFiles != null && tempFiles.length > 0) {
+					const first = tempFiles[0]
+					const firstName = first['name'] as string | null
+					const firstPath = first['path'] as string | null
+					if (firstName != null && firstName != '') { name = firstName }
+					if (firstPath != null && firstPath != '') { path = firstPath }
+				}
+				const profile = loadChatUserProfile()
+				this.userNickname = profile.nickname
+				this.userAvatar = profile.avatar
+				this.messages.push(createGroupUserFileMessage(this.groupId, this.sessionId, name, path, profile.nickname))
+				this.saveMessages()
+				this.scrollToBottom()
+				this.startGroupGenerationForMedia('用户发送了一个文件：' + name)
+			},
+			buildGroupMemberAgentItems(): UTSJSONObject[] {
+				const members = getActiveGroupMembers(this.groupId)
+				const result: UTSJSONObject[] = []
+				for (let i = 0; i < members.length; i++) {
+					const agent = getAgentById(members[i].agentId)
+					result.push({
+						agentId: members[i].agentId,
+						name: readAgentName(agent),
+					} as UTSJSONObject)
+				}
+				return result
+			},
+			chooseAgentForMemory(): void {
+				this.showToolPanel = false
+				this.chooseAgentAndRun('选择要查看记忆的 Agent', 'memory')
+			},
+			chooseAgentForContext(): void {
+				this.showToolPanel = false
+				this.chooseAgentAndRun('选择要查看上下文的 Agent', 'context')
+			},
+			chooseAgentAndRun(_title: string, action: string): void {
+				const items = this.buildGroupMemberAgentItems()
+				if (items.length == 0) {
+					uni.showToast({ position: 'bottom', title: '群里还没有成员', icon: 'none' })
+					return
+				}
+				const names: string[] = []
+				for (let i = 0; i < items.length; i++) {
+					const name = items[i]['name'] as string | null
+					names.push(name != null ? name : 'Agent')
+				}
+				uni.showActionSheet({
+					itemList: names,
+					success: (res) => {
+						const index = res.tapIndex
+						if (index < 0 || index >= items.length) { return }
+						const agentId = items[index]['agentId'] as string | null
+						if (agentId == null || agentId == '') { return }
+						if (action == 'memory') {
+							this.openMemoryForAgent(agentId)
+						} else {
+							this.openContextForAgent(agentId)
+						}
+					}
+				})
+			},
+			openMemoryForAgent(agentId: string): void {
+				uni.setStorageSync('memory_agent_id', agentId)
+				uni.setStorageSync('memory_conversation_id', this.sessionId)
+				uni.navigateTo({ url: '/pages/memory/memory' })
+			},
+			openContextForAgent(agentId: string): void {
+				const group = this.group
+				const session = this.session
+				if (group == null || session == null) { return }
+				const agent = getAgentById(agentId)
+				if (agent == null) { return }
+				const agentName = readAgentName(agent)
+				const action = {
+					type: 'speak',
+					agentId: agentId,
+					targetType: 'user',
+					targetAgentId: '',
+					privateInstruction: '用户手动查看原始上下文预览，本条不会实际发送。',
+					publicIntent: '上下文预览',
+					order: 0,
+				} as UTSJSONObject
+				const runtimeMessages = buildMemberRuntimeMessages(group, session, this.messages, action, agentName, readAgentInjectDatetime(agent), buildChatDatetimePrefix())
+				const preview = buildAgentContextPreview(
+					runtimeMessages,
+					buildMemberSystemPrompt(agent),
+					'',
+					readAgentModel(agent),
+					agentId,
+					0,
+					session.id,
+					getGroupSessionWorkspaceDir(group.id, session.id)
+				)
+				let previewText = ''
+				try {
+					previewText = JSON.stringify(preview, null, 2)
+				} catch (_e: any) {
+					previewText = JSON.stringify(preview)
+				}
+				uni.setStorageSync('context_preview_payload', previewText)
+				uni.navigateTo({ url: '/pages/context-preview/context-preview' })
+			},
+			openGroupWorkspace(): void {
+				this.showToolPanel = false
+				const group = this.group
+				const session = this.session
+				if (group == null || session == null) { return }
+				const workspaceRoot = getGroupSessionWorkspaceDir(group.id, session.id)
+				if (workspaceRoot == '') {
+					uni.showToast({ position: 'bottom', title: '工作区不可用', icon: 'none' })
+					return
+				}
+				uni.setStorageSync('files_initial_path', workspaceRoot)
+				uni.navigateTo({ url: '/pages/files/files' })
+			},
 			onMessageLongpress(msg: UTSJSONObject): void {
 				const senderType = msg['senderType'] as string | null
 				if (senderType != GROUP_MESSAGE_SENDER_AGENT) { return }
@@ -324,7 +568,7 @@
 				this.discussionStopped = false
 				this.isGenerating = true
 				const schedulerMessages = buildSchedulerRuntimeMessages(group, session, this.messages, reason, this.loopTurns)
-				chatWithLLM(schedulerMessages, buildSchedulerSystemPrompt(group), '', '').then((raw: string | null) => {
+				chatWithLLM(schedulerMessages, buildSchedulerSystemPrompt(), '', '').then((raw: string | null) => {
 					const text = raw != null ? raw : ''
 					const decision = parseSchedulerDecision(text, group.id)
 					const title = decision['titleSuggestion'] as string | null
@@ -389,17 +633,19 @@
 				const streamingMsg = createGroupAgentStreamingMessage(group.id, session.id, agentId)
 				this.messages.push(streamingMsg)
 				const agentName = readAgentName(agent)
-				const tempMessages = buildMemberRuntimeMessages(group, session, this.messages, action, agentName)
-				const systemPrompt = buildMemberSystemPrompt(group, session, agent, action)
+				const injectDatetime = readAgentInjectDatetime(agent)
+				const msgSegmentation = readAgentMsgSegmentation(agent)
+				const tempMessages = buildMemberRuntimeMessages(group, session, this.messages, action, agentName, injectDatetime, buildChatDatetimePrefix())
+				const systemPrompt = buildMemberSystemPrompt(agent)
 				const contextRecord = createGroupAgentContextRecord(group, session, agentId, agentName, action, tempMessages, systemPrompt)
 				saveGroupAgentContextRecord(contextRecord)
 				streamingMsg['contextRecordId'] = contextRecord['id'] as string | null
-				const workspaceRoot = buildGroupWorkspacePath(group.id, session.id)
+				const workspaceRoot = getGroupSessionWorkspaceDir(group.id, session.id)
 				const stream = agentChat(tempMessages, systemPrompt, '', readAgentModel(agent), agentId, 0, session.id, workspaceRoot)
 				this.currentStream = stream
 				stream.on((event: AgentEvent) => {
 					if (event.type == 'agent_end') {
-						finalizeAssistantTurn(tempMessages)
+						finalizeAssistantTurn(tempMessages, msgSegmentation)
 						const lastAssistant = this.findLastAssistantMessage(tempMessages)
 						if (lastAssistant != null) {
 							syncGroupStreamingMessage(streamingMsg, lastAssistant)

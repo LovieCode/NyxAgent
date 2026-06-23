@@ -2184,14 +2184,15 @@ export function buildAgentContextPreview(
 	model: string,
 	agentId: string,
 	maxIterations: number = 0,
-	conversationId: string = ''
+	conversationId: string = '',
+	workspaceRoot: string = ''
 ): UTSJSONObject {
 	const agent = getAgentById(agentId)
 	const settings = getEffectiveGenerationSettings(agent)
 	if (maxIterations > 0) {
 		settings.maxIterations = maxIterations
 	}
-	const prepared = prepareAgentContext(messages, systemPrompt, agentId, conversationId)
+	const prepared = prepareAgentContext(messages, systemPrompt, agentId, conversationId, false, true, workspaceRoot)
 	const config = resolveLLMConfig(providerId, model)
 	let requestModel = ''
 	let normalizedBaseUrl = ''
@@ -2202,6 +2203,13 @@ export function buildAgentContextPreview(
 		resolvedProviderId = config.providerId
 	}
 	const apiMessages = buildOpenAIMessages('', prepared.workingMessages, true)
+	let cacheKey = ''
+	if (agent != null && (agent['cacheEnabled'] as boolean | null) == true) {
+		cacheKey = agentId
+		if (conversationId != '') {
+			cacheKey = cacheKey + ':' + conversationId
+		}
+	}
 	// 读取上次调用的真实 Token 用量
 	let lastTokenUsage: UTSJSONObject | null = null
 	let lastCallInfo: UTSJSONObject | null = null
@@ -2233,6 +2241,7 @@ export function buildAgentContextPreview(
 		providerId: resolvedProviderId,
 		baseUrl: normalizedBaseUrl,
 		model: requestModel,
+		cacheKey: cacheKey,
 		importantMemory: prepared.importantMemory,
 		bufferInjection: prepared.bufferInjection,
 		lastUserIndex: prepared.lastUserIndex,

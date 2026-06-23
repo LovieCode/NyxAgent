@@ -29,6 +29,70 @@
 			</view>
 		</view>
 
+		<view v-else-if="role == 'assistant' && msgSegmentation == true && renderContentParts.length > 1" class="assistant-segment-list">
+			<view v-for="(part, pi) in renderContentParts" :key="'assistant-segment-' + pi" class="ai-row">
+				<image v-if="agentAvatar != '' && pi == 0" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" @click.stop="onAvatarClick" />
+				<view v-else-if="pi == 0" class="chat-avatar ai-avatar" @click.stop="onAvatarClick">
+					<text class="chat-avatar-text">AI</text>
+				</view>
+				<view v-else class="chat-avatar ai-avatar-spacer" />
+				<view class="ai-stack">
+					<text v-if="assistantName != '' && pi == 0" class="speaker-name assistant-name">{{assistantName}}</text>
+					<view class="ai-content timeline-content" :class="isPressed ? 'bubble-pressed' : ''"
+						@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
+						@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
+						@touchend="onBubbleTouchEnd">
+						<view v-if="pi == 0 && reasoningBlocks.length > 0 && hideThinking == false" class="reasoning-panel">
+							<view class="reasoning-header" @click.stop="thinkingExpanded = !thinkingExpanded">
+								<text class="thinking-step-icon">{{thinkingExpanded ? '↑' : '↓'}}</text>
+								<text class="thinking-step-label">思考过程</text>
+							</view>
+							<view v-if="thinkingExpanded == true" class="reasoning-body">
+								<view v-for="(block, bi) in reasoningBlocks" :key="'reasoning-segment-' + bi" class="block-entry">
+									<text v-if="block.type == 'thinking'" class="thinking-step-text">{{block.thinking}}</text>
+									<view v-else-if="block.type == 'toolCall'" class="tool-call-step" @click.stop="toggleToolCallExpand(bi)">
+										<view class="tool-call-card">
+											<view class="tool-call-card-header">
+												<view class="tool-call-card-left">
+													<text class="tool-call-status">{{getToolStatusText(block)}}</text>
+													<text class="tool-call-card-name">{{getToolDisplayName(block.name)}}</text>
+												</view>
+												<view class="tool-call-card-right">
+													<text v-if="block.ts > 0 && (_renderSwitch == true || _renderSwitch == false)" :key="'elapsed-segment-' + bi + '-' + timerTick + '-' + _renderSwitch" class="tool-call-elapsed">{{getToolElapsed(block)}}</text>
+													<text class="tool-call-chevron">{{getToolCallExpanded(bi) ? '收起' : '详情'}}</text>
+												</view>
+											</view>
+											<view v-if="getToolCallExpanded(bi) == true" class="tool-call-card-detail">
+												<view class="tool-detail-section">
+													<text class="tool-detail-label">参数</text>
+													<text class="tool-detail-value">{{block.args}}</text>
+												</view>
+												<view v-if="block.result != ''" class="tool-detail-section">
+													<text class="tool-detail-label">结果</text>
+													<text class="tool-detail-value">{{block.result}}</text>
+												</view>
+											</view>
+										</view>
+									</view>
+								</view>
+							</view>
+						</view>
+						<view v-if="part.type == 'image' && part.url != ''" class="image-part">
+							<image :src="part.url" class="bubble-image" mode="widthFix" />
+							<view v-if="part.caption != ''" class="caption-card">
+								<text class="caption-label">图片转述</text>
+								<text class="caption-text">{{part.caption}}</text>
+							</view>
+						</view>
+						<text v-else-if="part.type == 'plain' || part.type == 'location'" class="text-assistant-pre">{{part.text}}<text v-if="isStreaming == true && isLastContentPart(pi) == true" class="cursor">|</text></text>
+						<view v-else class="media-chip">
+							<text class="media-chip-text">{{getPartLabel(part)}}</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</view>
+
 		<view v-else-if="role == 'assistant'" class="ai-row">
 			<image v-if="agentAvatar != ''" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" @click.stop="onAvatarClick" />
 			<view v-else class="chat-avatar ai-avatar" @click.stop="onAvatarClick">
@@ -76,7 +140,7 @@
 						</view>
 					</view>
 
-					<view v-for="(part, pi) in contentParts" :key="'assistant-part-' + pi" class="part-wrap">
+					<view v-for="(part, pi) in renderContentParts" :key="'assistant-part-' + pi" class="part-wrap">
 						<view v-if="part.type == 'image' && part.url != ''" class="image-part">
 							<image :src="part.url" class="bubble-image" mode="widthFix" />
 							<view v-if="part.caption != ''" class="caption-card">
@@ -89,8 +153,8 @@
 							<text class="media-chip-text">{{getPartLabel(part)}}</text>
 						</view>
 					</view>
-					<text v-if="contentParts.length == 0 && content != ''" class="text-assistant-pre">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
-					<text v-if="contentParts.length == 0 && content == '' && isStreaming == true" class="text-assistant-pre"><text class="cursor">|</text></text>
+					<text v-if="renderContentParts.length == 0 && content != ''" class="text-assistant-pre">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
+					<text v-if="renderContentParts.length == 0 && content == '' && isStreaming == true" class="text-assistant-pre"><text class="cursor">|</text></text>
 				</view>
 			</view>
 		</view>
@@ -112,6 +176,7 @@
 		path: string
 		filename: string
 		caption: string
+		isLast: boolean
 	}
 	type DisplayBlock = {
 		type: string
@@ -324,7 +389,42 @@
 					} else if (rawName != null) {
 						filename = rawName
 					}
-					result.push({ type: partType == 'text' ? 'plain' : partType, text: text, url: url, path: path, filename: filename, caption: caption } as ContentPartView)
+					result.push({ type: partType == 'text' ? 'plain' : partType, text: text, url: url, path: path, filename: filename, caption: caption, isLast: false } as ContentPartView)
+				}
+				return result
+			},
+			renderContentParts(): ContentPartView[] {
+				const result: ContentPartView[] = []
+				const source = this.contentParts
+				for (let i = 0; i < source.length; i++) {
+					const part = source[i]
+					if (this.role == 'assistant' && this.msgSegmentation == true && part.type == 'plain') {
+						const segments = this.splitTextSegments(part.text)
+						for (let j = 0; j < segments.length; j++) {
+							result.push({
+								type: part.type,
+								text: segments[j],
+								url: part.url,
+								path: part.path,
+								filename: part.filename,
+								caption: part.caption,
+								isLast: false,
+							} as ContentPartView)
+						}
+					} else {
+						result.push({
+							type: part.type,
+							text: part.text,
+							url: part.url,
+							path: part.path,
+							filename: part.filename,
+							caption: part.caption,
+							isLast: false,
+						} as ContentPartView)
+					}
+				}
+				if (result.length > 0) {
+					result[result.length - 1].isLast = true
 				}
 				return result
 			},
@@ -388,7 +488,40 @@
 				} as DisplayBlock
 			},
 			isLastContentPart(index: number): boolean {
+				if (this.role == 'assistant') {
+					return index == this.renderContentParts.length - 1
+				}
 				return index == this.contentParts.length - 1
+			},
+			splitTextSegments(text: string): string[] {
+				const result: string[] = []
+				if (text == '') {
+					return result
+				}
+				const normalized = text.replace(/\r/g, '\n')
+				const lines = normalized.split('\n')
+				let para = ''
+				for (let i = 0; i < lines.length; i++) {
+					const raw = lines[i]
+					if (raw.trim() == '') {
+						if (para != '') {
+							result.push(para.trim())
+							para = ''
+						}
+					} else {
+						if (para != '') {
+							para = para + '\n'
+						}
+						para = para + raw
+					}
+				}
+				if (para != '') {
+					result.push(para.trim())
+				}
+				if (result.length == 0 && text.trim() != '') {
+					result.push(text.trim())
+				}
+				return result
 			},
 			syncToolTimer() {
 				let hasRunning = false
@@ -625,6 +758,14 @@
 	}
 	.ai-avatar-image {
 		margin-right: 16rpx;
+	}
+	.ai-avatar-spacer {
+		background-color: transparent;
+		margin-right: 16rpx;
+	}
+	.assistant-segment-list {
+		flex-direction: column;
+		align-items: flex-start;
 	}
 	.bubble-assistant {
 		flex-direction: column;

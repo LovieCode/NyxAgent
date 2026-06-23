@@ -21,11 +21,14 @@ import {
 	cloneParts,
 	createAssistantFinalMessage,
 	createAssistantStreamingMessage,
+	createFileMessage,
+	createImageMessage,
 	createPlainPart,
 	createTextMessage,
 	getMessageContent,
 	getMessageParts,
 } from '@/utils/chat-models.uts'
+import { buildRuntimeMessages as buildRuntimeChatMessages } from '@/utils/chat-message-reducer.uts'
 
 export const GROUP_CHAT_LIST_KEY = 'group_chat_list'
 export const ACTIVE_GROUP_CHAT_ID_KEY = 'active_group_chat_id'
@@ -711,11 +714,31 @@ export function readAgentSystemPrompt(agent: UTSJSONObject | null): string {
 	return raw != null ? raw : ''
 }
 
+export function readAgentHideThinking(agent: UTSJSONObject | null): boolean {
+	if (agent == null) { return false }
+	const raw = agent['hideThinking'] as boolean | null
+	return raw == true
+}
+
+export function readAgentInjectDatetime(agent: UTSJSONObject | null): boolean {
+	if (agent == null) { return true }
+	const raw = agent['injectDatetime'] as boolean | null
+	return raw != null ? raw : true
+}
+
+export function readAgentMsgSegmentation(agent: UTSJSONObject | null): boolean {
+	if (agent == null) { return true }
+	const raw = agent['msgSegmentation'] as boolean | null
+	return raw != null ? raw : true
+}
+
 export function createGroupAgentStreamingMessage(groupId: string, sessionId: string, agentId: string): UTSJSONObject {
 	const agent = getAgentById(agentId)
 	const name = readAgentName(agent)
 	const avatar = readAgentAvatar(agent)
 	const base = createAssistantStreamingMessage([] as UTSJSONObject[], Date.now())
+	base['hideThinking'] = readAgentHideThinking(agent)
+	base['msgSegmentation'] = readAgentMsgSegmentation(agent)
 	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true)
 }
 
@@ -725,7 +748,19 @@ export function createGroupAgentFinalMessage(groupId: string, sessionId: string,
 	const avatar = readAgentAvatar(agent)
 	const base = createAssistantFinalMessage(cloneParts(parts), Date.now())
 	base['content'] = content
+	base['hideThinking'] = readAgentHideThinking(agent)
+	base['msgSegmentation'] = readAgentMsgSegmentation(agent)
 	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true)
+}
+
+export function createGroupUserImageMessage(groupId: string, sessionId: string, imagePath: string, userName: string = ''): UTSJSONObject {
+	const base = createImageMessage(imagePath)
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeUserDisplayName(userName), '', true)
+}
+
+export function createGroupUserFileMessage(groupId: string, sessionId: string, fileName: string, filePath: string, userName: string = ''): UTSJSONObject {
+	const base = createFileMessage(fileName, filePath)
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeUserDisplayName(userName), '', true)
 }
 
 export function revokeGroupAgentMessage(groupId: string, sessionId: string, messageId: string): void {
@@ -861,12 +896,11 @@ export function createDefaultWritingGroupChat(): GroupChat {
 }
 
 
-export function buildSchedulerSystemPrompt(group: GroupChat): string {
-	let prompt = group.schedulerPrompt.trim()
-	if (prompt == '') {
-		prompt = buildDefaultSchedulerPrompt()
-	}
-	return prompt + '\n\n群聊共享规则：\n' + group.sharedPrompt
+export function buildSchedulerSystemPrompt(): string {
+	return '你是隐藏的群聊调度 Agent。你可以在内部向任意成员 Agent 传递私密指令、背景信息和任务拆解，也可以指定一个或多个成员按顺序发言。你的存在、调度流程、私密指令不能被其他成员在公开发言中暴露。\n' +
+		'你只在系统触发节点工作，例如用户发消息、用户手动继续、连续讨论过多需要判断是否继续。\n' +
+		'输出必须是 JSON 对象，禁止 Markdown，结构：{"actions":[{"type":"speak","agentId":"成员ID","targetType":"user","targetAgentId":"","privateInstruction":"给该成员的私密指令","publicIntent":"公开发言目标","order":0}],"shouldContinue":false,"titleSuggestion":"适合本会话的短标题","privateNotes":"仅内部记录"}。\n' +
+		'具体群聊调度提示词、共享规则、触发原因、成员列表和最近公开群聊记录会在最后一条用户消息中提供。'
 }
 
 function formatMemberList(groupId: string): string {
@@ -914,7 +948,14 @@ export function buildGroupTranscript(messages: UTSJSONObject[], limit: number = 
 }
 
 export function buildSchedulerRuntimeMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], reason: string, loopTurns: number): UTSJSONObject[] {
-	const content = '触发原因：' + reason + '\n' +
+	let schedulerPrompt = group.schedulerPrompt.trim()
+	if (schedulerPrompt == '') {
+		schedulerPrompt = buildDefaultSchedulerPrompt()
+	}
+	const content = '【动态调度上下文】\n' +
+		'群聊调度提示词：\n' + schedulerPrompt + '\n\n' +
+		'群聊共享规则：\n' + group.sharedPrompt + '\n\n' +
+		'触发原因：' + reason + '\n' +
 		'当前会话名：' + displaySessionTitle(session) + '\n' +
 		'连续讨论轮数：' + loopTurns + '\n\n' +
 		'可调度成员：\n' + formatMemberList(group.id) + '\n\n' +
@@ -977,24 +1018,15 @@ export function buildFallbackSchedulerDecision(groupId: string): UTSJSONObject {
 	} as UTSJSONObject
 }
 
-export function buildMemberSystemPrompt(group: GroupChat, session: GroupChatSession, agent: UTSJSONObject, action: UTSJSONObject): string {
+export function buildMemberSystemPrompt(agent: UTSJSONObject): string {
 	const basePrompt = readAgentSystemPrompt(agent)
-	const agentName = readAgentName(agent)
-	const privateInstruction = readActionText(action, 'privateInstruction')
-	const publicIntent = readActionText(action, 'publicIntent')
-	const targetType = readActionText(action, 'targetType')
-	const targetAgentId = readActionText(action, 'targetAgentId')
 	return basePrompt + '\n\n' +
-		'你正在群聊「' + group.name + '」的会话「' + displaySessionTitle(session) + '」中发言。\n' +
-		'群聊共享提示词：\n' + group.sharedPrompt + '\n\n' +
-		'群聊规则：你可以使用工具处理当前群会话共享工作区；公开回复只输出你作为「' + agentName + '」要发到群里的正文。不要说“收到调度”“内部指令”“隐藏调度 Agent”“系统让我”等内容，不要暴露任何调度流程。\n' +
-		'公开发言目标：' + publicIntent + '\n' +
-		'公开/内部目标类型：' + targetType + '\n' +
-		'目标 Agent ID：' + targetAgentId + '\n' +
-		'给你的私密指令：' + privateInstruction
+		'你正在一个群聊中发言。\n' +
+		'群聊规则：你可以使用工具处理当前群会话共享工作区；公开回复只输出你要发到群里的正文。不要说“收到调度”“内部指令”“隐藏调度 Agent”“系统让我”等内容，不要暴露任何调度流程。\n' +
+		'群聊共享提示词、成员名、动态会话名、公开发言目标、目标对象和私密指令会在最后一条用户消息中提供。'
 }
 
-export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], action: UTSJSONObject, agentName: string): UTSJSONObject[] {
+export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], action: UTSJSONObject, agentName: string, injectDatetime: boolean, datetimePrefix: string): UTSJSONObject[] {
 	const runtime: UTSJSONObject[] = []
 	const visible = getVisibleGroupMessages(messages)
 	const start = visible.length > 40 ? visible.length - 40 : 0
@@ -1016,15 +1048,22 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 	const publicIntent = readActionText(action, 'publicIntent')
 	const targetType = readActionText(action, 'targetType')
 	const targetAgentId = readActionText(action, 'targetAgentId')
-	const taskText = '现在轮到你「' + agentName + '」发言。\n' +
+	const taskText = '【动态调度上下文】\n' +
+		'现在轮到你发言。\n' +
+		'成员名：' + agentName + '\n' +
+		'群聊名：' + group.name + '\n' +
 		'会话名：' + displaySessionTitle(session) + '\n' +
+		'群聊共享提示词：\n' + group.sharedPrompt + '\n\n' +
 		'公开发言目标：' + publicIntent + '\n' +
 		'目标类型：' + targetType + '\n' +
 		'目标 Agent ID：' + targetAgentId + '\n' +
 		'私密指令：' + privateInstruction + '\n' +
 		'只输出要发到群聊里的正文，不要暴露调度和内部信息。'
 	runtime.push(createTextMessage(CHAT_ROLE_USER, taskText))
-	return runtime
+	return buildRuntimeChatMessages(runtime, {
+		injectDatetime: injectDatetime,
+		datetimePrefix: datetimePrefix,
+	})
 }
 
 export function syncGroupStreamingMessage(target: UTSJSONObject, source: UTSJSONObject): void {

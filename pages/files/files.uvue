@@ -188,7 +188,13 @@
 			}
 		},
 		onLoad() {
-			this.currentPath = VIRTUAL_ROOT
+			const initialPath = uni.getStorageSync('files_initial_path') as string | null
+			if (initialPath != null && initialPath != '') {
+				this.currentPath = initialPath
+				uni.removeStorageSync('files_initial_path')
+			} else {
+				this.currentPath = VIRTUAL_ROOT
+			}
 			this.refreshList()
 		},
 		onBackPress(): boolean {
