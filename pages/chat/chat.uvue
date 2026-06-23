@@ -555,13 +555,6 @@
 						uni.showToast({ position: 'bottom', title: '图片转述未配置或失败，已直接发送', icon: 'none' })
 					}
 					this.startGenerationForMedia(fallbackPrompt)
-				}).catch((_err: any) => {
-					if (taskId != this.imageCaptionTaskId) {
-						return
-					}
-					this.isGenerating = false
-					uni.showToast({ position: 'bottom', title: '图片转述失败，已直接发送', icon: 'none' })
-					this.startGenerationForMedia(fallbackPrompt)
 				})
 			},
 

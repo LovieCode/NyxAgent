@@ -2113,51 +2113,56 @@ export function buildAgentContextPreview(
 
 export function captionImage(imagePath: string, prompt: string = ''): Promise<string | null> {
 	return new Promise<string | null>((resolve) => {
-		if (imagePath == '') {
-			resolve(null)
-			return
-		}
-		const taskModel = getVisionTaskModel()
-		if (taskModel == null) {
-			resolve(null)
-			return
-		}
-		const providerIdRaw = taskModel['providerId'] as string | null
-		const modelRaw = taskModel['model'] as string | null
-		const providerId = providerIdRaw != null ? providerIdRaw : ''
-		const model = modelRaw != null ? modelRaw : ''
-		if (providerId == '' || model == '') {
-			resolve(null)
-			return
-		}
-		const config = resolveLLMConfig(providerId, model)
-		if (config == null) {
-			resolve(null)
-			return
-		}
-		let captionPrompt = prompt
-		if (captionPrompt == '') {
-			captionPrompt = getImageCaptionPrompt()
-		}
-		const contentJson = buildImageUserMessageContent(captionPrompt, imagePath)
-		if (contentJson == null) {
-			resolve(null)
-			return
-		}
-		const messages: UTSJSONObject[] = [{
-			role: 'user',
-			content: contentJson,
-		} as UTSJSONObject]
-		const baseUrl = normalizeBaseUrl(config.baseUrl)
-		const settings = getGlobalGenerationSettings()
-		callImageCaptionAPI(baseUrl, config.apiKey, config.model, messages, settings, (text: string | null) => {
-			if (text == null) {
+		try {
+			if (imagePath == '') {
 				resolve(null)
 				return
 			}
-			const cleaned = text.trim()
-			resolve(cleaned != '' ? cleaned : null)
-		})
+			const taskModel = getVisionTaskModel()
+			if (taskModel == null) {
+				resolve(null)
+				return
+			}
+			const providerIdRaw = taskModel['providerId'] as string | null
+			const modelRaw = taskModel['model'] as string | null
+			const providerId = providerIdRaw != null ? providerIdRaw : ''
+			const model = modelRaw != null ? modelRaw : ''
+			if (providerId == '' || model == '') {
+				resolve(null)
+				return
+			}
+			const config = resolveLLMConfig(providerId, model)
+			if (config == null) {
+				resolve(null)
+				return
+			}
+			let captionPrompt = prompt
+			if (captionPrompt == '') {
+				captionPrompt = getImageCaptionPrompt()
+			}
+			const contentJson = buildImageUserMessageContent(captionPrompt, imagePath)
+			if (contentJson == null) {
+				resolve(null)
+				return
+			}
+			const messages: UTSJSONObject[] = [{
+				role: 'user',
+				content: contentJson,
+			} as UTSJSONObject]
+			const baseUrl = normalizeBaseUrl(config.baseUrl)
+			const settings = getGlobalGenerationSettings()
+			callImageCaptionAPI(baseUrl, config.apiKey, config.model, messages, settings, (text: string | null) => {
+				if (text == null) {
+					resolve(null)
+					return
+				}
+				const cleaned = text.trim()
+				resolve(cleaned != '' ? cleaned : null)
+			})
+		} catch (_e: any) {
+			console.log('[LLM] 图片转述异常: ' + _e)
+			resolve(null)
+		}
 	})
 }
 
