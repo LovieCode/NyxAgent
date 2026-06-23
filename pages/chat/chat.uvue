@@ -33,6 +33,7 @@
 					:parts="getMessagePartsForView(msg)"
 					:agentAvatar="currentAgentAvatar"
 					:userNickname="userNickname"
+					:userDisplayName="msg.role == 'user' ? userNickname : ''"
 					:userAvatar="userAvatar"
 					:toolName="msg.toolName != null ? msg.toolName : ''"
 					:hideThinking="hideThinking"

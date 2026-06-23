@@ -3,8 +3,8 @@
 		<NavBar title="历史记录" showBack @back="handleBack">
 			<template #right>
 				<view v-if="!editMode" class="nav-right">
-					<text class="nav-btn" v-if="historyList.length > 0" @click="enterEditMode">管理</text>
-					<text class="nav-btn" v-if="historyList.length > 0" @click="confirmClear">清空</text>
+					<text class="nav-btn" v-if="currentHistoryLength > 0" @click="enterEditMode">管理</text>
+					<text class="nav-btn" v-if="currentHistoryLength > 0" @click="confirmClear">清空</text>
 				</view>
 				<view v-else class="nav-right">
 					<text class="nav-btn" @click="selectAll">全选</text>
@@ -14,12 +14,20 @@
 			</template>
 		</NavBar>
 		<view class="history-page">
+			<view class="history-tabs">
+				<view class="history-tab" :class="activeTab == 'agent' ? 'history-tab-active' : ''" @click="switchTab('agent')">
+					<text class="history-tab-text" :class="activeTab == 'agent' ? 'history-tab-text-active' : ''">私聊</text>
+				</view>
+				<view class="history-tab" :class="activeTab == 'group' ? 'history-tab-active' : ''" @click="switchTab('group')">
+					<text class="history-tab-text" :class="activeTab == 'group' ? 'history-tab-text-active' : ''">群聊</text>
+				</view>
+			</view>
 
 			<!-- 历史列表 -->
 			<scroll-view class="list-scroll" :scroll-y="true">
-				<view v-if="historyList.length > 0" class="list-content">
+				<view v-if="currentHistoryLength > 0" class="list-content">
 					<view
-						v-for="(item, index) in historyList"
+						v-for="(item, index) in currentHistoryList"
 						:key="index"
 						class="history-card"
 						:class="isSelected(item['id'] as string) ? 'card-selected' : ''"
@@ -55,7 +63,7 @@
 				<view v-else class="empty-state">
 					<oui-icon-unix name="time-circle" size="96rpx" color="#D1D5DB" />
 					<text class="empty-text">暂无历史记录</text>
-					<text class="empty-hint">开始对话后，记录将自动保存在这里</text>
+					<text class="empty-hint">{{activeTab == 'group' ? '群聊讨论后，会话记录会出现在这里' : '开始对话后，记录将自动保存在这里'}}</text>
 				</view>
 			</scroll-view>
 		</view>
@@ -67,15 +75,34 @@
 	 * 历史记录页面 - 展示过往对话列表，支持批量管理
 	 */
 	import { getConversations, getMessages, deleteConversation } from '@/utils/database.uts'
+	import {
+		ACTIVE_GROUP_CHAT_ID_KEY,
+		ACTIVE_GROUP_SESSION_ID_KEY,
+		deleteGroupSession,
+		displaySessionTitle,
+		getGroupChats,
+		getGroupMessages,
+		getGroupSessions,
+	} from '@/utils/group-chat-service.uts'
 
 	export default {
 		data() {
 			return {
 				historyList: [] as UTSJSONObject[],
+				groupHistoryList: [] as UTSJSONObject[],
+				activeTab: 'agent' as string,
 				editMode: false as boolean,
 				/** 选中的对话 id 列表 */
 				selectedIds: [] as string[],
 			}
+		},
+		computed: {
+			currentHistoryList(): UTSJSONObject[] {
+				return this.activeTab == 'group' ? this.groupHistoryList : this.historyList
+			},
+			currentHistoryLength(): number {
+				return this.activeTab == 'group' ? this.groupHistoryList.length : this.historyList.length
+			},
 		},
 		onLoad() {
 			this.loadHistory()
@@ -156,6 +183,87 @@
 				} catch (_e: any) {
 					this.historyList = []
 				}
+				this.loadGroupHistory()
+			},
+
+			loadGroupHistory(): void {
+				const result: UTSJSONObject[] = []
+				const groups = getGroupChats()
+				for (let gi = 0; gi < groups.length; gi++) {
+					const group = groups[gi]
+					const sessions = getGroupSessions(group.id)
+					for (let si = 0; si < sessions.length; si++) {
+						const session = sessions[si]
+						const messages = getGroupMessages(group.id, session.id)
+						const visibleCount = this.countVisibleGroupMessages(messages)
+						if (visibleCount <= 0) { continue }
+						result.push({
+							id: group.id + ':' + session.id,
+							type: 'group',
+							group_id: group.id,
+							session_id: session.id,
+							title: group.name + ' / ' + displaySessionTitle(session),
+							created_at: session.createdAt,
+							updated_at: session.updatedAt,
+							message_count: visibleCount,
+							preview: this.buildGroupPreview(messages),
+							model: '群聊',
+						} as UTSJSONObject)
+					}
+				}
+				result.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
+					const at = a['updated_at'] as number | null
+					const bt = b['updated_at'] as number | null
+					const av = at != null ? at : 0
+					const bv = bt != null ? bt : 0
+					if (av == bv) { return 0 }
+					return av > bv ? -1 : 1
+				})
+				this.groupHistoryList = result
+			},
+
+			switchTab(tab: string): void {
+				if (this.activeTab == tab) { return }
+				this.activeTab = tab
+				this.exitEditMode()
+			},
+
+			countVisibleGroupMessages(messages: UTSJSONObject[]): number {
+				let count = 0
+				for (let i = 0; i < messages.length; i++) {
+					const visible = messages[i]['visible'] as boolean | null
+					if (visible != false) { count++ }
+				}
+				return count
+			},
+
+			resolveGroupPreviewSenderName(senderName: string | null, senderType: string | null, role: string | null): string {
+				const name = senderName != null ? senderName.trim() : ''
+				if (senderType == 'user' || role == 'user') {
+					if (name != '' && name != '用户') { return name }
+					const raw = uni.getStorageSync('profile_nickname') as string | null
+					const profileName = raw != null ? raw.trim() : ''
+					return profileName != '' ? profileName : '用户'
+				}
+				return name != '' ? name : '成员'
+			},
+
+			buildGroupPreview(messages: UTSJSONObject[]): string {
+				for (let i = messages.length - 1; i >= 0; i--) {
+					const msg = messages[i]
+					const visible = msg['visible'] as boolean | null
+					if (visible == false) { continue }
+					const senderName = msg['senderName'] as string | null
+					const senderType = msg['senderType'] as string | null
+					const role = msg['role'] as string | null
+					const name = this.resolveGroupPreviewSenderName(senderName, senderType, role)
+					const content = this.renderMessagePartsMarkdown(msg)
+					if (content != '') {
+						const text = content.length > 50 ? content.substring(0, 50) + '...' : content
+						return name + '：' + text
+					}
+				}
+				return '暂无预览'
 			},
 
 			formatTime(ts: any | null): string {
@@ -237,13 +345,14 @@
 			},
 
 			selectAll() {
-				if (this.selectedIds.length == this.historyList.length) {
+				const list = this.currentHistoryList
+				if (this.selectedIds.length == list.length) {
 					// 已全选 → 取消全选
 					this.selectedIds = []
 				} else {
 					const all: string[] = []
-					for (let i = 0; i < this.historyList.length; i++) {
-						all.push(this.historyList[i]['id'] as string)
+					for (let i = 0; i < list.length; i++) {
+						all.push(list[i]['id'] as string)
 					}
 					this.selectedIds = all
 				}
@@ -260,7 +369,11 @@
 					success: (res) => {
 						if (res.confirm == true) {
 							for (let i = 0; i < this.selectedIds.length; i++) {
-								deleteConversation(this.selectedIds[i])
+								if (this.activeTab == 'group') {
+									this.deleteGroupHistoryById(this.selectedIds[i])
+								} else {
+									deleteConversation(this.selectedIds[i])
+								}
 							}
 							this.selectedIds = []
 							this.editMode = false
@@ -288,6 +401,18 @@
 				if (this.editMode) {
 					return
 				}
+				if (this.activeTab == 'group') {
+					uni.showActionSheet({
+						itemList: ['管理'],
+						success: (res) => {
+							if (res.tapIndex == 0) {
+								this.enterEditMode()
+								this.toggleItem(item['id'] as string)
+							}
+						}
+					})
+					return
+				}
 				uni.showActionSheet({
 					itemList: ['导出 Markdown', '管理'],
 					success: (res) => {
@@ -303,10 +428,41 @@
 			},
 
 			openConversation(item: UTSJSONObject) {
+				if (this.activeTab == 'group') {
+					this.openGroupConversation(item)
+					return
+				}
 				uni.setStorageSync('active_conversation_id', item['id'] as string)
 				uni.redirectTo({
 					url: '/pages/chat/chat'
 				})
+			},
+
+			openGroupConversation(item: UTSJSONObject): void {
+				const groupId = item['group_id'] as string | null
+				const sessionId = item['session_id'] as string | null
+				if (groupId == null || groupId == '' || sessionId == null || sessionId == '') {
+					uni.showToast({ position: 'bottom', title: '群聊会话不存在', icon: 'none' })
+					return
+				}
+				uni.setStorageSync(ACTIVE_GROUP_CHAT_ID_KEY, groupId)
+				uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, sessionId)
+				uni.redirectTo({ url: '/pages/group-chat/group-chat' })
+			},
+
+			deleteGroupHistoryById(id: string): void {
+				for (let i = 0; i < this.groupHistoryList.length; i++) {
+					const item = this.groupHistoryList[i]
+					const itemId = item['id'] as string | null
+					if (itemId == id) {
+						const groupId = item['group_id'] as string | null
+						const sessionId = item['session_id'] as string | null
+						if (groupId != null && groupId != '' && sessionId != null && sessionId != '') {
+							deleteGroupSession(groupId, sessionId, false)
+						}
+						return
+					}
+				}
 			},
 
 			/** 导出对话为 Markdown，并复制到剪贴板 */
@@ -362,13 +518,19 @@
 			confirmClear() {
 				uni.showModal({
 					title: '清空历史记录',
-					content: '确定要清空所有对话历史吗？此操作无法撤销。',
+					content: this.activeTab == 'group' ? '确定要清空所有群聊会话历史吗？此操作无法撤销。' : '确定要清空所有对话历史吗？此操作无法撤销。',
 					success: (res) => {
 						if (res.confirm == true) {
-							for (let i = 0; i < this.historyList.length; i++) {
-								deleteConversation(this.historyList[i]['id'] as string)
+							const list = this.currentHistoryList
+							for (let i = 0; i < list.length; i++) {
+								const id = list[i]['id'] as string
+								if (this.activeTab == 'group') {
+									this.deleteGroupHistoryById(id)
+								} else {
+									deleteConversation(id)
+								}
 							}
-							this.historyList = []
+							this.loadHistory()
 							uni.showToast({ position: 'bottom',
 								title: '已清空',
 								icon: 'success'
@@ -402,6 +564,39 @@
 
 	.nav-btn-danger {
 		color: #EF4444;
+	}
+
+	.history-tabs {
+		flex-direction: row;
+		margin-left: 32rpx;
+		margin-right: 32rpx;
+		margin-top: 24rpx;
+		padding: 8rpx;
+		border-radius: 999rpx;
+		background-color: var(--rice-background-2);
+	}
+
+	.history-tab {
+		flex: 1;
+		align-items: center;
+		justify-content: center;
+		padding-top: 18rpx;
+		padding-bottom: 18rpx;
+		border-radius: 999rpx;
+	}
+
+	.history-tab-active {
+		background-color: var(--rice-primary-color);
+	}
+
+	.history-tab-text {
+		font-size: 28rpx;
+		color: var(--rice-text-color-3);
+		font-weight: bold;
+	}
+
+	.history-tab-text-active {
+		color: #FFFFFF;
 	}
 
 	/* 列表滚动区 */

@@ -22,7 +22,7 @@
 					:agentAvatar="msg.senderAvatar != null ? msg.senderAvatar : ''"
 					:assistantName="isAgentMessage(msg) ? readMessageSenderName(msg) : ''"
 					:userNickname="userNickname"
-					:userDisplayName="isUserMessage(msg) ? readMessageSenderName(msg) : ''"
+					:userDisplayName="isUserMessage(msg) ? readUserMessageSenderName(msg) : ''"
 					:userAvatar="userAvatar"
 					:toolName="msg.toolName != null ? msg.toolName : ''"
 					:hideThinking="false"
@@ -183,6 +183,7 @@
 				this.session = session
 				uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, session.id)
 				this.messages = getGroupMessages(group.id, session.id)
+				this.normalizeUserSenderNames()
 				this.scrollToBottom()
 			},
 			goBack(): void { uni.navigateBack() },
@@ -211,6 +212,32 @@
 				const raw = msg['senderName'] as string | null
 				return raw != null ? raw : ''
 			},
+			readUserMessageSenderName(msg: UTSJSONObject): string {
+				const raw = msg['senderName'] as string | null
+				const name = raw != null ? raw.trim() : ''
+				if (name != '' && name != '用户') { return name }
+				return this.userNickname != '' ? this.userNickname : '用户'
+			},
+			normalizeUserSenderNames(): void {
+				const displayName = this.userNickname != '' ? this.userNickname : '用户'
+				if (displayName == '用户') { return }
+				let changed = false
+				for (let i = 0; i < this.messages.length; i++) {
+					const msg = this.messages[i]
+					const senderType = msg['senderType'] as string | null
+					if (senderType == GROUP_MESSAGE_SENDER_USER) {
+						const raw = msg['senderName'] as string | null
+						const name = raw != null ? raw.trim() : ''
+						if (name == '' || name == '用户') {
+							msg['senderName'] = displayName
+							changed = true
+						}
+					}
+				}
+				if (changed == true) {
+					this.saveMessages()
+				}
+			},
 			scrollToBottom(): void {
 				setTimeout(() => { this.scrollTop = this.scrollTop + 999999 }, 80)
 			},
@@ -233,7 +260,10 @@
 				if (this.isGenerating == true) { return }
 				this.inputText = ''
 				this.showToolPanel = false
-				const msg = createGroupUserMessage(this.groupId, this.sessionId, text, this.userNickname)
+				const profile = loadChatUserProfile()
+				this.userNickname = profile.nickname
+				this.userAvatar = profile.avatar
+				const msg = createGroupUserMessage(this.groupId, this.sessionId, text, profile.nickname)
 				this.messages.push(msg)
 				this.saveMessages()
 				this.scrollToBottom()

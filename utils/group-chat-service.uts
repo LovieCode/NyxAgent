@@ -777,6 +777,21 @@ function formatMemberList(groupId: string): string {
 	return lines.join('\n')
 }
 
+function readCurrentUserDisplayName(): string {
+	const raw = uni.getStorageSync('profile_nickname') as string | null
+	const name = raw != null ? raw.trim() : ''
+	return name != '' ? name : '用户'
+}
+
+function resolveGroupSenderDisplayName(senderName: string | null, senderType: string | null, role: string | null): string {
+	const name = senderName != null ? senderName.trim() : ''
+	if (senderType == GROUP_MESSAGE_SENDER_USER || role == CHAT_ROLE_USER) {
+		if (name != '' && name != '用户') { return name }
+		return readCurrentUserDisplayName()
+	}
+	return name != '' ? name : '成员'
+}
+
 export function buildGroupTranscript(messages: UTSJSONObject[], limit: number = 30): string {
 	const visible = getVisibleGroupMessages(messages)
 	const start = visible.length > limit ? visible.length - limit : 0
@@ -786,10 +801,7 @@ export function buildGroupTranscript(messages: UTSJSONObject[], limit: number = 
 		const role = msg['role'] as string | null
 		const senderType = msg['senderType'] as string | null
 		const senderName = msg['senderName'] as string | null
-		let name = senderName != null && senderName != '' ? senderName : '用户'
-		if (senderType == GROUP_MESSAGE_SENDER_USER || role == CHAT_ROLE_USER) {
-			name = senderName != null && senderName != '' ? senderName : '用户'
-		}
+		const name = resolveGroupSenderDisplayName(senderName, senderType, role)
 		const content = getMessageContent(msg)
 		if (content.trim() != '') {
 			lines.push(name + '：' + content)
@@ -894,10 +906,7 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 		const senderType = msg['senderType'] as string | null
 		const senderName = msg['senderName'] as string | null
 		const role = msg['role'] as string | null
-		let label = senderName != null && senderName != '' ? senderName : '用户'
-		if (senderType == GROUP_MESSAGE_SENDER_USER || role == CHAT_ROLE_USER) {
-			label = senderName != null && senderName != '' ? senderName : '用户'
-		}
+		const label = resolveGroupSenderDisplayName(senderName, senderType, role)
 		const content = getMessageContent(msg)
 		if (content.trim() == '') { continue }
 		if (role == CHAT_ROLE_ASSISTANT) {
