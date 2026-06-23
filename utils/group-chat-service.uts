@@ -569,9 +569,14 @@ function decorateGroupMessage(base: UTSJSONObject, groupId: string, sessionId: s
 	return base
 }
 
-export function createGroupUserMessage(groupId: string, sessionId: string, content: string): UTSJSONObject {
+function normalizeUserDisplayName(userName: string): string {
+	const name = userName.trim()
+	return name != '' ? name : '用户'
+}
+
+export function createGroupUserMessage(groupId: string, sessionId: string, content: string, userName: string = ''): UTSJSONObject {
 	const base = createTextMessage(CHAT_ROLE_USER, content)
-	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', '用户', '', true)
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeUserDisplayName(userName), '', true)
 }
 
 export function createGroupHiddenMessage(groupId: string, sessionId: string, senderType: string, content: string): UTSJSONObject {
@@ -783,7 +788,7 @@ export function buildGroupTranscript(messages: UTSJSONObject[], limit: number = 
 		const senderName = msg['senderName'] as string | null
 		let name = senderName != null && senderName != '' ? senderName : '用户'
 		if (senderType == GROUP_MESSAGE_SENDER_USER || role == CHAT_ROLE_USER) {
-			name = '用户'
+			name = senderName != null && senderName != '' ? senderName : '用户'
 		}
 		const content = getMessageContent(msg)
 		if (content.trim() != '') {
@@ -891,7 +896,7 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 		const role = msg['role'] as string | null
 		let label = senderName != null && senderName != '' ? senderName : '用户'
 		if (senderType == GROUP_MESSAGE_SENDER_USER || role == CHAT_ROLE_USER) {
-			label = '用户'
+			label = senderName != null && senderName != '' ? senderName : '用户'
 		}
 		const content = getMessageContent(msg)
 		if (content.trim() == '') { continue }

@@ -31,61 +31,64 @@
 			<view v-else class="chat-avatar ai-avatar" @click.stop="onAvatarClick">
 				<text class="chat-avatar-text">AI</text>
 			</view>
-			<view class="ai-content timeline-content" :class="isPressed ? 'bubble-pressed' : ''"
-				@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
-				@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
-				@touchend="onBubbleTouchEnd">
-				<view v-if="reasoningBlocks.length > 0 && hideThinking == false" class="reasoning-panel">
-					<view class="reasoning-header" @click.stop="thinkingExpanded = !thinkingExpanded">
-						<text class="thinking-step-icon">{{thinkingExpanded ? '↑' : '↓'}}</text>
-						<text class="thinking-step-label">思考过程</text>
-					</view>
-					<view v-if="thinkingExpanded == true" class="reasoning-body">
-						<view v-for="(block, bi) in reasoningBlocks" :key="'reasoning-' + bi" class="block-entry">
-							<text v-if="block.type == 'thinking'" class="thinking-step-text">{{block.thinking}}</text>
-							<view v-else-if="block.type == 'toolCall'" class="tool-call-step" @click.stop="toggleToolCallExpand(bi)">
-								<view class="tool-call-card">
-									<view class="tool-call-card-header">
-										<view class="tool-call-card-left">
-											<text class="tool-call-status">{{getToolStatusText(block)}}</text>
-											<text class="tool-call-card-name">{{getToolDisplayName(block.name)}}</text>
+			<view class="ai-stack">
+				<text v-if="assistantName != ''" class="assistant-name">{{assistantName}}</text>
+				<view class="ai-content timeline-content" :class="isPressed ? 'bubble-pressed' : ''"
+					@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
+					@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
+					@touchend="onBubbleTouchEnd">
+					<view v-if="reasoningBlocks.length > 0 && hideThinking == false" class="reasoning-panel">
+						<view class="reasoning-header" @click.stop="thinkingExpanded = !thinkingExpanded">
+							<text class="thinking-step-icon">{{thinkingExpanded ? '↑' : '↓'}}</text>
+							<text class="thinking-step-label">思考过程</text>
+						</view>
+						<view v-if="thinkingExpanded == true" class="reasoning-body">
+							<view v-for="(block, bi) in reasoningBlocks" :key="'reasoning-' + bi" class="block-entry">
+								<text v-if="block.type == 'thinking'" class="thinking-step-text">{{block.thinking}}</text>
+								<view v-else-if="block.type == 'toolCall'" class="tool-call-step" @click.stop="toggleToolCallExpand(bi)">
+									<view class="tool-call-card">
+										<view class="tool-call-card-header">
+											<view class="tool-call-card-left">
+												<text class="tool-call-status">{{getToolStatusText(block)}}</text>
+												<text class="tool-call-card-name">{{getToolDisplayName(block.name)}}</text>
+											</view>
+											<view class="tool-call-card-right">
+												<text v-if="block.ts > 0 && (_renderSwitch == true || _renderSwitch == false)" :key="'elapsed-' + bi + '-' + timerTick + '-' + _renderSwitch" class="tool-call-elapsed">{{getToolElapsed(block)}}</text>
+												<text class="tool-call-chevron">{{getToolCallExpanded(bi) ? '收起' : '详情'}}</text>
+											</view>
 										</view>
-										<view class="tool-call-card-right">
-											<text v-if="block.ts > 0 && (_renderSwitch == true || _renderSwitch == false)" :key="'elapsed-' + bi + '-' + timerTick + '-' + _renderSwitch" class="tool-call-elapsed">{{getToolElapsed(block)}}</text>
-											<text class="tool-call-chevron">{{getToolCallExpanded(bi) ? '收起' : '详情'}}</text>
-										</view>
-									</view>
-									<view v-if="getToolCallExpanded(bi) == true" class="tool-call-card-detail">
-										<view class="tool-detail-section">
-											<text class="tool-detail-label">参数</text>
-											<text class="tool-detail-value">{{block.args}}</text>
-										</view>
-										<view v-if="block.result != ''" class="tool-detail-section">
-											<text class="tool-detail-label">结果</text>
-											<text class="tool-detail-value">{{block.result}}</text>
+										<view v-if="getToolCallExpanded(bi) == true" class="tool-call-card-detail">
+											<view class="tool-detail-section">
+												<text class="tool-detail-label">参数</text>
+												<text class="tool-detail-value">{{block.args}}</text>
+											</view>
+											<view v-if="block.result != ''" class="tool-detail-section">
+												<text class="tool-detail-label">结果</text>
+												<text class="tool-detail-value">{{block.result}}</text>
+											</view>
 										</view>
 									</view>
 								</view>
 							</view>
 						</view>
 					</view>
-				</view>
 
-				<view v-for="(part, pi) in contentParts" :key="'assistant-part-' + pi" class="part-wrap">
-					<view v-if="part.type == 'image' && part.url != ''" class="image-part">
-						<image :src="part.url" class="bubble-image" mode="widthFix" />
-						<view v-if="part.caption != ''" class="caption-card">
-							<text class="caption-label">图片转述</text>
-							<text class="caption-text">{{part.caption}}</text>
+					<view v-for="(part, pi) in contentParts" :key="'assistant-part-' + pi" class="part-wrap">
+						<view v-if="part.type == 'image' && part.url != ''" class="image-part">
+							<image :src="part.url" class="bubble-image" mode="widthFix" />
+							<view v-if="part.caption != ''" class="caption-card">
+								<text class="caption-label">图片转述</text>
+								<text class="caption-text">{{part.caption}}</text>
+							</view>
+						</view>
+						<text v-else-if="part.type == 'plain' || part.type == 'location'" class="text-assistant-pre">{{part.text}}<text v-if="isStreaming == true && isLastContentPart(pi) == true" class="cursor">|</text></text>
+						<view v-else class="media-chip">
+							<text class="media-chip-text">{{getPartLabel(part)}}</text>
 						</view>
 					</view>
-					<text v-else-if="part.type == 'plain' || part.type == 'location'" class="text-assistant-pre">{{part.text}}<text v-if="isStreaming == true && isLastContentPart(pi) == true" class="cursor">|</text></text>
-					<view v-else class="media-chip">
-						<text class="media-chip-text">{{getPartLabel(part)}}</text>
-					</view>
+					<text v-if="contentParts.length == 0 && content != ''" class="text-assistant-pre">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
+					<text v-if="contentParts.length == 0 && content == '' && isStreaming == true" class="text-assistant-pre"><text class="cursor">|</text></text>
 				</view>
-				<text v-if="contentParts.length == 0 && content != ''" class="text-assistant-pre">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
-				<text v-if="contentParts.length == 0 && content == '' && isStreaming == true" class="text-assistant-pre"><text class="cursor">|</text></text>
 			</view>
 		</view>
 
@@ -173,6 +176,10 @@
 				default: ''
 			},
 			agentAvatar: {
+				type: String,
+				default: ''
+			},
+			assistantName: {
 				type: String,
 				default: ''
 			},
@@ -556,6 +563,20 @@
 	}
 	.ai-content:active {
 		background-color: #E5E7EB;
+	}
+	.ai-stack {
+		flex-direction: column;
+		align-items: flex-start;
+		flex-shrink: 1;
+		max-width: 1000rpx;
+	}
+	.assistant-name {
+		font-size: 22rpx;
+		color: var(--rice-text-color-3);
+		margin-top: 4rpx;
+		margin-bottom: 4rpx;
+		margin-left: 8rpx;
+		line-height: 28rpx;
 	}
 	.chat-avatar {
 		width: 56rpx;
