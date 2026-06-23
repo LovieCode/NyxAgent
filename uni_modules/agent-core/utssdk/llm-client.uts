@@ -1466,7 +1466,7 @@ function callChatAPI(
 				return
 			}
 			saveLastLLMCall(false, false, model, baseUrl, -1, '网络请求失败: ' + _err, null, apiMessages.length, tools.length, 0, false)
-			done('网络请求失败: ' + _err, null, null)
+			done('网络请求失败: ' + _err, null)
 		},
 	})
 }

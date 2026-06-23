@@ -190,14 +190,12 @@
 			goSessions(): void { uni.navigateTo({ url: '/pages/group-chat-sessions/group-chat-sessions' }) },
 			toggleToolPanel(): void { this.showToolPanel = !this.showToolPanel },
 			onMsgScroll(): void { this.longpressCancelToken++ },
-			onInputLineChange(e: any): void {
-				const detail = e.detail as UTSJSONObject
-				const h = detail['height'] as number | null
-				if (h != null) {
-					let next = h
-					if (next < 40) { next = 40 }
-					if (next > 120) { next = 120 }
-					this.inputHeight = next
+			onInputLineChange(e: UniTextareaLineChangeEvent): void {
+				const lineCount = e.detail.lineCount
+				if (lineCount <= 1) {
+					this.inputHeight = 40
+				} else {
+					this.inputHeight = Math.min(lineCount * 22 + 16, 120)
 				}
 			},
 			getMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] { return getMessageParts(msg) },
