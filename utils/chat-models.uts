@@ -113,7 +113,24 @@ export function createImagePart(imagePath: string): UTSJSONObject {
 		type: CHAT_PART_IMAGE,
 		url: imagePath,
 		path: imagePath,
+		caption: '',
 	} as UTSJSONObject
+}
+
+export function setImageMessageCaption(message: UTSJSONObject, caption: string): void {
+	const parts = getMessageParts(message)
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		const type = part['type'] as string | null
+		if (type == CHAT_PART_IMAGE) {
+			part['caption'] = caption
+		}
+	}
+	if (caption != '') {
+		message['content'] = '[图片转述] ' + caption
+	} else {
+		message['content'] = '[图片]'
+	}
 }
 
 export function createFilePart(fileName: string, filePath: string): UTSJSONObject {

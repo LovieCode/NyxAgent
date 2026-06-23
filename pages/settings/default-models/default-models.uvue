@@ -10,6 +10,7 @@
 					<text v-if="isUnimplemented(task)" class="unimplemented-badge">暂未实现</text>
 				</view>
 				<text v-if="isMemoryTask(task)" class="task-desc">不设置时默认使用对话模型；设置后记忆整理 Agent 会单独使用该模型。</text>
+				<text v-if="isVisionTask(task)" class="task-desc">参考 AstrBot：图片会先用该模型转述为文字，再交给对话模型继续回答。</text>
 
 				<!-- 暂未实现的功能显示提示 -->
 				<view v-if="isUnimplemented(task)" class="unimplemented-notice">
@@ -30,6 +31,17 @@
 								class="chip-text"
 								:class="isFollowChatModel(task) ? 'chip-text-active' : ''"
 							>跟随对话模型</text>
+						</view>
+						<view
+							v-if="isVisionTask(task)"
+							class="chip"
+							:class="isVisionDisabled(task) ? 'chip-active' : ''"
+							@click="selectDisableVision(index)"
+						>
+							<text
+								class="chip-text"
+								:class="isVisionDisabled(task) ? 'chip-text-active' : ''"
+							>不转述</text>
 						</view>
 						<view
 							v-for="(p, pi) in allProviders"
@@ -64,9 +76,15 @@
 						</view>
 						<!-- 没有模型时提示 -->
 						<text v-if="isFollowChatModel(task)" class="no-models-hint">当前跟随对话模型</text>
-						<text v-if="getTaskModels(task).length == 0 && isFollowChatModel(task) == false" class="no-models-hint">该提供商未配置模型</text>
+						<text v-if="isVisionDisabled(task)" class="no-models-hint">当前不转述图片</text>
+						<text v-if="getTaskModels(task).length == 0 && isFollowChatModel(task) == false && isVisionDisabled(task) == false" class="no-models-hint">该提供商未配置模型</text>
 					</view>
 				</scroll-view>
+
+				<view v-if="isVisionTask(task)" class="prompt-box">
+					<text class="field-label">图片转述提示词</text>
+					<textarea class="prompt-input" v-model="imageCaptionPrompt" auto-height />
+				</view>
 			</view>
 
 			<view class="save-wrap">
@@ -78,13 +96,14 @@
 </template>
 
 <script lang="uts">
-	import { getAllProviders, setDefaultTaskModel, getAllDefaultTaskModels, getProviderModels, parseModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { getAllProviders, setDefaultTaskModel, getAllDefaultTaskModels, getProviderModels, parseModels, getImageCaptionPrompt, setImageCaptionPrompt } from '@/uni_modules/agent-core/utssdk/provider.uts'
 
 	export default {
 		data() {
 			return {
 				allProviders: [] as UTSJSONObject[],
 				taskList: [] as UTSJSONObject[],
+				imageCaptionPrompt: '',
 			}
 		},
 		onShow() {
@@ -93,12 +112,13 @@
 		methods: {
 			isUnimplemented(task: UTSJSONObject): boolean {
 				const type = task['type'] as string
-				return type == 'vision' || type == 'stt' || type == 'tts'
+				return type == 'stt' || type == 'tts'
 			},
 
 			loadData() {
 				this.allProviders = getAllProviders()
 				this.taskList = getAllDefaultTaskModels()
+				this.imageCaptionPrompt = getImageCaptionPrompt()
 			},
 
 			taskIcon(type: string): string {
@@ -119,6 +139,17 @@
 				const providerId = task['providerId'] as string | null
 				const model = task['model'] as string | null
 				return this.isMemoryTask(task) && (providerId == null || providerId == '') && (model == null || model == '')
+			},
+
+			isVisionTask(task: UTSJSONObject): boolean {
+				const type = task['type'] as string | null
+				return type == 'vision'
+			},
+
+			isVisionDisabled(task: UTSJSONObject): boolean {
+				const providerId = task['providerId'] as string | null
+				const model = task['model'] as string | null
+				return this.isVisionTask(task) && (providerId == null || providerId == '') && (model == null || model == '')
 			},
 
 			/** 获取某个任务当前选择的提供商下可用的模型 ID 列表 */
@@ -172,6 +203,13 @@
 				task['model'] = ''
 			},
 
+			selectDisableVision(taskIndex: number) {
+				const task = this.taskList[taskIndex]
+				if (task == null) return
+				task['providerId'] = ''
+				task['model'] = ''
+			},
+
 			selectModel(taskIndex: number, model: string) {
 				const task = this.taskList[taskIndex]
 				if (task == null) return
@@ -179,6 +217,7 @@
 			},
 
 			saveAll() {
+				setImageCaptionPrompt(this.imageCaptionPrompt.trim())
 				for (let i = 0; i < this.taskList.length; i++) {
 					const task = this.taskList[i]
 					const type = task['type'] as string
@@ -186,7 +225,7 @@
 					const rawModel = task['model']
 					const providerId = rawPid != null ? (rawPid as string) : ''
 					const model = rawModel != null ? (rawModel as string) : ''
-					if (type == 'memory_organize') {
+					if (type == 'memory_organize' || type == 'vision') {
 						setDefaultTaskModel(type, providerId, model)
 					} else if (providerId != '' && model != '') {
 						setDefaultTaskModel(type, providerId, model)
@@ -307,6 +346,21 @@
 		font-size: 24rpx;
 		color: #9CA3AF;
 		padding: 14rpx 0;
+	}
+
+	.prompt-box {
+		margin-top: 18rpx;
+	}
+
+	.prompt-input {
+		width: 100%;
+		min-height: 120rpx;
+		background-color: #F9FAFB;
+		border-radius: 14rpx;
+		padding: 18rpx;
+		font-size: 26rpx;
+		color: #374151;
+		line-height: 38rpx;
 	}
 
 	/* 保存按钮 */

@@ -48,7 +48,7 @@ type ImageBase64Result = {
 	mimeType: string
 }
 
-import { resolveLLMConfig, normalizeBaseUrl, getMemoryOrganizeTaskModel, stripThinkTags, getAllProviders, getProviderModels } from './provider'
+import { resolveLLMConfig, normalizeBaseUrl, getMemoryOrganizeTaskModel, getVisionTaskModel, getImageCaptionPrompt, stripThinkTags, getAllProviders, getProviderModels } from './provider'
 import { getAgentById } from '@/utils/agent.uts'
 import { getGlobalGenerationSettings, getEffectiveGenerationSettings, getMemoryOrganizerGenerationSettings, GenerationSettings } from '@/utils/generation-settings.uts'
 import { createAgentTools, AgentTool, ToolResult } from './tools/agent-tools'
@@ -250,9 +250,14 @@ function getMessageApiText(msg: UTSJSONObject): string {
 				text += raw
 			}
 		} else if (type == 'image') {
+			const caption = readPartString(part, 'caption')
 			const url = readPartString(part, 'url') != '' ? readPartString(part, 'url') : readPartString(part, 'path')
 			if (text != '') { text += '\n' }
-			text += '[图片]' + (url != '' ? ' ' + url : '')
+			if (caption != '') {
+				text += '[图片转述] ' + caption
+			} else {
+				text += '[图片]' + (url != '' ? ' ' + url : '')
+			}
 		} else if (type == 'file') {
 			const filename = readPartString(part, 'filename') != '' ? readPartString(part, 'filename') : readPartString(part, 'name')
 			const path = readPartString(part, 'path')
@@ -295,6 +300,10 @@ function getFirstImagePathFromParts(msg: UTSJSONObject): string {
 		const part = parts[i]
 		const type = part['type'] as string | null
 		if (type == 'image') {
+			const caption = readPartString(part, 'caption')
+			if (caption != '') {
+				continue
+			}
 			const url = readPartString(part, 'url')
 			if (url != '') { return url }
 			const path = readPartString(part, 'path')
@@ -529,6 +538,22 @@ function getModelReasoningEnabled(modelId: string): boolean {
 }
 
 
+function buildImageUserMessageContent(prompt: string, imagePath: string): UTSJSONObject[] | null {
+	const imageResult = readImageAsBase64(imagePath)
+	if (imageResult == null) {
+		return null
+	}
+	const dataUrl = 'data:' + imageResult.mimeType + ';base64,' + imageResult.data
+	const safeText = prompt != '' ? prompt : '[图片]'
+	const contentJsonStr = '[{"type":"text","text":' + JSON.stringify(safeText) + '},{"type":"image_url","image_url":{"url":' + JSON.stringify(dataUrl) + ',"detail":"auto"}}]'
+	try {
+		return JSON.parse(contentJsonStr) as UTSJSONObject[]
+	} catch (_e: any) {
+		console.log('[LLM] 图片 content JSON 构造失败: ' + _e)
+		return null
+	}
+}
+
 function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[], supportsVision: boolean): UTSJSONObject[] {
 	const apiMessages: UTSJSONObject[] = []
 	if (systemPrompt != '') {
@@ -576,24 +601,12 @@ function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[], su
 					} as UTSJSONObject)
 					continue
 				}
-				const imageResult = readImageAsBase64(imagePath)
-				if (imageResult != null) {
-					const dataUrl = 'data:' + imageResult.mimeType + ';base64,' + imageResult.data
-					const safeText = textContent != '' ? textContent : '[图片]'
-					const contentJsonStr = '[{"type":"text","text":' + JSON.stringify(safeText) + '},{"type":"image_url","image_url":{"url":' + JSON.stringify(dataUrl) + ',"detail":"auto"}}]'
-					try {
-						const contentJson = JSON.parse(contentJsonStr)
-						apiMessages.push({
-							role: 'user',
-							content: contentJson,
-						} as UTSJSONObject)
-					} catch (_e: any) {
-						console.log('[LLM] 图片 content JSON 构造失败，回退纯文本: ' + _e)
-						apiMessages.push({
-							role: 'user',
-							content: textContent,
-						} as UTSJSONObject)
-					}
+				const contentJson = buildImageUserMessageContent(textContent != '' ? textContent : '[图片]', imagePath)
+				if (contentJson != null) {
+					apiMessages.push({
+						role: 'user',
+						content: contentJson,
+					} as UTSJSONObject)
 				} else {
 					console.log('[LLM] 图片 base64 读取失败，回退纯文本 | path=' + imagePath)
 					apiMessages.push({
@@ -1021,6 +1034,120 @@ function formatBodyForLog(body: UTSJSONObject): string {
 	return JSON.stringify(logBody)
 }
 
+function buildChatCompletionUrl(baseUrl: string): string {
+	const hasApiVersion = baseUrl.indexOf('/v1') >= 0 || baseUrl.indexOf('/api/v') >= 0
+	return hasApiVersion ? baseUrl + '/chat/completions' : baseUrl + '/v1/chat/completions'
+}
+
+function readChatCompletionText(responseData: UTSJSONObject): string | null {
+	const choices = responseData['choices'] as UTSJSONObject[] | null
+	if (choices == null || choices.length == 0) {
+		return null
+	}
+	const choice = choices[0]
+	const message = choice['message'] as UTSJSONObject | null
+	if (message == null) {
+		return null
+	}
+	const rawText = message['content'] as string | null
+	if (rawText == null) {
+		return ''
+	}
+	return stripThinkTags(rawText)
+}
+
+function callImageCaptionAPI(
+	baseUrl: string,
+	apiKey: string,
+	model: string,
+	apiMessages: UTSJSONObject[],
+	settings: GenerationSettings,
+	done: (text: string | null) => void
+): void {
+	clearLastTokenUsage()
+	const url = buildChatCompletionUrl(baseUrl)
+	const headers: UTSJSONObject = {
+		'Content-Type': 'application/json',
+		'Authorization': 'Bearer ' + apiKey,
+	} as UTSJSONObject
+	let maxTokens = settings.maxTokens
+	if (maxTokens > 1024) {
+		maxTokens = 1024
+	}
+	const body: UTSJSONObject = {
+		model: model,
+		messages: apiMessages,
+		max_tokens: maxTokens,
+		temperature: settings.temperature,
+		stream: false,
+	} as UTSJSONObject
+
+	console.log('[LLM] ====== IMAGE CAPTION REQUEST ======')
+	console.log('[LLM] URL: ' + url)
+	console.log('[LLM] Model: ' + model + ' | Messages: ' + apiMessages.length)
+	console.log('[LLM] Body: ' + formatBodyForLog(body))
+	console.log('[LLM] ===================================')
+
+	const bodyStr = JSON.stringify(body)
+	const finalBody = JSON.parse(bodyStr)
+	uni.request({
+		url: url,
+		method: 'POST',
+		header: headers,
+		data: finalBody,
+		success: (res) => {
+			const statusCode = res.statusCode as number
+			if (statusCode != 200) {
+				let errDetail = ''
+				try {
+					const errData = res.data as UTSJSONObject | null
+					if (errData != null) {
+						const errMsg = errData['error'] as UTSJSONObject | null
+						if (errMsg != null) {
+							const errMessage = errMsg['message'] as string | null
+							errDetail = ': ' + (errMessage != null ? errMessage : '')
+						}
+					}
+				} catch (_e: any) {}
+				console.log('[LLM] 图片转述失败 Status: ' + statusCode + errDetail)
+				saveLastLLMCall(false, false, model, baseUrl, statusCode, '图片转述失败' + errDetail, null, apiMessages.length, 0, 0, false)
+				done(null)
+				return
+			}
+			try {
+				const responseData = res.data as UTSJSONObject
+				if (responseData == null) {
+					saveLastLLMCall(false, false, model, baseUrl, statusCode, '图片转述响应为空', null, apiMessages.length, 0, 0, false)
+					done(null)
+					return
+				}
+				const usage = responseData['usage'] as UTSJSONObject | null
+				let normalizedUsage: UTSJSONObject | null = null
+				if (usage != null) { normalizedUsage = saveLastTokenUsage(usage) }
+				const text = readChatCompletionText(responseData)
+				if (text == null) {
+					saveLastLLMCall(false, false, model, baseUrl, statusCode, '图片转述 choices 为空', normalizedUsage, apiMessages.length, 0, 0, false)
+					done(null)
+					return
+				}
+				const preview = text != '' ? text.substring(0, text.length < 200 ? text.length : 200) : ''
+				console.log('[LLM] ====== IMAGE CAPTION RESPONSE ======')
+				console.log('[LLM] Status: 200 | ' + preview)
+				console.log('[LLM] ====================================')
+				saveLastLLMCall(true, false, model, baseUrl, statusCode, '', normalizedUsage, apiMessages.length, 0, text.length, false)
+				done(text)
+			} catch (_e2: any) {
+				saveLastLLMCall(false, false, model, baseUrl, statusCode, '图片转述响应解析异常: ' + _e2, null, apiMessages.length, 0, 0, false)
+				done(null)
+			}
+		},
+		fail: (_err: any) => {
+			saveLastLLMCall(false, false, model, baseUrl, -1, '图片转述网络失败: ' + _err, null, apiMessages.length, 0, 0, false)
+			done(null)
+		},
+	})
+}
+
 function callChatAPI(
 	baseUrl: string,
 	apiKey: string,
@@ -1036,8 +1163,7 @@ function callChatAPI(
 	clearLastTokenUsage()
 
 	// 构建请求体：检测 baseUrl 是否已包含 API 版本路径，避免重复
-	const hasApiVersion = baseUrl.indexOf('/v1') >= 0 || baseUrl.indexOf('/api/v') >= 0
-	const url = hasApiVersion ? baseUrl + '/chat/completions' : baseUrl + '/v1/chat/completions'
+	const url = buildChatCompletionUrl(baseUrl)
 	const headers: UTSJSONObject = {
 		'Content-Type': 'application/json',
 		'Authorization': 'Bearer ' + apiKey,
@@ -1350,8 +1476,7 @@ function callChatAPIStream(
 	const apiMessages = buildOpenAIMessages(systemPrompt, messages, supportsVision)
 	clearLastTokenUsage()
 
-	const hasApiVersion = baseUrl.indexOf('/v1') >= 0 || baseUrl.indexOf('/api/v') >= 0
-	const url = hasApiVersion ? baseUrl + '/chat/completions' : baseUrl + '/v1/chat/completions'
+	const url = buildChatCompletionUrl(baseUrl)
 	const headers: UTSJSONObject = {
 		'Content-Type': 'application/json',
 		'Authorization': 'Bearer ' + apiKey,
@@ -1984,6 +2109,56 @@ export function buildAgentContextPreview(
 			streamEnabled: settings.streamEnabled,
 		} as UTSJSONObject,
 	} as UTSJSONObject
+}
+
+export function captionImage(imagePath: string, prompt: string = ''): Promise<string | null> {
+	return new Promise<string | null>((resolve) => {
+		if (imagePath == '') {
+			resolve(null)
+			return
+		}
+		const taskModel = getVisionTaskModel()
+		if (taskModel == null) {
+			resolve(null)
+			return
+		}
+		const providerIdRaw = taskModel['providerId'] as string | null
+		const modelRaw = taskModel['model'] as string | null
+		const providerId = providerIdRaw != null ? providerIdRaw : ''
+		const model = modelRaw != null ? modelRaw : ''
+		if (providerId == '' || model == '') {
+			resolve(null)
+			return
+		}
+		const config = resolveLLMConfig(providerId, model)
+		if (config == null) {
+			resolve(null)
+			return
+		}
+		let captionPrompt = prompt
+		if (captionPrompt == '') {
+			captionPrompt = getImageCaptionPrompt()
+		}
+		const contentJson = buildImageUserMessageContent(captionPrompt, imagePath)
+		if (contentJson == null) {
+			resolve(null)
+			return
+		}
+		const messages: UTSJSONObject[] = [{
+			role: 'user',
+			content: contentJson,
+		} as UTSJSONObject]
+		const baseUrl = normalizeBaseUrl(config.baseUrl)
+		const settings = getGlobalGenerationSettings()
+		callImageCaptionAPI(baseUrl, config.apiKey, config.model, messages, settings, (text: string | null) => {
+			if (text == null) {
+				resolve(null)
+				return
+			}
+			const cleaned = text.trim()
+			resolve(cleaned != '' ? cleaned : null)
+		})
+	})
 }
 
 /**

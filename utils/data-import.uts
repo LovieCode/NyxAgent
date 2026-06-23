@@ -42,6 +42,7 @@ function buildFallbackStorageKeys(): string[] {
 		'memory_conversation_id',
 		'app_setting_default_task_chat',
 		'app_setting_default_task_vision',
+		'app_setting_image_caption_prompt',
 		'app_setting_default_task_stt',
 		'app_setting_default_task_tts',
 		'profile_nickname',

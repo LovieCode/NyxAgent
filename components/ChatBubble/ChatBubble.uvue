@@ -6,7 +6,13 @@
 				@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
 				@touchend="onBubbleTouchEnd">
 				<view v-for="(part, pi) in contentParts" :key="'user-part-' + pi" class="part-wrap">
-					<image v-if="part.type == 'image' && part.url != ''" :src="part.url" class="bubble-image" mode="widthFix" />
+					<view v-if="part.type == 'image' && part.url != ''" class="image-part">
+						<image :src="part.url" class="bubble-image" mode="widthFix" />
+						<view v-if="part.caption != ''" class="caption-card user-caption-card">
+							<text class="caption-label user-caption-label">图片转述</text>
+							<text class="caption-text user-caption-text">{{part.caption}}</text>
+						</view>
+					</view>
 					<text v-else-if="part.type == 'plain' || part.type == 'location'" class="text-user">{{part.text}}<text v-if="isStreaming == true && isLastContentPart(pi) == true" class="cursor">|</text></text>
 					<view v-else class="media-chip user-media-chip">
 						<text class="media-chip-text user-media-text">{{getPartLabel(part)}}</text>
@@ -66,7 +72,13 @@
 				</view>
 
 				<view v-for="(part, pi) in contentParts" :key="'assistant-part-' + pi" class="part-wrap">
-					<image v-if="part.type == 'image' && part.url != ''" :src="part.url" class="bubble-image" mode="widthFix" />
+					<view v-if="part.type == 'image' && part.url != ''" class="image-part">
+						<image :src="part.url" class="bubble-image" mode="widthFix" />
+						<view v-if="part.caption != ''" class="caption-card">
+							<text class="caption-label">图片转述</text>
+							<text class="caption-text">{{part.caption}}</text>
+						</view>
+					</view>
 					<text v-else-if="part.type == 'plain' || part.type == 'location'" class="text-assistant-pre">{{part.text}}<text v-if="isStreaming == true && isLastContentPart(pi) == true" class="cursor">|</text></text>
 					<view v-else class="media-chip">
 						<text class="media-chip-text">{{getPartLabel(part)}}</text>
@@ -93,6 +105,7 @@
 		url: string
 		path: string
 		filename: string
+		caption: string
 	}
 	type DisplayBlock = {
 		type: string
@@ -280,12 +293,15 @@
 					let url = ''
 					let path = ''
 					let filename = ''
+					let caption = ''
 					const rawText = part['text'] as string | null
 					if (rawText != null) { text = rawText }
 					const rawUrl = part['url'] as string | null
 					if (rawUrl != null) { url = rawUrl }
 					const rawPath = part['path'] as string | null
 					if (rawPath != null) { path = rawPath }
+					const rawCaption = part['caption'] as string | null
+					if (rawCaption != null) { caption = rawCaption }
 					if (url == '' && path != '') { url = path }
 					const rawFile = part['filename'] as string | null
 					const rawName = part['name'] as string | null
@@ -294,7 +310,7 @@
 					} else if (rawName != null) {
 						filename = rawName
 					}
-					result.push({ type: partType == 'text' ? 'plain' : partType, text: text, url: url, path: path, filename: filename } as ContentPartView)
+					result.push({ type: partType == 'text' ? 'plain' : partType, text: text, url: url, path: path, filename: filename, caption: caption } as ContentPartView)
 				}
 				return result
 			},
@@ -625,6 +641,37 @@
 		max-height: 600rpx;
 		border-radius: 20rpx;
 		margin-bottom: 8rpx;
+	}
+	.image-part {
+		flex-direction: column;
+	}
+	.caption-card {
+		background-color: rgba(31, 41, 55, 0.06);
+		border-radius: 16rpx;
+		padding: 14rpx 16rpx;
+		border-width: 1rpx;
+		border-color: rgba(31, 41, 55, 0.08);
+	}
+	.user-caption-card {
+		background-color: rgba(255, 255, 255, 0.18);
+		border-color: rgba(255, 255, 255, 0.25);
+	}
+	.caption-label {
+		font-size: 22rpx;
+		color: #9CA3AF;
+		margin-bottom: 6rpx;
+	}
+	.caption-text {
+		font-size: 24rpx;
+		color: var(--rice-text-color-2);
+		line-height: 34rpx;
+		white-space: pre-wrap;
+	}
+	.user-caption-label {
+		color: rgba(255, 255, 255, 0.76);
+	}
+	.user-caption-text {
+		color: #FFFFFF;
 	}
 	.media-chip {
 		background-color: rgba(31, 41, 55, 0.06);
