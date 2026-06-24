@@ -51,56 +51,62 @@
 				<rice-button v-if="isGenerating == false" type="primary" text="发送" size="small" shape="round" @click="sendMessage" style="margin-left:12rpx" />
 				<rice-button v-else type="primary" text="停止" size="small" shape="round" @click="stopDiscussion" style="margin-left:12rpx" />
 			</view>
-			<view v-if="showToolPanel" class="toolbar-panel" @touchstart="onToolbarTouchStart" @touchend="onToolbarTouchEnd">
-				<view class="toolbar-grid">
-					<template v-if="toolbarPageIndex == 0">
-						<view class="toolbar-grid-item" @click="pickImage">
-							<view class="toolbar-grid-icon"><oui-icon-unix name="image" size="52rpx" color="var(--rice-primary-color)" /></view>
-							<text class="toolbar-grid-label">图片</text>
+			<view v-if="showToolPanel" class="toolbar-panel">
+				<view id="toolbar-slider-viewport" class="toolbar-slider-viewport" @touchstart="onToolbarTouchStart" @touchmove="onToolbarTouchMove" @touchend="onToolbarTouchEnd" @touchcancel="onToolbarTouchCancel">
+					<view class="toolbar-slider-track" :class="toolbarDragging == true ? '' : 'toolbar-slider-track-anim'" :style="toolbarTrackStyle">
+						<view class="toolbar-slide-page">
+							<view class="toolbar-grid">
+								<view class="toolbar-grid-item" @click="pickImage">
+									<view class="toolbar-grid-icon"><oui-icon-unix name="image" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<text class="toolbar-grid-label">图片</text>
+								</view>
+								<view class="toolbar-grid-item" @click="takePhoto">
+									<view class="toolbar-grid-icon"><oui-icon-unix name="camera" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<text class="toolbar-grid-label">拍照</text>
+								</view>
+								<view class="toolbar-grid-item" @click="pickFile">
+									<view class="toolbar-grid-icon"><oui-icon-unix name="file" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<text class="toolbar-grid-label">文件</text>
+								</view>
+								<view class="toolbar-grid-item" @click="chooseAgentForMemory">
+									<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<text class="toolbar-grid-label">记忆管理</text>
+								</view>
+								<view class="toolbar-grid-item" @click="chooseAgentForContext">
+									<view class="toolbar-grid-icon"><oui-icon-unix name="eye" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<text class="toolbar-grid-label">原始上下文</text>
+								</view>
+								<view class="toolbar-grid-item" @click="openGroupWorkspace">
+									<view class="toolbar-grid-icon"><oui-icon-unix name="folder" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<text class="toolbar-grid-label">工作区</text>
+								</view>
+								<view class="toolbar-grid-item" @click="stopDiscussion">
+									<view class="toolbar-grid-icon"><oui-icon-unix name="stop" size="52rpx" color="#EF4444" /></view>
+									<text class="toolbar-grid-label">停止讨论</text>
+								</view>
+								<view class="toolbar-grid-item" @click="continueDiscussion">
+									<view class="toolbar-grid-icon"><oui-icon-unix name="plus-circle" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<text class="toolbar-grid-label">继续讨论</text>
+								</view>
+							</view>
 						</view>
-						<view class="toolbar-grid-item" @click="takePhoto">
-							<view class="toolbar-grid-icon"><oui-icon-unix name="camera" size="52rpx" color="var(--rice-primary-color)" /></view>
-							<text class="toolbar-grid-label">拍照</text>
+						<view class="toolbar-slide-page">
+							<view class="toolbar-grid">
+								<view class="toolbar-grid-item" @click="goSessions">
+									<view class="toolbar-grid-icon"><oui-icon-unix name="time-circle" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<text class="toolbar-grid-label">会话分支</text>
+								</view>
+								<view class="toolbar-grid-item" @click="goSettings">
+									<view class="toolbar-grid-icon"><oui-icon-unix name="setting" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<text class="toolbar-grid-label">群聊设置</text>
+								</view>
+								<view class="toolbar-grid-item" @click="showDispatchHistory">
+									<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<text class="toolbar-grid-label">调度历史</text>
+								</view>
+							</view>
 						</view>
-						<view class="toolbar-grid-item" @click="pickFile">
-							<view class="toolbar-grid-icon"><oui-icon-unix name="file" size="52rpx" color="var(--rice-primary-color)" /></view>
-							<text class="toolbar-grid-label">文件</text>
-						</view>
-						<view class="toolbar-grid-item" @click="chooseAgentForMemory">
-							<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="52rpx" color="var(--rice-primary-color)" /></view>
-							<text class="toolbar-grid-label">记忆管理</text>
-						</view>
-						<view class="toolbar-grid-item" @click="chooseAgentForContext">
-							<view class="toolbar-grid-icon"><oui-icon-unix name="eye" size="52rpx" color="var(--rice-primary-color)" /></view>
-							<text class="toolbar-grid-label">原始上下文</text>
-						</view>
-						<view class="toolbar-grid-item" @click="openGroupWorkspace">
-							<view class="toolbar-grid-icon"><oui-icon-unix name="folder" size="52rpx" color="var(--rice-primary-color)" /></view>
-							<text class="toolbar-grid-label">工作区</text>
-						</view>
-						<view class="toolbar-grid-item" @click="stopDiscussion">
-							<view class="toolbar-grid-icon"><oui-icon-unix name="stop" size="52rpx" color="#EF4444" /></view>
-							<text class="toolbar-grid-label">停止讨论</text>
-						</view>
-						<view class="toolbar-grid-item" @click="continueDiscussion">
-							<view class="toolbar-grid-icon"><oui-icon-unix name="plus-circle" size="52rpx" color="var(--rice-primary-color)" /></view>
-							<text class="toolbar-grid-label">继续讨论</text>
-						</view>
-					</template>
-					<template v-if="toolbarPageIndex == 1">
-						<view class="toolbar-grid-item" @click="goSessions">
-							<view class="toolbar-grid-icon"><oui-icon-unix name="time-circle" size="52rpx" color="var(--rice-primary-color)" /></view>
-							<text class="toolbar-grid-label">会话分支</text>
-						</view>
-						<view class="toolbar-grid-item" @click="goSettings">
-							<view class="toolbar-grid-icon"><oui-icon-unix name="setting" size="52rpx" color="var(--rice-primary-color)" /></view>
-							<text class="toolbar-grid-label">群聊设置</text>
-						</view>
-						<view class="toolbar-grid-item" @click="showDispatchHistory">
-							<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="52rpx" color="var(--rice-primary-color)" /></view>
-							<text class="toolbar-grid-label">调度历史</text>
-						</view>
-					</template>
+					</view>
 				</view>
 				<view class="toolbar-pager">
 					<view class="toolbar-page-arrow" :class="toolbarPageIndex == 0 ? 'toolbar-page-arrow-disabled' : ''" @click="prevToolbarPage">
@@ -180,6 +186,10 @@
 				toolbarPageIndex: 0 as number,
 				toolbarTouchStartX: 0 as number,
 				toolbarTouchStartY: 0 as number,
+				toolbarTouchCurrentX: 0 as number,
+				toolbarDragOffset: 0 as number,
+				toolbarViewportWidth: 0 as number,
+				toolbarDragging: false as boolean,
 				scrollTop: 0 as number,
 				longpressCancelToken: 0 as number,
 				currentStream: null as AgentEventStream | null,
@@ -201,6 +211,13 @@
 			},
 			visibleMessages(): UTSJSONObject[] {
 				return getVisibleGroupMessages(this.messages)
+			},
+			toolbarTrackStyle(): string {
+				let width = this.toolbarViewportWidth
+				if (width <= 0) { width = 375 }
+				const base = -this.toolbarPageIndex * width
+				const offset = base + this.toolbarDragOffset
+				return 'transform: translateX(' + offset + 'px);'
 			}
 		},
 		onLoad() {
@@ -245,24 +262,68 @@
 			goSessions(): void { uni.navigateTo({ url: '/pages/group-chat-sessions/group-chat-sessions' }) },
 			toggleToolPanel(): void {
 				this.showToolPanel = !this.showToolPanel
-				if (this.showToolPanel == true) { this.toolbarPageIndex = 0 }
+				if (this.showToolPanel == true) {
+					this.toolbarPageIndex = 0
+					this.toolbarDragOffset = 0
+					this.measureToolbarViewport()
+				}
 			},
 			setToolbarPage(index: number): void {
 				if (index < 0 || index > 1) { return }
 				this.toolbarPageIndex = index
+				this.toolbarDragOffset = 0
+				this.toolbarDragging = false
 			},
 			prevToolbarPage(): void {
 				if (this.toolbarPageIndex <= 0) { return }
-				this.toolbarPageIndex--
+				this.setToolbarPage(this.toolbarPageIndex - 1)
 			},
 			nextToolbarPage(): void {
 				if (this.toolbarPageIndex >= 1) { return }
-				this.toolbarPageIndex++
+				this.setToolbarPage(this.toolbarPageIndex + 1)
+			},
+			measureToolbarViewport(): void {
+				setTimeout(() => {
+					const query = uni.createSelectorQuery().in(this)
+					query.select('#toolbar-slider-viewport').boundingClientRect()
+					query.exec((res: any) => {
+						const rows = res as UTSArray<any> | null
+						if (rows == null || rows.length == 0) { return }
+						const rect = rows[0] as NodeInfo | null
+						if (rect == null) { return }
+						const width = rect.width as number | null
+						if (width != null && width > 0) {
+							this.toolbarViewportWidth = width
+						}
+					})
+				}, 40)
 			},
 			onToolbarTouchStart(e: UniTouchEvent): void {
 				if (e.touches.length == 0) { return }
+				this.measureToolbarViewport()
 				this.toolbarTouchStartX = e.touches[0].screenX
 				this.toolbarTouchStartY = e.touches[0].screenY
+				this.toolbarTouchCurrentX = this.toolbarTouchStartX
+				this.toolbarDragOffset = 0
+				this.toolbarDragging = true
+			},
+			onToolbarTouchMove(e: UniTouchEvent): void {
+				if (e.touches.length == 0) { return }
+				const currentX = e.touches[0].screenX
+				const currentY = e.touches[0].screenY
+				const dx = currentX - this.toolbarTouchStartX
+				const dy = currentY - this.toolbarTouchStartY
+				const absX = Math.abs(dx)
+				const absY = Math.abs(dy)
+				this.toolbarTouchCurrentX = currentX
+				if (absX <= 8 || absX <= absY * 1.15) {
+					return
+				}
+				let offset = dx
+				if ((this.toolbarPageIndex == 0 && dx > 0) || (this.toolbarPageIndex == 1 && dx < 0)) {
+					offset = dx * 0.28
+				}
+				this.toolbarDragOffset = offset
 			},
 			onToolbarTouchEnd(e: UniTouchEvent): void {
 				if (e.changedTouches.length == 0) { return }
@@ -272,12 +333,18 @@
 				const dy = endY - this.toolbarTouchStartY
 				const absX = Math.abs(dx)
 				const absY = Math.abs(dy)
+				this.toolbarDragging = false
+				this.toolbarDragOffset = 0
 				if (absX < 40 || absX <= absY * 1.4) { return }
-				if (dx < 0) {
+				if (dx < 0 && this.toolbarPageIndex < 1) {
 					this.nextToolbarPage()
-				} else {
+				} else if (dx > 0 && this.toolbarPageIndex > 0) {
 					this.prevToolbarPage()
 				}
+			},
+			onToolbarTouchCancel(): void {
+				this.toolbarDragging = false
+				this.toolbarDragOffset = 0
 			},
 			onMsgScroll(): void { this.longpressCancelToken++ },
 			onInputLineChange(e: UniTextareaLineChangeEvent): void {
@@ -809,6 +876,10 @@
 	.input-wrap { flex: 1; flex-direction: row; align-items: flex-end; background-color: var(--rice-background); border-radius: 32rpx; padding-left: 16rpx; padding-right: 16rpx; margin-left: 12rpx; margin-right: 12rpx; }
 	.text-input { width: 100%; min-height: 64rpx; max-height: 400rpx; padding-left: 8rpx; padding-right: 8rpx; padding-top: 16rpx; padding-bottom: 16rpx; font-size: 30rpx; color: var(--rice-text-color); background-color: transparent; line-height: 44rpx; }
 	.toolbar-panel { background-color: var(--rice-background); padding: 24rpx 16rpx 16rpx 16rpx; }
+	.toolbar-slider-viewport { width: 100%; overflow: hidden; }
+	.toolbar-slider-track { width: 200%; flex-direction: row; }
+	.toolbar-slider-track-anim { transition-property: transform; transition-duration: 180ms; transition-timing-function: ease-out; }
+	.toolbar-slide-page { width: 50%; flex-shrink: 0; }
 	.toolbar-grid { flex-direction: row; justify-content: flex-start; flex-wrap: wrap; }
 	.toolbar-grid-item { width: 25%; align-items: center; margin-bottom: 24rpx; }
 	.toolbar-grid-icon { width: 104rpx; height: 104rpx; border-radius: 28rpx; background-color: var(--rice-background-2); justify-content: center; align-items: center; margin-bottom: 8rpx; }
