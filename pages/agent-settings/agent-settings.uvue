@@ -172,11 +172,11 @@
 					<text class="card-label">工具设置</text>
 				</view>
 				<text class="skill-section-desc">为当前智能体启用可调用工具。不启用的工具不会注入模型上下文，也不会被执行。</text>
-				<view class="skill-grid">
+				<view class="tool-list">
 					<view
 						v-for="(tool, ti) in availableTools"
 						:key="ti"
-						class="skill-card"
+						class="skill-card tool-card"
 						:class="isAgentToolSelected(tool) ? 'skill-card-active' : ''"
 						@click="toggleAgentTool(tool)"
 					>
@@ -1005,6 +1005,16 @@
 		border-width: 2rpx;
 		border-style: solid;
 		border-color: #F3F4F6;
+	}
+
+	.tool-list {
+		flex-direction: column;
+	}
+
+	.tool-card {
+		width: auto;
+		margin-right: 0;
+		margin-bottom: 14rpx;
 	}
 
 	.skill-card-active {
