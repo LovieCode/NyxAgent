@@ -51,7 +51,7 @@
 				<rice-button v-if="isGenerating == false" type="primary" text="发送" size="small" shape="round" @click="sendMessage" style="margin-left:12rpx" />
 				<rice-button v-else type="primary" text="停止" size="small" shape="round" @click="stopDiscussion" style="margin-left:12rpx" />
 			</view>
-			<view v-if="showToolPanel" class="toolbar-panel">
+			<view v-if="showToolPanel" class="toolbar-panel" @touchstart="onToolbarTouchStart" @touchend="onToolbarTouchEnd">
 				<view class="toolbar-grid">
 					<template v-if="toolbarPageIndex == 0">
 						<view class="toolbar-grid-item" @click="pickImage">
@@ -178,6 +178,8 @@
 				isGenerating: false as boolean,
 				showToolPanel: false as boolean,
 				toolbarPageIndex: 0 as number,
+				toolbarTouchStartX: 0 as number,
+				toolbarTouchStartY: 0 as number,
 				scrollTop: 0 as number,
 				longpressCancelToken: 0 as number,
 				currentStream: null as AgentEventStream | null,
@@ -256,6 +258,26 @@
 			nextToolbarPage(): void {
 				if (this.toolbarPageIndex >= 1) { return }
 				this.toolbarPageIndex++
+			},
+			onToolbarTouchStart(e: UniTouchEvent): void {
+				if (e.touches.length == 0) { return }
+				this.toolbarTouchStartX = e.touches[0].screenX
+				this.toolbarTouchStartY = e.touches[0].screenY
+			},
+			onToolbarTouchEnd(e: UniTouchEvent): void {
+				if (e.changedTouches.length == 0) { return }
+				const endX = e.changedTouches[0].screenX
+				const endY = e.changedTouches[0].screenY
+				const dx = endX - this.toolbarTouchStartX
+				const dy = endY - this.toolbarTouchStartY
+				const absX = Math.abs(dx)
+				const absY = Math.abs(dy)
+				if (absX < 40 || absX <= absY * 1.4) { return }
+				if (dx < 0) {
+					this.nextToolbarPage()
+				} else {
+					this.prevToolbarPage()
+				}
 			},
 			onMsgScroll(): void { this.longpressCancelToken++ },
 			onInputLineChange(e: UniTextareaLineChangeEvent): void {
