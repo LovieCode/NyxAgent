@@ -118,7 +118,7 @@
 </template>
 
 <script lang="uts">
-	import { agentChat, readLastLLMRequestSnapshot, captionImage } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+	import { agentChat, readLastLLMRequestSnapshot, captionImage, appendResponseToSnapshot } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
 	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
 	import { getAgentById } from '@/utils/agent.uts'
 	import { loadChatUserProfile } from '@/utils/chat-conversation-service.uts'
@@ -318,6 +318,15 @@
 			},
 			findLastAssistantMessage(list: UTSJSONObject[]): UTSJSONObject | null {
 				for (let i = list.length - 1; i >= 0; i--) {
+					const role = list[i]['role'] as string | null
+					if (role == CHAT_ROLE_ASSISTANT) {
+						return list[i]
+					}
+				}
+				return null
+			},
+			findLastAssistantMessageFrom(list: UTSJSONObject[], startIndex: number): UTSJSONObject | null {
+				for (let i = list.length - 1; i >= startIndex; i--) {
 					const role = list[i]['role'] as string | null
 					if (role == CHAT_ROLE_ASSISTANT) {
 						return list[i]
@@ -650,6 +659,7 @@
 							this.session = freshSession != null ? freshSession : session
 						}
 						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerText)
+						appendResponseToSnapshot(schedulerAgentId, session.id, schedulerText)
 						const schedulerSnapshot = readLastLLMRequestSnapshot(schedulerAgentId, session.id)
 						if (schedulerSnapshot != null) {
 							const capturedAt = schedulerSnapshot['capturedAt'] as number | null
@@ -727,6 +737,7 @@
 				saveGroupAgentContextRecord(contextRecord)
 				streamingMsg['contextRecordId'] = contextRecord['id'] as string | null
 				const workspaceRoot = getGroupSessionWorkspaceDir(group.id, session.id)
+				const newMsgStartIndex = tempMessages.length
 				const stream = agentChat(tempMessages, systemPrompt, '', readAgentModel(agent), agentId, 0, session.id, workspaceRoot)
 				this.currentStream = stream
 				stream.on((event: AgentEvent) => {
@@ -737,9 +748,13 @@
 							contextRecord['requestSnapshot'] = requestSnapshot
 							saveGroupAgentContextRecord(contextRecord)
 						}
-						const lastAssistant = this.findLastAssistantMessage(tempMessages)
+						const lastAssistant = this.findLastAssistantMessageFrom(tempMessages, newMsgStartIndex)
 						if (lastAssistant != null) {
 							syncGroupStreamingMessage(streamingMsg, lastAssistant)
+							const responseText = streamingMsg['content'] as string | null
+							if (responseText != null && responseText != '') {
+								appendResponseToSnapshot(agentId, session.id, responseText)
+							}
 						} else {
 							streamingMsg['visible'] = false
 						}
@@ -751,7 +766,7 @@
 						return
 					}
 					reduceAgentEvent(tempMessages, event)
-					const lastAssistant = this.findLastAssistantMessage(tempMessages)
+					const lastAssistant = this.findLastAssistantMessageFrom(tempMessages, newMsgStartIndex)
 					if (lastAssistant != null) { syncGroupStreamingMessage(streamingMsg, lastAssistant) }
 					this.scrollToBottom()
 				})

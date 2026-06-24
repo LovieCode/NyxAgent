@@ -2,24 +2,15 @@
 	<view class="page-shell rice-theme-light">
 		<NavBar title="群聊设置" showBack @back="goBack" />
 		<scroll-view class="settings-scroll" :scroll-y="true">
+
 			<view class="card">
-				<text class="card-title">基础信息</text>
-				<input class="text-input" v-model="groupName" placeholder="群聊名称" placeholder-style="color:var(--rice-text-color-3)" />
-				<text class="field-label">隐藏调度器</text>
-				<view class="scheduler-card">
-					<view class="scheduler-icon">
-						<oui-icon-unix name="robot" size="40rpx" color="var(--rice-primary-color)" />
-					</view>
-					<view class="scheduler-info">
-						<text class="scheduler-title">群聊内部调度 Agent</text>
-						<text class="scheduler-desc">不复用私聊 Agent，不出现在成员列表；模型走设置里的默认 Chat 模型。</text>
-					</view>
-				</view>
+				<text class="card-title">群名</text>
+				<input class="text-input" v-model="groupName" placeholder="输入群聊名称" placeholder-style="color:var(--rice-text-color-3)" />
 			</view>
 
 			<view class="card">
 				<text class="card-title">成员</text>
-				<text class="card-desc">直接复用私聊 Agent；踢出只影响之后发言，历史会保留。</text>
+				<text class="card-desc">直接复用私聊 Agent；踢出只影响之后发言，历史保留。</text>
 				<view v-for="(agent, index) in agentList" :key="agent['id']" class="member-row">
 					<view class="member-avatar" :class="'avatar-' + ((index % 5) + 1)">
 						<image v-if="getAgentAvatar(agent) != ''" :src="getAgentAvatar(agent)" class="member-avatar-img" mode="aspectFill" />
@@ -36,19 +27,32 @@
 			</view>
 
 			<view class="card">
-				<text class="card-title">调度提示词</text>
-				<textarea class="prompt-input" v-model="schedulerPrompt" placeholder="隐藏调度 Agent 的系统提示词" placeholder-style="color:var(--rice-text-color-3)" />
+				<view class="prompt-header">
+					<view class="prompt-header-left">
+						<text class="card-title" style="margin-bottom:0">调度提示词</text>
+						<text class="card-desc" style="margin-top:6rpx;margin-bottom:0">隐藏调度 Agent 的行为规则，决定谁发言、顺序和续轮逻辑。</text>
+					</view>
+					<text class="reset-btn" @click="resetSchedulerPrompt">恢复默认</text>
+				</view>
+				<textarea class="prompt-input" v-model="schedulerPrompt" placeholder="调度 Agent 系统提示词" placeholder-style="color:var(--rice-text-color-3)" />
 			</view>
 
-			<view class="card bottom-card">
-				<text class="card-title">群聊共享提示词</text>
+			<view class="card">
+				<view class="prompt-header">
+					<view class="prompt-header-left">
+						<text class="card-title" style="margin-bottom:0">共享提示词</text>
+						<text class="card-desc" style="margin-top:6rpx;margin-bottom:0">注入每个成员的上下文，规定公开发言的风格和约束。</text>
+					</view>
+					<text class="reset-btn" @click="resetSharedPrompt">恢复默认</text>
+				</view>
 				<textarea class="prompt-input" v-model="sharedPrompt" placeholder="所有成员公开发言共同遵守的提示词" placeholder-style="color:var(--rice-text-color-3)" />
 			</view>
-		</scroll-view>
 
-		<view class="footer-bar">
-			<rice-button type="primary" text="保存" size="large" shape="round" @click="saveSettings" style="flex:1" />
-		</view>
+			<view class="card save-card">
+				<rice-button type="primary" text="保存" size="large" shape="round" @click="saveSettings" style="flex:1" />
+			</view>
+
+		</scroll-view>
 	</view>
 </template>
 
@@ -174,6 +178,12 @@
 				}
 				this.refreshToken++
 			},
+			resetSchedulerPrompt(): void {
+				this.schedulerPrompt = buildDefaultSchedulerPrompt()
+			},
+			resetSharedPrompt(): void {
+				this.sharedPrompt = buildDefaultSharedPrompt()
+			},
 			saveSettings(): boolean {
 				const group = this.group
 				if (group == null) { return false }
@@ -203,16 +213,13 @@
 <style>
 	.settings-scroll { flex: 1; }
 	.card { margin: 20rpx 24rpx 0; padding: 28rpx; border-radius: 32rpx; background-color: var(--rice-background-2); flex-direction: column; }
-	.bottom-card { margin-bottom: 160rpx; }
+	.save-card { margin-bottom: 40rpx; }
 	.card-title { font-size: 32rpx; font-weight: bold; color: var(--rice-text-color); margin-bottom: 18rpx; }
 	.card-desc { font-size: 24rpx; color: var(--rice-text-color-3); margin-bottom: 18rpx; }
 	.text-input { height: 78rpx; border-radius: 24rpx; background-color: var(--rice-background); padding: 0 22rpx; font-size: 28rpx; color: var(--rice-text-color); }
-	.field-label { font-size: 24rpx; color: var(--rice-text-color-3); margin-top: 24rpx; margin-bottom: 14rpx; }
-	.scheduler-card { flex-direction: row; align-items: center; border-radius: 24rpx; background-color: var(--rice-background); padding: 20rpx; }
-	.scheduler-icon { width: 76rpx; height: 76rpx; border-radius: 24rpx; background-color: rgba(251,143,171,0.12); justify-content: center; align-items: center; margin-right: 18rpx; }
-	.scheduler-info { flex: 1; flex-direction: column; }
-	.scheduler-title { font-size: 28rpx; color: var(--rice-text-color); font-weight: bold; }
-	.scheduler-desc { margin-top: 6rpx; font-size: 22rpx; color: var(--rice-text-color-3); line-height: 32rpx; }
+	.prompt-header { flex-direction: row; align-items: flex-start; margin-bottom: 18rpx; }
+	.prompt-header-left { flex: 1; flex-direction: column; }
+	.reset-btn { font-size: 24rpx; color: var(--rice-primary-color); padding-left: 20rpx; padding-top: 4rpx; }
 	.member-row { flex-direction: row; align-items: center; padding: 18rpx 0; border-bottom-width: 0.10rpx; border-bottom-color: var(--rice-border-color); border-bottom-style: solid; }
 	.member-avatar { width: 76rpx; height: 76rpx; border-radius: 24rpx; justify-content: center; align-items: center; margin-right: 18rpx; overflow: hidden; }
 	.member-avatar-img { width: 76rpx; height: 76rpx; border-radius: 24rpx; }
@@ -229,5 +236,4 @@
 	.member-action-text { color: #FFFFFF; font-size: 24rpx; font-weight: bold; }
 	.member-action-text-on { color: #EF4444; }
 	.prompt-input { min-height: 240rpx; border-radius: 24rpx; background-color: var(--rice-background); padding: 20rpx; font-size: 26rpx; color: var(--rice-text-color); line-height: 38rpx; }
-	.footer-bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 20rpx 28rpx 34rpx; background-color: var(--rice-background-2); }
 </style>

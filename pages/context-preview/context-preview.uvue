@@ -217,8 +217,12 @@
 				this.lastCallStatus = '已捕获'
 				if (requestBody != null) {
 					const bodyText = JSON.stringify(requestBody, null, 2)
-					this.fullJsonText = this.decodeDisplayEscapes(bodyText)
-					this.previewText = bodyText
+					const responseText = parsed['responseText'] as string | null
+					const combined = responseText != null && responseText != ''
+						? bodyText + '\n\n=== 响应 ===\n' + responseText
+						: bodyText
+					this.fullJsonText = this.decodeDisplayEscapes(combined)
+					this.previewText = combined
 					const bodyMessages = requestBody['messages'] as UTSJSONObject[] | null
 					if (bodyMessages != null) {
 						this.messageCount = bodyMessages.length

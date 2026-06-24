@@ -1158,6 +1158,21 @@ export function readLastLLMRequestSnapshot(agentId: string = '', conversationId:
 	return null
 }
 
+export function appendResponseToSnapshot(agentId: string, conversationId: string, responseText: string): void {
+	try {
+		const scopedKey = buildScopedLLMStorageKey(LAST_LLM_REQUEST_SNAPSHOT_KEY, agentId, conversationId)
+		const raw = uni.getStorageSync(scopedKey) as string | null
+		if (raw == null || raw == '') { return }
+		const snapshot = JSON.parse(raw) as UTSJSONObject
+		snapshot['responseText'] = responseText
+		const updated = JSON.stringify(snapshot)
+		uni.setStorageSync(scopedKey, updated)
+		if (scopedKey != LAST_LLM_REQUEST_SNAPSHOT_KEY) {
+			uni.setStorageSync(LAST_LLM_REQUEST_SNAPSHOT_KEY, updated)
+		}
+	} catch (_e: any) {}
+}
+
 function saveLastLLMCall(
 	success: boolean,
 	streamEnabled: boolean,
