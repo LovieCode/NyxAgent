@@ -1002,7 +1002,13 @@ export function buildGroupTranscript(messages: UTSJSONObject[], limit: number = 
 		const name = resolveGroupSenderDisplayName(senderName, senderType, role)
 		const content = getMessageContent(msg)
 		if (content.trim() != '') {
-			lines.push(name + '：' + content)
+			lines.push('--- message #' + (i - start + 1).toString() + ' ---')
+			lines.push('sender: ' + name)
+			lines.push('senderType: ' + (senderType != null ? senderType : '未标记'))
+			lines.push('role: ' + (role != null ? role : '未标记'))
+			lines.push('content:')
+			lines.push(content)
+			lines.push('')
 		}
 	}
 	if (lines.length == 0) { return '(暂无公开发言)' }
