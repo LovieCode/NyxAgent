@@ -29,10 +29,11 @@
 
 				<view class="card-header" style="margin-top:20rpx;">
 					<oui-icon-unix name="file-text" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
-					<text class="card-label">描述</text>
+					<text class="card-label">介绍</text>
+					<text class="card-hint">（会用于其他 Agent 读取）</text>
 				</view>
 				<view class="desc-wrap" @click="openDescEditor">
-					<text class="desc-preview" lines="2" text-overflow="ellipsis">{{agentDesc != '' ? agentDesc : '点击输入智能体描述'}}</text>
+					<text class="desc-preview" lines="2" text-overflow="ellipsis">{{agentDesc != '' ? agentDesc : '点击输入智能体介绍'}}</text>
 					<view class="desc-edit-btn">
 						<text class="desc-edit-text">全屏编辑</text>
 					</view>

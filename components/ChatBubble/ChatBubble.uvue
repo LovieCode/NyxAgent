@@ -43,7 +43,7 @@
 						@touchend="onBubbleTouchEnd">
 						<view v-if="pi == 0 && reasoningBlocks.length > 0 && hideThinking == false" class="reasoning-panel">
 							<view class="reasoning-header" @click.stop="thinkingExpanded = !thinkingExpanded">
-								<text class="thinking-step-icon">{{thinkingExpanded ? '⌄' : '›'}}</text>
+								<oui-icon-unix :name="thinkingExpanded ? 'down' : 'right'" size="18rpx" color="var(--rice-text-color-3)" />
 								<text class="thinking-step-label">思考过程</text>
 							</view>
 							<view v-if="thinkingExpanded == true" class="reasoning-body">
@@ -908,6 +908,7 @@
 	}
 	.reasoning-panel {
 		margin-bottom: 4rpx;
+		max-width: 85%;
 	}
 	.reasoning-header {
 		flex-direction: row;

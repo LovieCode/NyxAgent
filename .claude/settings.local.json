@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//d/Code/Python/AgentDebuger/**)",
+      "Skill(update-config)"
+    ]
+  }
+}

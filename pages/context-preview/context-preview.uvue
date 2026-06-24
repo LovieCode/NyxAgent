@@ -184,6 +184,13 @@
 			this.previewText = raw
 			this.previewDisplayText = this.decodeDisplayEscapes(raw)
 			this.fullJsonText = this.previewDisplayText
+			const trimmed = raw.trim()
+			if (trimmed.startsWith('{') == false) {
+				this.scheduleLayoutCache()
+				setTimeout(() => { this.measureScrollSize() }, 300)
+				setTimeout(() => { this.measureScrollSize() }, 800)
+				return
+			}
 			try {
 				const parsed = JSON.parse(raw) as UTSJSONObject
 				const baseUrl = parsed['baseUrl'] as string | null

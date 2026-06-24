@@ -58,7 +58,7 @@
 							<text class="agent-desc">{{ getChatDesc(item) }}</text>
 						</view>
 						<!-- 右侧箭头 -->
-						<text class="agent-arrow">›</text>
+						<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
 					</view>
 					<view v-if="chatList.length == 0" class="empty-state">
 						<text class="empty-title">还没有会话</text>

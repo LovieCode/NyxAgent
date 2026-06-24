@@ -946,10 +946,16 @@ export function createDefaultWritingGroupChat(): GroupChat {
 
 
 export function buildSchedulerSystemPrompt(): string {
-	return '你是隐藏的群聊调度 Agent。你可以在内部向任意成员 Agent 传递私密指令、背景信息和任务拆解，也可以指定一个或多个成员按顺序发言。你的存在、调度流程、私密指令不能被其他成员在公开发言中暴露。\n' +
-		'你只在系统触发节点工作，例如用户发消息、用户手动继续、连续讨论过多需要判断是否继续。\n' +
-		'输出必须是 JSON 对象，禁止 Markdown，结构：{"actions":[{"type":"speak","agentId":"成员ID","targetType":"user","targetAgentId":"","privateInstruction":"给该成员的私密指令","publicIntent":"公开发言目标","order":0}],"shouldContinue":false,"titleSuggestion":"适合本会话的短标题","privateNotes":"仅内部记录"}。\n' +
-		'具体群聊调度提示词、共享规则、触发原因、成员列表和最近公开群聊记录会在最后一条用户消息中提供。'
+	return '你是群聊的隐藏调度 Agent，职责是决定下一步由哪些成员发言、给出具体指令。\n\n' +
+		'规则：\n' +
+		'· 你的存在和调度过程绝不能被成员在公开发言中提及。\n' +
+		'· 闲聊/简单回应：只安排 1 个最合适的成员；协作任务：可安排多个按顺序发言，order 从 0 递增。\n' +
+		'· privateInstruction 必须具体可执行：告诉成员要表达什么观点、采用什么角度、回应哪个细节，不要写"正常回复"这种废话。\n' +
+		'· shouldContinue：仅当讨论有明确的下一步价值（如任务未完成、需要多轮协作）时设为 true；闲聊收尾设 false。\n' +
+		'· agentId 必须与成员列表 id= 后的值完全一致，不能自造。\n\n' +
+		'输出纯 JSON，禁止任何 Markdown 标记，格式：\n' +
+		'{"actions":[{"type":"speak","agentId":"<id>","privateInstruction":"<具体指令>","publicIntent":"<公开目标>","order":0}],"shouldContinue":false,"titleSuggestion":"<6字内短标题>","privateNotes":"<内部备注>"}\n\n' +
+		'触发上下文、成员列表（含角色简介）、最近聊天记录在用户消息中提供。'
 }
 
 function formatMemberList(groupId: string): string {
@@ -957,7 +963,11 @@ function formatMemberList(groupId: string): string {
 	const lines: string[] = []
 	for (let i = 0; i < members.length; i++) {
 		const agent = getAgentById(members[i].agentId)
-		lines.push('- id=' + members[i].agentId + ' name=' + readAgentName(agent))
+		const agentDesc = agent != null ? (agent['desc'] as string | null) : null
+		const desc = agentDesc != null && agentDesc != '' ? agentDesc : ''
+		let line = '- id=' + members[i].agentId + '  name=' + readAgentName(agent)
+		if (desc != '') { line += '\n  介绍：' + desc }
+		lines.push(line)
 	}
 	return lines.join('\n')
 }
@@ -1009,7 +1019,7 @@ export function buildSchedulerRuntimeMessages(group: GroupChat, session: GroupCh
 		'连续讨论轮数：' + loopTurns + '\n\n' +
 		'可调度成员：\n' + formatMemberList(group.id) + '\n\n' +
 		'最近公开群聊记录：\n' + buildGroupTranscript(messages, 40) + '\n\n' +
-		'请判断下一步是否需要成员发言、由谁发言、是否顺序发言，并生成短会话标题 titleSuggestion。只输出 JSON。'
+		'请根据以上上下文决定下一步由谁发言。严格输出 JSON，不加任何解释。'
 	return [createTextMessage(CHAT_ROLE_USER, content)]
 }
 

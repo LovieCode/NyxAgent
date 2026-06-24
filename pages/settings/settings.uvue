@@ -12,7 +12,7 @@
 							<text class="menu-desc">昵称、头像、个人简介</text>
 						</view>
 					</view>
-					<text class="menu-arrow">›</text>
+					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('basic')">
@@ -23,7 +23,7 @@
 							<text class="menu-desc">管理多个 LLM 提供商、API 密钥</text>
 						</view>
 					</view>
-					<text class="menu-arrow">›</text>
+					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('default-models')">
@@ -34,7 +34,7 @@
 							<text class="menu-desc">对话、识图、语音识别、语音合成模型分配</text>
 						</view>
 					</view>
-					<text class="menu-arrow">›</text>
+					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('generation')">
@@ -45,7 +45,7 @@
 							<text class="menu-desc">温度、输出上限、Agent 最大迭代、流式显示</text>
 						</view>
 					</view>
-					<text class="menu-arrow">›</text>
+					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('plugin')">
@@ -56,7 +56,7 @@
 							<text class="menu-desc">GitHub 代理、下载配置</text>
 						</view>
 					</view>
-					<text class="menu-arrow">›</text>
+					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('skills')">
@@ -67,7 +67,7 @@
 							<text class="menu-desc">纯文本技能包，多文档，按 Agent 启用</text>
 						</view>
 					</view>
-					<text class="menu-arrow">›</text>
+					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="confirmExportAllData">
@@ -78,7 +78,7 @@
 							<text class="menu-desc">ZIP 备份包：配置、对话、头像、Agent 工作区</text>
 						</view>
 					</view>
-					<text class="menu-arrow">›</text>
+					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="confirmImportAllData">
@@ -89,7 +89,7 @@
 							<text class="menu-desc">从 ZIP 恢复配置、对话与 Agent 工作区</text>
 						</view>
 					</view>
-					<text class="menu-arrow">›</text>
+					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('about')">
@@ -100,7 +100,7 @@
 							<text class="menu-desc">版本信息</text>
 						</view>
 					</view>
-					<text class="menu-arrow">›</text>
+					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
 				</view>
 			</view>
 		</scroll-view>

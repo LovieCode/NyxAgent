@@ -87,6 +87,7 @@
 
 <style>
 	.nb-status {
+		height: 0rpx;
 		background-color: var(--rice-primary-color);
 	}
 
@@ -100,8 +101,11 @@
 		justify-content: space-between;
 		padding-left: 20rpx;
 		padding-right: 20rpx;
+		padding-top: 48rpx;
+		padding-bottom: 24rpx;
 		height: 96rpx;
 		background-color: var(--rice-primary-color);
+		/* background: linear-gradient(to bottom, rgb(238, 156, 167), rgb(255, 221, 225)); */
 	}
 
 	/* 阴影线 */

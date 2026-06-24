@@ -49,7 +49,7 @@
 	/* ===== Pink/White 主题色覆盖 ===== */
 	.rice-theme-light {
 		/* 主色系 - 清新淡粉（强调用） */
-		--rice-primary-color: #FB8FAB;
+		--rice-primary-color: #ff99af;
 		--rice-primary-color-1: #FDE8EF;
 		--rice-primary-color-7: #E8729A;
 

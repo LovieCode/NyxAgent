@@ -21,6 +21,8 @@ AstrBot/
 .codex/
 .agents/
 .trae/
+.claude/
+CLAUDE.md
 
 # OS
 .DS_Store

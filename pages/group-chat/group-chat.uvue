@@ -96,6 +96,10 @@
 							<view class="toolbar-grid-icon"><oui-icon-unix name="setting" size="52rpx" color="var(--rice-primary-color)" /></view>
 							<text class="toolbar-grid-label">群聊设置</text>
 						</view>
+						<view class="toolbar-grid-item" @click="showDispatchHistory">
+							<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="52rpx" color="var(--rice-primary-color)" /></view>
+							<text class="toolbar-grid-label">调度历史</text>
+						</view>
 					</template>
 				</view>
 				<view class="toolbar-pager">
@@ -114,7 +118,7 @@
 </template>
 
 <script lang="uts">
-	import { agentChat, readLastLLMRequestSnapshot, captionImage, chatWithLLM } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+	import { agentChat, readLastLLMRequestSnapshot, captionImage } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
 	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
 	import { getAgentById } from '@/utils/agent.uts'
 	import { loadChatUserProfile } from '@/utils/chat-conversation-service.uts'
@@ -338,6 +342,7 @@
 				this.messages.push(msg)
 				this.saveMessages()
 				this.scrollToBottom()
+				this.loopTurns = 0
 				this.runScheduler('用户发送消息')
 			},
 			continueDiscussion(): void {
@@ -467,6 +472,10 @@
 			buildGroupMemberAgentItems(): UTSJSONObject[] {
 				const members = getActiveGroupMembers(this.groupId)
 				const result: UTSJSONObject[] = []
+				result.push({
+					agentId: 'scheduler',
+					name: '调度',
+				} as UTSJSONObject)
 				for (let i = 0; i < members.length; i++) {
 					const agent = getAgentById(members[i].agentId)
 					result.push({
@@ -568,6 +577,43 @@
 				uni.setStorageSync('active_agent_id', agentId)
 				uni.navigateTo({ url: '/pages/chat/chat' })
 			},
+			showDispatchHistory(): void {
+				this.showToolPanel = false
+				const lines: string[] = []
+				for (let i = this.messages.length - 1; i >= 0; i--) {
+					const msg = this.messages[i]
+					const senderType = msg['senderType'] as string | null
+					if (senderType != GROUP_MESSAGE_SENDER_SCHEDULER) { continue }
+					const reason = msg['triggerReason'] as string | null
+					const ts = msg['timestamp'] as number | null
+					const d = ts != null && ts > 0 ? new Date(ts) : new Date()
+					const hh = d.getHours() < 10 ? '0' + d.getHours().toString() : d.getHours().toString()
+					const mm = d.getMinutes() < 10 ? '0' + d.getMinutes().toString() : d.getMinutes().toString()
+					lines.push('=== ' + hh + ':' + mm + '  ' + (reason != null ? reason : '') + ' ===')
+					const content = msg['content'] as string | null
+					const text = content != null ? content : ''
+					const first = text.indexOf('{')
+					const last = text.lastIndexOf('}')
+					if (first >= 0 && last > first) {
+						try {
+							const parsed = JSON.parse(text.substring(first, last + 1)) as UTSJSONObject
+							lines.push(JSON.stringify(parsed, null, 2))
+						} catch (_e: any) {
+							lines.push(text)
+						}
+					} else {
+						lines.push(text)
+					}
+					lines.push('')
+					if (lines.length >= 200) { break }
+				}
+				if (lines.length == 0) {
+					uni.showToast({ position: 'bottom', title: '还没有调度记录', icon: 'none' })
+					return
+				}
+				uni.setStorageSync('context_preview_payload', lines.join('\n'))
+				uni.navigateTo({ url: '/pages/context-preview/context-preview' })
+			},
 			runScheduler(reason: string): void {
 				const group = this.group
 				const session = this.session
@@ -581,28 +627,43 @@
 				this.isGenerating = true
 				const schedulerStartedAt = Date.now()
 				const schedulerMessages = buildSchedulerRuntimeMessages(group, session, this.messages, reason, this.loopTurns)
-				chatWithLLM(schedulerMessages, buildSchedulerSystemPrompt(), '', '').then((raw: string | null) => {
-					const text = raw != null ? raw : ''
-					const decision = parseSchedulerDecision(text, group.id)
-					const title = decision['titleSuggestion'] as string | null
-					if (title != null && title.trim() != '') {
-						applyGroupSessionTitleSuggestion(group.id, session.id, title)
-						const freshSession = getGroupSessionById(group.id, session.id)
-						this.session = freshSession != null ? freshSession : session
-					}
-					const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, text)
-					const schedulerSnapshot = readLastLLMRequestSnapshot('', '')
-					if (schedulerSnapshot != null) {
-						const capturedAt = schedulerSnapshot['capturedAt'] as number | null
-						if (capturedAt != null && capturedAt >= schedulerStartedAt) {
-							hidden['requestSnapshot'] = schedulerSnapshot
+				const schedulerAgentId = 'scheduler'
+				let schedulerText = ''
+				const schedulerStream = agentChat(schedulerMessages, buildSchedulerSystemPrompt(), '', '', schedulerAgentId, 1, session.id, '')
+				this.currentStream = schedulerStream
+				schedulerStream.on((event: AgentEvent) => {
+					if (event.type == 'text_delta' && event.text != null) {
+						schedulerText += event.text
+					} else if (event.type == 'error' && event.error != null) {
+						schedulerText = event.error
+					} else if (event.type == 'agent_end') {
+						if (this.discussionStopped == true) {
+							this.isGenerating = false
+							this.currentStream = null
+							return
 						}
+						const decision = parseSchedulerDecision(schedulerText, group.id)
+						const title = decision['titleSuggestion'] as string | null
+						if (title != null && title.trim() != '') {
+							applyGroupSessionTitleSuggestion(group.id, session.id, title)
+							const freshSession = getGroupSessionById(group.id, session.id)
+							this.session = freshSession != null ? freshSession : session
+						}
+						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerText)
+						const schedulerSnapshot = readLastLLMRequestSnapshot(schedulerAgentId, session.id)
+						if (schedulerSnapshot != null) {
+							const capturedAt = schedulerSnapshot['capturedAt'] as number | null
+							if (capturedAt != null && capturedAt >= schedulerStartedAt) {
+								hidden['requestSnapshot'] = schedulerSnapshot
+							}
+						}
+						hidden['triggerReason'] = reason
+						hidden['runtimeMessages'] = JSON.parse(JSON.stringify(schedulerMessages)) as UTSJSONObject[]
+						this.messages.push(hidden)
+						this.saveMessages()
+						this.currentStream = null
+						this.runDecisionActions(decision)
 					}
-					hidden['triggerReason'] = reason
-					hidden['runtimeMessages'] = JSON.parse(JSON.stringify(schedulerMessages)) as UTSJSONObject[]
-					this.messages.push(hidden)
-					this.saveMessages()
-					this.runDecisionActions(decision)
 				})
 			},
 			runDecisionActions(decision: UTSJSONObject): void {
@@ -611,9 +672,10 @@
 					this.isGenerating = false
 					return
 				}
-				this.runActionAt(actions, 0)
+				const shouldContinue = (decision['shouldContinue'] as boolean | null) == true
+				this.runActionAt(actions, 0, shouldContinue)
 			},
-			runActionAt(actions: UTSJSONObject[], index: number): void {
+			runActionAt(actions: UTSJSONObject[], index: number, shouldContinue: boolean): void {
 				if (this.discussionStopped == true) {
 					this.isGenerating = false
 					this.currentStream = null
@@ -628,6 +690,8 @@
 					if (this.loopTurns >= 10) {
 						this.loopTurns = 0
 						this.runScheduler('连续讨论轮数过多，判断是否继续')
+					} else if (shouldContinue == true) {
+						this.runScheduler('调度器决定继续讨论')
 					}
 					return
 				}
@@ -635,10 +699,10 @@
 				const actionType = action['type'] as string | null
 				const agentId = action['agentId'] as string | null
 				if (actionType != 'speak' || agentId == null || agentId == '' || isAgentInGroup(this.groupId, agentId) == false) {
-					this.runActionAt(actions, index + 1)
+					this.runActionAt(actions, index + 1, shouldContinue)
 					return
 				}
-				this.runMemberSpeak(agentId, action, () => { this.runActionAt(actions, index + 1) })
+				this.runMemberSpeak(agentId, action, () => { this.runActionAt(actions, index + 1, shouldContinue) })
 			},
 			runMemberSpeak(agentId: string, action: UTSJSONObject, done: () => void): void {
 				const group = this.group

@@ -32,7 +32,7 @@
 						</view>
 						<text class="group-desc">{{getGroupSummary(group)}}</text>
 					</view>
-					<text class="group-arrow">›</text>
+					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
 				</view>
 				<view v-if="groupList.length == 0" class="empty-state">
 					<text class="empty-title">还没有群聊</text>
