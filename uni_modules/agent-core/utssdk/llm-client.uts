@@ -49,7 +49,7 @@ type ImageBase64Result = {
 }
 
 import { resolveLLMConfig, normalizeBaseUrl, getMemoryOrganizeTaskModel, getVisionTaskModel, getImageCaptionPrompt, stripThinkTags, getAllProviders, getProviderModels } from './provider'
-import { getAgentById } from '@/utils/agent.uts'
+import { getAgentById, isAgentToolEnabled, AGENT_TOOL_MEMORY_BUFFER_WRITE } from '@/utils/agent.uts'
 import { getGlobalGenerationSettings, getEffectiveGenerationSettings, getMemoryOrganizerGenerationSettings, GenerationSettings } from '@/utils/generation-settings.uts'
 import { createAgentTools, AgentTool, ToolResult } from './tools/agent-tools'
 import { AgentEventStream, AgentEvent } from '@/utils/event.uts'
@@ -947,6 +947,7 @@ function prepareAgentContext(
 ): PreparedAgentContext {
 	const workingMessages: UTSJSONObject[] = []
 	const droppedMessages: UTSJSONObject[] = []
+	const agent = getAgentById(agentId)
 	if (systemPrompt != '') {
 		workingMessages.push({
 			role: 'system',
@@ -961,6 +962,12 @@ function prepareAgentContext(
 				content: skillsPrompt,
 			} as UTSJSONObject)
 		}
+	}
+	if (allowCoreMemoryWrite == false && isAgentToolEnabled(agent, AGENT_TOOL_MEMORY_BUFFER_WRITE, allowCoreMemoryWrite) == true) {
+		workingMessages.push({
+			role: 'system',
+			content: '短记忆缓存使用策略：当用户提出或改变当前任务、临时要求、输出偏好、对话阶段或下一步动作时，优先调用 memory_buffer_write 写入一句 64 字以内短状态，覆盖旧缓存；它用于下一轮立刻接上上下文。没有短期状态变化、只是普通问答或闲聊收尾时不要调用。',
+		} as UTSJSONObject)
 	}
 	const personId = 'default'
 	const importantMemory = buildImportantMemoryInjection(agentId, personId, conversationId)
@@ -989,7 +996,6 @@ function prepareAgentContext(
 	if (enableContextTruncation == true) {
 		const systemCount = workingMessages.length
 		// 截断权重：user 1，普通 assistant 0.3，工具调用/结果 0.1
-		const agent = getAgentById(agentId)
 		if (agent != null) {
 			const rawThreshold = agent['truncateThreshold']
 			const rawDropCount = agent['truncateDropCount']

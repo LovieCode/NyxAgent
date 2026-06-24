@@ -610,7 +610,7 @@
 				const list: UTSJSONObject[] = []
 				list.push(this.buildToolOption(AGENT_TOOL_WORKSPACE_FILE, '工作区文件', '读写当前私聊或群聊会话工作区文件'))
 				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_SEARCH, '记忆搜索', '查询当前智能体可见记忆和历史记录'))
-				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_BUFFER_WRITE, '短记忆缓存', '写入 64 字以内的临时记忆缓存'))
+				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_BUFFER_WRITE, '短记忆缓存', '记录当前任务/临时要求/下一步，方便下轮接上'))
 				list.push(this.buildToolOption(AGENT_TOOL_WEB_SEARCH, '网络搜索', '联网搜索实时事实、资料和网页信息'))
 				return list
 			},

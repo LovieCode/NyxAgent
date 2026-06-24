@@ -4,7 +4,7 @@
 		<scroll-view class="container" :scroll-y="true">
 			<view class="hero-card">
 				<text class="hero-title">Agent 记忆系统</text>
-				<text class="hero-desc">这里管理当前智能体的短缓存和重要信息库。短缓存最多 64 字，只会临时注入当前用户的下一次请求；重要信息按范围注入，不保存工具调用细节。</text>
+				<text class="hero-desc">这里管理当前智能体的短缓存和重要信息库。短缓存最多 64 字，用来记录当前任务、临时要求或下一步动作，只会临时注入当前用户的下一次请求；重要信息按范围注入，不保存工具调用细节。</text>
 			</view>
 
 			<view class="card">
@@ -22,9 +22,9 @@
 					<oui-icon-unix name="edit" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
 					<text class="card-title">64 字短缓存</text>
 				</view>
-				<textarea class="textarea" v-model="bufferContent" placeholder="例如：用户偏好简洁回复；当前任务是重构记忆系统。" placeholder-style="color:#9CA3AF" />
+				<textarea class="textarea" v-model="bufferContent" placeholder="例如：当前任务：修群聊工具栏误触；临时要求：回复简短。" placeholder-style="color:#9CA3AF" />
 				<view class="meta-row">
-					<text class="field-tip">{{bufferContent.length}}/64，当前用户短缓存，超过会自动截断</text>
+					<text class="field-tip">{{bufferContent.length}}/64，适合当前任务/临时要求/下一步，超过会自动截断</text>
 					<view class="inline-actions">
 						<text class="text-btn" @click="clearBuffer">清空</text>
 						<text class="primary-mini" @click="saveBuffer">保存</text>
