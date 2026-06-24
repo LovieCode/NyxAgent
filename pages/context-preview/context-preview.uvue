@@ -13,6 +13,20 @@
 				<text class="hero-desc">这里展示上次发送瞬间真实写入 API request body 的上下文快照。不会显示 API Key，也不会重新模拟上下文。</text>
 			</view>
 
+			<view v-if="responsePreviewText != '' || thinkingPreviewText != ''" id="section-response" class="card response-card">
+				<view class="section-row">
+					<text class="section-title">上次响应</text>
+				</view>
+				<view v-if="responsePreviewText != ''" class="response-section">
+					<text class="summary-section-title">正文</text>
+					<text class="code-text">{{responsePreviewText}}</text>
+				</view>
+				<view v-if="thinkingPreviewText != ''" class="response-section response-section-last">
+					<text class="summary-section-title">思考过程</text>
+					<text class="code-text">{{thinkingPreviewText}}</text>
+				</view>
+			</view>
+
 			<view id="section-summary" class="card summary-card">
 				<text class="section-title">摘要</text>
 				<view class="summary-section">
@@ -97,7 +111,7 @@
 
 			<view id="section-full-json" class="card">
 				<view class="section-row">
-					<text class="section-title">完整 JSON</text>
+					<text class="section-title">完整上下文</text>
 					<text class="mini-btn" @click="copyAll">复制</text>
 				</view>
 				<text class="code-text">{{fullJsonText}}</text>
@@ -138,6 +152,8 @@
 				settingsMaxIterations: '—' as string,
 				settingsStreamEnabled: false as boolean,
 				fullJsonText: '' as string,
+				responsePreviewText: '' as string,
+				thinkingPreviewText: '' as string,
 				// 自定义滚动条
 				scrollViewHeight: 0 as number,
 				scrollContentHeight: 0 as number,
@@ -218,9 +234,10 @@
 				if (requestBody != null) {
 					const bodyText = JSON.stringify(requestBody, null, 2)
 					const responseText = parsed['responseText'] as string | null
-					const combined = responseText != null && responseText != ''
-						? bodyText + '\n\n=== 响应 ===\n' + responseText
-						: bodyText
+					const thinkingText = parsed['thinkingText'] as string | null
+					this.responsePreviewText = responseText != null ? this.decodeDisplayEscapes(responseText) : ''
+					this.thinkingPreviewText = thinkingText != null ? this.decodeDisplayEscapes(thinkingText) : ''
+					const combined = this.buildSnapshotDisplayText(bodyText, responseText, thinkingText)
 					this.fullJsonText = this.decodeDisplayEscapes(combined)
 					this.previewText = combined
 					const bodyMessages = requestBody['messages'] as UTSJSONObject[] | null
@@ -261,7 +278,7 @@
 			},
 
 			cacheLayoutMetrics(): void {
-				const ids: string[] = ['context-scroll', 'anchor-top', 'anchor-bottom', 'section-summary', 'section-full-json']
+				const ids: string[] = ['context-scroll', 'anchor-top', 'anchor-bottom', 'section-response', 'section-summary', 'section-full-json']
 				const query = uni.createSelectorQuery().in(this)
 				for (let i = 0; i < ids.length; i++) {
 					const id = ids[i]
@@ -545,6 +562,18 @@
 				}
 			},
 
+			buildSnapshotDisplayText(bodyText: string, responseText: string | null, thinkingText: string | null): string {
+				let result = ''
+				if (responseText != null && responseText != '') {
+					result += '=== 响应 ===\n' + responseText + '\n\n'
+				}
+				if (thinkingText != null && thinkingText != '') {
+					result += '=== 思考过程 ===\n' + thinkingText + '\n\n'
+				}
+				result += '=== 请求体 ===\n' + bodyText
+				return result
+			},
+
 			copyAll() {
 				if (this.previewText == '') {
 					uni.showToast({ position: 'bottom', 
@@ -621,6 +650,18 @@
 
 	.summary-card {
 		padding-bottom: 22rpx;
+	}
+
+	.response-card {
+		background-color: #FFFBFD;
+	}
+
+	.response-section {
+		margin-bottom: 24rpx;
+	}
+
+	.response-section-last {
+		margin-bottom: 0;
 	}
 
 	.summary-section {

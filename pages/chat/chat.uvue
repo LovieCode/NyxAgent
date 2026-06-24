@@ -118,7 +118,7 @@
 	 * 对话页面 - AI Agent 主聊天界面
 	 * 扁平化粉白主题
 	 */
-	import { agentChat, readLastLLMRequestSnapshot, organizeAgentMemory, captionImage } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+	import { agentChat, readLastLLMRequestSnapshot, organizeAgentMemory, captionImage, appendResponseToSnapshot } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
 	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
 	import { getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { buildChatDatetimePrefix } from '@/utils/datetime-context.uts'
@@ -136,6 +136,8 @@
 		createVoiceMessage,
 		createTextMessage,
 		setImageMessageCaption,
+		getMessageContent,
+		getMessageThinking,
 	} from '@/utils/chat-models.uts'
 	import {
 		pushUserTextMessage,
@@ -268,6 +270,26 @@
 					return parts
 				}
 				return [] as UTSJSONObject[]
+			},
+
+			findLastAssistantMessage(): UTSJSONObject | null {
+				for (let i = this.messages.length - 1; i >= 0; i--) {
+					const msg = this.messages[i]
+					const role = msg['role'] as string | null
+					if (role == 'assistant') {
+						return msg
+					}
+				}
+				return null
+			},
+
+			appendLatestResponseSnapshot(): void {
+				const msg = this.findLastAssistantMessage()
+				if (msg == null) { return }
+				const responseText = getMessageContent(msg)
+				const thinkingText = getMessageThinking(msg)
+				if (responseText == '' && thinkingText == '') { return }
+				appendResponseToSnapshot(this.currentAgentId, this.conversationId, responseText, thinkingText)
 			},
 
 			loadUserNickname() {
@@ -809,6 +831,7 @@
 					})
 				} else if (event.type == 'agent_end') {
 					finalizeAssistantTurn(this.messages, this.msgSegmentation)
+					this.appendLatestResponseSnapshot()
 					this.isGenerating = false
 					this.currentStream = null
 					this.saveCurrentConversation()

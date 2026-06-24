@@ -129,7 +129,7 @@
 	import { getAgentById } from '@/utils/agent.uts'
 	import { loadChatUserProfile } from '@/utils/chat-conversation-service.uts'
 	import { buildChatDatetimePrefix } from '@/utils/datetime-context.uts'
-	import { CHAT_ROLE_ASSISTANT, getMessageParts, setImageMessageCaption } from '@/utils/chat-models.uts'
+	import { CHAT_ROLE_ASSISTANT, getMessageParts, getMessageThinking, setImageMessageCaption } from '@/utils/chat-models.uts'
 	import { reduceAgentEvent, finalizeAssistantTurn } from '@/utils/chat-message-reducer.uts'
 	import {
 		ACTIVE_GROUP_CHAT_ID_KEY,
@@ -773,11 +773,16 @@
 				const schedulerMessages = buildSchedulerRuntimeMessages(group, session, this.messages, reason, this.loopTurns)
 				const schedulerAgentId = 'scheduler'
 				let schedulerText = ''
+				let schedulerThinking = ''
 				const schedulerStream = agentChat(schedulerMessages, buildSchedulerSystemPrompt(), '', '', schedulerAgentId, 1, session.id, '')
 				this.currentStream = schedulerStream
 				schedulerStream.on((event: AgentEvent) => {
 					if (event.type == 'text_delta' && event.text != null) {
 						schedulerText += event.text
+					} else if (event.type == 'thinking_delta' && event.thinkingText != null) {
+						schedulerThinking += (event.thinkingText as string)
+					} else if (event.type == 'thinking_end' && event.fullThinking != null) {
+						schedulerThinking = event.fullThinking as string
 					} else if (event.type == 'error' && event.error != null) {
 						schedulerText = event.error
 					} else if (event.type == 'agent_end') {
@@ -794,7 +799,7 @@
 							this.session = freshSession != null ? freshSession : session
 						}
 						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerText)
-						appendResponseToSnapshot(schedulerAgentId, session.id, schedulerText)
+						appendResponseToSnapshot(schedulerAgentId, session.id, schedulerText, schedulerThinking)
 						const schedulerSnapshot = readLastLLMRequestSnapshot(schedulerAgentId, session.id)
 						if (schedulerSnapshot != null) {
 							const capturedAt = schedulerSnapshot['capturedAt'] as number | null
@@ -882,8 +887,9 @@
 						if (lastAssistant != null) {
 							syncGroupStreamingMessage(streamingMsg, lastAssistant)
 							const responseText = streamingMsg['content'] as string | null
-							if (responseText != null && responseText != '') {
-								appendResponseToSnapshot(agentId, session.id, responseText)
+							const thinkingText = getMessageThinking(streamingMsg)
+							if ((responseText != null && responseText != '') || thinkingText != '') {
+								appendResponseToSnapshot(agentId, session.id, responseText != null ? responseText : '', thinkingText)
 							}
 						} else {
 							streamingMsg['visible'] = false
