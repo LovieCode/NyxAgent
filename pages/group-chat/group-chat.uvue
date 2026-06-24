@@ -866,11 +866,6 @@
 				stream.on((event: AgentEvent) => {
 					if (event.type == 'agent_end') {
 						finalizeAssistantTurn(tempMessages, msgSegmentation)
-						const requestSnapshot = readLastLLMRequestSnapshot(agentId, session.id)
-						if (requestSnapshot != null) {
-							contextRecord['requestSnapshot'] = requestSnapshot
-							saveGroupAgentContextRecord(contextRecord)
-						}
 						const lastAssistant = this.findLastAssistantMessageFrom(tempMessages, newMsgStartIndex)
 						if (lastAssistant != null) {
 							syncGroupStreamingMessage(streamingMsg, lastAssistant)
@@ -880,6 +875,11 @@
 							}
 						} else {
 							streamingMsg['visible'] = false
+						}
+						const requestSnapshot = readLastLLMRequestSnapshot(agentId, session.id)
+						if (requestSnapshot != null) {
+							contextRecord['requestSnapshot'] = requestSnapshot
+							saveGroupAgentContextRecord(contextRecord)
 						}
 						streamingMsg['isStreaming'] = false
 						this.currentStream = null
