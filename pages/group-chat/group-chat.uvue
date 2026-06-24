@@ -190,6 +190,8 @@
 				toolbarDragOffset: 0 as number,
 				toolbarViewportWidth: 0 as number,
 				toolbarDragging: false as boolean,
+				toolbarSwipeMoved: false as boolean,
+				toolbarSwipeLockedUntil: 0 as number,
 				scrollTop: 0 as number,
 				longpressCancelToken: 0 as number,
 				currentStream: null as AgentEventStream | null,
@@ -258,8 +260,14 @@
 				this.scrollToBottom()
 			},
 			goBack(): void { uni.navigateBack() },
-			goSettings(): void { uni.navigateTo({ url: '/pages/group-chat-settings/group-chat-settings' }) },
-			goSessions(): void { uni.navigateTo({ url: '/pages/group-chat-sessions/group-chat-sessions' }) },
+			goSettings(): void {
+				if (this.consumeToolbarSwipeClick() == true) { return }
+				uni.navigateTo({ url: '/pages/group-chat-settings/group-chat-settings' })
+			},
+			goSessions(): void {
+				if (this.consumeToolbarSwipeClick() == true) { return }
+				uni.navigateTo({ url: '/pages/group-chat-sessions/group-chat-sessions' })
+			},
 			toggleToolPanel(): void {
 				this.showToolPanel = !this.showToolPanel
 				if (this.showToolPanel == true) {
@@ -305,6 +313,7 @@
 				this.toolbarTouchStartY = e.touches[0].screenY
 				this.toolbarTouchCurrentX = this.toolbarTouchStartX
 				this.toolbarDragOffset = 0
+				this.toolbarSwipeMoved = false
 				this.toolbarDragging = true
 			},
 			onToolbarTouchMove(e: UniTouchEvent): void {
@@ -319,6 +328,8 @@
 				if (absX <= 8 || absX <= absY * 1.15) {
 					return
 				}
+				this.toolbarSwipeMoved = true
+				this.toolbarSwipeLockedUntil = Date.now() + 350
 				let offset = dx
 				if ((this.toolbarPageIndex == 0 && dx > 0) || (this.toolbarPageIndex == 1 && dx < 0)) {
 					offset = dx * 0.28
@@ -335,6 +346,9 @@
 				const absY = Math.abs(dy)
 				this.toolbarDragging = false
 				this.toolbarDragOffset = 0
+				if (this.toolbarSwipeMoved == true) {
+					this.toolbarSwipeLockedUntil = Date.now() + 350
+				}
 				if (absX < 40 || absX <= absY * 1.4) { return }
 				if (dx < 0 && this.toolbarPageIndex < 1) {
 					this.nextToolbarPage()
@@ -345,6 +359,17 @@
 			onToolbarTouchCancel(): void {
 				this.toolbarDragging = false
 				this.toolbarDragOffset = 0
+				if (this.toolbarSwipeMoved == true) {
+					this.toolbarSwipeLockedUntil = Date.now() + 350
+				}
+			},
+			consumeToolbarSwipeClick(): boolean {
+				const now = Date.now()
+				if (this.toolbarSwipeMoved == true || now < this.toolbarSwipeLockedUntil) {
+					this.toolbarSwipeMoved = false
+					return true
+				}
+				return false
 			},
 			onMsgScroll(): void { this.longpressCancelToken++ },
 			onInputLineChange(e: UniTextareaLineChangeEvent): void {
@@ -444,11 +469,13 @@
 				this.runScheduler('用户发送消息')
 			},
 			continueDiscussion(): void {
+				if (this.consumeToolbarSwipeClick() == true) { return }
 				if (this.isGenerating == true) { return }
 				this.showToolPanel = false
 				this.runScheduler('用户要求继续讨论')
 			},
 			stopDiscussion(): void {
+				if (this.consumeToolbarSwipeClick() == true) { return }
 				this.discussionStopped = true
 				const stream = this.currentStream
 				if (stream != null) {
@@ -496,6 +523,7 @@
 				})
 			},
 			pickImage(): void {
+				if (this.consumeToolbarSwipeClick() == true) { return }
 				this.showToolPanel = false
 				if (this.isGenerating == true) { return }
 				uni.chooseImage({
@@ -515,6 +543,7 @@
 				})
 			},
 			takePhoto(): void {
+				if (this.consumeToolbarSwipeClick() == true) { return }
 				this.showToolPanel = false
 				if (this.isGenerating == true) { return }
 				uni.chooseImage({
@@ -534,6 +563,7 @@
 				})
 			},
 			pickFile(): void {
+				if (this.consumeToolbarSwipeClick() == true) { return }
 				this.showToolPanel = false
 				if (this.isGenerating == true) { return }
 				uni.chooseFile({
@@ -584,10 +614,12 @@
 				return result
 			},
 			chooseAgentForMemory(): void {
+				if (this.consumeToolbarSwipeClick() == true) { return }
 				this.showToolPanel = false
 				this.chooseAgentAndRun('选择要查看记忆的 Agent', 'memory')
 			},
 			chooseAgentForContext(): void {
+				if (this.consumeToolbarSwipeClick() == true) { return }
 				this.showToolPanel = false
 				this.chooseAgentAndRun('选择要查看上下文的 Agent', 'context')
 			},
@@ -640,6 +672,7 @@
 				uni.navigateTo({ url: '/pages/context-preview/context-preview' })
 			},
 			openGroupWorkspace(): void {
+				if (this.consumeToolbarSwipeClick() == true) { return }
 				this.showToolPanel = false
 				const group = this.group
 				const session = this.session
@@ -676,6 +709,7 @@
 				uni.navigateTo({ url: '/pages/chat/chat' })
 			},
 			showDispatchHistory(): void {
+				if (this.consumeToolbarSwipeClick() == true) { return }
 				this.showToolPanel = false
 				const lines: string[] = []
 				for (let i = this.messages.length - 1; i >= 0; i--) {
