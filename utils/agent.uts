@@ -8,6 +8,24 @@ import { getAgentDir, deleteItem } from '@/utils/file-manager.uts'
 const DEFAULT_AGENT_PROMPT_VERSION_KEY = 'default_agent_prompt_version'
 const DEFAULT_AGENT_PROMPT_VERSION = 'minxi-default-v1'
 
+export const AGENT_TOOL_WORKSPACE_FILE = 'workspace_file'
+export const AGENT_TOOL_MEMORY_SEARCH = 'memory_search'
+export const AGENT_TOOL_MEMORY_BUFFER_WRITE = 'memory_buffer_write'
+export const AGENT_TOOL_WEB_SEARCH = 'web_search'
+export const AGENT_TOOL_MEMORY_CORE_LIST = 'memory_core_list'
+export const AGENT_TOOL_MEMORY_CORE_SAVE = 'memory_core_save'
+export const AGENT_TOOL_MEMORY_CORE_FORGET = 'memory_core_forget'
+
+const ALL_AGENT_TOOL_IDS: string[] = [
+	AGENT_TOOL_WORKSPACE_FILE,
+	AGENT_TOOL_MEMORY_SEARCH,
+	AGENT_TOOL_MEMORY_BUFFER_WRITE,
+	AGENT_TOOL_WEB_SEARCH,
+	AGENT_TOOL_MEMORY_CORE_LIST,
+	AGENT_TOOL_MEMORY_CORE_SAVE,
+	AGENT_TOOL_MEMORY_CORE_FORGET,
+]
+
 export const MINXI_BASE_STYLE = '你是 AI，用户也知道你是 AI，但对话中不要表现出来。别提"我是 AI""作为 AI""虚拟"这类词，别解释你能做什么不能做什么，像个正常人一样说话就行。做事严谨、高效、优雅。只能图文交流，不能假装完成现实动作。主动使用合适工具，尊重事实，涉及实时或可能变化的信息要先求证，不编造结果。\n' +
 	'以下是风格参考，不是硬性规则：直接接话题，别太正式；回复简短，每次发言尽量不超过15字，除非有必须的事务；可以轻吐槽、开玩笑或简短关心，视对方语气调整；别写动作描写和心理活动。口语化收尾，别啰嗦。'
 
@@ -140,6 +158,110 @@ export function getAgentById(id: string): UTSJSONObject | null {
 		}
 	}
 	return null
+}
+
+export function agentToolIdListContains(list: string[], toolId: string): boolean {
+	for (let i = 0; i < list.length; i++) {
+		if (list[i] == toolId) {
+			return true
+		}
+	}
+	return false
+}
+
+export function isKnownAgentToolId(toolId: string): boolean {
+	return agentToolIdListContains(ALL_AGENT_TOOL_IDS, toolId)
+}
+
+function appendUniqueAgentToolId(list: string[], toolId: string): void {
+	if (toolId == '') {
+		return
+	}
+	if (isKnownAgentToolId(toolId) == false) {
+		return
+	}
+	if (agentToolIdListContains(list, toolId) == true) {
+		return
+	}
+	list.push(toolId)
+}
+
+function readAgentToolIdArray(value: any | null): string[] {
+	const result: string[] = []
+	if (value == null) {
+		return result
+	}
+	try {
+		const json = JSON.stringify(value)
+		if (json.startsWith('[')) {
+			const arr = JSON.parse(json) as string[]
+			for (let i = 0; i < arr.length; i++) {
+				appendUniqueAgentToolId(result, arr[i])
+			}
+		} else if (json.startsWith('"')) {
+			appendUniqueAgentToolId(result, JSON.parse(json) as string)
+		}
+	} catch (_e: any) {
+		// 旧数据异常时按未配置处理
+	}
+	return result
+}
+
+export function getDefaultAgentToolIds(allowCoreMemoryWrite: boolean = false): string[] {
+	const result: string[] = [
+		AGENT_TOOL_WORKSPACE_FILE,
+		AGENT_TOOL_MEMORY_SEARCH,
+		AGENT_TOOL_MEMORY_BUFFER_WRITE,
+		AGENT_TOOL_WEB_SEARCH,
+	]
+	if (allowCoreMemoryWrite == true) {
+		result.push(AGENT_TOOL_MEMORY_CORE_LIST)
+		result.push(AGENT_TOOL_MEMORY_CORE_SAVE)
+		result.push(AGENT_TOOL_MEMORY_CORE_FORGET)
+	}
+	return result
+}
+
+export function filterKnownAgentToolIds(ids: string[]): string[] {
+	const result: string[] = []
+	for (let i = 0; i < ids.length; i++) {
+		appendUniqueAgentToolId(result, ids[i])
+	}
+	return result
+}
+
+function filterAllowedAgentToolIds(ids: string[], allowCoreMemoryWrite: boolean): string[] {
+	const allowed = getDefaultAgentToolIds(allowCoreMemoryWrite)
+	const result: string[] = []
+	for (let i = 0; i < ids.length; i++) {
+		const id = ids[i]
+		if (agentToolIdListContains(allowed, id) == true) {
+			appendUniqueAgentToolId(result, id)
+		}
+	}
+	return result
+}
+
+export function getAgentEnabledToolIds(agent: UTSJSONObject | null, allowCoreMemoryWrite: boolean = false): string[] {
+	if (agent == null) {
+		return getDefaultAgentToolIds(allowCoreMemoryWrite)
+	}
+	const rawValue = agent['enabledToolIds']
+	if (rawValue == null) {
+		return getDefaultAgentToolIds(allowCoreMemoryWrite)
+	}
+	return filterAllowedAgentToolIds(readAgentToolIdArray(rawValue), allowCoreMemoryWrite)
+}
+
+export function isAgentToolEnabled(agent: UTSJSONObject | null, toolId: string, allowCoreMemoryWrite: boolean = false): boolean {
+	if (toolId == '') {
+		return false
+	}
+	if (isKnownAgentToolId(toolId) == false) {
+		return false
+	}
+	const enabled = getAgentEnabledToolIds(agent, allowCoreMemoryWrite)
+	return agentToolIdListContains(enabled, toolId)
 }
 
 /** 更新智能体的名称、描述、头像和系统提示词 */
@@ -293,6 +415,18 @@ export function updateAgentSkills(id: string, skillIds: string[]): void {
 	for (let i = 0; i < agents.length; i++) {
 		if ((agents[i]['id'] as string) == id) {
 			agents[i]['skillIds'] = skillIds
+			break
+		}
+	}
+	saveAgents(agents)
+}
+
+/** 更新智能体启用的工具列表；未启用的工具不会注入 LLM 上下文。 */
+export function updateAgentTools(id: string, toolIds: string[]): void {
+	const agents = getAgents()
+	for (let i = 0; i < agents.length; i++) {
+		if ((agents[i]['id'] as string) == id) {
+			agents[i]['enabledToolIds'] = filterKnownAgentToolIds(toolIds)
 			break
 		}
 	}

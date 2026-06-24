@@ -34,6 +34,7 @@ import {
 	MemorySearchFilter,
 } from '../memory'
 import { getProviderApiConfig } from '../provider'
+import { getAgentById, isAgentToolEnabled } from '@/utils/agent.uts'
 
 /** ToolResult 匹配 agent-core types */
 export type ToolResult = {
@@ -56,23 +57,32 @@ export interface AgentTool {
 	execute(args: UTSJSONObject): Promise<ToolResult>
 }
 
+function appendToolIfEnabled(tools: AgentTool[], agent: UTSJSONObject | null, tool: AgentTool, allowCoreMemoryWrite: boolean): void {
+	if (isAgentToolEnabled(agent, tool.name, allowCoreMemoryWrite) == true) {
+		tools.push(tool)
+	}
+}
+
 /**
  * 创建绑定到指定 agent 的沙箱文件工具列表
  * @param agentId 智能体 ID
  * @returns AgentTool 数组
  */
 export function createAgentTools(agentId: string, conversationId: string = '', personId: string = '', allowCoreMemoryWrite: boolean = false, workspaceRoot: string = ''): AgentTool[] {
-	const tools: AgentTool[] = [
-		new WorkspaceFileTool(agentId, workspaceRoot) as AgentTool,
-		new MemorySearchTool(agentId, conversationId, personId) as AgentTool,
-		new MemoryBufferWriteTool(agentId, conversationId, personId) as AgentTool,
-		new WebSearchTool() as AgentTool,
-	]
+	const tools: AgentTool[] = []
+	if (agentId == 'scheduler') {
+		return tools
+	}
+	const agent = getAgentById(agentId)
+	appendToolIfEnabled(tools, agent, new WorkspaceFileTool(agentId, workspaceRoot) as AgentTool, allowCoreMemoryWrite)
+	appendToolIfEnabled(tools, agent, new MemorySearchTool(agentId, conversationId, personId) as AgentTool, allowCoreMemoryWrite)
+	appendToolIfEnabled(tools, agent, new MemoryBufferWriteTool(agentId, conversationId, personId) as AgentTool, allowCoreMemoryWrite)
+	appendToolIfEnabled(tools, agent, new WebSearchTool() as AgentTool, allowCoreMemoryWrite)
 	// 核心记忆增删仅限记忆管理 Agent
 	if (allowCoreMemoryWrite == true) {
-		tools.push(new MemoryCoreListTool(agentId, conversationId, personId) as AgentTool)
-		tools.push(new MemoryCoreSaveTool(agentId, conversationId, personId) as AgentTool)
-		tools.push(new MemoryCoreForgetTool() as AgentTool)
+		appendToolIfEnabled(tools, agent, new MemoryCoreListTool(agentId, conversationId, personId) as AgentTool, allowCoreMemoryWrite)
+		appendToolIfEnabled(tools, agent, new MemoryCoreSaveTool(agentId, conversationId, personId) as AgentTool, allowCoreMemoryWrite)
+		appendToolIfEnabled(tools, agent, new MemoryCoreForgetTool() as AgentTool, allowCoreMemoryWrite)
 	}
 	return tools
 }
