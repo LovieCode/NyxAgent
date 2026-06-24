@@ -650,6 +650,10 @@
 				})
 			},
 			openMemoryForAgent(agentId: string): void {
+				if (agentId != 'scheduler' && getAgentById(agentId) == null) {
+					uni.showToast({ position: 'bottom', title: '该智能体已删除', icon: 'none' })
+					return
+				}
 				uni.setStorageSync('memory_agent_id', agentId)
 				uni.setStorageSync('memory_conversation_id', this.sessionId)
 				uni.navigateTo({ url: '/pages/memory/memory' })
@@ -657,6 +661,10 @@
 			openContextForAgent(agentId: string): void {
 				const session = this.session
 				if (session == null) { return }
+				if (agentId != 'scheduler' && getAgentById(agentId) == null) {
+					uni.showToast({ position: 'bottom', title: '该智能体已删除', icon: 'none' })
+					return
+				}
 				const preview = readLastLLMRequestSnapshot(agentId, session.id)
 				if (preview == null) {
 					uni.showToast({ position: 'bottom', title: '该 Agent 还没有真实请求快照', icon: 'none' })
@@ -705,6 +713,10 @@
 			openAgentPrivateChat(msg: UTSJSONObject): void {
 				const agentId = msg['senderAgentId'] as string | null
 				if (agentId == null || agentId == '') { return }
+				if (getAgentById(agentId) == null) {
+					uni.showToast({ position: 'bottom', title: '该智能体已删除', icon: 'none' })
+					return
+				}
 				uni.setStorageSync('active_agent_id', agentId)
 				uni.navigateTo({ url: '/pages/chat/chat' })
 			},
@@ -831,7 +843,7 @@
 				const action = actions[index]
 				const actionType = action['type'] as string | null
 				const agentId = action['agentId'] as string | null
-				if (actionType != 'speak' || agentId == null || agentId == '' || isAgentInGroup(this.groupId, agentId) == false) {
+				if (actionType != 'speak' || agentId == null || agentId == '' || getAgentById(agentId) == null || isAgentInGroup(this.groupId, agentId) == false) {
 					this.runActionAt(actions, index + 1, shouldContinue)
 					return
 				}

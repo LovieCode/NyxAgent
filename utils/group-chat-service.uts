@@ -373,7 +373,7 @@ export function getActiveGroupMembers(groupId: string): GroupChatMember[] {
 	const members = getGroupMembers(groupId)
 	const result: GroupChatMember[] = []
 	for (let i = 0; i < members.length; i++) {
-		if (members[i].active == true) {
+		if (members[i].active == true && getAgentById(members[i].agentId) != null) {
 			result.push(members[i])
 		}
 	}
@@ -386,6 +386,9 @@ export function getActiveGroupMembers(groupId: string): GroupChatMember[] {
 }
 
 export function isAgentInGroup(groupId: string, agentId: string): boolean {
+	if (getAgentById(agentId) == null) {
+		return false
+	}
 	const members = getGroupMembers(groupId)
 	for (let i = 0; i < members.length; i++) {
 		if (members[i].agentId == agentId && members[i].active == true) {
