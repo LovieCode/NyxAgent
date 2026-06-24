@@ -1,0 +1,56 @@
+/**
+ * 群聊流式控场检测
+ *
+ * 只做极窄关键词触发，不在本地裁决对错。
+ * 真正 allow / revise / revoke 交给隐藏调度 Agent。
+ */
+
+export type SchedulerLeakCandidate = {
+	hit: boolean
+	keyword: string
+}
+
+const SCHEDULER_LEAK_KEYWORDS: string[] = [
+	'调度让我',
+	'调度要求',
+	'调度指示',
+	'收到调度',
+	'隐藏调度',
+	'调度 Agent',
+	'调度 agent',
+	'调度Agent',
+	'调度agent',
+	'内部指令',
+	'私密指令',
+	'幕后安排',
+	'scheduler',
+	'privateInstruction',
+]
+
+export function getSchedulerLeakHoldSize(): number {
+	let maxLength = 0
+	for (let i = 0; i < SCHEDULER_LEAK_KEYWORDS.length; i++) {
+		const len = SCHEDULER_LEAK_KEYWORDS[i].length
+		if (len > maxLength) {
+			maxLength = len
+		}
+	}
+	return maxLength + 2
+}
+
+export function detectSchedulerLeakCandidate(text: string): SchedulerLeakCandidate {
+	const lower = text.toLowerCase()
+	for (let i = 0; i < SCHEDULER_LEAK_KEYWORDS.length; i++) {
+		const keyword = SCHEDULER_LEAK_KEYWORDS[i]
+		if (lower.indexOf(keyword.toLowerCase()) >= 0) {
+			return {
+				hit: true,
+				keyword: keyword,
+			} as SchedulerLeakCandidate
+		}
+	}
+	return {
+		hit: false,
+		keyword: '',
+	} as SchedulerLeakCandidate
+}

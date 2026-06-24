@@ -821,14 +821,27 @@ export function revokeGroupAgentMessage(groupId: string, sessionId: string, mess
 		const id = messages[i]['id'] as string | null
 		const senderType = messages[i]['senderType'] as string | null
 		if (id == messageId && senderType == GROUP_MESSAGE_SENDER_AGENT) {
+			const senderName = messages[i]['senderName'] as string | null
+			const name = senderName != null && senderName.trim() != '' ? senderName.trim() : '成员'
+			const text = name + '撤回了一条消息'
 			messages[i]['revoked'] = true
-			messages[i]['content'] = '消息已撤回'
-			messages[i]['message'] = [createPlainPart('消息已撤回')]
+			messages[i]['content'] = text
+			messages[i]['message'] = [createPlainPart(text)]
 			messages[i]['isStreaming'] = false
 			break
 		}
 	}
 	saveGroupMessages(groupId, sessionId, messages)
+}
+
+export function markGroupAgentMessageRevoked(message: UTSJSONObject): void {
+	const senderName = message['senderName'] as string | null
+	const name = senderName != null && senderName.trim() != '' ? senderName.trim() : '成员'
+	const text = name + '撤回了一条消息'
+	message['revoked'] = true
+	message['content'] = text
+	message['message'] = [createPlainPart(text)]
+	message['isStreaming'] = false
 }
 
 export function getVisibleGroupMessages(messages: UTSJSONObject[]): UTSJSONObject[] {
@@ -961,6 +974,15 @@ export function buildSchedulerSystemPrompt(): string {
 		'触发上下文、成员列表（含角色简介）、最近聊天记录在用户消息中提供。'
 }
 
+export function buildSchedulerReviewSystemPrompt(): string {
+	return '你是群聊的隐藏审核调度 Agent，职责是判断一条候选群聊发言是否可以公开显示。\n\n' +
+		'审核范围只限：是否暴露隐藏调度、内部指令、私密指令、幕后安排或 scheduler 机制。\n' +
+		'不要审查事实对错、语气好坏、创作质量，也不要扩大判断范围。\n\n' +
+		'输出纯 JSON，禁止 Markdown，格式：\n' +
+		'{"decision":"allow|revise|revoke","reason":"<简短原因>","revisionInstruction":"<需要重写时给成员的要求，否则为空>"}\n\n' +
+		'allow：误触发或没有真正暴露调度；revise：保留原意但必须移除调度/内部指令表述；revoke：严重暴露且不适合公开。'
+}
+
 function formatMemberList(groupId: string): string {
 	const members = getActiveGroupMembers(groupId)
 	const lines: string[] = []
@@ -1008,6 +1030,7 @@ export function buildGroupTranscript(messages: UTSJSONObject[], limit: number = 
 		const role = msg['role'] as string | null
 		const senderType = msg['senderType'] as string | null
 		const senderName = msg['senderName'] as string | null
+		const messageId = msg['id'] as string | null
 		const name = resolveGroupSenderDisplayName(senderName, senderType, role)
 		const content = getMessageContent(msg)
 		if (content.trim() != '') {
@@ -1017,6 +1040,7 @@ export function buildGroupTranscript(messages: UTSJSONObject[], limit: number = 
 				displayContent = truncateTranscriptContent(content, truncateLength)
 			}
 			lines.push('--- message #' + (i - start + 1).toString() + ' ---')
+			lines.push('messageId: ' + (messageId != null ? messageId : ''))
 			lines.push('sender: ' + name)
 			lines.push('senderType: ' + (senderType != null ? senderType : '未标记'))
 			lines.push('role: ' + (role != null ? role : '未标记'))
@@ -1100,14 +1124,60 @@ export function buildFallbackSchedulerDecision(groupId: string): UTSJSONObject {
 	} as UTSJSONObject
 }
 
+export function buildSchedulerReviewMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], agentId: string, agentName: string, keyword: string, candidateText: string): UTSJSONObject[] {
+	const content = '【调度审核任务】\n' +
+		'你是隐藏的群聊调度 Agent。现在需要审核一条尚未完整公开的成员发言是否暴露了调度机制。\n\n' +
+		'审核目标：只判断是否暴露隐藏调度、内部指令或私密调度过程；不要评价事实对错、文风、内容质量。\n' +
+		'触发关键词：' + keyword + '\n' +
+		'发言成员 ID：' + agentId + '\n' +
+		'发言成员名：' + agentName + '\n' +
+		'当前会话名：' + displaySessionTitle(session) + '\n\n' +
+		'最近公开群聊记录：\n' + buildGroupTranscript(messages, 12) + '\n\n' +
+		'候选完整发言：\n' + candidateText + '\n\n' +
+		'请严格输出 JSON，不加 Markdown，不加解释。\n' +
+		'格式：{"decision":"allow|revise|revoke","reason":"简短原因","revisionInstruction":"如果 decision=revise，给原成员的重写要求；否则为空"}\n' +
+		'allow：误触发或没有真正暴露调度；revise：能保留原意但必须删掉调度/内部指令表述；revoke：严重暴露且不适合公开。'
+	return [createTextMessage(CHAT_ROLE_USER, content)]
+}
+
+export function parseSchedulerReviewDecision(raw: string): UTSJSONObject {
+	let jsonText = raw.trim()
+	const first = jsonText.indexOf('{')
+	const last = jsonText.lastIndexOf('}')
+	if (first >= 0 && last > first) {
+		jsonText = jsonText.substring(first, last + 1)
+	}
+	try {
+		const parsed = JSON.parse(jsonText) as UTSJSONObject
+		const decisionRaw = parsed['decision'] as string | null
+		let decision = decisionRaw != null ? decisionRaw.trim() : ''
+		if (decision != 'allow' && decision != 'revise' && decision != 'revoke') {
+			decision = 'revise'
+		}
+		const reasonRaw = parsed['reason'] as string | null
+		const instructionRaw = parsed['revisionInstruction'] as string | null
+		return {
+			decision: decision,
+			reason: reasonRaw != null ? reasonRaw : '',
+			revisionInstruction: instructionRaw != null ? instructionRaw : '',
+		} as UTSJSONObject
+	} catch (_e: any) {
+	}
+	return {
+		decision: 'revise',
+		reason: '审核结果解析失败',
+		revisionInstruction: '保留原意，删除任何关于调度、内部指令、私密指令或幕后安排的表述。',
+	} as UTSJSONObject
+}
+
 export function buildMemberSystemPrompt(agent: UTSJSONObject, sharedPrompt: string = ''): string {
 	const basePrompt = readAgentSystemPrompt(agent)
 	const sharedText = sharedPrompt.trim()
 	const sharedBlock = sharedText != '' ? '\n\n群聊共享提示词：\n' + sharedText : ''
 	return basePrompt + '\n\n' +
 		'你正在一个群聊中发言。\n' +
-		'群聊规则：你可以使用工具处理当前群会话共享工作区；公开回复只输出你要发到群里的正文，不要在开头附加自己的名字或“成员名：”。不要说“收到调度”“内部指令”“隐藏调度 Agent”“系统让我”等内容，不要暴露任何调度流程。\n' +
-		'成员名、动态会话名、公开发言目标、目标对象和私密指令会在最后一条用户消息中提供。' +
+		'群聊规则：你可以使用工具处理当前群会话共享工作区；公开回复只输出你要发到群里的正文，不要在开头附加自己的名字或“成员名：”。不要提及幕后安排、内部任务描述或系统流程。\n' +
+		'成员名、动态会话名、公开发言目标、目标对象和本轮发言要点会在最后一条用户消息中提供。' +
 		sharedBlock
 }
 
@@ -1133,7 +1203,7 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 	const publicIntent = readActionText(action, 'publicIntent')
 	const targetType = readActionText(action, 'targetType')
 	const targetAgentId = readActionText(action, 'targetAgentId')
-	const taskText = '【动态调度上下文】\n' +
+	const taskText = '【当前发言任务】\n' +
 		'现在轮到你发言。\n' +
 		'成员名：' + agentName + '\n' +
 		'群聊名：' + group.name + '\n' +
@@ -1141,8 +1211,8 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 		'公开发言目标：' + publicIntent + '\n' +
 		'目标类型：' + targetType + '\n' +
 		'目标 Agent ID：' + targetAgentId + '\n' +
-		'私密指令：' + privateInstruction + '\n' +
-		'只输出要发到群聊里的正文，不要加自己的名字前缀，不要暴露调度和内部信息。'
+		'本轮发言要点：' + privateInstruction + '\n' +
+		'只输出要发到群聊里的正文，不要加自己的名字前缀，不要描述幕后流程。'
 	runtime.push(createTextMessage(CHAT_ROLE_USER, taskText))
 	return buildRuntimeChatMessages(runtime, {
 		injectDatetime: injectDatetime,
