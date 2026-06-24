@@ -990,10 +990,19 @@ function resolveGroupSenderDisplayName(senderName: string | null, senderType: st
 	return name != '' ? name : '成员'
 }
 
+function truncateTranscriptContent(content: string, maxLength: number): string {
+	if (content.length <= maxLength) {
+		return content
+	}
+	return content.substring(0, maxLength) + '...[已截断]'
+}
+
 export function buildGroupTranscript(messages: UTSJSONObject[], limit: number = 30): string {
 	const visible = getVisibleGroupMessages(messages)
 	const start = visible.length > limit ? visible.length - limit : 0
 	const lines: string[] = []
+	const keepFullCount = 5
+	const truncateLength = 30
 	for (let i = start; i < visible.length; i++) {
 		const msg = visible[i]
 		const role = msg['role'] as string | null
@@ -1002,12 +1011,17 @@ export function buildGroupTranscript(messages: UTSJSONObject[], limit: number = 
 		const name = resolveGroupSenderDisplayName(senderName, senderType, role)
 		const content = getMessageContent(msg)
 		if (content.trim() != '') {
+			const fromLatest = visible.length - i
+			let displayContent = content
+			if (fromLatest > keepFullCount) {
+				displayContent = truncateTranscriptContent(content, truncateLength)
+			}
 			lines.push('--- message #' + (i - start + 1).toString() + ' ---')
 			lines.push('sender: ' + name)
 			lines.push('senderType: ' + (senderType != null ? senderType : '未标记'))
 			lines.push('role: ' + (role != null ? role : '未标记'))
 			lines.push('content:')
-			lines.push(content)
+			lines.push(displayContent)
 			lines.push('')
 		}
 	}
@@ -1027,7 +1041,7 @@ export function buildSchedulerRuntimeMessages(group: GroupChat, session: GroupCh
 		'当前会话名：' + displaySessionTitle(session) + '\n' +
 		'连续讨论轮数：' + loopTurns + '\n\n' +
 		'可调度成员：\n' + formatMemberList(group.id) + '\n\n' +
-		'最近公开群聊记录：\n' + buildGroupTranscript(messages, 40) + '\n\n' +
+		'最近公开群聊记录：\n' + buildGroupTranscript(messages, 20) + '\n\n' +
 		'请根据以上上下文决定下一步由谁发言。严格输出 JSON，不加任何解释。'
 	return [createTextMessage(CHAT_ROLE_USER, content)]
 }
