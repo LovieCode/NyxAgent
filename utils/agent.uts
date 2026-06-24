@@ -250,7 +250,13 @@ export function getAgentEnabledToolIds(agent: UTSJSONObject | null, allowCoreMem
 	if (rawValue == null) {
 		return getDefaultAgentToolIds(allowCoreMemoryWrite)
 	}
-	return filterAllowedAgentToolIds(readAgentToolIdArray(rawValue), allowCoreMemoryWrite)
+	const result = filterAllowedAgentToolIds(readAgentToolIdArray(rawValue), allowCoreMemoryWrite)
+	if (allowCoreMemoryWrite == true) {
+		appendUniqueAgentToolId(result, AGENT_TOOL_MEMORY_CORE_LIST)
+		appendUniqueAgentToolId(result, AGENT_TOOL_MEMORY_CORE_SAVE)
+		appendUniqueAgentToolId(result, AGENT_TOOL_MEMORY_CORE_FORGET)
+	}
+	return result
 }
 
 export function isAgentToolEnabled(agent: UTSJSONObject | null, toolId: string, allowCoreMemoryWrite: boolean = false): boolean {

@@ -176,16 +176,17 @@
 					<view
 						v-for="(tool, ti) in availableTools"
 						:key="ti"
-						class="skill-card tool-card"
-						:class="isAgentToolSelected(tool) ? 'skill-card-active' : ''"
+						class="tool-card"
+						:class="isAgentToolSelected(tool) ? 'tool-card-active' : ''"
 						@click="toggleAgentTool(tool)"
 					>
-						<view class="skill-card-top">
-							<text class="skill-card-name">{{getToolName(tool)}}</text>
-							<text class="skill-card-check">{{isAgentToolSelected(tool) ? '✓' : '+'}}</text>
+						<view class="tool-card-main">
+							<view class="tool-card-text">
+								<text class="tool-card-name">{{getToolName(tool)}}</text>
+								<text class="tool-card-desc" lines="1" text-overflow="ellipsis">{{getToolDesc(tool)}}</text>
+							</view>
+							<text class="tool-card-check">{{isAgentToolSelected(tool) ? '✓' : '+'}}</text>
 						</view>
-						<text class="skill-card-desc" lines="2" text-overflow="ellipsis">{{getToolDesc(tool)}}</text>
-						<text class="skill-card-meta">{{getToolMeta(tool)}}</text>
 					</view>
 				</view>
 			</view>
@@ -264,7 +265,7 @@
 	/**
 	 * 智能体设置页面 - 编辑名称/描述/头像/删除智能体
 	 */
-	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, agentToolIdListContains, AGENT_TOOL_WORKSPACE_FILE, AGENT_TOOL_MEMORY_SEARCH, AGENT_TOOL_MEMORY_BUFFER_WRITE, AGENT_TOOL_WEB_SEARCH, AGENT_TOOL_MEMORY_CORE_LIST, AGENT_TOOL_MEMORY_CORE_SAVE, AGENT_TOOL_MEMORY_CORE_FORGET } from '@/utils/agent.uts'
+	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, agentToolIdListContains, AGENT_TOOL_WORKSPACE_FILE, AGENT_TOOL_MEMORY_SEARCH, AGENT_TOOL_MEMORY_BUFFER_WRITE, AGENT_TOOL_WEB_SEARCH } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { updateSystemPromptForAgent } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
@@ -439,7 +440,7 @@
 						this.currentModel = rawModel as string
 					}
 					this.selectedSkillIds = filterExistingSkillIds(getAgentSkillIds(agent))
-					this.selectedToolIds = getAgentEnabledToolIds(agent, true)
+					this.selectedToolIds = getAgentEnabledToolIds(agent, false)
 					this.loadGenerationSettings(agent)
 				}
 				this.initModelSelection()
@@ -590,9 +591,6 @@
 				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_SEARCH, '记忆搜索', '查询当前智能体可见记忆和历史记录'))
 				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_BUFFER_WRITE, '短记忆缓存', '写入 64 字以内的临时记忆缓存'))
 				list.push(this.buildToolOption(AGENT_TOOL_WEB_SEARCH, '网络搜索', '联网搜索实时事实、资料和网页信息'))
-				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_CORE_LIST, '长期记忆列表', '记忆整理时读取长期记忆清单'))
-				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_CORE_SAVE, '长期记忆保存', '记忆整理时写入重要长期记忆'))
-				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_CORE_FORGET, '长期记忆遗忘', '记忆整理时归档重复或过期记忆'))
 				return list
 			},
 
@@ -611,10 +609,6 @@
 
 			getToolDesc(tool: UTSJSONObject): string {
 				return this.readToolField(tool, 'desc')
-			},
-
-			getToolMeta(tool: UTSJSONObject): string {
-				return this.isAgentToolSelected(tool) ? '已启用' : '未启用'
 			},
 
 			isAgentToolSelected(tool: UTSJSONObject): boolean {
@@ -1008,13 +1002,54 @@
 	}
 
 	.tool-list {
-		flex-direction: column;
+		flex-direction: row;
+		flex-wrap: wrap;
 	}
 
 	.tool-card {
-		width: auto;
-		margin-right: 0;
-		margin-bottom: 14rpx;
+		width: 300rpx;
+		background-color: var(--rice-background);
+		border-radius: 14rpx;
+		padding: 16rpx;
+		margin-right: 12rpx;
+		margin-bottom: 12rpx;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: #F3F4F6;
+	}
+
+	.tool-card-active {
+		background-color: #FDE8EF;
+		border-color: #FB8FAB;
+	}
+
+	.tool-card-main {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.tool-card-text {
+		flex: 1;
+		padding-right: 8rpx;
+	}
+
+	.tool-card-name {
+		font-size: 24rpx;
+		font-weight: bold;
+		color: #111827;
+		margin-bottom: 4rpx;
+	}
+
+	.tool-card-desc {
+		font-size: 20rpx;
+		color: #6B7280;
+		line-height: 28rpx;
+	}
+
+	.tool-card-check {
+		font-size: 26rpx;
+		font-weight: bold;
+		color: var(--rice-primary-color);
 	}
 
 	.skill-card-active {
