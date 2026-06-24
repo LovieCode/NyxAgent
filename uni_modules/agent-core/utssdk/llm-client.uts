@@ -323,7 +323,8 @@ function sanitizeSyntheticToolName(name: string): string {
 	let result = ''
 	for (let i = 0; i < name.length; i++) {
 		const ch = name.charAt(i)
-		const code = ch.charCodeAt(0)
+		const rawCode = ch.charCodeAt(0)
+		const code = rawCode != null ? rawCode : 0
 		const isLower = code >= 97 && code <= 122
 		const isUpper = code >= 65 && code <= 90
 		const isDigit = code >= 48 && code <= 57
