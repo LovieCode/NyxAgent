@@ -1007,12 +1007,12 @@
 	}
 
 	.tool-card {
-		width: 300rpx;
+		width: 270rpx;
 		background-color: var(--rice-background);
 		border-radius: 14rpx;
-		padding: 16rpx;
-		margin-right: 12rpx;
-		margin-bottom: 12rpx;
+		padding: 14rpx;
+		margin-right: 8rpx;
+		margin-bottom: 10rpx;
 		border-width: 2rpx;
 		border-style: solid;
 		border-color: #F3F4F6;
