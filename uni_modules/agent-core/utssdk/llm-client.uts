@@ -319,7 +319,41 @@ function getFirstImagePathFromParts(msg: UTSJSONObject): string {
 	return ''
 }
 
-function buildApiToolCallFromItem(item: UTSJSONObject): UTSJSONObject | null {
+function sanitizeSyntheticToolName(name: string): string {
+	let result = ''
+	for (let i = 0; i < name.length; i++) {
+		const ch = name.charAt(i)
+		const code = ch.charCodeAt(0)
+		const isLower = code >= 97 && code <= 122
+		const isUpper = code >= 65 && code <= 90
+		const isDigit = code >= 48 && code <= 57
+		if (isLower == true || isUpper == true || isDigit == true || ch == '_' || ch == '-') {
+			result += ch
+		} else {
+			result += '_'
+		}
+	}
+	if (result == '') {
+		result = 'tool'
+	}
+	if (result.length > 48) {
+		result = result.substring(0, 48)
+	}
+	return result
+}
+
+function buildSyntheticToolCallId(index: number, name: string): string {
+	return 'call_' + index.toString() + '_' + sanitizeSyntheticToolName(name)
+}
+
+function normalizeToolCallId(rawId: string | null, index: number, name: string): string {
+	if (rawId != null && rawId != '') {
+		return rawId
+	}
+	return buildSyntheticToolCallId(index, name)
+}
+
+function buildApiToolCallFromItem(item: UTSJSONObject, index: number): UTSJSONObject | null {
 	let id = readPartString(item, 'id')
 	let name = readPartString(item, 'name')
 	let args = readPartString(item, 'arguments')
@@ -339,6 +373,8 @@ function buildApiToolCallFromItem(item: UTSJSONObject): UTSJSONObject | null {
 		return null
 	}
 	if (args == '') { args = '{}' }
+	id = normalizeToolCallId(id != '' ? id : null, index, name)
+	item['id'] = id
 	return {
 		id: id,
 		type: 'function',
@@ -359,11 +395,11 @@ function collectApiToolCalls(msg: UTSJSONObject): UTSJSONObject[] {
 		const calls = part['tool_calls'] as UTSJSONObject[] | null
 		if (calls != null) {
 			for (let j = 0; j < calls.length; j++) {
-				const apiCall = buildApiToolCallFromItem(calls[j])
+				const apiCall = buildApiToolCallFromItem(calls[j], j)
 				if (apiCall != null) { result.push(apiCall) }
 			}
 		} else {
-			const single = buildApiToolCallFromItem(part)
+			const single = buildApiToolCallFromItem(part, 0)
 			if (single != null) { result.push(single) }
 		}
 	}
@@ -373,7 +409,8 @@ function collectApiToolCalls(msg: UTSJSONObject): UTSJSONObject[] {
 	const oldCalls = msg['tool_calls'] as UTSJSONObject[] | null
 	if (oldCalls != null) {
 		for (let i = 0; i < oldCalls.length; i++) {
-			result.push(oldCalls[i])
+			const apiCall = buildApiToolCallFromItem(oldCalls[i], i)
+			if (apiCall != null) { result.push(apiCall) }
 		}
 	}
 	return result
@@ -391,28 +428,39 @@ function findEmbeddedToolResult(msg: UTSJSONObject, toolCallId: string): string 
 		const calls = part['tool_calls'] as UTSJSONObject[] | null
 		if (calls != null) {
 			for (let j = 0; j < calls.length; j++) {
-				const itemId = calls[j]['id'] as string | null
-				if (itemId != null && itemId == toolCallId) {
-					const result = calls[j]['result'] as string | null
-					if (result != null) {
-						return result
-					}
+				let itemId = calls[j]['id'] as string | null
+				if (itemId == null || itemId == '') {
+					const itemName = calls[j]['name'] as string | null
+					itemId = normalizeToolCallId(null, j, itemName != null ? itemName : '')
+					calls[j]['id'] = itemId
+				}
+				if (itemId == toolCallId) {
 					const status = calls[j]['status'] as string | null
-					if (status != null && status != '') {
+					const result = calls[j]['result'] as string | null
+					if (status == 'completed' || status == 'error') {
+						if (result != null) {
+							return result
+						}
 						return '[' + status + ']'
+					}
+					if (result != null && result != '') {
+						return result
 					}
 				}
 			}
 		} else {
 			const itemId = part['id'] as string | null
 			if (itemId != null && itemId == toolCallId) {
-				const result = part['result'] as string | null
-				if (result != null) {
-					return result
-				}
 				const status = part['status'] as string | null
-				if (status != null && status != '') {
+				const result = part['result'] as string | null
+				if (status == 'completed' || status == 'error') {
+					if (result != null) {
+						return result
+					}
 					return '[' + status + ']'
+				}
+				if (result != null && result != '') {
+					return result
 				}
 			}
 		}
@@ -1522,9 +1570,10 @@ function callChatAPI(
 						const rawId = tc['id'] as string | null
 						const rawName = funcObj['name'] as string | null
 						const rawArgs = funcObj['arguments'] as string | null
+						const safeName = rawName != null ? rawName : ''
 						tcList.push({
-							id: rawId != null ? rawId : '',
-							name: rawName != null ? rawName : '',
+							id: normalizeToolCallId(rawId, i, safeName),
+							name: safeName,
 							arguments: rawArgs != null ? rawArgs : '{}',
 						} as ToolCallInfo)
 					}
@@ -1821,13 +1870,14 @@ function callChatAPIStream(
 					const rawId = tc['id'] as string | null
 					const rawName = tc['name'] as string | null
 					const rawArgs = tc['arguments'] as string | null
-					if (rawName != null) {
+					const safeName = rawName != null ? rawName : ''
+					if (safeName != '') {
 						if (tcNames != '') { tcNames = tcNames + ',' }
-						tcNames = tcNames + rawName
+						tcNames = tcNames + safeName
 					}
 					tcList.push({
-						id: rawId != null ? rawId : '',
-						name: rawName != null ? rawName : '',
+						id: normalizeToolCallId(rawId, i, safeName),
+						name: safeName,
 						arguments: rawArgs != null ? rawArgs : '{}',
 					} as ToolCallInfo)
 				}
