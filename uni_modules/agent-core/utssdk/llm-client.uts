@@ -160,6 +160,7 @@ function buildMemoryManagerSystemPrompt(agentId: string, conversationId: string,
 		'只保存长期有用、未来会复用的信息：用户稳定偏好、明确规则、关键事实、对某人/某 Agent 的重要印象。\n' +
 		'不要保存工具调用信息、工具结果、API 密钥、临时流水账、一次性任务细节、用户未明确表达的猜测。\n' +
 		'默认面对对象是当前用户：target_type=user，target_id 留空。对话内短期状态优先写入短记忆缓存，不要写入重要记忆。\n' +
+		'短记忆缓存维护规则：每轮整理都要判断是否需要更新 64 字短缓存。若最新片段改变了当前任务、临时约束、临时偏好、当前阶段或下一步动作，推荐调用 memory_buffer_write 覆盖为一句短状态；格式尽量是“当前任务/约束/下一步”，不要超过 64 字。若没有仍有效的短期状态，不要为了凑数写缓存。\n' +
 		'时间语义规则：每条整理输入都带消息时间戳。对话里提到的“现在/当前/凌晨两点”等必须以该条消息时间为参照，再和最新消息时间比较，不能把旧消息时间误当成当前状态。短记忆缓存不要只记录“当前时间是几点/现在是某时”，应记录任务状态或临时约束。\n' +
 		'如果需要保存长期记忆，优先使用 memory_core_save；如果发现明显重复或过期，可以谨慎使用 memory_core_forget。\n' +
 		'保存范围建议：稳定偏好用 person_only/preference；面对某人的规则用 person_only/rule；全局规则才用 rule/rule；跨对话事实用 person_only/fact；只对当前对话有用才用 conversation_only。person_only/manual_only 的数量限制按面对对象独立，不同对象不要互相挤占。\n' +

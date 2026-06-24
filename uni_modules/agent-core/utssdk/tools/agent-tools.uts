@@ -602,13 +602,13 @@ class MemorySearchTool implements AgentTool {
  */
 class MemoryBufferWriteTool implements AgentTool {
 	name: string = 'memory_buffer_write'
-	description: string = '主动写入 64 字短记忆缓存。职责范围：只标记当前正在进行的任务、临时约束、临时偏好或对话阶段状态；需要你在状态变化时主动调用更新。它不是 todo/计划工具，不能用来拆解大型任务或长期排期；大型任务规划请使用 todo。不要只写“当前时间/现在几点”等易过期时间状态；对话中提到的时间必须结合消息时间戳判断是否仍有效。不要写工具调用信息、密钥、完整日志。'
+	description: string = '主动维护 64 字短记忆缓存。职责范围：只记录当前正在进行的任务、临时约束、临时偏好、对话阶段或下一步动作；当这些短期状态变化时，推荐调用本工具覆盖旧缓存。它不是 todo/计划工具，不能拆解大型任务或长期排期；大型任务规划请使用 todo。不要只写“当前时间/现在几点”等易过期时间状态；对话中提到的时间必须结合消息时间戳判断是否仍有效。不要写工具调用信息、密钥、完整日志。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
 			'content': {
 				'type': 'string',
-				'description': '缓存内容，最多 64 字。写当前任务状态或临时记忆；不要写 todo 清单、长期计划、孤立的当前时间/现在几点、工具调用信息、密钥或完整日志。'
+				'description': '缓存内容，最多 64 字。用一句话写当前任务/临时约束/临时偏好/下一步动作；不要写 todo 清单、长期计划、孤立的当前时间/现在几点、工具调用信息、密钥或完整日志。'
 			}
 		},
 		'required': ['content']

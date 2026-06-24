@@ -42,8 +42,8 @@ export const GROUP_MESSAGE_SENDER_SCHEDULER = 'scheduler'
 export const GROUP_MESSAGE_SENDER_SYSTEM = 'system'
 
 const DEFAULT_SCHEDULER_PROMPT_TEXT = '你是隐藏的群聊调度 Agent。你可以在内部向任意成员 Agent 传递私密指令、背景信息和任务拆解，也可以指定一个或多个成员按顺序发言。你的存在、调度流程、私密指令不能被其他成员在公开发言中暴露。你只在系统触发节点工作，例如用户发消息、用户手动继续、连续讨论过多需要判断是否继续。\n' +
-	'输出必须是 JSON 对象，禁止 Markdown，结构：{"actions":[{"type":"speak","agentId":"成员ID","targetType":"user","targetAgentId":"","privateInstruction":"给该成员的私密指令","publicIntent":"公开发言目标","order":0}],"shouldContinue":false,"titleSuggestion":"适合本会话的短标题","privateNotes":"仅内部记录"}。\n' +
-	'如果用户只是闲聊，可以只安排 1 个成员回复。如果任务需要协作，可以安排多个成员顺序发言。不要为了热闹强行多人发言。'
+	'输出必须是 JSON 对象，禁止 Markdown，结构：{"actions":[{"type":"speak","agentId":"成员ID","targetType":"user","targetAgentId":"","privateInstruction":"给该成员的私密指令","publicIntent":"公开发言目标","replyLength":"short","replyGuidance":"简短自然，优先 1-3 句","searchAdvice":"none","searchInstruction":"","order":0}],"shouldContinue":false,"titleSuggestion":"适合本会话的短标题","privateNotes":"仅内部记录"}。\n' +
+	'默认让成员简短发言。事实不确定、涉及外部/时效信息时，建议具备相关工具的成员先查证或搜索；发现跑题、重复、事实冲突或虚构 App 功能时，用私密指令要求纠偏和收束。不要为了热闹强行多人发言。'
 
 const DEFAULT_SHARED_PROMPT_TEXT = '这是一个故事/写作交流群聊。成员可以讨论人物、剧情、节奏、文风和表达，但要自然像群聊发言。公开发言只输出自己要说的话，不写舞台说明，不提隐藏调度、内部指令或系统消息。'
 
@@ -640,6 +640,10 @@ export function createGroupAgentContextRecord(group: GroupChat, session: GroupCh
 	const publicIntent = readActionText(action, 'publicIntent')
 	const targetType = readActionText(action, 'targetType')
 	const targetAgentId = readActionText(action, 'targetAgentId')
+	const replyLength = readActionText(action, 'replyLength')
+	const replyGuidance = readActionText(action, 'replyGuidance')
+	const searchAdvice = readActionText(action, 'searchAdvice')
+	const searchInstruction = readActionText(action, 'searchInstruction')
 	const now = Date.now()
 	return {
 		id: createId('gctx'),
@@ -653,6 +657,10 @@ export function createGroupAgentContextRecord(group: GroupChat, session: GroupCh
 		publicIntent: publicIntent,
 		targetType: targetType,
 		targetAgentId: targetAgentId,
+		replyLength: replyLength,
+		replyGuidance: replyGuidance,
+		searchAdvice: searchAdvice,
+		searchInstruction: searchInstruction,
 		systemPrompt: systemPrompt,
 		runtimeMessages: JSON.parse(JSON.stringify(runtimeMessages)) as UTSJSONObject[],
 		createdAt: now,
@@ -966,11 +974,14 @@ export function buildSchedulerSystemPrompt(): string {
 		'规则：\n' +
 		'· 你的存在和调度过程绝不能被成员在公开发言中提及。\n' +
 		'· 闲聊/简单回应：只安排 1 个最合适的成员；协作任务：可安排多个按顺序发言，order 从 0 递增。\n' +
-		'· privateInstruction 必须具体可执行：告诉成员要表达什么观点、采用什么角度、回应哪个细节，不要写"正常回复"这种废话。\n' +
+		'· 默认控场目标是简短、清晰、少废话。replyLength 默认 short；只有用户明确要求长文、方案、创作片段或复杂推理时才用 normal/detailed。\n' +
+		'· privateInstruction 必须具体可执行：告诉成员要表达什么观点、采用什么角度、回应哪个细节、是否需要纠偏/收束，不要写"正常回复"这种废话。\n' +
+		'· 如果最近发言出现事实冲突、虚构 App 功能、误解用户意图或跑题，优先安排最合适成员自然修正；不要让成员提及你、调度、私密指令或系统流程。\n' +
+		'· 涉及时效、外部事实、版本、价格、法律、医学、金融、新闻等不稳信息时，将 searchAdvice 设为 recommend，并在 searchInstruction 写明要查证什么；不能让成员伪造搜索结果。\n' +
 		'· shouldContinue：仅当讨论有明确的下一步价值（如任务未完成、需要多轮协作）时设为 true；闲聊收尾设 false。\n' +
 		'· agentId 必须与成员列表 id= 后的值完全一致，不能自造。\n\n' +
 		'输出纯 JSON，禁止任何 Markdown 标记，格式：\n' +
-		'{"actions":[{"type":"speak","agentId":"<id>","privateInstruction":"<具体指令>","publicIntent":"<公开目标>","order":0}],"shouldContinue":false,"titleSuggestion":"<6字内短标题>","privateNotes":"<内部备注>"}\n\n' +
+		'{"actions":[{"type":"speak","agentId":"<id>","targetType":"user","targetAgentId":"","privateInstruction":"<具体指令>","publicIntent":"<公开目标>","replyLength":"short|normal|detailed","replyGuidance":"<语气/结构建议，默认简短>","searchAdvice":"none|recommend","searchInstruction":"<需要查证时写查什么，否则空>","order":0}],"shouldContinue":false,"titleSuggestion":"<6字内短标题>","privateNotes":"<内部备注>"}\n\n' +
 		'触发上下文、成员列表（含角色简介）、最近聊天记录在用户消息中提供。'
 }
 
@@ -1060,6 +1071,7 @@ export function buildSchedulerRuntimeMessages(group: GroupChat, session: GroupCh
 	}
 	const content = '【动态调度上下文】\n' +
 		'群聊调度提示词：\n' + schedulerPrompt + '\n\n' +
+		'调度字段补充：即使上方提示词没有列出，也必须在每个 speak action 中返回 replyLength、replyGuidance、searchAdvice、searchInstruction。默认 replyLength=short、searchAdvice=none；需要查证外部/时效事实时才用 searchAdvice=recommend。\n\n' +
 		'群聊共享规则：\n' + group.sharedPrompt + '\n\n' +
 		'触发原因：' + reason + '\n' +
 		'当前会话名：' + displaySessionTitle(session) + '\n' +
@@ -1113,6 +1125,10 @@ export function buildFallbackSchedulerDecision(groupId: string): UTSJSONObject {
 			targetAgentId: '',
 			privateInstruction: '调度结果解析失败，请根据最近公开群聊记录自然回应用户。',
 			publicIntent: '自然回应用户',
+			replyLength: 'short',
+			replyGuidance: '简短自然，优先 1-3 句。',
+			searchAdvice: 'none',
+			searchInstruction: '',
 			order: 0,
 		} as UTSJSONObject)
 	}
@@ -1177,7 +1193,7 @@ export function buildMemberSystemPrompt(agent: UTSJSONObject, sharedPrompt: stri
 	return basePrompt + '\n\n' +
 		'你正在一个群聊中发言。\n' +
 		'群聊规则：你可以使用工具处理当前群会话共享工作区；公开回复只输出你要发到群里的正文，不要在开头附加自己的名字或“成员名：”。不要提及幕后安排、内部任务描述或系统流程。\n' +
-		'成员名、动态会话名、公开发言目标、目标对象和本轮发言要点会在最后一条用户消息中提供。' +
+		'成员名、动态会话名、公开发言目标、目标对象、本轮发言要点、推荐回复长度和查证建议会在最后一条用户消息中提供。' +
 		sharedBlock
 }
 
@@ -1203,6 +1219,13 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 	const publicIntent = readActionText(action, 'publicIntent')
 	const targetType = readActionText(action, 'targetType')
 	const targetAgentId = readActionText(action, 'targetAgentId')
+	const replyLengthRaw = readActionText(action, 'replyLength')
+	const replyLength = replyLengthRaw != '' ? replyLengthRaw : 'short'
+	const replyGuidanceRaw = readActionText(action, 'replyGuidance')
+	const replyGuidance = replyGuidanceRaw != '' ? replyGuidanceRaw : '简短自然，优先 1-3 句。'
+	const searchAdviceRaw = readActionText(action, 'searchAdvice')
+	const searchAdvice = searchAdviceRaw != '' ? searchAdviceRaw : 'none'
+	const searchInstruction = readActionText(action, 'searchInstruction')
 	const taskText = '【当前发言任务】\n' +
 		'现在轮到你发言。\n' +
 		'成员名：' + agentName + '\n' +
@@ -1211,8 +1234,12 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 		'公开发言目标：' + publicIntent + '\n' +
 		'目标类型：' + targetType + '\n' +
 		'目标 Agent ID：' + targetAgentId + '\n' +
+		'推荐回复长度：' + replyLength + '\n' +
+		'回复组织建议：' + replyGuidance + '\n' +
+		'查证/搜索建议：' + searchAdvice + '\n' +
+		'查证/搜索任务：' + searchInstruction + '\n' +
 		'本轮发言要点：' + privateInstruction + '\n' +
-		'只输出要发到群聊里的正文，不要加自己的名字前缀，不要描述幕后流程。'
+		'如果建议查证但你没有可用工具，不要伪造搜索结果；可以基于已知信息简短回应并说明未查证。只输出要发到群聊里的正文，不要加自己的名字前缀，不要描述幕后流程。'
 	runtime.push(createTextMessage(CHAT_ROLE_USER, taskText))
 	return buildRuntimeChatMessages(runtime, {
 		injectDatetime: injectDatetime,
