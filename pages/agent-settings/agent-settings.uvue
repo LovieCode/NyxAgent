@@ -174,18 +174,24 @@
 				<text class="skill-section-desc">为当前智能体启用可调用工具。不启用的工具不会注入模型上下文，也不会被执行。</text>
 				<view class="tool-list">
 					<view
-						v-for="(tool, ti) in availableTools"
-						:key="ti"
-						class="tool-card"
-						:class="isAgentToolSelected(tool) ? 'tool-card-active' : ''"
-						@click="toggleAgentTool(tool)"
+						v-for="(row, ri) in toolRows"
+						:key="ri"
+						class="tool-row"
 					>
-						<view class="tool-card-main">
-							<view class="tool-card-text">
-								<text class="tool-card-name">{{getToolName(tool)}}</text>
-								<text class="tool-card-desc" lines="1" text-overflow="ellipsis">{{getToolDesc(tool)}}</text>
+						<view
+							v-for="(tool, ti) in row"
+							:key="ti"
+							class="tool-card"
+							:class="getToolCardClass(tool, ti)"
+							@click="toggleAgentTool(tool)"
+						>
+							<view class="tool-card-main">
+								<view class="tool-card-text">
+									<text class="tool-card-name">{{getToolName(tool)}}</text>
+									<text class="tool-card-desc" lines="1" text-overflow="ellipsis">{{getToolDesc(tool)}}</text>
+								</view>
+								<text class="tool-card-check">{{isAgentToolSelected(tool) ? '✓' : '+'}}</text>
 							</view>
-							<text class="tool-card-check">{{isAgentToolSelected(tool) ? '✓' : '+'}}</text>
 						</view>
 					</view>
 				</view>
@@ -327,6 +333,21 @@
 			providerModels(): ModelInfo[] {
 				if (this.selectedProviderId == '') return []
 				return getProviderModels(this.selectedProviderId)
+			},
+			toolRows(): UTSJSONObject[][] {
+				const rows: UTSJSONObject[][] = []
+				let current: UTSJSONObject[] = []
+				for (let i = 0; i < this.availableTools.length; i++) {
+					current.push(this.availableTools[i])
+					if (current.length == 2) {
+						rows.push(current)
+						current = []
+					}
+				}
+				if (current.length > 0) {
+					rows.push(current)
+				}
+				return rows
 			},
 			/** 显示文本：提供商 / 模型（向后兼容纯模型名） */
 			currentModelLabel(): string {
@@ -613,6 +634,17 @@
 
 			isAgentToolSelected(tool: UTSJSONObject): boolean {
 				return agentToolIdListContains(this.selectedToolIds, this.getToolId(tool))
+			},
+
+			getToolCardClass(tool: UTSJSONObject, index: number): string {
+				let cls = ''
+				if (index > 0) {
+					cls = 'tool-card-spaced'
+				}
+				if (this.isAgentToolSelected(tool) == true) {
+					cls = cls == '' ? 'tool-card-active' : cls + ' tool-card-active'
+				}
+				return cls
 			},
 
 			toggleAgentTool(tool: UTSJSONObject) {
@@ -1002,20 +1034,26 @@
 	}
 
 	.tool-list {
+		flex-direction: column;
+	}
+
+	.tool-row {
 		flex-direction: row;
-		flex-wrap: wrap;
+		margin-bottom: 10rpx;
 	}
 
 	.tool-card {
-		width: 270rpx;
+		flex: 1;
 		background-color: var(--rice-background);
 		border-radius: 14rpx;
 		padding: 14rpx;
-		margin-right: 8rpx;
-		margin-bottom: 10rpx;
 		border-width: 2rpx;
 		border-style: solid;
 		border-color: #F3F4F6;
+	}
+
+	.tool-card-spaced {
+		margin-left: 10rpx;
 	}
 
 	.tool-card-active {
