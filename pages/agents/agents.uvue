@@ -178,15 +178,16 @@
 	import { getAgentDir } from '@/utils/file-manager.uts'
 	import { getConversationsByAgent } from '@/utils/database.uts'
 	import {
-		ACTIVE_GROUP_CHAT_ID_KEY,
-		ACTIVE_GROUP_SESSION_ID_KEY,
 		type GroupChat,
 		createDefaultWritingGroupChat,
 		displaySessionTitle,
 		ensureGroupActiveSession,
 		getActiveGroupMembers,
 		getGroupChats,
+		setActiveGroupChat,
+		setActiveGroupSessionId,
 	} from '@/utils/group-chat-service.uts'
+	import { setActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
 
 	/** 可用图标列表 */
 	const AVAILABLE_ICONS: string[] = [
@@ -328,6 +329,7 @@
 			},
 
 			consumeCreateAvatarCropResult(): void {
+				// COMPAT_LEGACY_STORAGE: 头像裁剪页仍通过 uni.storage 传参，未来迁移 runtime-state 后删除。
 				const target = uni.getStorageSync('crop_target') as string
 				if (target != 'create_agent_avatar') {
 					return
@@ -532,7 +534,7 @@
 			},
 
 			openAgent(agent: UTSJSONObject) {
-				uni.setStorageSync('active_agent_id', agent['id'] as string)
+				setActiveAgentRuntimeId(agent['id'] as string)
 				uni.navigateTo({
 					url: '/pages/chat/chat'
 				})
@@ -540,8 +542,8 @@
 
 			openGroup(group: GroupChat): void {
 				const session = ensureGroupActiveSession(group)
-				uni.setStorageSync(ACTIVE_GROUP_CHAT_ID_KEY, group.id)
-				uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, session.id)
+				setActiveGroupChat(group.id)
+				setActiveGroupSessionId(session.id)
 				uni.navigateTo({ url: '/pages/group-chat/group-chat' })
 			},
 
@@ -568,7 +570,7 @@
 						return
 					}
 				}
-				uni.setStorageSync('active_agent_id', agentId)
+				setActiveAgentRuntimeId(agentId)
 				uni.navigateTo({ url: '/pages/chat/chat' })
 			},
 
@@ -639,6 +641,7 @@
 							uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
 							return
 						}
+						// COMPAT_LEGACY_STORAGE: 裁剪组件旧协议，未来迁移 runtime-state 后删除。
 						uni.removeStorageSync('crop_result')
 						uni.setStorageSync('crop_target', 'create_agent_avatar')
 						uni.setStorageSync('crop_image_path', path)
@@ -677,6 +680,7 @@
 				const finalDesc = desc != '' ? desc : '自定义智能体'
 				const finalPrompt = systemPrompt != '' ? systemPrompt : this.templatePrompt(CREATE_TEMPLATES[0])
 
+				// COMPAT_LEGACY_STORAGE: 默认模型设置仍在旧 storage，未来迁移设置表后删除。
 				const defaultModel = uni.getStorageSync('settings_model') as string
 
 				const newAgent: UTSJSONObject = {
@@ -713,7 +717,7 @@
 					title: '创建成功',
 					icon: 'success'
 				})
-				uni.setStorageSync('active_agent_id', id)
+				setActiveAgentRuntimeId(id)
 				uni.navigateTo({
 					url: '/pages/chat/chat'
 				})

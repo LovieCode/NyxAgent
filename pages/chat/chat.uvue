@@ -151,6 +151,7 @@
 		reduceAgentEvent,
 	} from '@/utils/chat-message-reducer.uts'
 	import { getAgentConversationDir } from '@/utils/file-manager.uts'
+	import { setContextPreviewPayload, setMemoryRouteState } from '@/utils/runtime-state.uts'
 
 	export default {
 		data() {
@@ -739,8 +740,7 @@
 
 			goMemoryManager() {
 				this.showToolPanel = false
-				uni.setStorageSync('memory_agent_id', this.currentAgentId)
-				uni.setStorageSync('memory_conversation_id', this.conversationId)
+				setMemoryRouteState(this.currentAgentId, this.conversationId)
 				uni.navigateTo({
 					url: '/pages/memory/memory'
 				})
@@ -759,7 +759,7 @@
 				} catch (_e: any) {
 					previewText = JSON.stringify(preview)
 				}
-				uni.setStorageSync('context_preview_payload', previewText)
+				setContextPreviewPayload(previewText)
 				uni.navigateTo({
 					url: '/pages/context-preview/context-preview'
 				})

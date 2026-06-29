@@ -232,6 +232,7 @@
 		type MemorySearchFilter,
 	} from '@/uni_modules/agent-core/utssdk/memory.uts'
 	import { getAgents } from '@/utils/agent.uts'
+	import { consumeMemoryRouteAgentId, consumeMemoryRouteConversationId, getActiveAgentRuntimeId, getActiveConversationRuntimeId } from '@/utils/runtime-state.uts'
 
 	export default {
 		data() {
@@ -271,17 +272,13 @@
 			},
 		},
 		onLoad() {
-			const memoryAgentId = uni.getStorageSync('memory_agent_id') as string | null
-			const memoryConversationId = uni.getStorageSync('memory_conversation_id') as string | null
-			this.agentId = memoryAgentId != null ? memoryAgentId : ''
-			this.conversationId = memoryConversationId != null ? memoryConversationId : ''
+			this.agentId = consumeMemoryRouteAgentId()
+			this.conversationId = consumeMemoryRouteConversationId()
 			if (this.agentId == '') {
-				const activeAgentId = uni.getStorageSync('active_agent_id') as string | null
-				this.agentId = activeAgentId != null ? activeAgentId : ''
+				this.agentId = getActiveAgentRuntimeId()
 			}
 			if (this.conversationId == '') {
-				const activeConversationId = uni.getStorageSync('active_conversation_id') as string | null
-				this.conversationId = activeConversationId != null ? activeConversationId : ''
+				this.conversationId = getActiveConversationRuntimeId()
 			}
 			if (this.agentId == '') {
 				this.agentId = 'default_agent'

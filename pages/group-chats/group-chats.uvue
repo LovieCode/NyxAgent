@@ -47,14 +47,14 @@
 
 <script lang="uts">
 	import {
-		ACTIVE_GROUP_CHAT_ID_KEY,
-		ACTIVE_GROUP_SESSION_ID_KEY,
 		GroupChat,
 		createDefaultWritingGroupChat,
 		displaySessionTitle,
 		ensureGroupActiveSession,
 		getActiveGroupMembers,
 		getGroupChats,
+		setActiveGroupChat,
+		setActiveGroupSessionId,
 	} from '@/utils/group-chat-service.uts'
 
 	export default {
@@ -80,8 +80,8 @@
 			},
 			openGroup(group: GroupChat): void {
 				const session = ensureGroupActiveSession(group)
-				uni.setStorageSync(ACTIVE_GROUP_CHAT_ID_KEY, group.id)
-				uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, session.id)
+				setActiveGroupChat(group.id)
+				setActiveGroupSessionId(session.id)
 				uni.navigateTo({ url: '/pages/group-chat/group-chat' })
 			},
 			getGroupSummary(group: GroupChat): string {

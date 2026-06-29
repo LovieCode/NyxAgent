@@ -526,6 +526,37 @@ function extractAgentWorkspaceEntry(zip: ZipFile, entry: ZipEntry, agentsRoot: F
 	input.close()
 	return 1
 }
+
+function extractGroupWorkspaceEntry(zip: ZipFile, entry: ZipEntry, groupRoot: File): number {
+	const name = entry.name as string
+	const prefix = 'group-workspaces/'
+	if (!name.startsWith(prefix)) {
+		return 0
+	}
+	if (!isSafeExtractPath(name)) {
+		return 0
+	}
+	const rel = name.substring(prefix.length)
+	if (rel == '') {
+		return 0
+	}
+	const target = new File(groupRoot.absolutePath + '/' + rel)
+	if (entry.isDirectory()) {
+		ensureDirectory(target)
+		return 0
+	}
+	const parent = target.parentFile
+	if (parent != null) {
+		ensureDirectory(parent)
+	}
+	const input = zip.getInputStream(entry)
+	const output = new FileOutputStream(target)
+	output.write(input.readBytes())
+	output.flush()
+	output.close()
+	input.close()
+	return 1
+}
 // #endif
 
 /** 读取导入 ZIP 的 export.json 清单。 */
@@ -584,6 +615,38 @@ export function importAgentWorkspaceFiles(zipPath: string): number {
 		while (entries.hasMoreElements()) {
 			const entry = entries.nextElement() as ZipEntry
 			count = count + extractAgentWorkspaceEntry(zip, entry, agentsRoot)
+		}
+		zip.close()
+		return count
+	} catch (_e: any) {
+		return 0
+	}
+	// #endif
+	return 0
+}
+
+/** 解压导入 ZIP 中的群聊工作区文件。 */
+export function importGroupWorkspaceFiles(zipPath: string): number {
+	// #ifdef APP-ANDROID
+	try {
+		const importRoot = getImportRoot()
+		const context = UTSAndroid.getAppContext()
+		if (importRoot == null || context == null) {
+			return 0
+		}
+		const groupRoot = new File((context.filesDir as File).absolutePath + '/group-workspaces')
+		ensureDirectory(groupRoot)
+		cleanDirectory(groupRoot)
+		const zipFile = prepareImportZipFile(zipPath)
+		if (zipFile == null) {
+			return 0
+		}
+		const zip = new ZipFile(zipFile)
+		let count = 0
+		const entries = zip.entries()
+		while (entries.hasMoreElements()) {
+			const entry = entries.nextElement() as ZipEntry
+			count = count + extractGroupWorkspaceEntry(zip, entry, groupRoot)
 		}
 		zip.close()
 		return count

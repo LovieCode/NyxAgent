@@ -126,6 +126,8 @@
 </template>
 
 <script lang="uts">
+	import { consumeContextPreviewPayload } from '@/utils/runtime-state.uts'
+
 	export default {
 		data() {
 			return {
@@ -191,8 +193,8 @@
 			},
 		},
 		onLoad() {
-			const raw = uni.getStorageSync('context_preview_payload') as string | null
-			if (raw == null || raw == '') {
+			const raw = consumeContextPreviewPayload()
+			if (raw == '') {
 				this.previewText = '（没有可展示的上下文）'
 				this.previewDisplayText = '（没有可展示的上下文）'
 				return

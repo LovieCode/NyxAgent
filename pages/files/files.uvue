@@ -102,6 +102,7 @@
 	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, parentPath, basename, joinPath, normalizePath, getUserDir, getInternalFilesDir, getExternalFilesDir, getAgentsRoot, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
 	import { getConversationsByAgent } from '@/utils/database.uts'
 	import { displaySessionTitle, getGroupChats, getGroupSessions } from '@/utils/group-chat-service.uts'
+	import { consumeFilesInitialPath } from '@/utils/runtime-state.uts'
 
 	/** 虚拟根路径标记（合并视图用） */
 	const VIRTUAL_ROOT = '__FILE_ROOT__'
@@ -213,10 +214,9 @@
 			}
 		},
 		onLoad() {
-			const initialPath = uni.getStorageSync('files_initial_path') as string | null
-			if (initialPath != null && initialPath != '') {
+			const initialPath = consumeFilesInitialPath()
+			if (initialPath != '') {
 				this.currentPath = initialPath
-				uni.removeStorageSync('files_initial_path')
 			} else {
 				this.currentPath = VIRTUAL_ROOT
 			}
@@ -244,6 +244,7 @@
 			return true
 		},
 		onShow() {
+			// COMPAT_LEGACY_STORAGE: 编辑器旧协议仍通过 uni.storage 回传保存结果，未来迁移 runtime-state 后删除。
 			const saved = uni.getStorageSync('editor_saved') as string | null
 			if (saved == 'true') {
 				uni.removeStorageSync('editor_saved')
@@ -347,6 +348,7 @@
 			},
 
 			clearEditorStorage() {
+				// COMPAT_LEGACY_STORAGE: 编辑器旧协议清理，未来迁移 runtime-state 后删除。
 				uni.removeStorageSync('editor_mode')
 				uni.removeStorageSync('editor_title')
 				uni.removeStorageSync('editor_content')
@@ -364,6 +366,7 @@
 			/** 打开文本编辑器 */
 			openTextEditor(item : FileItem) {
 				this.clearEditorStorage()
+				// COMPAT_LEGACY_STORAGE: 编辑器旧协议传参，未来迁移 runtime-state 后删除。
 				uni.setStorageSync('editor_mode', 'file')
 				uni.setStorageSync('editor_file_path', item.path)
 				uni.setStorageSync('editor_title', item.name)
@@ -641,13 +644,14 @@
 
 			/** 查智能体显示名（agentId → name），无匹配返回空 */
 			lookupAgentName(agentId : string) : string {
+				// COMPAT_LEGACY_STORAGE: Agent 列表仍在旧 storage，未来迁移 Agent 表后删除。
 				const stored = uni.getStorageSync('agent_list') as string
 				if (stored == null || stored == '') {
 					return ''
 				}
 				try {
 					const list = JSON.parse(stored) as UTSJSONObject[]
-					for (let i = 0; i < (list as any[]).length; i++) {
+					for (let i = 0; i < list.length; i++) {
 						const item = list[i] as UTSJSONObject
 						if ((item['id'] as string) == agentId) {
 							const name = item['name'] as string

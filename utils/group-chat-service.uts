@@ -14,6 +14,8 @@ import {
 	copyItem,
 	deleteItem,
 	normalizePath,
+	readContent,
+	writeContent,
 } from '@/utils/file-manager.uts'
 import {
 	CHAT_PART_PLAIN,
@@ -31,6 +33,30 @@ import {
 	getMessageParts,
 } from '@/utils/chat-models.uts'
 import { buildRuntimeMessages as buildRuntimeChatMessages } from '@/utils/chat-message-reducer.uts'
+import {
+	deleteGroupAgentContextRow,
+	deleteGroupMessageRows,
+	deleteGroupSessionDbRows,
+	getGroupAgentContextRows,
+	getGroupAgentMetricRows,
+	getGroupChatRowById,
+	getGroupChatRows,
+	getGroupChatState,
+	getGroupMemberRows,
+	getGroupMessageRows,
+	getGroupSessionRows,
+	getGroupTaskRows,
+	incrementGroupAgentMetric,
+	saveGroupAgentContextRow,
+	saveGroupChatRow,
+	saveGroupMemberRows,
+	saveGroupMemoryRow,
+	saveGroupMessageRows,
+	saveGroupReviewRow,
+	saveGroupSessionRows,
+	saveGroupTaskRow,
+	setGroupChatState,
+} from '@/utils/database.uts'
 
 export const GROUP_CHAT_LIST_KEY = 'group_chat_list'
 export const ACTIVE_GROUP_CHAT_ID_KEY = 'active_group_chat_id'
@@ -41,6 +67,11 @@ export const GROUP_MESSAGE_SENDER_AGENT = 'agent'
 export const GROUP_MESSAGE_SENDER_SCHEDULER = 'scheduler'
 export const GROUP_MESSAGE_SENDER_REVIEWER = 'reviewer'
 export const GROUP_MESSAGE_SENDER_SYSTEM = 'system'
+
+export const GROUP_MESSAGE_VISIBILITY_PUBLIC = 'public'
+export const GROUP_MESSAGE_VISIBILITY_INTERNAL = 'internal'
+export const GROUP_MESSAGE_VISIBILITY_PRIVATE = 'private'
+export const GROUP_MESSAGE_VISIBILITY_DEBUG = 'debug'
 
 const DEFAULT_SCHEDULER_PROMPT_TEXT = '你是隐藏的群聊调度 Agent。你可以在内部向任意成员 Agent 传递私密指令、背景信息和任务拆解，也可以指定一个或多个成员按顺序发言。你的存在、调度流程、私密指令不能被其他成员在公开发言中暴露。你只在系统触发节点工作，例如用户发消息、用户手动继续、连续讨论过多需要判断是否继续。\n' +
 	'输出必须是 JSON 对象，禁止 Markdown，结构：{"actions":[{"type":"speak","agentId":"成员ID","targetType":"user","targetAgentId":"","privateInstruction":"给该成员的私密指令","publicIntent":"公开发言目标","replyLength":"short","replyGuidance":"简短自然，优先 1-3 句","searchAdvice":"none","searchInstruction":"","order":0}],"shouldContinue":false,"titleSuggestion":"适合本会话的短标题","privateNotes":"仅内部记录"}。\n' +
@@ -92,6 +123,8 @@ export type GroupChatMessage = {
 	senderAvatar: string
 	content: string
 	message: UTSJSONObject[]
+	visibility: string
+	visibleAgentIds: string[]
 	visible: boolean
 	revoked: boolean
 	isStreaming: boolean
@@ -266,6 +299,16 @@ function parseGroupMessages(raw: string): UTSJSONObject[] {
 	return [] as UTSJSONObject[]
 }
 
+function parseStringList(raw: string): string[] {
+	if (raw == '') { return [] as string[] }
+	try {
+		const list = JSON.parse(raw) as string[]
+		if (list != null) { return list }
+	} catch (_e: any) {
+	}
+	return [] as string[]
+}
+
 function parseAgentContextRecords(raw: string): UTSJSONObject[] {
 	if (raw == '') { return [] as UTSJSONObject[] }
 	try {
@@ -274,6 +317,140 @@ function parseAgentContextRecords(raw: string): UTSJSONObject[] {
 	} catch (_e: any) {
 	}
 	return [] as UTSJSONObject[]
+}
+
+function groupChatToDbRow(group: GroupChat): UTSJSONObject {
+	return {
+		id: group.id,
+		name: group.name,
+		avatar: group.avatar,
+		scheduler_agent_id: group.schedulerAgentId,
+		scheduler_prompt: group.schedulerPrompt,
+		shared_prompt: group.sharedPrompt,
+		active_session_id: group.activeSessionId,
+		created_at: group.createdAt,
+		updated_at: group.updatedAt,
+	} as UTSJSONObject
+}
+
+function memberToDbRow(member: GroupChatMember): UTSJSONObject {
+	return {
+		id: member.id,
+		group_id: member.groupId,
+		agent_id: member.agentId,
+		active: member.active == true ? 1 : 0,
+		joined_at: member.joinedAt,
+		left_at: member.leftAt,
+		order_index: member.order,
+	} as UTSJSONObject
+}
+
+function sessionToDbRow(session: GroupChatSession): UTSJSONObject {
+	return {
+		id: session.id,
+		group_id: session.groupId,
+		title: session.title,
+		workspace_path: session.workspacePath,
+		forked_from_session_id: session.forkedFromSessionId,
+		title_locked: session.titleLocked == true ? 1 : 0,
+		created_at: session.createdAt,
+		updated_at: session.updatedAt,
+	} as UTSJSONObject
+}
+
+function dbRowToGroupChat(row: UTSJSONObject): GroupChat {
+	return normalizeGroupChat({
+		id: readStringField(row, 'id'),
+		name: readStringField(row, 'name'),
+		avatar: readStringField(row, 'avatar'),
+		schedulerAgentId: readStringField(row, 'scheduler_agent_id'),
+		schedulerPrompt: readStringField(row, 'scheduler_prompt'),
+		sharedPrompt: readStringField(row, 'shared_prompt'),
+		activeSessionId: readStringField(row, 'active_session_id'),
+		createdAt: readNumberField(row, 'created_at'),
+		updatedAt: readNumberField(row, 'updated_at'),
+	} as UTSJSONObject)
+}
+
+function dbRowToGroupMember(row: UTSJSONObject): GroupChatMember {
+	return normalizeGroupMember({
+		id: readStringField(row, 'id'),
+		groupId: readStringField(row, 'group_id'),
+		agentId: readStringField(row, 'agent_id'),
+		active: readNumberField(row, 'active') != 0,
+		joinedAt: readNumberField(row, 'joined_at'),
+		leftAt: readNumberField(row, 'left_at'),
+		order: readNumberField(row, 'order_index'),
+	} as UTSJSONObject)
+}
+
+function dbRowToGroupSession(row: UTSJSONObject): GroupChatSession {
+	return normalizeGroupSession({
+		id: readStringField(row, 'id'),
+		groupId: readStringField(row, 'group_id'),
+		title: readStringField(row, 'title'),
+		workspacePath: readStringField(row, 'workspace_path'),
+		forkedFromSessionId: readStringField(row, 'forked_from_session_id'),
+		titleLocked: readNumberField(row, 'title_locked') != 0,
+		createdAt: readNumberField(row, 'created_at'),
+		updatedAt: readNumberField(row, 'updated_at'),
+	} as UTSJSONObject)
+}
+
+function dbRowToGroupMessage(row: UTSJSONObject): UTSJSONObject {
+	const payload = readStringField(row, 'payload_json')
+	let msg: UTSJSONObject = {}
+	try {
+		msg = JSON.parse(payload) as UTSJSONObject
+	} catch (_e: any) {
+		msg = {} as UTSJSONObject
+	}
+	msg['id'] = readStringField(row, 'id')
+	msg['groupId'] = readStringField(row, 'group_id')
+	msg['sessionId'] = readStringField(row, 'session_id')
+	msg['role'] = readStringField(row, 'role')
+	msg['senderType'] = readStringField(row, 'sender_type')
+	msg['senderAgentId'] = readStringField(row, 'sender_agent_id')
+	msg['visibility'] = readStringField(row, 'visibility')
+	msg['visibleAgentIds'] = parseStringList(readStringField(row, 'visible_agent_ids_json'))
+	msg['visible'] = readNumberField(row, 'visible') != 0
+	msg['timestamp'] = readNumberField(row, 'timestamp')
+	return msg
+}
+
+function legacyGetGroupChats(): GroupChat[] {
+	// COMPAT_LEGACY_STORAGE: 兼容旧群聊列表 storage，未来迁移窗口清理。
+	const raw = uni.getStorageSync(GROUP_CHAT_LIST_KEY) as string | null
+	return parseGroupChats(safeJsonText(raw))
+}
+
+function legacyGetGroupMembers(groupId: string): GroupChatMember[] {
+	// COMPAT_LEGACY_STORAGE: 兼容旧群聊成员 storage，未来迁移窗口清理。
+	const raw = uni.getStorageSync(storageMembersKey(groupId)) as string | null
+	return parseGroupMembers(safeJsonText(raw))
+}
+
+function legacyGetGroupSessions(groupId: string): GroupChatSession[] {
+	// COMPAT_LEGACY_STORAGE: 兼容旧群聊会话 storage，未来迁移窗口清理。
+	const raw = uni.getStorageSync(storageSessionsKey(groupId)) as string | null
+	return parseGroupSessions(safeJsonText(raw))
+}
+
+function legacyGetGroupMessages(groupId: string, sessionId: string): UTSJSONObject[] {
+	// COMPAT_LEGACY_STORAGE: 兼容旧群聊消息 storage，未来迁移窗口清理。
+	const raw = uni.getStorageSync(storageMessagesKey(groupId, sessionId)) as string | null
+	return parseGroupMessages(safeJsonText(raw))
+}
+
+function appendSystemJsonl(groupId: string, sessionId: string, fileName: string, record: UTSJSONObject): void {
+	const root = getGroupSessionWorkspaceDir(groupId, sessionId)
+	if (root == '') { return }
+	const dir = joinPath(root, '_system')
+	ensureDirectory(dir)
+	const filePath = joinPath(dir, fileName)
+	const old = readContent(filePath)
+	const prefix = old != null && old != '' ? old + '\n' : ''
+	writeContent(filePath, prefix + JSON.stringify(record))
 }
 
 function isSafeId(id: string): boolean {
@@ -291,38 +468,35 @@ function ensureDirectory(path: string): void {
 }
 
 export function getGroupChats(): GroupChat[] {
-	const raw = uni.getStorageSync(GROUP_CHAT_LIST_KEY) as string | null
-	return parseGroupChats(safeJsonText(raw))
+	const rows = getGroupChatRows()
+	const result: GroupChat[] = []
+	for (let i = 0; i < rows.length; i++) {
+		result.push(dbRowToGroupChat(rows[i]))
+	}
+	if (result.length > 0) { return result }
+	return legacyGetGroupChats()
 }
 
 export function saveGroupChats(groups: GroupChat[]): void {
-	uni.setStorageSync(GROUP_CHAT_LIST_KEY, JSON.stringify(groups))
+	for (let i = 0; i < groups.length; i++) {
+		saveGroupChatRow(groupChatToDbRow(groups[i]))
+	}
 }
 
 export function getGroupChatById(groupId: string): GroupChat | null {
-	const groups = getGroupChats()
+	const row = getGroupChatRowById(groupId)
+	if (row != null) {
+		return dbRowToGroupChat(row)
+	}
+	const groups = legacyGetGroupChats()
 	for (let i = 0; i < groups.length; i++) {
-		if (groups[i].id == groupId) {
-			return groups[i]
-		}
+		if (groups[i].id == groupId) { return groups[i] }
 	}
 	return null
 }
 
 export function saveGroupChat(group: GroupChat): void {
-	const groups = getGroupChats()
-	let found = false
-	for (let i = 0; i < groups.length; i++) {
-		if (groups[i].id == group.id) {
-			groups.splice(i, 1, group)
-			found = true
-			break
-		}
-	}
-	if (found == false) {
-		groups.push(group)
-	}
-	saveGroupChats(groups)
+	saveGroupChatRow(groupChatToDbRow(group))
 }
 
 export function buildDefaultSchedulerPrompt(): string {
@@ -362,12 +536,21 @@ function isInsideGroupWorkspace(path: string): boolean {
 }
 
 export function getGroupMembers(groupId: string): GroupChatMember[] {
-	const raw = uni.getStorageSync(storageMembersKey(groupId)) as string | null
-	return parseGroupMembers(safeJsonText(raw))
+	const rows = getGroupMemberRows(groupId)
+	const result: GroupChatMember[] = []
+	for (let i = 0; i < rows.length; i++) {
+		result.push(dbRowToGroupMember(rows[i]))
+	}
+	if (result.length > 0) { return result }
+	return legacyGetGroupMembers(groupId)
 }
 
 export function saveGroupMembers(groupId: string, members: GroupChatMember[]): void {
-	uni.setStorageSync(storageMembersKey(groupId), JSON.stringify(members))
+	const rows: UTSJSONObject[] = []
+	for (let i = 0; i < members.length; i++) {
+		rows.push(memberToDbRow(members[i]))
+	}
+	saveGroupMemberRows(groupId, rows)
 }
 
 export function getActiveGroupMembers(groupId: string): GroupChatMember[] {
@@ -435,12 +618,21 @@ export function removeGroupMember(groupId: string, agentId: string): void {
 }
 
 export function getGroupSessions(groupId: string): GroupChatSession[] {
-	const raw = uni.getStorageSync(storageSessionsKey(groupId)) as string | null
-	return parseGroupSessions(safeJsonText(raw))
+	const rows = getGroupSessionRows(groupId)
+	const result: GroupChatSession[] = []
+	for (let i = 0; i < rows.length; i++) {
+		result.push(dbRowToGroupSession(rows[i]))
+	}
+	if (result.length > 0) { return result }
+	return legacyGetGroupSessions(groupId)
 }
 
 export function saveGroupSessions(groupId: string, sessions: GroupChatSession[]): void {
-	uni.setStorageSync(storageSessionsKey(groupId), JSON.stringify(sessions))
+	const rows: UTSJSONObject[] = []
+	for (let i = 0; i < sessions.length; i++) {
+		rows.push(sessionToDbRow(sessions[i]))
+	}
+	saveGroupSessionRows(groupId, rows)
 }
 
 export function displaySessionTitle(session: GroupChatSession | null): string {
@@ -526,8 +718,34 @@ export function setActiveGroupSession(groupId: string, sessionId: string): void 
 	group.activeSessionId = sessionId
 	group.updatedAt = Date.now()
 	saveGroupChat(group)
-	uni.setStorageSync(ACTIVE_GROUP_CHAT_ID_KEY, groupId)
-	uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, sessionId)
+	setActiveGroupChat(groupId)
+	setActiveGroupSessionId(sessionId)
+}
+
+export function getActiveGroupChatId(): string {
+	const dbValue = getGroupChatState(ACTIVE_GROUP_CHAT_ID_KEY)
+	if (dbValue != '') { return dbValue }
+	// COMPAT_LEGACY_STORAGE: 兼容旧活跃群聊 ID，未来迁移窗口清理。
+	const legacy = uni.getStorageSync(ACTIVE_GROUP_CHAT_ID_KEY) as string | null
+	return legacy != null ? legacy : ''
+}
+
+export function setActiveGroupChat(groupId: string): void {
+	if (groupId == '') { return }
+	setGroupChatState(ACTIVE_GROUP_CHAT_ID_KEY, groupId)
+}
+
+export function getActiveGroupSessionId(): string {
+	const dbValue = getGroupChatState(ACTIVE_GROUP_SESSION_ID_KEY)
+	if (dbValue != '') { return dbValue }
+	// COMPAT_LEGACY_STORAGE: 兼容旧活跃群聊会话 ID，未来迁移窗口清理。
+	const legacy = uni.getStorageSync(ACTIVE_GROUP_SESSION_ID_KEY) as string | null
+	return legacy != null ? legacy : ''
+}
+
+export function setActiveGroupSessionId(sessionId: string): void {
+	if (sessionId == '') { return }
+	setGroupChatState(ACTIVE_GROUP_SESSION_ID_KEY, sessionId)
 }
 
 export function updateGroupSessionTitle(groupId: string, sessionId: string, title: string): void {
@@ -554,12 +772,17 @@ export function applyGroupSessionTitleSuggestion(groupId: string, sessionId: str
 }
 
 export function getGroupMessages(groupId: string, sessionId: string): UTSJSONObject[] {
-	const raw = uni.getStorageSync(storageMessagesKey(groupId, sessionId)) as string | null
-	return parseGroupMessages(safeJsonText(raw))
+	const rows = getGroupMessageRows(groupId, sessionId)
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < rows.length; i++) {
+		result.push(dbRowToGroupMessage(rows[i]))
+	}
+	if (result.length > 0) { return result }
+	return legacyGetGroupMessages(groupId, sessionId)
 }
 
 export function saveGroupMessages(groupId: string, sessionId: string, messages: UTSJSONObject[]): void {
-	uni.setStorageSync(storageMessagesKey(groupId, sessionId), JSON.stringify(messages))
+	saveGroupMessageRows(groupId, sessionId, messages)
 	const session = getGroupSessionById(groupId, sessionId)
 	if (session != null) {
 		session.updatedAt = Date.now()
@@ -573,8 +796,24 @@ export function saveGroupMessages(groupId: string, sessionId: string, messages: 
 }
 
 export function listGroupAgentContextRecords(agentId: string): UTSJSONObject[] {
-	const raw = uni.getStorageSync(storageAgentContextKey(agentId)) as string | null
-	const records = parseAgentContextRecords(safeJsonText(raw))
+	const rows = getGroupAgentContextRows(agentId)
+	const records: UTSJSONObject[] = []
+	for (let i = 0; i < rows.length; i++) {
+		const payload = readStringField(rows[i], 'payload_json')
+		try {
+			const record = JSON.parse(payload) as UTSJSONObject
+			records.push(record)
+		} catch (_e: any) {
+		}
+	}
+	if (records.length == 0) {
+		// COMPAT_LEGACY_STORAGE: 兼容旧 Agent 原始上下文记录，未来迁移窗口清理。
+		const raw = uni.getStorageSync(storageAgentContextKey(agentId)) as string | null
+		const legacyRecords = parseAgentContextRecords(safeJsonText(raw))
+		for (let j = 0; j < legacyRecords.length; j++) {
+			records.push(legacyRecords[j])
+		}
+	}
 	records.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
 		const at = a['createdAt'] as number | null
 		const bt = b['createdAt'] as number | null
@@ -596,39 +835,13 @@ export function getGroupAgentContextRecord(agentId: string, recordId: string): U
 }
 
 export function deleteGroupAgentContextRecord(agentId: string, recordId: string): void {
-	const records = listGroupAgentContextRecords(agentId)
-	const next: UTSJSONObject[] = []
-	for (let i = 0; i < records.length; i++) {
-		const id = records[i]['id'] as string | null
-		if (id != recordId) { next.push(records[i]) }
-	}
-	uni.setStorageSync(storageAgentContextKey(agentId), JSON.stringify(next))
+	deleteGroupAgentContextRow(agentId, recordId)
 }
 
 export function saveGroupAgentContextRecord(record: UTSJSONObject): void {
 	const agentId = record['agentId'] as string | null
 	if (agentId == null || agentId == '') { return }
-	const records = listGroupAgentContextRecords(agentId)
-	const id = record['id'] as string | null
-	let replaced = false
-	for (let i = 0; i < records.length; i++) {
-		const oldId = records[i]['id'] as string | null
-		if (id != null && id != '' && oldId == id) {
-			records.splice(i, 1, record)
-			replaced = true
-			break
-		}
-	}
-	if (replaced == false) { records.push(record) }
-	records.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
-		const at = a['createdAt'] as number | null
-		const bt = b['createdAt'] as number | null
-		const av = at != null ? at : 0
-		const bv = bt != null ? bt : 0
-		if (av == bv) { return 0 }
-		return av > bv ? -1 : 1
-	})
-	uni.setStorageSync(storageAgentContextKey(agentId), JSON.stringify(records))
+	saveGroupAgentContextRow(record)
 }
 
 function readActionText(action: UTSJSONObject, key: string): string {
@@ -674,7 +887,7 @@ export function appendGroupMessage(groupId: string, sessionId: string, message: 
 	saveGroupMessages(groupId, sessionId, messages)
 }
 
-function decorateGroupMessage(base: UTSJSONObject, groupId: string, sessionId: string, senderType: string, agentId: string, agentName: string, agentAvatar: string, visible: boolean): UTSJSONObject {
+function decorateGroupMessage(base: UTSJSONObject, groupId: string, sessionId: string, senderType: string, agentId: string, agentName: string, agentAvatar: string, visible: boolean, visibility: string = GROUP_MESSAGE_VISIBILITY_PUBLIC, visibleAgentIds: string[] | null = null): UTSJSONObject {
 	base['id'] = createId('gmsg')
 	base['groupId'] = groupId
 	base['sessionId'] = sessionId
@@ -682,6 +895,8 @@ function decorateGroupMessage(base: UTSJSONObject, groupId: string, sessionId: s
 	base['senderAgentId'] = agentId
 	base['senderName'] = agentName
 	base['senderAvatar'] = agentAvatar
+	base['visibility'] = visibility
+	base['visibleAgentIds'] = visibleAgentIds != null ? visibleAgentIds : ([] as string[])
 	base['visible'] = visible
 	base['revoked'] = false
 	base['timestamp'] = Date.now()
@@ -695,12 +910,12 @@ function normalizeUserDisplayName(userName: string): string {
 
 export function createGroupUserMessage(groupId: string, sessionId: string, content: string, userName: string = ''): UTSJSONObject {
 	const base = createTextMessage(CHAT_ROLE_USER, content)
-	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeUserDisplayName(userName), '', true)
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeUserDisplayName(userName), '', true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
 }
 
 export function createGroupHiddenMessage(groupId: string, sessionId: string, senderType: string, content: string): UTSJSONObject {
 	const base = createTextMessage('system', content)
-	return decorateGroupMessage(base, groupId, sessionId, senderType, '', senderType, '', false)
+	return decorateGroupMessage(base, groupId, sessionId, senderType, '', senderType, '', false, GROUP_MESSAGE_VISIBILITY_INTERNAL, [] as string[])
 }
 
 
@@ -797,7 +1012,7 @@ export function createGroupAgentStreamingMessage(groupId: string, sessionId: str
 	const base = createAssistantStreamingMessage([] as UTSJSONObject[], Date.now())
 	base['hideThinking'] = readAgentHideThinking(agent)
 	base['msgSegmentation'] = readAgentMsgSegmentation(agent)
-	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true)
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
 }
 
 export function createGroupAgentFinalMessage(groupId: string, sessionId: string, agentId: string, parts: UTSJSONObject[], content: string): UTSJSONObject {
@@ -811,17 +1026,17 @@ export function createGroupAgentFinalMessage(groupId: string, sessionId: string,
 	base['content'] = cleanContent != '' ? cleanContent : stripGroupAgentSpeakerPrefix(content, name)
 	base['hideThinking'] = readAgentHideThinking(agent)
 	base['msgSegmentation'] = readAgentMsgSegmentation(agent)
-	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true)
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
 }
 
 export function createGroupUserImageMessage(groupId: string, sessionId: string, imagePath: string, userName: string = ''): UTSJSONObject {
 	const base = createImageMessage(imagePath)
-	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeUserDisplayName(userName), '', true)
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeUserDisplayName(userName), '', true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
 }
 
 export function createGroupUserFileMessage(groupId: string, sessionId: string, fileName: string, filePath: string, userName: string = ''): UTSJSONObject {
 	const base = createFileMessage(fileName, filePath)
-	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeUserDisplayName(userName), '', true)
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeUserDisplayName(userName), '', true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
 }
 
 export function revokeGroupAgentMessage(groupId: string, sessionId: string, messageId: string): void {
@@ -857,8 +1072,36 @@ export function getVisibleGroupMessages(messages: UTSJSONObject[]): UTSJSONObjec
 	const result: UTSJSONObject[] = []
 	for (let i = 0; i < messages.length; i++) {
 		const visible = messages[i]['visible'] as boolean | null
-		if (visible != false) {
+		const visibility = messages[i]['visibility'] as string | null
+		if (visible != false && (visibility == null || visibility == '' || visibility == GROUP_MESSAGE_VISIBILITY_PUBLIC)) {
 			result.push(messages[i])
+		}
+	}
+	return result
+}
+
+export function getGroupMessagesVisibleToAgent(messages: UTSJSONObject[], agentId: string): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const visible = msg['visible'] as boolean | null
+		if (visible == false) { continue }
+		const visibility = msg['visibility'] as string | null
+		if (visibility == null || visibility == '' || visibility == GROUP_MESSAGE_VISIBILITY_PUBLIC) {
+			result.push(msg)
+		} else {
+			const senderAgentId = msg['senderAgentId'] as string | null
+			const targetIds = msg['visibleAgentIds'] as string[] | null
+			if (agentId != '' && senderAgentId == agentId) {
+				result.push(msg)
+			} else if (targetIds != null) {
+				for (let ti = 0; ti < targetIds.length; ti++) {
+					if (targetIds[ti] == agentId) {
+						result.push(msg)
+						break
+					}
+				}
+			}
 		}
 	}
 	return result
@@ -875,7 +1118,8 @@ export function deleteGroupSession(groupId: string, sessionId: string, clearFile
 			next.push(sessions[i])
 		}
 	}
-	uni.removeStorageSync(storageMessagesKey(groupId, sessionId))
+	deleteGroupMessageRows(groupId, sessionId)
+	deleteGroupSessionDbRows(groupId, sessionId)
 	if (clearFiles == true && targetWorkspace != '' && isInsideGroupWorkspace(targetWorkspace) == true && exists(targetWorkspace) == true) {
 		deleteItem(targetWorkspace, true)
 	}
@@ -890,7 +1134,7 @@ export function deleteGroupSession(groupId: string, sessionId: string, clearFile
 		}
 		group.updatedAt = Date.now()
 		saveGroupChat(group)
-		uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, group.activeSessionId)
+		setActiveGroupSessionId(group.activeSessionId)
 	}
 }
 
@@ -979,6 +1223,7 @@ export function buildSchedulerSystemPrompt(): string {
 		'· privateInstruction 必须具体可执行：告诉成员要表达什么观点、采用什么角度、回应哪个细节、是否需要纠偏/收束，不要写"正常回复"这种废话。\n' +
 		'· 如果最近发言出现事实冲突、虚构 App 功能、误解用户意图或跑题，优先安排最合适成员自然修正；不要让成员提及你、调度、私密指令或系统流程。\n' +
 		'· 涉及时效、外部事实、版本、价格、法律、医学、金融、新闻等不稳信息时，将 searchAdvice 设为 recommend，并在 searchInstruction 写明要查证什么；不能让成员伪造搜索结果。\n' +
+		'· 消息可见性参考 Agentopia：公开内容 public 才会进群聊；内部调度/复盘 internal 不公开；定向私密消息未来使用 visibleAgentIds，不要让成员在公开正文里模拟 <private> 或 <visible> 标签。\n' +
 		'· shouldContinue：仅当讨论有明确的下一步价值（如任务未完成、需要多轮协作）时设为 true；闲聊收尾设 false。\n' +
 		'· agentId 必须与成员列表 id= 后的值完全一致，不能自造。\n\n' +
 		'输出纯 JSON，禁止任何 Markdown 标记，格式：\n' +
@@ -997,6 +1242,7 @@ export function buildSchedulerReviewSystemPrompt(): string {
 
 function formatMemberList(groupId: string): string {
 	const members = getActiveGroupMembers(groupId)
+	const metrics = getGroupAgentMetricRows(groupId, getActiveGroupSessionId())
 	const lines: string[] = []
 	for (let i = 0; i < members.length; i++) {
 		const agent = getAgentById(members[i].agentId)
@@ -1004,12 +1250,38 @@ function formatMemberList(groupId: string): string {
 		const desc = agentDesc != null && agentDesc != '' ? agentDesc : ''
 		let line = '- id=' + members[i].agentId + '  name=' + readAgentName(agent)
 		if (desc != '') { line += '\n  介绍：' + desc }
+		for (let j = 0; j < metrics.length; j++) {
+			const metricAgentId = metrics[j]['agent_id'] as string | null
+			if (metricAgentId == members[i].agentId) {
+				const speak = metrics[j]['speak_count'] as number | null
+				const useful = metrics[j]['useful_count'] as number | null
+				const issue = metrics[j]['issue_count'] as number | null
+				line += '\n  群聊指标：发言 ' + (speak != null ? speak : 0) + '，有效贡献 ' + (useful != null ? useful : 0) + '，问题 ' + (issue != null ? issue : 0)
+				break
+			}
+		}
 		lines.push(line)
 	}
 	return lines.join('\n')
 }
 
+function buildOpenTaskSummary(groupId: string, sessionId: string): string {
+	const tasks = getGroupTaskRows(groupId, sessionId)
+	const lines: string[] = []
+	for (let i = 0; i < tasks.length; i++) {
+		const status = tasks[i]['status'] as string | null
+		if (status != null && status != 'open' && status != 'doing') { continue }
+		const title = tasks[i]['title'] as string | null
+		const owner = tasks[i]['owner_agent_id'] as string | null
+		lines.push('- ' + (title != null ? title : '未命名任务') + ' / owner=' + (owner != null ? owner : '') + ' / status=' + (status != null ? status : 'open'))
+		if (lines.length >= 8) { break }
+	}
+	if (lines.length == 0) { return '(暂无结构化任务)' }
+	return lines.join('\n')
+}
+
 function readCurrentUserDisplayName(): string {
+	// COMPAT_LEGACY_STORAGE: 用户资料仍在旧 storage，未来资料表迁移时统一删除。
 	const raw = uni.getStorageSync('profile_nickname') as string | null
 	const name = raw != null ? raw.trim() : ''
 	return name != '' ? name : '用户'
@@ -1078,6 +1350,7 @@ export function buildSchedulerRuntimeMessages(group: GroupChat, session: GroupCh
 		'当前会话名：' + displaySessionTitle(session) + '\n' +
 		'连续讨论轮数：' + loopTurns + '\n\n' +
 		'可调度成员：\n' + formatMemberList(group.id) + '\n\n' +
+		'当前结构化任务：\n' + buildOpenTaskSummary(group.id, session.id) + '\n\n' +
 		'最近公开群聊记录：\n' + buildGroupTranscript(messages, 20) + '\n\n' +
 		'请根据以上上下文决定下一步由谁发言。严格输出 JSON，不加任何解释。'
 	return [createTextMessage(CHAT_ROLE_USER, content)]
@@ -1193,9 +1466,10 @@ export function buildGroupReviewSystemPrompt(): string {
 		'· 总结本轮实际推进了什么，不要复述全文。\n' +
 		'· 标记跑题、重复、事实冲突、虚构 App 功能、未满足用户目标等问题。\n' +
 		'· 判断是否值得继续一轮讨论；只有任务未完成、有明确下一步价值时才建议 continue。\n' +
+		'· 如果本轮产生明确待办或协作事项，写入 taskCards；没有就返回空数组。\n' +
 		'· 给出可沉淀到长期记忆的候选笔记，但不要编造用户没有表达过的信息。\n\n' +
 		'输出纯 JSON，禁止 Markdown，格式：\n' +
-		'{"roundSummary":"<一句话复盘>","completed":["<已完成点>"],"issues":["<问题或风险>"],"usefulAgents":[{"agentId":"<成员ID>","reason":"<贡献>"}],"continueAdvice":"continue|stop|neutral","suggestedNext":"<如果继续，建议下一步>","memoryCandidates":[{"agentId":"<成员ID或空>","note":"<可写入记忆的事实/偏好/关系变化>"}]}\n\n' +
+		'{"roundSummary":"<一句话复盘>","completed":["<已完成点>"],"issues":["<问题或风险>"],"usefulAgents":[{"agentId":"<成员ID>","reason":"<贡献>"}],"continueAdvice":"continue|stop|neutral","suggestedNext":"<如果继续，建议下一步>","taskCards":[{"title":"<任务标题>","ownerAgentId":"<负责人Agent ID或空>","participants":["<Agent ID>"],"status":"open|doing|done","summary":"<任务说明>"}],"memoryCandidates":[{"agentId":"<成员ID或空>","note":"<可写入记忆的事实/偏好/关系变化>"}]}\n\n' +
 		'字段要求：数组没有内容就返回空数组；continueAdvice 只能是 continue、stop、neutral；不确定时用 neutral。'
 }
 
@@ -1220,6 +1494,7 @@ export function buildGroupReviewMessages(group: GroupChat, session: GroupChatSes
 		'当前会话名：' + displaySessionTitle(session) + '\n' +
 		'连续讨论轮数：' + loopTurns + '\n\n' +
 		'可复盘成员：\n' + formatMemberList(group.id) + '\n\n' +
+		'当前结构化任务：\n' + buildOpenTaskSummary(group.id, session.id) + '\n\n' +
 		'最近隐藏调度记录：\n' + buildLatestSchedulerRecord(messages) + '\n\n' +
 		'最近公开群聊记录：\n' + buildGroupTranscript(messages, 24) + '\n\n' +
 		'请根据以上上下文输出内部复盘 JSON，不要加解释。'
@@ -1251,8 +1526,110 @@ export function parseGroupReviewDecision(raw: string): UTSJSONObject {
 		usefulAgents: [] as UTSJSONObject[],
 		continueAdvice: 'neutral',
 		suggestedNext: '',
+		taskCards: [] as UTSJSONObject[],
 		memoryCandidates: [] as UTSJSONObject[],
 	} as UTSJSONObject
+}
+
+function readReviewAgentId(item: UTSJSONObject): string {
+	const agentId = item['agentId'] as string | null
+	return agentId != null ? agentId : ''
+}
+
+function readReviewText(item: UTSJSONObject, key: string): string {
+	const value = item[key] as string | null
+	return value != null ? value : ''
+}
+
+export function persistGroupReviewEffects(group: GroupChat, session: GroupChatSession, review: UTSJSONObject, messageId: string): void {
+	const reviewId = createId('greview')
+	const now = Date.now()
+	const summary = readReviewText(review, 'roundSummary')
+	const adviceRaw = readReviewText(review, 'continueAdvice')
+	const advice = adviceRaw != '' ? adviceRaw : 'neutral'
+	const reviewRecord = {
+		id: reviewId,
+		groupId: group.id,
+		sessionId: session.id,
+		messageId: messageId,
+		summary: summary,
+		continueAdvice: advice,
+		payload: review,
+		createdAt: now,
+	} as UTSJSONObject
+	saveGroupReviewRow(reviewRecord)
+	appendSystemJsonl(group.id, session.id, 'reviews.jsonl', reviewRecord)
+
+	const usefulAgents = review['usefulAgents'] as UTSJSONObject[] | null
+	if (usefulAgents != null) {
+		for (let i = 0; i < usefulAgents.length; i++) {
+			const agentId = readReviewAgentId(usefulAgents[i])
+			if (agentId != '') {
+				incrementGroupAgentMetric(group.id, session.id, agentId, 0, 1, 0, 0)
+			}
+		}
+	}
+	const issues = review['issues'] as string[] | null
+	if (issues != null && issues.length > 0) {
+		const members = getActiveGroupMembers(group.id)
+		for (let j = 0; j < members.length; j++) {
+			incrementGroupAgentMetric(group.id, session.id, members[j].agentId, 0, 0, 1, 0)
+		}
+	}
+	const taskCards = review['taskCards'] as UTSJSONObject[] | null
+	if (taskCards != null) {
+		for (let t = 0; t < taskCards.length; t++) {
+			const title = readReviewText(taskCards[t], 'title')
+			if (title == '') { continue }
+			const ownerAgentId = readReviewText(taskCards[t], 'ownerAgentId')
+			const participantsRaw = taskCards[t]['participants'] as string[] | null
+			const participants = participantsRaw != null ? participantsRaw : ([] as string[])
+			const statusRaw = readReviewText(taskCards[t], 'status')
+			const status = statusRaw != '' ? statusRaw : 'open'
+			const taskRecord = {
+				id: createId('gtask'),
+				groupId: group.id,
+				sessionId: session.id,
+				title: title,
+				ownerAgentId: ownerAgentId,
+				participants: participants,
+				status: status,
+				sourceReviewId: reviewId,
+				summary: readReviewText(taskCards[t], 'summary'),
+				createdAt: now,
+			} as UTSJSONObject
+			saveGroupTaskRow(taskRecord)
+			appendSystemJsonl(group.id, session.id, 'tasks.jsonl', taskRecord)
+		}
+	}
+	const memoryCandidates = review['memoryCandidates'] as UTSJSONObject[] | null
+	if (memoryCandidates != null) {
+		for (let m = 0; m < memoryCandidates.length; m++) {
+			const note = readReviewText(memoryCandidates[m], 'note')
+			if (note == '') { continue }
+			const agentId = readReviewAgentId(memoryCandidates[m])
+			const memoryRecord = {
+				id: createId('gmem'),
+				groupId: group.id,
+				sessionId: session.id,
+				agentId: agentId,
+				category: 'group_review',
+				visibility: GROUP_MESSAGE_VISIBILITY_PRIVATE,
+				content: note,
+				sourceReviewId: reviewId,
+				createdAt: now,
+			} as UTSJSONObject
+			saveGroupMemoryRow(memoryRecord)
+			appendSystemJsonl(group.id, session.id, 'memory.jsonl', memoryRecord)
+			if (agentId != '') {
+				incrementGroupAgentMetric(group.id, session.id, agentId, 0, 0, 0, 1)
+			}
+		}
+	}
+}
+
+export function recordGroupAgentSpeak(groupId: string, sessionId: string, agentId: string): void {
+	incrementGroupAgentMetric(groupId, sessionId, agentId, 1, 0, 0, 0)
 }
 
 export function buildMemberSystemPrompt(agent: UTSJSONObject, sharedPrompt: string = ''): string {
@@ -1268,7 +1645,8 @@ export function buildMemberSystemPrompt(agent: UTSJSONObject, sharedPrompt: stri
 
 export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], action: UTSJSONObject, agentName: string, injectDatetime: boolean, datetimePrefix: string): UTSJSONObject[] {
 	const runtime: UTSJSONObject[] = []
-	const visible = getVisibleGroupMessages(messages)
+	const actionAgentId = readActionText(action, 'agentId')
+	const visible = getGroupMessagesVisibleToAgent(messages, actionAgentId)
 	const start = visible.length > 40 ? visible.length - 40 : 0
 	for (let i = start; i < visible.length; i++) {
 		const msg = visible[i]

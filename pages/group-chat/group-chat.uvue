@@ -132,9 +132,8 @@
 	import { CHAT_ROLE_ASSISTANT, createPlainPart, getMessageContent, getMessageParts, getMessageThinking, setImageMessageCaption } from '@/utils/chat-models.uts'
 	import { reduceAgentEvent, finalizeAssistantTurn } from '@/utils/chat-message-reducer.uts'
 	import { detectSchedulerLeakCandidate, getSchedulerLeakHoldSize } from '@/utils/group-chat-moderation.uts'
+	import { setActiveAgentRuntimeId, setContextPreviewPayload, setFilesInitialPath, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import {
-		ACTIVE_GROUP_CHAT_ID_KEY,
-		ACTIVE_GROUP_SESSION_ID_KEY,
 		GROUP_MESSAGE_SENDER_AGENT,
 		GROUP_MESSAGE_SENDER_REVIEWER,
 		GROUP_MESSAGE_SENDER_SCHEDULER,
@@ -160,6 +159,7 @@
 		displaySessionTitle,
 		ensureGroupActiveSession,
 		getActiveGroupMembers,
+		getActiveGroupChatId,
 		getGroupChatById,
 		getGroupMessages,
 		getGroupSessionById,
@@ -168,6 +168,8 @@
 		parseGroupReviewDecision,
 		parseSchedulerDecision,
 		parseSchedulerReviewDecision,
+		persistGroupReviewEffects,
+		recordGroupAgentSpeak,
 		isAgentInGroup,
 		markGroupAgentMessageRevoked,
 		readAgentModel,
@@ -177,6 +179,8 @@
 		revokeGroupAgentMessage,
 		saveGroupAgentContextRecord,
 		saveGroupMessages,
+		setActiveGroupChat,
+		setActiveGroupSessionId,
 		syncGroupStreamingMessage,
 	} from '@/utils/group-chat-service.uts'
 
@@ -246,24 +250,24 @@
 				this.userAvatar = profile.avatar
 			},
 			loadGroup(): void {
-				let groupId = uni.getStorageSync(ACTIVE_GROUP_CHAT_ID_KEY) as string | null
-				if (groupId == null || groupId == '') {
+				let groupId = getActiveGroupChatId()
+				if (groupId == '') {
 					const group = createDefaultWritingGroupChat()
 					groupId = group.id
-					uni.setStorageSync(ACTIVE_GROUP_CHAT_ID_KEY, group.id)
+					setActiveGroupChat(group.id)
 				}
 				let group = getGroupChatById(groupId)
 				if (group == null) {
 					group = createDefaultWritingGroupChat()
 					groupId = group.id
-					uni.setStorageSync(ACTIVE_GROUP_CHAT_ID_KEY, group.id)
+					setActiveGroupChat(group.id)
 				}
 				const session = ensureGroupActiveSession(group)
 				this.groupId = group.id
 				this.sessionId = session.id
 				this.group = group
 				this.session = session
-				uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, session.id)
+				setActiveGroupSessionId(session.id)
 				this.messages = getGroupMessages(group.id, session.id)
 				this.normalizeUserSenderNames()
 				this.scrollToBottom()
@@ -697,8 +701,7 @@
 					uni.showToast({ position: 'bottom', title: '该智能体已删除', icon: 'none' })
 					return
 				}
-				uni.setStorageSync('memory_agent_id', agentId)
-				uni.setStorageSync('memory_conversation_id', this.sessionId)
+				setMemoryRouteState(agentId, this.sessionId)
 				uni.navigateTo({ url: '/pages/memory/memory' })
 			},
 			openContextForAgent(agentId: string): void {
@@ -719,7 +722,7 @@
 				} catch (_e: any) {
 					previewText = JSON.stringify(preview)
 				}
-				uni.setStorageSync('context_preview_payload', previewText)
+				setContextPreviewPayload(previewText)
 				uni.navigateTo({ url: '/pages/context-preview/context-preview' })
 			},
 			openGroupWorkspace(): void {
@@ -733,7 +736,7 @@
 					uni.showToast({ position: 'bottom', title: '工作区不可用', icon: 'none' })
 					return
 				}
-				uni.setStorageSync('files_initial_path', workspaceRoot)
+				setFilesInitialPath(workspaceRoot)
 				uni.navigateTo({ url: '/pages/files/files' })
 			},
 			onMessageLongpress(msg: UTSJSONObject): void {
@@ -760,7 +763,7 @@
 					uni.showToast({ position: 'bottom', title: '该智能体已删除', icon: 'none' })
 					return
 				}
-				uni.setStorageSync('active_agent_id', agentId)
+				setActiveAgentRuntimeId(agentId)
 				uni.navigateTo({ url: '/pages/chat/chat' })
 			},
 			showDispatchHistory(): void {
@@ -770,13 +773,16 @@
 				for (let i = this.messages.length - 1; i >= 0; i--) {
 					const msg = this.messages[i]
 					const senderType = msg['senderType'] as string | null
-					if (senderType != GROUP_MESSAGE_SENDER_SCHEDULER) { continue }
+					if (senderType != GROUP_MESSAGE_SENDER_SCHEDULER && senderType != GROUP_MESSAGE_SENDER_REVIEWER) { continue }
 					const reason = msg['triggerReason'] as string | null
+					const visibility = msg['visibility'] as string | null
+					const kind = senderType != null ? senderType : 'internal'
+					const level = visibility != null && visibility != '' ? visibility : 'internal'
 					const ts = msg['timestamp'] as number | null
 					const d = ts != null && ts > 0 ? new Date(ts) : new Date()
 					const hh = d.getHours() < 10 ? '0' + d.getHours().toString() : d.getHours().toString()
 					const mm = d.getMinutes() < 10 ? '0' + d.getMinutes().toString() : d.getMinutes().toString()
-					lines.push('=== ' + hh + ':' + mm + '  ' + (reason != null ? reason : '') + ' ===')
+					lines.push('=== ' + hh + ':' + mm + ' [' + kind + '/' + level + '] ' + (reason != null ? reason : '') + ' ===')
 					const content = msg['content'] as string | null
 					const text = content != null ? content : ''
 					const first = text.indexOf('{')
@@ -798,7 +804,7 @@
 					uni.showToast({ position: 'bottom', title: '还没有调度记录', icon: 'none' })
 					return
 				}
-				uni.setStorageSync('context_preview_payload', lines.join('\n'))
+				setContextPreviewPayload(lines.join('\n'))
 				uni.navigateTo({ url: '/pages/context-preview/context-preview' })
 			},
 			runScheduler(reason: string): void {
@@ -942,6 +948,8 @@
 						hidden['runtimeMessages'] = JSON.parse(JSON.stringify(reviewMessages)) as UTSJSONObject[]
 						hidden['review'] = review
 						this.messages.push(hidden)
+						const hiddenId = hidden['id'] as string | null
+						persistGroupReviewEffects(group, session, review, hiddenId != null ? hiddenId : '')
 						this.saveMessages()
 						this.currentStream = null
 						let nextShouldContinue = schedulerShouldContinue
@@ -1038,6 +1046,7 @@
 						} else {
 							streamingMsg['visible'] = false
 						}
+						recordGroupAgentSpeak(group.id, session.id, agentId)
 						const requestSnapshot = readLastLLMRequestSnapshot(agentId, session.id)
 						if (requestSnapshot != null) {
 							contextRecord['requestSnapshot'] = requestSnapshot

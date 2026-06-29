@@ -3,7 +3,7 @@
  * 聚合 SQLite、uni.storage、智能体配置和本地资源，生成可备份 ZIP 清单。
  */
 
-import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings, getDatabaseFilePathForExport, getAllMemoryBuffersForExport, getAllMemoryCoreForExport, getAllConversationTokenUsageStatsForExport, getAllMemoryCompactionStatesForExport } from '@/utils/database.uts'
+import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings, getDatabaseFilePathForExport, getAllMemoryBuffersForExport, getAllMemoryCoreForExport, getAllConversationTokenUsageStatsForExport, getAllMemoryCompactionStatesForExport, getAllGroupChatDataForExport } from '@/utils/database.uts'
 import { getAllDefaultTaskModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
 import { getAgents } from '@/utils/agent.uts'
 import { getSkills } from '@/utils/skills.uts'
@@ -454,6 +454,61 @@ function collectAgentFiles(agents: UTSJSONObject[], specs: UTSJSONObject[]): UTS
 	return result
 }
 
+function appendGroupWorkspaceEntries(dirPath: string, result: UTSJSONObject[], specs: UTSJSONObject[], depth: number): void {
+	if (depth > 10) {
+		return
+	}
+	const filesDir = getInternalFilesDir()
+	if (filesDir == '') {
+		return
+	}
+	const root = joinPath(filesDir, 'group-workspaces')
+	if (exists(root) == false) {
+		return
+	}
+	const fullDirPath = dirPath == '' ? root : joinPath(root, dirPath)
+	const files = listDir(fullDirPath)
+	for (let i = 0; i < files.length; i++) {
+		const item = files[i]
+		const name = item.name
+		if (name == '') {
+			continue
+		}
+		const relPath = dirPath == '' ? name : dirPath + '/' + name
+		const safeRelPath = sanitizeRelativeZipPath(relPath)
+		if (item.isDirectory == true) {
+			const zipPath = 'group-workspaces/' + safeRelPath + '/'
+			appendDirectorySpec(specs, zipPath)
+			result.push({
+				path: relPath,
+				zipPath: zipPath,
+				isDirectory: true,
+				size: item.size,
+				lastModified: item.lastModified,
+			} as UTSJSONObject)
+			appendGroupWorkspaceEntries(relPath, result, specs, depth + 1)
+		} else {
+			const zipPath = 'group-workspaces/' + safeRelPath
+			appendFileSpec(specs, joinPath(root, relPath), zipPath)
+			result.push({
+				path: relPath,
+				zipPath: zipPath,
+				isDirectory: false,
+				size: item.size,
+				lastModified: item.lastModified,
+				includedInZip: true,
+			} as UTSJSONObject)
+		}
+	}
+}
+
+function collectGroupWorkspaceFiles(specs: UTSJSONObject[]): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	appendDirectorySpec(specs, 'group-workspaces/')
+	appendGroupWorkspaceEntries('', result, specs, 0)
+	return result
+}
+
 function appendUserFileEntries(dirPath: string, result: UTSJSONObject[], specs: UTSJSONObject[], depth: number): void {
 	if (depth > 8) {
 		return
@@ -583,6 +638,7 @@ export function buildAllDataExport(): UTSJSONObject {
 	const memoryCore = getAllMemoryCoreForExport()
 	const conversationTokenUsageStats = getAllConversationTokenUsageStatsForExport()
 	const memoryCompactionStates = getAllMemoryCompactionStatesForExport()
+	const groupChatData = getAllGroupChatDataForExport()
 	const storageKeys = collectStorageKeys()
 	const storage = collectKnownStorageByKeys(storageKeys)
 	const agents = getAgents()
@@ -591,6 +647,7 @@ export function buildAllDataExport(): UTSJSONObject {
 	const databaseFile = appendDatabaseFile(fileSpecs)
 	const userFiles = collectUserFiles(fileSpecs)
 	const agentFiles = collectAgentFiles(agents, fileSpecs)
+	const groupWorkspaceFiles = collectGroupWorkspaceFiles(fileSpecs)
 	appendKnowledgeWorkspaceFiles(agents, fileSpecs)
 	const notes = parseStorageArray('notes_list')
 	const todos = parseStorageArray('todo_list')
@@ -614,6 +671,7 @@ export function buildAllDataExport(): UTSJSONObject {
 			skills: skills,
 			userFiles: userFiles,
 			agentFiles: agentFiles,
+			groupWorkspaceFiles: groupWorkspaceFiles,
 			assets: assets,
 			conversations: conversations,
 			messages: messages,
@@ -621,6 +679,7 @@ export function buildAllDataExport(): UTSJSONObject {
 			memoryCore: memoryCore,
 			conversationTokenUsageStats: conversationTokenUsageStats,
 			memoryCompactionStates: memoryCompactionStates,
+			groupChatData: groupChatData,
 			notes: notes,
 			todos: todos,
 			storage: storage,

@@ -111,6 +111,7 @@
 		listGroupAgentContextRecords,
 		saveGroupMessages,
 	} from '@/utils/group-chat-service.uts'
+	import { getActiveAgentRuntimeId, setActiveConversationRuntimeId } from '@/utils/runtime-state.uts'
 
 	export default {
 		data() {
@@ -211,8 +212,7 @@
 			},
 
 			loadHistory() {
-				const rawAgentId = uni.getStorageSync('active_agent_id') as string | null
-				this.activeAgentId = rawAgentId != null ? rawAgentId : ''
+				this.activeAgentId = getActiveAgentRuntimeId()
 				try {
 					const list = getConversations()
 					if (this.activeAgentId == '') {
@@ -455,6 +455,7 @@
 				const name = senderName != null ? senderName.trim() : ''
 				if (senderType == 'user' || role == 'user') {
 					if (name != '' && name != '用户') { return name }
+					// COMPAT_LEGACY_STORAGE: 用户资料仍在旧 storage，未来资料表迁移时统一删除。
 					const raw = uni.getStorageSync('profile_nickname') as string | null
 					const profileName = raw != null ? raw.trim() : ''
 					return profileName != '' ? profileName : '用户'
@@ -834,7 +835,7 @@
 					uni.showToast({ position: 'bottom', title: '这是群聊上下文快照，不是会话', icon: 'none' })
 					return
 				}
-				uni.setStorageSync('active_conversation_id', item['id'] as string)
+				setActiveConversationRuntimeId(item['id'] as string)
 				uni.redirectTo({
 					url: '/pages/chat/chat'
 				})

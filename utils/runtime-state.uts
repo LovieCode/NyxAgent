@@ -1,0 +1,96 @@
+/**
+ * 运行期跨页状态。
+ *
+ * 新路由参数统一写 SQLite，避免继续把临时状态散落到 uni.storage。
+ * COMPAT_LEGACY_STORAGE 标记的分支只用于读取历史版本遗留 key，未来可整段删除。
+ */
+import { consumeRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+
+export const RUNTIME_ACTIVE_AGENT_ID_KEY = 'active_agent_id'
+export const RUNTIME_ACTIVE_CONVERSATION_ID_KEY = 'active_conversation_id'
+export const RUNTIME_CONTEXT_PREVIEW_PAYLOAD_KEY = 'context_preview_payload'
+export const RUNTIME_FILES_INITIAL_PATH_KEY = 'files_initial_path'
+export const RUNTIME_MEMORY_AGENT_ID_KEY = 'memory_agent_id'
+export const RUNTIME_MEMORY_CONVERSATION_ID_KEY = 'memory_conversation_id'
+
+function readLegacyStorageString(key: string): string {
+	// COMPAT_LEGACY_STORAGE: 兼容旧版本 uni.storage 路由参数；未来清理 storage 迁移时删除。
+	const value = uni.getStorageSync(key) as string | null
+	if (value == null) { return '' }
+	return value
+}
+
+function consumeLegacyStorageString(key: string): string {
+	// COMPAT_LEGACY_STORAGE: 兼容旧版本一次性路由参数；未来清理 storage 迁移时删除。
+	const value = uni.getStorageSync(key) as string | null
+	if (value != null && value != '') {
+		uni.removeStorageSync(key)
+		return value
+	}
+	return ''
+}
+
+export function setContextPreviewPayload(value: string): void {
+	setRuntimeState(RUNTIME_CONTEXT_PREVIEW_PAYLOAD_KEY, value)
+}
+
+export function consumeContextPreviewPayload(): string {
+	const value = consumeRuntimeState(RUNTIME_CONTEXT_PREVIEW_PAYLOAD_KEY)
+	if (value != '') { return value }
+	return readLegacyStorageString(RUNTIME_CONTEXT_PREVIEW_PAYLOAD_KEY)
+}
+
+export function setFilesInitialPath(value: string): void {
+	setRuntimeState(RUNTIME_FILES_INITIAL_PATH_KEY, value)
+}
+
+export function consumeFilesInitialPath(): string {
+	const value = consumeRuntimeState(RUNTIME_FILES_INITIAL_PATH_KEY)
+	if (value != '') { return value }
+	return consumeLegacyStorageString(RUNTIME_FILES_INITIAL_PATH_KEY)
+}
+
+export function setMemoryRouteState(agentId: string, conversationId: string): void {
+	setRuntimeState(RUNTIME_MEMORY_AGENT_ID_KEY, agentId)
+	setRuntimeState(RUNTIME_MEMORY_CONVERSATION_ID_KEY, conversationId)
+}
+
+export function consumeMemoryRouteAgentId(): string {
+	const value = consumeRuntimeState(RUNTIME_MEMORY_AGENT_ID_KEY)
+	if (value != '') { return value }
+	return readLegacyStorageString(RUNTIME_MEMORY_AGENT_ID_KEY)
+}
+
+export function consumeMemoryRouteConversationId(): string {
+	const value = consumeRuntimeState(RUNTIME_MEMORY_CONVERSATION_ID_KEY)
+	if (value != '') { return value }
+	return readLegacyStorageString(RUNTIME_MEMORY_CONVERSATION_ID_KEY)
+}
+
+export function setActiveConversationRuntimeId(value: string): void {
+	setRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY, value)
+}
+
+export function consumeActiveConversationRuntimeId(): string {
+	const value = consumeRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY)
+	if (value != '') { return value }
+	return consumeLegacyStorageString(RUNTIME_ACTIVE_CONVERSATION_ID_KEY)
+}
+
+export function getActiveAgentRuntimeId(): string {
+	const value = getRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY)
+	if (value != '') { return value }
+	return readLegacyStorageString(RUNTIME_ACTIVE_AGENT_ID_KEY)
+}
+
+export function setActiveAgentRuntimeId(value: string): void {
+	setRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY, value)
+	// COMPAT_LEGACY_STORAGE: agent-settings 等旧页面仍读取 active_agent_id；全量迁移后删除这行。
+	uni.setStorageSync(RUNTIME_ACTIVE_AGENT_ID_KEY, value)
+}
+
+export function getActiveConversationRuntimeId(): string {
+	const value = getRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY)
+	if (value != '') { return value }
+	return readLegacyStorageString(RUNTIME_ACTIVE_CONVERSATION_ID_KEY)
+}

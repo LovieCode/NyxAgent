@@ -52,8 +52,6 @@
 
 <script lang="uts">
 	import {
-		ACTIVE_GROUP_CHAT_ID_KEY,
-		ACTIVE_GROUP_SESSION_ID_KEY,
 		GroupChat,
 		GroupChatSession,
 		createGroupSession,
@@ -61,6 +59,7 @@
 		displaySessionTitle,
 		ensureGroupActiveSession,
 		forkGroupSession,
+		getActiveGroupChatId,
 		getGroupChatById,
 		getGroupMessages,
 		getGroupSessions,
@@ -83,8 +82,8 @@
 		onShow() { this.loadData() },
 		methods: {
 			loadData(): void {
-				const groupId = uni.getStorageSync(ACTIVE_GROUP_CHAT_ID_KEY) as string | null
-				if (groupId == null || groupId == '') { return }
+				const groupId = getActiveGroupChatId()
+				if (groupId == '') { return }
 				const group = getGroupChatById(groupId)
 				if (group == null) { return }
 				const session = ensureGroupActiveSession(group)
@@ -105,13 +104,11 @@
 				if (this.groupId == '') { return }
 				const session = createGroupSession(this.groupId, '新会话')
 				setActiveGroupSession(this.groupId, session.id)
-				uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, session.id)
 				this.loadData()
 				uni.showToast({ position: 'bottom', title: '新会话已创建', icon: 'success' })
 			},
 			switchSession(session: GroupChatSession): void {
 				setActiveGroupSession(this.groupId, session.id)
-				uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, session.id)
 				this.loadData()
 				uni.showToast({ position: 'bottom', title: '已切换：' + displaySessionTitle(session), icon: 'none' })
 			},
@@ -128,7 +125,6 @@
 				const forked = forkGroupSession(this.groupId, session.id)
 				if (forked != null) {
 					setActiveGroupSession(this.groupId, forked.id)
-					uni.setStorageSync(ACTIVE_GROUP_SESSION_ID_KEY, forked.id)
 					this.loadData()
 					uni.showToast({ position: 'bottom', title: '分支已创建', icon: 'success' })
 				}

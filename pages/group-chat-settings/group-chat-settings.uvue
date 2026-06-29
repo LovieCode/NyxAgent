@@ -59,12 +59,12 @@
 <script lang="uts">
 	import { getAgents } from '@/utils/agent.uts'
 	import {
-		ACTIVE_GROUP_CHAT_ID_KEY,
 		type GroupChat,
 		addGroupMember,
 		buildDefaultSchedulerPrompt,
 		buildDefaultSharedPrompt,
 		getActiveGroupMembers,
+		getActiveGroupChatId,
 		getGroupChatById,
 		isAgentInGroup,
 		removeGroupMember,
@@ -98,8 +98,8 @@
 		methods: {
 			loadData(): void {
 				this.agentList = getAgents()
-				const groupId = uni.getStorageSync(ACTIVE_GROUP_CHAT_ID_KEY) as string | null
-				if (groupId == null || groupId == '') { return }
+				const groupId = getActiveGroupChatId()
+				if (groupId == '') { return }
 				const group = getGroupChatById(groupId)
 				if (group == null) { return }
 				this.group = group
