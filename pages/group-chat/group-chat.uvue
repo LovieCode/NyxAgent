@@ -136,11 +136,14 @@
 		ACTIVE_GROUP_CHAT_ID_KEY,
 		ACTIVE_GROUP_SESSION_ID_KEY,
 		GROUP_MESSAGE_SENDER_AGENT,
+		GROUP_MESSAGE_SENDER_REVIEWER,
 		GROUP_MESSAGE_SENDER_SCHEDULER,
 		GROUP_MESSAGE_SENDER_USER,
 		type GroupChat,
 		type GroupChatSession,
 		applyGroupSessionTitleSuggestion,
+		buildGroupReviewMessages,
+		buildGroupReviewSystemPrompt,
 		buildMemberRuntimeMessages,
 		buildMemberSystemPrompt,
 		buildSchedulerRuntimeMessages,
@@ -162,6 +165,7 @@
 		getGroupSessionById,
 		getGroupSessionWorkspaceDir,
 		getVisibleGroupMessages,
+		parseGroupReviewDecision,
 		parseSchedulerDecision,
 		parseSchedulerReviewDecision,
 		isAgentInGroup,
@@ -874,16 +878,7 @@
 					return
 				}
 				if (index >= actions.length) {
-					this.isGenerating = false
-					this.currentStream = null
-					this.loopTurns++
-					this.saveMessages()
-					if (this.loopTurns >= 10) {
-						this.loopTurns = 0
-						this.runScheduler('连续讨论轮数过多，判断是否继续')
-					} else if (shouldContinue == true) {
-						this.runScheduler('调度器决定继续讨论')
-					}
+					this.finishDecisionRound(shouldContinue)
 					return
 				}
 				const action = actions[index]
@@ -894,6 +889,78 @@
 					return
 				}
 				this.runMemberSpeak(agentId, action, () => { this.runActionAt(actions, index + 1, shouldContinue) })
+			},
+			finishDecisionRound(shouldContinue: boolean): void {
+				this.loopTurns++
+				this.saveMessages()
+				this.runGroupReview('成员发言结束，进入回合复盘', shouldContinue)
+			},
+			runGroupReview(reason: string, schedulerShouldContinue: boolean): void {
+				const group = this.group
+				const session = this.session
+				if (group == null || session == null) {
+					this.isGenerating = false
+					this.currentStream = null
+					return
+				}
+				const reviewStartedAt = Date.now()
+				const reviewMessages = buildGroupReviewMessages(group, session, this.messages, reason, this.loopTurns)
+				const reviewerAgentId = 'reviewer'
+				let reviewText = ''
+				let reviewThinking = ''
+				const reviewStream = agentChat(reviewMessages, buildGroupReviewSystemPrompt(), '', '', reviewerAgentId, 1, session.id, '')
+				this.currentStream = reviewStream
+				reviewStream.on((event: AgentEvent) => {
+					if (event.type == 'text_delta' && event.text != null) {
+						reviewText += event.text
+					} else if (event.type == 'text_end' && event.fullText != null && reviewText == '') {
+						reviewText = event.fullText as string
+					} else if (event.type == 'thinking_delta' && event.thinkingText != null) {
+						reviewThinking += (event.thinkingText as string)
+					} else if (event.type == 'thinking_end' && event.fullThinking != null) {
+						reviewThinking = event.fullThinking as string
+					} else if (event.type == 'error' && event.error != null) {
+						reviewText = event.error
+					} else if (event.type == 'agent_end') {
+						if (this.discussionStopped == true) {
+							this.isGenerating = false
+							this.currentStream = null
+							this.saveMessages()
+							return
+						}
+						const review = parseGroupReviewDecision(reviewText)
+						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_REVIEWER, reviewText)
+						appendResponseToSnapshot(reviewerAgentId, session.id, reviewText, reviewThinking)
+						const reviewerSnapshot = readLastLLMRequestSnapshot(reviewerAgentId, session.id)
+						if (reviewerSnapshot != null) {
+							const capturedAt = reviewerSnapshot['capturedAt'] as number | null
+							if (capturedAt != null && capturedAt >= reviewStartedAt) {
+								hidden['requestSnapshot'] = reviewerSnapshot
+							}
+						}
+						hidden['triggerReason'] = reason
+						hidden['runtimeMessages'] = JSON.parse(JSON.stringify(reviewMessages)) as UTSJSONObject[]
+						hidden['review'] = review
+						this.messages.push(hidden)
+						this.saveMessages()
+						this.currentStream = null
+						let nextShouldContinue = schedulerShouldContinue
+						const advice = review['continueAdvice'] as string | null
+						if (advice == 'continue') {
+							nextShouldContinue = true
+						} else if (advice == 'stop') {
+							nextShouldContinue = false
+						}
+						if (this.loopTurns >= 10) {
+							this.loopTurns = 0
+							this.runScheduler('连续讨论轮数过多，判断是否继续')
+						} else if (nextShouldContinue == true) {
+							this.runScheduler('复盘建议继续讨论')
+						} else {
+							this.isGenerating = false
+						}
+					}
+				})
 			},
 			runMemberSpeak(agentId: string, action: UTSJSONObject, done: () => void): void {
 				this.runMemberSpeakWithReview(agentId, action, false, done)

@@ -39,6 +39,7 @@ export const ACTIVE_GROUP_SESSION_ID_KEY = 'active_group_session_id'
 export const GROUP_MESSAGE_SENDER_USER = 'user'
 export const GROUP_MESSAGE_SENDER_AGENT = 'agent'
 export const GROUP_MESSAGE_SENDER_SCHEDULER = 'scheduler'
+export const GROUP_MESSAGE_SENDER_REVIEWER = 'reviewer'
 export const GROUP_MESSAGE_SENDER_SYSTEM = 'system'
 
 const DEFAULT_SCHEDULER_PROMPT_TEXT = '你是隐藏的群聊调度 Agent。你可以在内部向任意成员 Agent 传递私密指令、背景信息和任务拆解，也可以指定一个或多个成员按顺序发言。你的存在、调度流程、私密指令不能被其他成员在公开发言中暴露。你只在系统触发节点工作，例如用户发消息、用户手动继续、连续讨论过多需要判断是否继续。\n' +
@@ -1183,6 +1184,74 @@ export function parseSchedulerReviewDecision(raw: string): UTSJSONObject {
 		decision: 'revise',
 		reason: '审核结果解析失败',
 		revisionInstruction: '保留原意，删除任何关于调度、内部指令、私密指令或幕后安排的表述。',
+	} as UTSJSONObject
+}
+
+export function buildGroupReviewSystemPrompt(): string {
+	return '你是群聊的隐藏复盘 Agent，职责是在一轮成员发言结束后做内部 Review，不公开发言。\n\n' +
+		'复盘目标：\n' +
+		'· 总结本轮实际推进了什么，不要复述全文。\n' +
+		'· 标记跑题、重复、事实冲突、虚构 App 功能、未满足用户目标等问题。\n' +
+		'· 判断是否值得继续一轮讨论；只有任务未完成、有明确下一步价值时才建议 continue。\n' +
+		'· 给出可沉淀到长期记忆的候选笔记，但不要编造用户没有表达过的信息。\n\n' +
+		'输出纯 JSON，禁止 Markdown，格式：\n' +
+		'{"roundSummary":"<一句话复盘>","completed":["<已完成点>"],"issues":["<问题或风险>"],"usefulAgents":[{"agentId":"<成员ID>","reason":"<贡献>"}],"continueAdvice":"continue|stop|neutral","suggestedNext":"<如果继续，建议下一步>","memoryCandidates":[{"agentId":"<成员ID或空>","note":"<可写入记忆的事实/偏好/关系变化>"}]}\n\n' +
+		'字段要求：数组没有内容就返回空数组；continueAdvice 只能是 continue、stop、neutral；不确定时用 neutral。'
+}
+
+function buildLatestSchedulerRecord(messages: UTSJSONObject[]): string {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i]
+		const senderType = msg['senderType'] as string | null
+		if (senderType != GROUP_MESSAGE_SENDER_SCHEDULER) { continue }
+		const content = msg['content'] as string | null
+		const text = content != null ? content.trim() : ''
+		if (text != '') {
+			return truncateTranscriptContent(text, 3000)
+		}
+	}
+	return '(暂无隐藏调度记录)'
+}
+
+export function buildGroupReviewMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], reason: string, loopTurns: number): UTSJSONObject[] {
+	const content = '【群聊回合复盘】\n' +
+		'触发原因：' + reason + '\n' +
+		'群聊名：' + group.name + '\n' +
+		'当前会话名：' + displaySessionTitle(session) + '\n' +
+		'连续讨论轮数：' + loopTurns + '\n\n' +
+		'可复盘成员：\n' + formatMemberList(group.id) + '\n\n' +
+		'最近隐藏调度记录：\n' + buildLatestSchedulerRecord(messages) + '\n\n' +
+		'最近公开群聊记录：\n' + buildGroupTranscript(messages, 24) + '\n\n' +
+		'请根据以上上下文输出内部复盘 JSON，不要加解释。'
+	return [createTextMessage(CHAT_ROLE_USER, content)]
+}
+
+export function parseGroupReviewDecision(raw: string): UTSJSONObject {
+	let jsonText = raw.trim()
+	const first = jsonText.indexOf('{')
+	const last = jsonText.lastIndexOf('}')
+	if (first >= 0 && last > first) {
+		jsonText = jsonText.substring(first, last + 1)
+	}
+	try {
+		const parsed = JSON.parse(jsonText) as UTSJSONObject
+		const adviceRaw = parsed['continueAdvice'] as string | null
+		let advice = adviceRaw != null ? adviceRaw.trim() : 'neutral'
+		if (advice != 'continue' && advice != 'stop' && advice != 'neutral') {
+			advice = 'neutral'
+		}
+		parsed['continueAdvice'] = advice
+		return parsed
+	} catch (_e: any) {
+	}
+	return {
+		roundSummary: '复盘结果解析失败',
+		completed: [] as string[],
+		issues: ['review JSON 解析失败'] as string[],
+		usefulAgents: [] as UTSJSONObject[],
+		continueAdvice: 'neutral',
+		suggestedNext: '',
+		memoryCandidates: [] as UTSJSONObject[],
 	} as UTSJSONObject
 }
 
