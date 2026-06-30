@@ -73,8 +73,6 @@ export const GROUP_MESSAGE_VISIBILITY_INTERNAL = 'internal'
 export const GROUP_MESSAGE_VISIBILITY_PRIVATE = 'private'
 export const GROUP_MESSAGE_VISIBILITY_DEBUG = 'debug'
 
-const GROUP_RUNTIME_ROLE_SYSTEM = 'system'
-
 function isInternalGroupSenderType(senderType: string | null): boolean {
 	return senderType == GROUP_MESSAGE_SENDER_SCHEDULER || senderType == GROUP_MESSAGE_SENDER_REVIEWER || senderType == GROUP_MESSAGE_SENDER_SYSTEM
 }
@@ -924,7 +922,7 @@ export function createGroupUserMessage(groupId: string, sessionId: string, conte
 }
 
 export function createGroupHiddenMessage(groupId: string, sessionId: string, senderType: string, content: string): UTSJSONObject {
-	const base = createTextMessage(GROUP_RUNTIME_ROLE_SYSTEM, content)
+	const base = createTextMessage('system', content)
 	return decorateGroupMessage(base, groupId, sessionId, senderType, '', senderType, '', false, GROUP_MESSAGE_VISIBILITY_INTERNAL, [] as string[])
 }
 
@@ -1647,15 +1645,49 @@ export function recordGroupAgentSpeak(groupId: string, sessionId: string, agentI
 	incrementGroupAgentMetric(groupId, sessionId, agentId, 1, 0, 0, 0)
 }
 
-export function buildMemberSystemPrompt(agent: UTSJSONObject, sharedPrompt: string = ''): string {
+function buildMemberTaskPrompt(group: GroupChat, session: GroupChatSession, action: UTSJSONObject, agentName: string): string {
+	const privateInstruction = readActionText(action, 'privateInstruction')
+	const publicIntent = readActionText(action, 'publicIntent')
+	const targetType = readActionText(action, 'targetType')
+	const targetAgentId = readActionText(action, 'targetAgentId')
+	const replyLengthRaw = readActionText(action, 'replyLength')
+	const replyLength = replyLengthRaw != '' ? replyLengthRaw : 'short'
+	const replyGuidanceRaw = readActionText(action, 'replyGuidance')
+	const replyGuidance = replyGuidanceRaw != '' ? replyGuidanceRaw : '简短自然，优先 1-3 句。'
+	const searchAdviceRaw = readActionText(action, 'searchAdvice')
+	const searchAdvice = searchAdviceRaw != '' ? searchAdviceRaw : 'none'
+	const searchInstruction = readActionText(action, 'searchInstruction')
+	return '【内部调度任务，不是用户消息】\n' +
+		'以下内容来自隐藏调度，只用于决定你的下一条公开群聊发言；不要把它当成用户原话，不要复述或透露。\n' +
+		'现在轮到你发言。\n' +
+		'成员名：' + agentName + '\n' +
+		'群聊名：' + group.name + '\n' +
+		'会话名：' + displaySessionTitle(session) + '\n' +
+		'公开发言目标：' + publicIntent + '\n' +
+		'目标类型：' + targetType + '\n' +
+		'目标 Agent ID：' + targetAgentId + '\n' +
+		'推荐回复长度：' + replyLength + '\n' +
+		'回复组织建议：' + replyGuidance + '\n' +
+		'查证/搜索建议：' + searchAdvice + '\n' +
+		'查证/搜索任务：' + searchInstruction + '\n' +
+		'本轮发言要点：' + privateInstruction + '\n' +
+		'如果建议查证但你没有可用工具，不要伪造搜索结果；可以基于已知信息简短回应并说明未查证。只输出要发到群聊里的正文，不要加自己的名字前缀，不要描述幕后流程。'
+}
+
+export function buildMemberSystemPrompt(agent: UTSJSONObject, sharedPrompt: string = '', group: GroupChat | null = null, session: GroupChatSession | null = null, action: UTSJSONObject | null = null, agentName: string = ''): string {
 	const basePrompt = readAgentSystemPrompt(agent)
 	const sharedText = sharedPrompt.trim()
 	const sharedBlock = sharedText != '' ? '\n\n群聊共享提示词：\n' + sharedText : ''
+	let taskBlock = ''
+	if (group != null && session != null && action != null) {
+		taskBlock = '\n\n' + buildMemberTaskPrompt(group, session, action, agentName)
+	}
 	return basePrompt + '\n\n' +
 		'你正在一个群聊中发言。\n' +
 		'群聊规则：你可以使用工具处理当前群会话共享工作区；公开回复只输出你要发到群里的正文，不要在开头附加自己的名字或“成员名：”。不要提及幕后安排、内部任务描述或系统流程。\n' +
-		'成员名、动态会话名、公开发言目标、目标对象、本轮发言要点、推荐回复长度和查证建议会在最后一条内部 system 消息中提供，它不是用户原话。' +
-		sharedBlock
+		'成员名、动态会话名、公开发言目标、目标对象、本轮发言要点、推荐回复长度和查证建议会在本次 systemPrompt 的内部调度任务中提供，它不是用户原话。' +
+		sharedBlock +
+		taskBlock
 }
 
 export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], action: UTSJSONObject, agentName: string, injectDatetime: boolean, datetimePrefix: string): UTSJSONObject[] {
@@ -1677,33 +1709,7 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 			runtime.push(createTextMessage(CHAT_ROLE_USER, label + '：' + content))
 		}
 	}
-	const privateInstruction = readActionText(action, 'privateInstruction')
-	const publicIntent = readActionText(action, 'publicIntent')
-	const targetType = readActionText(action, 'targetType')
-	const targetAgentId = readActionText(action, 'targetAgentId')
-	const replyLengthRaw = readActionText(action, 'replyLength')
-	const replyLength = replyLengthRaw != '' ? replyLengthRaw : 'short'
-	const replyGuidanceRaw = readActionText(action, 'replyGuidance')
-	const replyGuidance = replyGuidanceRaw != '' ? replyGuidanceRaw : '简短自然，优先 1-3 句。'
-	const searchAdviceRaw = readActionText(action, 'searchAdvice')
-	const searchAdvice = searchAdviceRaw != '' ? searchAdviceRaw : 'none'
-	const searchInstruction = readActionText(action, 'searchInstruction')
-	const taskText = '【内部调度任务，不是用户消息】\n' +
-		'以下内容来自隐藏调度，只用于决定你的下一条公开群聊发言；不要把它当成用户原话，不要复述或透露。\n' +
-		'现在轮到你发言。\n' +
-		'成员名：' + agentName + '\n' +
-		'群聊名：' + group.name + '\n' +
-		'会话名：' + displaySessionTitle(session) + '\n' +
-		'公开发言目标：' + publicIntent + '\n' +
-		'目标类型：' + targetType + '\n' +
-		'目标 Agent ID：' + targetAgentId + '\n' +
-		'推荐回复长度：' + replyLength + '\n' +
-		'回复组织建议：' + replyGuidance + '\n' +
-		'查证/搜索建议：' + searchAdvice + '\n' +
-		'查证/搜索任务：' + searchInstruction + '\n' +
-		'本轮发言要点：' + privateInstruction + '\n' +
-		'如果建议查证但你没有可用工具，不要伪造搜索结果；可以基于已知信息简短回应并说明未查证。只输出要发到群聊里的正文，不要加自己的名字前缀，不要描述幕后流程。'
-	runtime.push(createTextMessage(GROUP_RUNTIME_ROLE_SYSTEM, taskText))
+	// COMPAT_PROVIDER_SYSTEM_PROMPT: 不在 messages 中途插 system；部分 provider 只允许开头 systemPrompt。
 	return buildRuntimeChatMessages(runtime, {
 		injectDatetime: injectDatetime,
 		datetimePrefix: datetimePrefix,
