@@ -991,7 +991,7 @@
 				const agentName = readAgentName(agent)
 				const injectDatetime = readAgentInjectDatetime(agent)
 				const msgSegmentation = readAgentMsgSegmentation(agent)
-				const systemPrompt = buildMemberSystemPrompt(agent, group.sharedPrompt, group, session, action, agentName)
+				const systemPrompt = buildMemberSystemPrompt(agent, group.sharedPrompt)
 				const tempMessages = buildMemberRuntimeMessages(group, session, this.messages, action, agentName, injectDatetime, buildChatDatetimePrefix())
 				const contextRecord = createGroupAgentContextRecord(group, session, agentId, agentName, action, tempMessages, systemPrompt)
 				saveGroupAgentContextRecord(contextRecord)

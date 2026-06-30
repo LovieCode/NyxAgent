@@ -1674,20 +1674,30 @@ function buildMemberTaskPrompt(group: GroupChat, session: GroupChatSession, acti
 		'如果建议查证但你没有可用工具，不要伪造搜索结果；可以基于已知信息简短回应并说明未查证。只输出要发到群聊里的正文，不要加自己的名字前缀，不要描述幕后流程。'
 }
 
-export function buildMemberSystemPrompt(agent: UTSJSONObject, sharedPrompt: string = '', group: GroupChat | null = null, session: GroupChatSession | null = null, action: UTSJSONObject | null = null, agentName: string = ''): string {
+export function buildMemberSystemPrompt(agent: UTSJSONObject, sharedPrompt: string = ''): string {
 	const basePrompt = readAgentSystemPrompt(agent)
 	const sharedText = sharedPrompt.trim()
 	const sharedBlock = sharedText != '' ? '\n\n群聊共享提示词：\n' + sharedText : ''
-	let taskBlock = ''
-	if (group != null && session != null && action != null) {
-		taskBlock = '\n\n' + buildMemberTaskPrompt(group, session, action, agentName)
-	}
 	return basePrompt + '\n\n' +
 		'你正在一个群聊中发言。\n' +
 		'群聊规则：你可以使用工具处理当前群会话共享工作区；公开回复只输出你要发到群里的正文，不要在开头附加自己的名字或“成员名：”。不要提及幕后安排、内部任务描述或系统流程。\n' +
-		'成员名、动态会话名、公开发言目标、目标对象、本轮发言要点、推荐回复长度和查证建议会在本次 systemPrompt 的内部调度任务中提供，它不是用户原话。' +
-		sharedBlock +
-		taskBlock
+		'成员名、动态会话名、公开发言目标、目标对象、本轮发言要点、推荐回复长度和查证建议会在用户消息前置上下文中提供，它不是用户原话。' +
+		sharedBlock
+}
+
+function attachMemberTaskContext(runtime: UTSJSONObject[], taskText: string): void {
+	if (taskText.trim() == '') { return }
+	for (let i = runtime.length - 1; i >= 0; i--) {
+		const role = runtime[i]['role'] as string | null
+		if (role != CHAT_ROLE_USER) { continue }
+		const oldContext = runtime[i]['agent_context_before'] as string | null
+		const prefix = oldContext != null && oldContext.trim() != '' ? oldContext.trim() + '\n\n' : ''
+		const oldLabel = runtime[i]['agent_context_before_label'] as string | null
+		const label = oldLabel != null && oldLabel.trim() != '' ? oldLabel.trim() + ' / 内部调度任务' : '内部调度任务'
+		runtime[i]['agent_context_before'] = prefix + taskText
+		runtime[i]['agent_context_before_label'] = label
+		return
+	}
 }
 
 export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], action: UTSJSONObject, agentName: string, injectDatetime: boolean, datetimePrefix: string): UTSJSONObject[] {
@@ -1709,11 +1719,13 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 			runtime.push(createTextMessage(CHAT_ROLE_USER, label + '：' + content))
 		}
 	}
-	// COMPAT_PROVIDER_SYSTEM_PROMPT: 不在 messages 中途插 system；部分 provider 只允许开头 systemPrompt。
-	return buildRuntimeChatMessages(runtime, {
+	const runtimeMessages = buildRuntimeChatMessages(runtime, {
 		injectDatetime: injectDatetime,
 		datetimePrefix: datetimePrefix,
 	})
+	// COMPAT_PROVIDER_SYSTEM_PROMPT: 不改动态 systemPrompt，也不在 messages 中途插 system；调度任务挂到 user 前置上下文以保留 prompt cache。
+	attachMemberTaskContext(runtimeMessages, buildMemberTaskPrompt(group, session, action, agentName))
+	return runtimeMessages
 }
 
 export function syncGroupStreamingMessage(target: UTSJSONObject, source: UTSJSONObject): void {
