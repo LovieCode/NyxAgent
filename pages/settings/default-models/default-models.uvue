@@ -1,25 +1,20 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NavBar title="默认模型" showBack />
+		<NavBar title="默认模型" showBack @back="goBack" />
 		<scroll-view class="container" :scroll-y="true">
 
 			<view class="card" v-for="(task, index) in taskList" :key="index">
 				<view class="task-header">
 					<text class="task-type-icon">{{taskIcon(task['type'] as string)}}</text>
 					<text class="task-type-name">{{task['typeName']}}</text>
-					<text v-if="isUnimplemented(task)" class="unimplemented-badge">暂未实现</text>
 				</view>
 				<text v-if="isMemoryTask(task)" class="task-desc">不设置时默认使用对话模型；设置后记忆整理 Agent 会单独使用该模型。</text>
 				<text v-if="isVisionTask(task)" class="task-desc">参考 AstrBot：图片会先用该模型转述为文字，再交给对话模型继续回答。</text>
-
-				<!-- 暂未实现的功能显示提示 -->
-				<view v-if="isUnimplemented(task)" class="unimplemented-notice">
-					<text class="unimplemented-notice-text">该功能尚未实现，配置后也不会生效</text>
-				</view>
+				<text v-if="isSpeechTask(task)" class="task-desc">{{speechTaskDesc(task)}}</text>
 
 				<!-- 选择提供商 -->
-				<text v-if="isUnimplemented(task) == false" class="field-label">提供商</text>
-				<scroll-view v-if="isUnimplemented(task) == false" class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
+				<text class="field-label">提供商</text>
+				<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
 					<view class="chip-row">
 						<view
 							v-if="isMemoryTask(task)"
@@ -44,11 +39,22 @@
 							>不转述</text>
 						</view>
 						<view
-							v-for="(p, pi) in allProviders"
+							v-if="isSpeechTask(task)"
+							class="chip"
+							:class="isSpeechDisabled(task) ? 'chip-active' : ''"
+							@click="selectDisableSpeech(index)"
+						>
+							<text
+								class="chip-text"
+								:class="isSpeechDisabled(task) ? 'chip-text-active' : ''"
+							>不启用</text>
+						</view>
+						<view
+							v-for="(p, pi) in enabledProviders"
 							:key="pi"
 							class="chip"
 							:class="(task['providerId'] as string) == (p['id'] as string) ? 'chip-active' : ''"
-							@click="selectProvider(index, p['id'] as string, p['models'] as string)"
+							@click="selectProvider(index, p['id'] as string)"
 						>
 							<text
 								class="chip-text"
@@ -59,8 +65,8 @@
 				</scroll-view>
 
 				<!-- 选择模型 -->
-				<text v-if="isUnimplemented(task) == false" class="field-label" style="margin-top:16rpx;">模型</text>
-				<scroll-view v-if="isUnimplemented(task) == false" class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
+				<text class="field-label" style="margin-top:16rpx;">模型</text>
+				<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
 					<view class="chip-row">
 						<view
 							v-for="(m, mi) in getTaskModels(task)"
@@ -77,18 +83,18 @@
 						<!-- 没有模型时提示 -->
 						<text v-if="isFollowChatModel(task)" class="no-models-hint">当前跟随对话模型</text>
 						<text v-if="isVisionDisabled(task)" class="no-models-hint">当前不转述图片</text>
-						<text v-if="getTaskModels(task).length == 0 && isFollowChatModel(task) == false && isVisionDisabled(task) == false" class="no-models-hint">该提供商未配置模型</text>
+						<text v-if="isSpeechDisabled(task)" class="no-models-hint">{{speechDisabledHint(task)}}</text>
+						<text v-if="getTaskModels(task).length == 0 && isFollowChatModel(task) == false && isVisionDisabled(task) == false && isSpeechDisabled(task) == false" class="no-models-hint">该提供商未配置模型</text>
 					</view>
 				</scroll-view>
 
 				<view v-if="isVisionTask(task)" class="prompt-box">
-					<text class="field-label">图片转述提示词</text>
-					<textarea class="prompt-input" v-model="imageCaptionPrompt" auto-height />
+					<view class="prompt-header-row">
+						<text class="field-label">图片转述提示词</text>
+						<text class="prompt-save-text" @click="saveImageCaptionPrompt">保存提示词</text>
+					</view>
+					<textarea class="prompt-input" v-model="imageCaptionPrompt" auto-height @input="hasUnsavedPrompt = true" />
 				</view>
-			</view>
-
-			<view class="save-wrap">
-				<rice-button type="primary" text="保存设置" size="large" shape="round" @click="saveAll" />
 			</view>
 
 		</scroll-view>
@@ -104,21 +110,42 @@
 				allProviders: [] as UTSJSONObject[],
 				taskList: [] as UTSJSONObject[],
 				imageCaptionPrompt: '',
+				savedImageCaptionPrompt: '' as string,
+				hasUnsavedPrompt: false as boolean,
+				isConfirmingLeave: false as boolean,
 			}
 		},
 		onShow() {
 			this.loadData()
 		},
+		onBackPress(): boolean {
+			if (this.hasUnsavedPrompt == false) {
+				return false
+			}
+			this.confirmLeave()
+			return true
+		},
+		computed: {
+			/** 只展示已启用提供商，避免默认任务指向未启用的 Provider。 */
+			enabledProviders(): UTSJSONObject[] {
+				const list: UTSJSONObject[] = []
+				for (let i = 0; i < this.allProviders.length; i++) {
+					const p = this.allProviders[i]
+					const enabled = p['enabled'] as number | null
+					if (enabled == 1) {
+						list.push(p)
+					}
+				}
+				return list
+			}
+		},
 		methods: {
-			isUnimplemented(task: UTSJSONObject): boolean {
-				const type = task['type'] as string
-				return type == 'stt' || type == 'tts'
-			},
-
 			loadData() {
 				this.allProviders = getAllProviders()
 				this.taskList = getAllDefaultTaskModels()
 				this.imageCaptionPrompt = getImageCaptionPrompt()
+				this.savedImageCaptionPrompt = this.imageCaptionPrompt
+				this.hasUnsavedPrompt = false
 			},
 
 			taskIcon(type: string): string {
@@ -152,15 +179,51 @@
 				return this.isVisionTask(task) && (providerId == null || providerId == '') && (model == null || model == '')
 			},
 
+			isSpeechTask(task: UTSJSONObject): boolean {
+				const type = task['type'] as string | null
+				return type == 'stt' || type == 'tts'
+			},
+
+			isSpeechDisabled(task: UTSJSONObject): boolean {
+				const providerId = task['providerId'] as string | null
+				const model = task['model'] as string | null
+				return this.isSpeechTask(task) && (providerId == null || providerId == '') && (model == null || model == '')
+			},
+
+			speechTaskDesc(task: UTSJSONObject): string {
+				const type = task['type'] as string | null
+				if (type == 'stt') {
+					return '语音输入会先用该模型转成文字，再发送给 Agent。'
+				}
+				if (type == 'tts') {
+					return '助手回复会用该模型合成语音；可自动播放，也可长按助手消息播放。'
+				}
+				return ''
+			},
+
+			speechDisabledHint(task: UTSJSONObject): string {
+				const type = task['type'] as string | null
+				if (type == 'stt') {
+					return '当前不启用语音识别'
+				}
+				if (type == 'tts') {
+					return '当前不启用语音合成'
+				}
+				return ''
+			},
+
 			/** 获取某个任务当前选择的提供商下可用的模型 ID 列表 */
 			getTaskModels(task: UTSJSONObject): string[] {
-				const providerId = task['providerId'] as string
+				const providerIdRaw = task['providerId'] as string | null
+				const providerId = providerIdRaw != null ? providerIdRaw : ''
 				if (providerId == '') return []
 				// 从内存中的提供商列表获取
 				for (let i = 0; i < this.allProviders.length; i++) {
 					const p = this.allProviders[i]
-					if ((p['id'] as string) == providerId) {
-						const modelsStr = p['models'] as string
+					const pid = p['id'] as string | null
+					if (pid == providerId) {
+						const modelsRaw = p['models'] as string | null
+						const modelsStr = modelsRaw != null ? modelsRaw : ''
 						if (modelsStr != null && modelsStr != '') {
 							const parsed = parseModels(modelsStr)
 							const ids: string[] = []
@@ -181,19 +244,18 @@
 			},
 
 			/** 选择提供商后自动选第一个模型 */
-			selectProvider(taskIndex: number, providerId: string, modelsStr: string) {
+			selectProvider(taskIndex: number, providerId: string) {
 				const task = this.taskList[taskIndex]
 				if (task == null) return
 				task['providerId'] = providerId
-				// 自动选第一个模型
-				if (modelsStr != null && modelsStr != '') {
-					const parsed = parseModels(modelsStr)
-					if (parsed.length > 0) {
-						task['model'] = parsed[0].id
-						return
-					}
+				const models = getProviderModels(providerId)
+				if (models.length > 0) {
+					task['model'] = models[0].id
+					this.saveTaskModel(taskIndex)
+					return
 				}
 				task['model'] = ''
+				uni.showToast({ title: '该提供商未配置模型', icon: 'none' })
 			},
 
 			selectFollowChat(taskIndex: number) {
@@ -201,6 +263,7 @@
 				if (task == null) return
 				task['providerId'] = ''
 				task['model'] = ''
+				this.saveTaskModel(taskIndex)
 			},
 
 			selectDisableVision(taskIndex: number) {
@@ -208,34 +271,87 @@
 				if (task == null) return
 				task['providerId'] = ''
 				task['model'] = ''
+				this.saveTaskModel(taskIndex)
+			},
+
+			selectDisableSpeech(taskIndex: number) {
+				const task = this.taskList[taskIndex]
+				if (task == null) return
+				task['providerId'] = ''
+				task['model'] = ''
+				this.saveTaskModel(taskIndex)
 			},
 
 			selectModel(taskIndex: number, model: string) {
 				const task = this.taskList[taskIndex]
 				if (task == null) return
 				task['model'] = model
+				this.saveTaskModel(taskIndex)
 			},
 
-			saveAll() {
-				setImageCaptionPrompt(this.imageCaptionPrompt.trim())
-				for (let i = 0; i < this.taskList.length; i++) {
-					const task = this.taskList[i]
-					const type = task['type'] as string
-					const rawPid = task['providerId']
-					const rawModel = task['model']
-					const providerId = rawPid != null ? (rawPid as string) : ''
-					const model = rawModel != null ? (rawModel as string) : ''
-					if (type == 'memory_organize' || type == 'vision') {
-						setDefaultTaskModel(type, providerId, model)
-					} else if (providerId != '' && model != '') {
-						setDefaultTaskModel(type, providerId, model)
-					}
+			saveTaskModel(taskIndex: number) {
+				const task = this.taskList[taskIndex]
+				if (task == null) return
+				const type = task['type'] as string
+				const rawPid = task['providerId']
+				const rawModel = task['model']
+				const providerId = rawPid != null ? (rawPid as string) : ''
+				const model = rawModel != null ? (rawModel as string) : ''
+				if (type == 'chat' && (providerId == '' || model == '')) {
+					uni.showToast({ title: '对话模型不能为空', icon: 'none' })
+					return
 				}
+				if (providerId == '' || model == '') {
+					setDefaultTaskModel(type, providerId, model)
+					uni.showToast({ title: '已停用默认任务模型', icon: 'none' })
+					return
+				}
+				setDefaultTaskModel(type, providerId, model)
+				uni.showToast({ title: '已保存', icon: 'success' })
+			},
+
+			saveImageCaptionPrompt() {
+				setImageCaptionPrompt(this.imageCaptionPrompt.trim())
+				this.savedImageCaptionPrompt = this.imageCaptionPrompt.trim()
+				this.imageCaptionPrompt = this.savedImageCaptionPrompt
+				this.hasUnsavedPrompt = false
 				uni.showToast({
 					title: '已保存',
 					icon: 'success'
 				})
-			}
+			},
+
+			confirmLeave() {
+				if (this.isConfirmingLeave == true) { return }
+				this.isConfirmingLeave = true
+				uni.showModal({
+					title: '有未保存提示词',
+					content: '图片转述提示词已修改，要保存后退出吗？',
+					cancelText: '不保存',
+					confirmText: '保存',
+					success: (res) => {
+						this.isConfirmingLeave = false
+						if (res.confirm == true) {
+							this.saveImageCaptionPrompt()
+						} else {
+							this.imageCaptionPrompt = this.savedImageCaptionPrompt
+							this.hasUnsavedPrompt = false
+						}
+						uni.navigateBack()
+					},
+					fail: () => {
+						this.isConfirmingLeave = false
+					}
+				})
+			},
+
+			goBack() {
+				if (this.hasUnsavedPrompt == false) {
+					uni.navigateBack()
+					return
+				}
+				this.confirmLeave()
+			},
 		}
 	}
 </script>
@@ -350,6 +466,20 @@
 
 	.prompt-box {
 		margin-top: 18rpx;
+	}
+
+	.prompt-header-row {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 12rpx;
+	}
+
+	.prompt-save-text {
+		font-size: 24rpx;
+		color: var(--rice-primary-color);
+		font-weight: bold;
+		padding-left: 20rpx;
 	}
 
 	.prompt-input {

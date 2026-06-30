@@ -1141,31 +1141,61 @@ export function toggleProvider(id: string, enabled: boolean): void {
 	db.close()
 }
 
-// ==================== 应用设置（基于 uni.storage，避免 SQLite 单行结果问题） ====================
+// ==================== 应用设置（SQLite app_settings） ====================
 
 const SETTINGS_PREFIX = 'app_setting_'
+
+function ensureAppSettingsTable(db: xSqlite): void {
+	db.run(
+		'CREATE TABLE IF NOT EXISTS app_settings (' +
+		'key TEXT PRIMARY KEY,' +
+		'value TEXT NOT NULL DEFAULT \'\')'
+	)
+}
 
 /**
  * 获取应用设置值
  */
 export function getAppSetting(key: string): string | null {
-	const val = uni.getStorageSync(SETTINGS_PREFIX + key) as string
-	return (val != null && val != '') ? val : null
+	if (key == '') { return null }
+	const db = getDb()
+	ensureAppSettingsTable(db)
+	const result = db.query('SELECT value FROM app_settings WHERE key = ? AND ? = ? LIMIT 1', [key, 1, 1])
+	db.close()
+	const rows = rowsToObjects(result)
+	if (rows.length > 0) {
+		const value = rows[0]['value'] as string | null
+		if (value != null && value != '') {
+			return value
+		}
+		return null
+	}
+	// COMPAT_LEGACY_STORAGE_SETTINGS: 旧版本把 app setting 写在 uni.storage；当前只读兼容，未来可清空。
+	const legacyVal = uni.getStorageSync(SETTINGS_PREFIX + key) as string
+	return (legacyVal != null && legacyVal != '') ? legacyVal : null
 }
 
 /**
  * 保存应用设置
  */
 export function setAppSetting(key: string, value: string): void {
-	uni.setStorageSync(SETTINGS_PREFIX + key, value)
+	if (key == '') { return }
+	const db = getDb()
+	ensureAppSettingsTable(db)
+	if (value == '') {
+		db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [key, ''])
+	} else {
+		db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [key, value])
+	}
+	db.close()
 }
 
 /**
  * 导出 SQLite app_settings 表中的原始设置。
- * 当前运行时设置主要走 uni.storage，这里用于兼容旧数据或未来迁移数据。
  */
 export function getAllAppSettings(): UTSJSONObject[] {
 	const db = getDb()
+	ensureAppSettingsTable(db)
 	const result = db.query('SELECT key, value FROM app_settings ORDER BY key ASC')
 	db.close()
 	return rowsToObjects(result)

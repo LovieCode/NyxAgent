@@ -278,6 +278,16 @@
 		methods: {
 			/** 加载当前智能体信息 */
 			/** 加载用户昵称 */
+			hasValidDefaultTaskModel(type: string): boolean {
+				const config = getDefaultTaskModel(type)
+				if (config == null) { return false }
+				const providerIdRaw = config['providerId'] as string | null
+				const modelRaw = config['model'] as string | null
+				const providerId = providerIdRaw != null ? providerIdRaw : ''
+				const model = modelRaw != null ? modelRaw : ''
+				return providerId != '' && model != ''
+			},
+
 			getMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] {
 				const parts = msg['message'] as UTSJSONObject[] | null
 				if (parts != null) {
@@ -407,9 +417,8 @@
 				if (role == 'user' || role == 'assistant') {
 					actions = ['删除', '编辑']
 					if (role == 'assistant') {
-						const ttsConfig = getDefaultTaskModel('tts')
 						const content = getMessageContent(msg).trim()
-						if (ttsConfig != null && content != '') {
+						if (this.hasValidDefaultTaskModel('tts') == true && content != '') {
 							actions.push('播放语音')
 						}
 						actions.push('重新回答')
@@ -733,8 +742,7 @@
 				if (this.isListening == true) {
 					return
 				}
-				const sttConfig = getDefaultTaskModel('stt')
-				if (sttConfig == null) {
+				if (this.hasValidDefaultTaskModel('stt') == false) {
 					uni.showToast({ position: 'bottom',  title: '请先在设置中配置语音识别模型', icon: 'none' })
 					return
 				}
@@ -876,8 +884,7 @@
 			},
 
 			maybeSynthesizeLatestAssistantSpeech(): void {
-				const ttsConfig = getDefaultTaskModel('tts')
-				if (ttsConfig == null) { return }
+				if (this.hasValidDefaultTaskModel('tts') == false) { return }
 				const msg = this.findLastAssistantMessage()
 				if (msg == null) { return }
 				const existing = msg['ttsAudioPath'] as string | null
