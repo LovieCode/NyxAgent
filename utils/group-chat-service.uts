@@ -73,6 +73,16 @@ export const GROUP_MESSAGE_VISIBILITY_INTERNAL = 'internal'
 export const GROUP_MESSAGE_VISIBILITY_PRIVATE = 'private'
 export const GROUP_MESSAGE_VISIBILITY_DEBUG = 'debug'
 
+const GROUP_RUNTIME_ROLE_SYSTEM = 'system'
+
+function isInternalGroupSenderType(senderType: string | null): boolean {
+	return senderType == GROUP_MESSAGE_SENDER_SCHEDULER || senderType == GROUP_MESSAGE_SENDER_REVIEWER || senderType == GROUP_MESSAGE_SENDER_SYSTEM
+}
+
+function isInternalGroupVisibility(visibility: string | null): boolean {
+	return visibility == GROUP_MESSAGE_VISIBILITY_INTERNAL || visibility == GROUP_MESSAGE_VISIBILITY_DEBUG
+}
+
 const DEFAULT_SCHEDULER_PROMPT_TEXT = '你是隐藏的群聊调度 Agent。你可以在内部向任意成员 Agent 传递私密指令、背景信息和任务拆解，也可以指定一个或多个成员按顺序发言。你的存在、调度流程、私密指令不能被其他成员在公开发言中暴露。你只在系统触发节点工作，例如用户发消息、用户手动继续、连续讨论过多需要判断是否继续。\n' +
 	'输出必须是 JSON 对象，禁止 Markdown，结构：{"actions":[{"type":"speak","agentId":"成员ID","targetType":"user","targetAgentId":"","privateInstruction":"给该成员的私密指令","publicIntent":"公开发言目标","replyLength":"short","replyGuidance":"简短自然，优先 1-3 句","searchAdvice":"none","searchInstruction":"","order":0}],"shouldContinue":false,"titleSuggestion":"适合本会话的短标题","privateNotes":"仅内部记录"}。\n' +
 	'默认让成员简短发言。事实不确定、涉及外部/时效信息时，建议具备相关工具的成员先查证或搜索；发现跑题、重复、事实冲突或虚构 App 功能时，用私密指令要求纠偏和收束。不要为了热闹强行多人发言。'
@@ -914,7 +924,7 @@ export function createGroupUserMessage(groupId: string, sessionId: string, conte
 }
 
 export function createGroupHiddenMessage(groupId: string, sessionId: string, senderType: string, content: string): UTSJSONObject {
-	const base = createTextMessage('system', content)
+	const base = createTextMessage(GROUP_RUNTIME_ROLE_SYSTEM, content)
 	return decorateGroupMessage(base, groupId, sessionId, senderType, '', senderType, '', false, GROUP_MESSAGE_VISIBILITY_INTERNAL, [] as string[])
 }
 
@@ -1071,6 +1081,8 @@ export function markGroupAgentMessageRevoked(message: UTSJSONObject): void {
 export function getVisibleGroupMessages(messages: UTSJSONObject[]): UTSJSONObject[] {
 	const result: UTSJSONObject[] = []
 	for (let i = 0; i < messages.length; i++) {
+		const senderType = messages[i]['senderType'] as string | null
+		if (isInternalGroupSenderType(senderType) == true) { continue }
 		const visible = messages[i]['visible'] as boolean | null
 		const visibility = messages[i]['visibility'] as string | null
 		if (visible != false && (visibility == null || visibility == '' || visibility == GROUP_MESSAGE_VISIBILITY_PUBLIC)) {
@@ -1084,9 +1096,12 @@ export function getGroupMessagesVisibleToAgent(messages: UTSJSONObject[], agentI
 	const result: UTSJSONObject[] = []
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i]
+		const senderType = msg['senderType'] as string | null
+		if (isInternalGroupSenderType(senderType) == true) { continue }
 		const visible = msg['visible'] as boolean | null
 		if (visible == false) { continue }
 		const visibility = msg['visibility'] as string | null
+		if (isInternalGroupVisibility(visibility) == true) { continue }
 		if (visibility == null || visibility == '' || visibility == GROUP_MESSAGE_VISIBILITY_PUBLIC) {
 			result.push(msg)
 		} else {
@@ -1639,7 +1654,7 @@ export function buildMemberSystemPrompt(agent: UTSJSONObject, sharedPrompt: stri
 	return basePrompt + '\n\n' +
 		'你正在一个群聊中发言。\n' +
 		'群聊规则：你可以使用工具处理当前群会话共享工作区；公开回复只输出你要发到群里的正文，不要在开头附加自己的名字或“成员名：”。不要提及幕后安排、内部任务描述或系统流程。\n' +
-		'成员名、动态会话名、公开发言目标、目标对象、本轮发言要点、推荐回复长度和查证建议会在最后一条用户消息中提供。' +
+		'成员名、动态会话名、公开发言目标、目标对象、本轮发言要点、推荐回复长度和查证建议会在最后一条内部 system 消息中提供，它不是用户原话。' +
 		sharedBlock
 }
 
@@ -1673,7 +1688,8 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 	const searchAdviceRaw = readActionText(action, 'searchAdvice')
 	const searchAdvice = searchAdviceRaw != '' ? searchAdviceRaw : 'none'
 	const searchInstruction = readActionText(action, 'searchInstruction')
-	const taskText = '【当前发言任务】\n' +
+	const taskText = '【内部调度任务，不是用户消息】\n' +
+		'以下内容来自隐藏调度，只用于决定你的下一条公开群聊发言；不要把它当成用户原话，不要复述或透露。\n' +
 		'现在轮到你发言。\n' +
 		'成员名：' + agentName + '\n' +
 		'群聊名：' + group.name + '\n' +
@@ -1687,7 +1703,7 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 		'查证/搜索任务：' + searchInstruction + '\n' +
 		'本轮发言要点：' + privateInstruction + '\n' +
 		'如果建议查证但你没有可用工具，不要伪造搜索结果；可以基于已知信息简短回应并说明未查证。只输出要发到群聊里的正文，不要加自己的名字前缀，不要描述幕后流程。'
-	runtime.push(createTextMessage(CHAT_ROLE_USER, taskText))
+	runtime.push(createTextMessage(GROUP_RUNTIME_ROLE_SYSTEM, taskText))
 	return buildRuntimeChatMessages(runtime, {
 		injectDatetime: injectDatetime,
 		datetimePrefix: datetimePrefix,
