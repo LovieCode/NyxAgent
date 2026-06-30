@@ -1,0 +1,248 @@
+/**
+ * 语音服务层。
+ *
+ * 参考 AstrBot 的 ProviderType 分层：
+ * - speech_to_text: Record -> Plain
+ * - text_to_speech: Plain -> Record
+ *
+ * 当前先接 OpenAI-compatible Audio API：
+ * - POST /v1/audio/transcriptions
+ * - POST /v1/audio/speech
+ */
+
+import { getDefaultTaskModel, getProviderById, normalizeBaseUrl } from '@/uni_modules/agent-core/utssdk/provider.uts'
+import { getInternalCacheDir, createDir, exists } from '@/utils/file-manager.uts'
+
+export type SpeechTextResult = {
+	ok: boolean
+	text: string
+	error: string
+}
+
+export type SpeechAudioResult = {
+	ok: boolean
+	path: string
+	error: string
+}
+
+type SpeechConfig = {
+	providerId: string
+	apiKey: string
+	baseUrl: string
+	model: string
+}
+
+function failText(error: string): SpeechTextResult {
+	return {
+		ok: false,
+		text: '',
+		error: error,
+	} as SpeechTextResult
+}
+
+function okText(text: string): SpeechTextResult {
+	return {
+		ok: true,
+		text: text,
+		error: '',
+	} as SpeechTextResult
+}
+
+function failAudio(error: string): SpeechAudioResult {
+	return {
+		ok: false,
+		path: '',
+		error: error,
+	} as SpeechAudioResult
+}
+
+function okAudio(path: string): SpeechAudioResult {
+	return {
+		ok: true,
+		path: path,
+		error: '',
+	} as SpeechAudioResult
+}
+
+function buildAudioApiUrl(baseUrl: string, path: string): string {
+	const normalized = normalizeBaseUrl(baseUrl)
+	const hasApiVersion = normalized.indexOf('/v1') >= 0 || normalized.indexOf('/api/v') >= 0
+	if (hasApiVersion == true) {
+		return normalized + path
+	}
+	return normalized + '/v1' + path
+}
+
+function readProviderString(provider: UTSJSONObject, key: string): string {
+	const raw = provider[key] as string | null
+	return raw != null ? raw : ''
+}
+
+function getDefaultAudioBaseUrl(providerId: string): string {
+	if (providerId == 'openai') { return 'https://api.openai.com' }
+	return ''
+}
+
+function resolveSpeechConfig(type: string): SpeechConfig | null {
+	const task = getDefaultTaskModel(type)
+	if (task == null) { return null }
+	const providerIdRaw = task['providerId'] as string | null
+	const modelRaw = task['model'] as string | null
+	const providerId = providerIdRaw != null ? providerIdRaw : ''
+	const model = modelRaw != null ? modelRaw : ''
+	if (providerId == '' || model == '') { return null }
+	const provider = getProviderById(providerId)
+	if (provider == null) { return null }
+	const apiKey = readProviderString(provider, 'api_key')
+	let baseUrl = readProviderString(provider, 'api_base')
+	if (baseUrl == '') {
+		baseUrl = getDefaultAudioBaseUrl(providerId)
+	}
+	if (apiKey == '' || baseUrl == '') { return null }
+	return {
+		providerId: providerId,
+		apiKey: apiKey,
+		baseUrl: baseUrl,
+		model: model,
+	} as SpeechConfig
+}
+
+function readTranscriptionText(data: any | null): string {
+	if (data == null) { return '' }
+	if (typeof data == 'string') {
+		try {
+			const obj = JSON.parse(data as string) as UTSJSONObject
+			const parsedText = obj['text'] as string | null
+			return parsedText != null ? parsedText.trim() : ''
+		} catch (_e: any) {
+			return ''
+		}
+	}
+	const obj = data as UTSJSONObject
+	const text = obj['text'] as string | null
+	return text != null ? text.trim() : ''
+}
+
+function buildSpeechCacheDir(): string {
+	const root = getInternalCacheDir()
+	if (root == '') { return '' }
+	const dir = root + '/speech'
+	if (exists(dir) == false) {
+		createDir(dir)
+	}
+	return dir
+}
+
+function writeArrayBufferToFile(path: string, data: ArrayBuffer): boolean {
+	if (path == '') { return false }
+	try {
+		const fm = uni.getFileSystemManager()
+		fm.writeFileSync(path, data)
+		return true
+	} catch (e: any) {
+		console.log('[Speech] 写入音频失败: ' + e)
+		return false
+	}
+}
+
+export function transcribeAudio(audioPath: string): Promise<SpeechTextResult> {
+	return new Promise<SpeechTextResult>((resolve) => {
+		if (audioPath == '') {
+			resolve(failText('录音文件为空'))
+			return
+		}
+		const config = resolveSpeechConfig('stt')
+		if (config == null) {
+			resolve(failText('请先在设置中配置语音识别模型'))
+			return
+		}
+		const url = buildAudioApiUrl(config.baseUrl, '/audio/transcriptions')
+		// COMPAT_PROVIDER_AUDIO_API: OpenAI-compatible multipart 字段，部分 provider 可能要求 language/response_format。
+		uni.uploadFile({
+			url: url,
+			filePath: audioPath,
+			name: 'file',
+			formData: {
+				model: config.model,
+			} as UTSJSONObject,
+			header: {
+				Authorization: 'Bearer ' + config.apiKey,
+			} as UTSJSONObject,
+			success: (res) => {
+				const statusCode = res.statusCode as number
+				if (statusCode < 200 || statusCode >= 300) {
+					resolve(failText('语音识别失败：HTTP ' + statusCode))
+					return
+				}
+				const text = readTranscriptionText(res.data)
+				if (text == '') {
+					resolve(failText('语音识别结果为空'))
+					return
+				}
+				resolve(okText(text))
+			},
+			fail: (err: any) => {
+				resolve(failText('语音识别网络失败：' + err))
+			},
+		})
+	})
+}
+
+export function synthesizeSpeech(text: string): Promise<SpeechAudioResult> {
+	return new Promise<SpeechAudioResult>((resolve) => {
+		const content = text.trim()
+		if (content == '') {
+			resolve(failAudio('朗读文本为空'))
+			return
+		}
+		const config = resolveSpeechConfig('tts')
+		if (config == null) {
+			resolve(failAudio('请先在设置中配置语音合成模型'))
+			return
+		}
+		const dir = buildSpeechCacheDir()
+		if (dir == '') {
+			resolve(failAudio('语音缓存目录不可用'))
+			return
+		}
+		const outputPath = dir + '/tts_' + Date.now() + '.wav'
+		const url = buildAudioApiUrl(config.baseUrl, '/audio/speech')
+		// COMPAT_PROVIDER_AUDIO_API: 参考 AstrBot OpenAI TTS，默认 voice=alloy/response_format=wav。
+		const body: UTSJSONObject = {
+			model: config.model,
+			voice: 'alloy',
+			response_format: 'wav',
+			input: content,
+		} as UTSJSONObject
+		uni.request({
+			url: url,
+			method: 'POST',
+			header: {
+				Authorization: 'Bearer ' + config.apiKey,
+				'Content-Type': 'application/json',
+			} as UTSJSONObject,
+			responseType: 'arraybuffer',
+			data: body,
+			success: (res) => {
+				const statusCode = res.statusCode as number
+				if (statusCode < 200 || statusCode >= 300) {
+					resolve(failAudio('语音合成失败：HTTP ' + statusCode))
+					return
+				}
+				const data = res.data as ArrayBuffer | null
+				if (data == null || data.byteLength == 0) {
+					resolve(failAudio('语音合成结果为空'))
+					return
+				}
+				if (writeArrayBufferToFile(outputPath, data) == false) {
+					resolve(failAudio('语音文件写入失败'))
+					return
+				}
+				resolve(okAudio(outputPath))
+			},
+			fail: (err: any) => {
+				resolve(failAudio('语音合成网络失败：' + err))
+			},
+		})
+	})
+}

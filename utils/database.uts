@@ -810,6 +810,10 @@ export function saveConversation(
 		if (toolName != null) {
 			extra['toolName'] = toolName
 		}
+		const ttsAudioPath = msg['ttsAudioPath']
+		if (ttsAudioPath != null) {
+			extra['ttsAudioPath'] = ttsAudioPath
+		}
 		const extraStr = JSON.stringify(extra)
 
 		db.run(
@@ -895,6 +899,9 @@ export function getMessages(conversationId: string): UTSJSONObject[] {
 				}
 				if (extra['toolName'] != null) {
 					row['toolName'] = extra['toolName']
+				}
+				if (extra['ttsAudioPath'] != null) {
+					row['ttsAudioPath'] = extra['ttsAudioPath']
 				}
 			} catch (_e: any) {
 				// ignore parse error

@@ -152,6 +152,7 @@
 	} from '@/utils/chat-message-reducer.uts'
 	import { getAgentConversationDir } from '@/utils/file-manager.uts'
 	import { setContextPreviewPayload, setMemoryRouteState } from '@/utils/runtime-state.uts'
+	import { transcribeAudio, synthesizeSpeech } from '@/utils/speech-service.uts'
 
 	export default {
 		data() {
@@ -162,6 +163,16 @@
 				inputText: '',
 				/** 是否正在语音输入 */
 				isListening: false as boolean,
+				/** 是否正在把录音转成文字 */
+				isTranscribing: false as boolean,
+				/** 是否正在把助手回复转成语音 */
+				isSynthesizingSpeech: false as boolean,
+				/** 录音会话序号，避免旧 onStop 回调重复处理 */
+				voiceSessionId: 0 as number,
+				/** 当前播放中的 TTS 音频 */
+				playingSpeechPath: '' as string,
+				/** TTS 播放器实例 */
+				speechPlayer: null as any | null,
 				/** AI 是否正在生成回复 */
 				isGenerating: false as boolean,
 				/** 当前 Agent 事件流，用于停止生成 */
@@ -241,24 +252,26 @@
 			})
 		},
 
-	onShow() {
-				// 每次显示页面时刷新智能体信息和用户昵称
-				this.loadUserNickname()
-				this.loadCurrentAgent()
-			},
+		onShow() {
+			// 每次显示页面时刷新智能体信息和用户昵称
+			this.loadUserNickname()
+			this.loadCurrentAgent()
+		},
 
-			onReady() {
-				// DOM 就绪后滚动到底部
-				this.scrollToBottom()
-			},
+		onReady() {
+			// DOM 就绪后滚动到底部
+			this.scrollToBottom()
+		},
 
-			onHide() {
-			// 离开页面时保存当前对话
+		onHide() {
+			// 离开页面时保存当前对话，并停止后台朗读。
+			this.stopSpeechPlayback()
 			this.saveCurrentConversation()
 		},
 
 		onUnload() {
 			// 页面卸载时移除软键盘高度监听，防止内存泄漏
+			this.stopSpeechPlayback()
 			uni.offKeyboardHeightChange()
 		},
 
@@ -282,6 +295,15 @@
 					}
 				}
 				return null
+			},
+
+			hasMessageRef(target: UTSJSONObject): boolean {
+				for (let i = 0; i < this.messages.length; i++) {
+					if (this.messages[i] == target) {
+						return true
+					}
+				}
+				return false
 			},
 
 			appendLatestResponseSnapshot(): void {
@@ -385,6 +407,11 @@
 				if (role == 'user' || role == 'assistant') {
 					actions = ['删除', '编辑']
 					if (role == 'assistant') {
+						const ttsConfig = getDefaultTaskModel('tts')
+						const content = getMessageContent(msg).trim()
+						if (ttsConfig != null && content != '') {
+							actions.push('播放语音')
+						}
 						actions.push('重新回答')
 					}
 				} else {
@@ -402,6 +429,8 @@
 							this.deleteMessage(msgIndex)
 						} else if (action == '编辑') {
 							this.editMessage(msgIndex)
+						} else if (action == '播放语音') {
+							this.playAssistantSpeech(msgIndex)
 						} else if (action == '重新回答') {
 							this.regenerateResponse(msgIndex)
 						}
@@ -547,7 +576,22 @@
 				if (tempPath == '') { return }
 				this.messages.push(createVoiceMessage(tempPath))
 				this.scrollToBottom()
-				this.startGenerationForMedia('[语音消息] ' + tempPath)
+				this.savedFlag = false
+				this.saveCurrentConversation()
+			},
+
+			/** 发送语音识别后的纯文本：Record -> Plain，不把录音路径喂给 Agent。 */
+			sendTranscribedVoiceMessage(text: string) {
+				const content = text.trim()
+				if (content == '' || this.isGenerating == true) { return }
+				if (this.messages.length == 0) {
+					this.conversationId = '' + Date.now()
+				}
+				this.savedFlag = false
+				this.messages.push(createTextMessage('user', content))
+				this.inputText = ''
+				this.scrollToBottom()
+				this.simulateAIResponse(content)
 			},
 
 			// ===== 工具栏 =====
@@ -682,14 +726,24 @@
 			// ===== 语音输入 =====
 
 			startVoice() {
+				if (this.isGenerating == true || this.isTranscribing == true) {
+					uni.showToast({ position: 'bottom',  title: '当前任务进行中', icon: 'none' })
+					return
+				}
+				if (this.isListening == true) {
+					return
+				}
 				const sttConfig = getDefaultTaskModel('stt')
 				if (sttConfig == null) {
 					uni.showToast({ position: 'bottom',  title: '请先在设置中配置语音识别模型', icon: 'none' })
 					return
 				}
 				this.isListening = true
+				this.voiceSessionId++
+				const sessionId = this.voiceSessionId
 				const recorder = uni.getRecorderManager()
 				recorder.onStop((res: any): void => {
+					if (sessionId != this.voiceSessionId) { return }
 					this.isListening = false
 					const raw = JSON.stringify(res)
 					if (raw == null || raw == '') { return }
@@ -697,18 +751,141 @@
 					const rawTempPath = parsed['tempFilePath'] as string | null
 					const tempPath = rawTempPath != null ? rawTempPath : ''
 					if (tempPath != '') {
-						this.addVoiceMessage(tempPath)
+						this.handleVoiceRecordStopped(tempPath)
 					}
 				})
+				recorder.onError((err: any): void => {
+					if (sessionId != this.voiceSessionId) { return }
+					this.isListening = false
+					console.log('[Speech] 录音失败: ' + err)
+					uni.showToast({ position: 'bottom',  title: '录音失败', icon: 'none' })
+				})
 				const startOpts: RecorderManagerStartOptions = {
-					format: 'aac',
+					// COMPAT_PROVIDER_AUDIO_API: OpenAI-compatible STT 优先 wav；部分平台录音格式支持不同，后续统一抽 provider 能力。
+					format: 'wav',
 				}
 				recorder.start(startOpts)
 			},
 
 			stopVoice() {
+				if (this.isListening == false) { return }
 				const recorder = uni.getRecorderManager()
 				recorder.stop()
+			},
+
+			handleVoiceRecordStopped(tempPath: string) {
+				if (tempPath == '') { return }
+				if (this.isGenerating == true) {
+					uni.showToast({ position: 'bottom',  title: '请等待当前回复完成', icon: 'none' })
+					return
+				}
+				this.isTranscribing = true
+				uni.showLoading({ title: '识别中...' })
+				transcribeAudio(tempPath).then((result) => {
+					this.isTranscribing = false
+					uni.hideLoading()
+					if (result.ok == true) {
+						this.sendTranscribedVoiceMessage(result.text)
+						return
+					}
+					uni.showToast({ position: 'bottom',  title: result.error, icon: 'none' })
+				})
+			},
+
+			stopSpeechPlayback(): void {
+				const player = this.speechPlayer
+				if (player != null) {
+					try {
+						player.stop()
+						player.destroy()
+					} catch (_e: any) {
+					}
+				}
+				this.speechPlayer = null
+				this.playingSpeechPath = ''
+			},
+
+			playSpeechPath(path: string): void {
+				if (path == '') {
+					uni.showToast({ position: 'bottom',  title: '语音路径为空', icon: 'none' })
+					return
+				}
+				if (this.playingSpeechPath == path) {
+					this.stopSpeechPlayback()
+					return
+				}
+				this.stopSpeechPlayback()
+				// COMPAT_PROVIDER_AUDIO_API: TTS 当前落本地 wav 文件，使用 uni inner audio 统一播放。
+				const audio = uni.createInnerAudioContext()
+				this.speechPlayer = audio
+				this.playingSpeechPath = path
+				audio.src = path
+				audio.onEnded(() => {
+					this.stopSpeechPlayback()
+				})
+				audio.onError((err: any) => {
+					console.log('[Speech] 播放失败: ' + err)
+					this.stopSpeechPlayback()
+					uni.showToast({ position: 'bottom',  title: '语音播放失败', icon: 'none' })
+				})
+				audio.play()
+			},
+
+			synthesizeAssistantSpeech(msg: UTSJSONObject, autoPlay: boolean): void {
+				if (this.isSynthesizingSpeech == true) {
+					if (autoPlay == false) {
+						uni.showToast({ position: 'bottom',  title: '语音合成中', icon: 'none' })
+					}
+					return
+				}
+				const text = getMessageContent(msg).trim()
+				if (text == '') { return }
+				const conversationId = this.conversationId
+				this.isSynthesizingSpeech = true
+				synthesizeSpeech(text).then((result) => {
+					this.isSynthesizingSpeech = false
+					if (this.conversationId != conversationId) { return }
+					if (this.hasMessageRef(msg) == false) { return }
+					if (result.ok == true) {
+						msg['ttsAudioPath'] = result.path
+						this.savedFlag = false
+						this.saveCurrentConversation()
+						if (autoPlay == true) {
+							this.playSpeechPath(result.path)
+						}
+						return
+					}
+					console.log('[Speech] 语音合成失败: ' + result.error)
+					uni.showToast({ position: 'bottom',  title: result.error, icon: 'none' })
+				})
+			},
+
+			playAssistantSpeech(index: number): void {
+				if (index < 0 || index >= this.messages.length) { return }
+				const msg = this.messages[index]
+				if (msg == null) { return }
+				const role = msg['role'] as string | null
+				if (role != 'assistant') { return }
+				const existing = msg['ttsAudioPath'] as string | null
+				if (existing != null && existing != '') {
+					this.playSpeechPath(existing)
+					return
+				}
+				uni.showToast({ position: 'bottom',  title: '语音生成中', icon: 'none' })
+				this.synthesizeAssistantSpeech(msg, true)
+			},
+
+			maybeSynthesizeLatestAssistantSpeech(): void {
+				const ttsConfig = getDefaultTaskModel('tts')
+				if (ttsConfig == null) { return }
+				const msg = this.findLastAssistantMessage()
+				if (msg == null) { return }
+				const existing = msg['ttsAudioPath'] as string | null
+				if (existing != null && existing != '') {
+					this.playSpeechPath(existing)
+					return
+				}
+				this.synthesizeAssistantSpeech(msg, true)
 			},
 
 			/** 停止当前 AI 生成 */
@@ -835,6 +1012,7 @@
 					this.isGenerating = false
 					this.currentStream = null
 					this.saveCurrentConversation()
+					this.maybeSynthesizeLatestAssistantSpeech()
 				}
 			},
 			simulateAIResponse(_userText: string) {
