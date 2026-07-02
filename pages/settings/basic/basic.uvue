@@ -29,7 +29,7 @@
 				</view>
 				<view class="provider-detail">
 					<text class="detail-label">接口地址</text>
-					<text class="detail-value">{{(item['api_base'] as string) != '' ? item['api_base'] : '默认'}}</text>
+					<text class="detail-value">{{providerApiBaseText(item)}}</text>
 				</view>
 				<view class="provider-detail" style="flex-direction:column;align-items:flex-start;">
 					<view style="flex-direction:row;align-items:center;width:100%;">
@@ -53,7 +53,10 @@
 </template>
 
 <script lang="uts">
-	import { getAllProviders, deleteProvider, setProviderEnabled, parseModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { getAllProviders, deleteProvider, setProviderEnabled, parseModels, getDefaultProviderApiBase } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { setRuntimeState } from '@/utils/database.uts'
+
+	const PROVIDER_EDIT_RUNTIME_ID_KEY = 'provider_edit_id'
 
 	export default {
 		data() {
@@ -101,6 +104,21 @@
 				return names.join(', ') + ` 等${models.length}个`
 			},
 
+			providerApiBaseText(item: UTSJSONObject): string {
+				const apiBase = item['api_base'] as string | null
+				if (apiBase != null && apiBase != '') {
+					return apiBase
+				}
+				const id = item['id'] as string | null
+				if (id != null && id != '') {
+					const defaultApiBase = getDefaultProviderApiBase(id)
+					if (defaultApiBase != '') {
+						return defaultApiBase
+					}
+				}
+				return '默认'
+			},
+
 			toggleEnabled(index: number) {
 				const item = this.providerList[index]
 				if (item == null) {
@@ -113,7 +131,7 @@
 			},
 
 			addProvider() {
-				uni.setStorageSync('provider_edit_data', '')
+				setRuntimeState(PROVIDER_EDIT_RUNTIME_ID_KEY, '')
 				uni.navigateTo({
 					url: '/pages/settings/basic/provider-edit'
 				})
@@ -124,14 +142,9 @@
 				if (item == null) {
 					return
 				}
-				const data: UTSJSONObject = {
-					id: item['id'],
-					name: item['name'],
-					apiKey: item['api_key'],
-					apiBase: item['api_base'],
-					models: item['models'],
-				} as UTSJSONObject
-				uni.setStorageSync('provider_edit_data', JSON.stringify(data))
+				const id = item['id'] as string | null
+				if (id == null || id == '') { return }
+				setRuntimeState(PROVIDER_EDIT_RUNTIME_ID_KEY, id)
 				uni.navigateTo({
 					url: '/pages/settings/basic/provider-edit'
 				})

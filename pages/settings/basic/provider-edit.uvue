@@ -165,8 +165,11 @@
 </template>
 
 <script lang="uts">
-	import { saveProvider, fetchProviderModels, parseModels, ModelInfo, getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { saveProvider, fetchProviderModels, parseModels, ModelInfo, getDefaultTaskModel, getProviderById, getDefaultProviderApiBase } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { getModelCapabilities, refreshMetadataCache, isMetadataCacheStale, ensureMetadataCache } from '@/uni_modules/agent-core/utssdk/llm-metadata.uts'
+	import { consumeRuntimeState } from '@/utils/database.uts'
+
+	const PROVIDER_EDIT_RUNTIME_ID_KEY = 'provider_edit_id'
 
 	export default {
 			data() {
@@ -187,27 +190,9 @@
 		onLoad() {
 			// 预加载元数据缓存到内存，保证后续 getModelCapabilities 直接命中
 			ensureMetadataCache()
-			const editData = uni.getStorageSync('provider_edit_data') as string
-			if (editData != null && editData != '') {
-				try {
-					const data = JSON.parse(editData) as UTSJSONObject
-					const id = data['id'] as string | null
-					if (id != null && id != '') {
-						this.isNew = false
-						this.editId = id
-						const rawName = data['name'] as string | null
-						const rawApiKey = data['apiKey'] as string | null
-						const rawApiBase = data['apiBase'] as string | null
-						this.editName = rawName != null ? rawName : ''
-						this.editApiKey = rawApiKey != null ? rawApiKey : ''
-						this.editApiBase = rawApiBase != null ? rawApiBase : ''
-						const modelsStr = data['models'] as string | null
-						if (modelsStr != null) {
-							this.editModels = parseModels(modelsStr)
-						}
-					}
-				} catch (_e: any) {}
-				uni.removeStorageSync('provider_edit_data')
+			const editId = consumeRuntimeState(PROVIDER_EDIT_RUNTIME_ID_KEY)
+			if (editId != '') {
+				this.loadProviderForEdit(editId)
 			}
 		},
 		computed: {
@@ -239,6 +224,29 @@
 		methods: {
 			goBack() {
 				uni.navigateBack()
+			},
+
+			loadProviderForEdit(id: string) {
+				const data = getProviderById(id)
+				if (data == null) {
+					uni.showToast({ position: 'bottom', title: '提供商不存在', icon: 'none' })
+					return
+				}
+				this.isNew = false
+				this.editId = id
+				const rawName = data['name'] as string | null
+				const rawApiKey = data['api_key'] as string | null
+				const rawApiBase = data['api_base'] as string | null
+				this.editName = rawName != null ? rawName : ''
+				this.editApiKey = rawApiKey != null ? rawApiKey : ''
+				this.editApiBase = rawApiBase != null ? rawApiBase : ''
+				if (this.editApiBase == '') {
+					this.editApiBase = getDefaultProviderApiBase(id)
+				}
+				const modelsStr = data['models'] as string | null
+				if (modelsStr != null) {
+					this.editModels = parseModels(modelsStr)
+				}
 			},
 
 			getModelSummary(m: ModelInfo): string {
@@ -276,8 +284,11 @@
 
 			async fetchModels() {
 				if (this.editApiBase == '') {
-					uni.showToast({ position: 'bottom',  title: '请先输入接口地址', icon: 'none' })
-					return
+					this.editApiBase = getDefaultProviderApiBase(this.editId)
+					if (this.editApiBase == '') {
+						uni.showToast({ position: 'bottom',  title: '请先输入接口地址', icon: 'none' })
+						return
+					}
 				}
 				if (this.editApiKey == '') {
 					uni.showToast({ position: 'bottom',  title: '请先输入 API Key', icon: 'none' })
@@ -375,6 +386,9 @@
 				}
 				if (this.editName == '') {
 					this.editName = this.editId
+				}
+				if (this.editApiBase == '') {
+					this.editApiBase = getDefaultProviderApiBase(this.editId)
 				}
 				// 同步字符串 → 数字，清理空模型
 				const validModels: ModelInfo[] = []

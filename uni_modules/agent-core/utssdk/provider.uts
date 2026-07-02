@@ -95,20 +95,43 @@ function getDefaultUrl(providerId: string): string {
 	return ''
 }
 
+export function getDefaultProviderApiBase(providerId: string): string {
+	return getDefaultUrl(providerId)
+}
+
+function fillDefaultProviderApiBase(provider: UTSJSONObject): void {
+	const id = provider['id'] as string | null
+	if (id == null || id == '') { return }
+	const apiBase = provider['api_base'] as string | null
+	if (apiBase != null && apiBase != '') { return }
+	const defaultApiBase = getDefaultUrl(id)
+	if (defaultApiBase != '') {
+		provider['api_base'] = defaultApiBase
+	}
+}
+
 // ==================== 提供商 CRUD ====================
 
 /**
  * 获取所有提供商
  */
 export function getAllProviders(): UTSJSONObject[] {
-	return dbGetAllProviders()
+	const providers = dbGetAllProviders()
+	for (let i = 0; i < providers.length; i++) {
+		fillDefaultProviderApiBase(providers[i])
+	}
+	return providers
 }
 
 /**
  * 根据 id 获取提供商
  */
 export function getProviderById(id: string): UTSJSONObject | null {
-	return dbGetProviderById(id)
+	const provider = dbGetProviderById(id)
+	if (provider != null) {
+		fillDefaultProviderApiBase(provider)
+	}
+	return provider
 }
 
 /**
@@ -246,7 +269,11 @@ export function saveProvider(
 	models: ModelInfo[],
 	enabled: boolean
 ): void {
-	dbSaveProvider(id, name, apiBase, apiKey, serializeModels(models), enabled)
+	let finalApiBase = apiBase
+	if (finalApiBase == '') {
+		finalApiBase = getDefaultUrl(id)
+	}
+	dbSaveProvider(id, name, finalApiBase, apiKey, serializeModels(models), enabled)
 }
 
 /**
