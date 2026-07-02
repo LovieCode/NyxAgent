@@ -307,7 +307,7 @@
 		{
 			id: 'deepseek',
 			name: 'DeepSeek',
-			desc: '推荐，地址已填好',
+			desc: '便宜好用，不能识图',
 			baseUrl: 'https://api.deepseek.com',
 			model: 'deepseek-v4-flash',
 		} as UTSJSONObject,
@@ -321,7 +321,7 @@
 		{
 			id: 'volcengine',
 			name: '豆包',
-			desc: '火山引擎，国内访问友好',
+			desc: '可以使用网络搜索插件',
 			baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
 			model: 'doubao-seed-1-6-flash-250615',
 		} as UTSJSONObject,
