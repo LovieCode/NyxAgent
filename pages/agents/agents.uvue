@@ -1477,9 +1477,10 @@
 	}
 
 	.first-run-provider {
-		width: 268rpx;
+		flex: 1;
+		width: 280rpx;
 		border-radius: 24rpx;
-		padding: 22rpx;
+		padding: 20rpx;
 		margin-right: 12rpx;
 		margin-bottom: 12rpx;
 		background-color: #F9FAFB;
@@ -1498,6 +1499,8 @@
 		font-size: 28rpx;
 		font-weight: bold;
 		color: var(--rice-text-color);
+		lines: 1;
+		text-overflow: ellipsis;
 	}
 
 	.first-run-provider-desc {
