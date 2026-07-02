@@ -298,6 +298,8 @@
 		} as UTSJSONObject
 	]
 	const FIRST_RUN_GUIDE_DONE_KEY = 'first_run_model_guide_done'
+	// DEV_ONLY_FORCE_FIRST_RUN_GUIDE: 临时强制展示首启引导，验完 UI 后改回 false。
+	const DEV_ONLY_FORCE_FIRST_RUN_GUIDE = true
 	const FIRST_RUN_PROVIDER_OPTIONS: UTSJSONObject[] = [
 		{
 			id: 'deepseek',
@@ -470,6 +472,10 @@
 			},
 
 			checkFirstRunGuide(): void {
+				if (DEV_ONLY_FORCE_FIRST_RUN_GUIDE == true) {
+					this.showFirstRunGuide = true
+					return
+				}
 				const done = getAppSetting(FIRST_RUN_GUIDE_DONE_KEY)
 				if (done == 'true') {
 					this.showFirstRunGuide = false
