@@ -154,6 +154,9 @@
 	import { setContextPreviewPayload, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import { transcribeAudio, synthesizeSpeech } from '@/utils/speech-service.uts'
 
+	const STREAM_FLUSH_DELAY_MS = 48
+	const STREAM_SCROLL_DELAY_MS = 96
+
 	export default {
 		data() {
 			return {
@@ -177,6 +180,12 @@
 				isGenerating: false as boolean,
 				/** 当前 Agent 事件流，用于停止生成 */
 				currentStream: null as AgentEventStream | null,
+				/** 流式 token 事件缓冲队列，避免真机每个 token 都重绘页面 */
+				streamEventQueue: [] as AgentEvent[],
+				/** 流式事件批量刷新定时器 */
+				streamFlushTimer: -1 as number,
+				/** 流式期间滚动节流定时器 */
+				streamScrollTimer: -1 as number,
 				/** 图片转述任务序号，用于取消过期的 caption 回调 */
 				imageCaptionTaskId: 0,
 				/** 当前智能体 ID */
@@ -265,12 +274,17 @@
 
 		onHide() {
 			// 离开页面时保存当前对话，并停止后台朗读。
+			this.flushStreamEvents()
+			this.clearStreamScrollTimer()
 			this.stopSpeechPlayback()
 			this.saveCurrentConversation()
 		},
 
 		onUnload() {
 			// 页面卸载时移除软键盘高度监听，防止内存泄漏
+			this.flushStreamEvents()
+			this.clearStreamFlushTimer()
+			this.clearStreamScrollTimer()
 			this.stopSpeechPlayback()
 			uni.offKeyboardHeightChange()
 		},
@@ -895,9 +909,85 @@
 				this.synthesizeAssistantSpeech(msg, true)
 			},
 
+			isBufferedAgentEvent(event: AgentEvent): boolean {
+				return event.type == 'text_delta' || event.type == 'thinking_delta'
+			},
+
+			clearStreamFlushTimer() {
+				if (this.streamFlushTimer != -1) {
+					clearTimeout(this.streamFlushTimer)
+					this.streamFlushTimer = -1
+				}
+			},
+
+			clearStreamScrollTimer() {
+				if (this.streamScrollTimer != -1) {
+					clearTimeout(this.streamScrollTimer)
+					this.streamScrollTimer = -1
+				}
+			},
+
+			appendBufferedAgentEvent(event: AgentEvent) {
+				const lastIndex = this.streamEventQueue.length - 1
+				if (lastIndex >= 0) {
+					const last = this.streamEventQueue[lastIndex]
+					if (last.type == event.type) {
+						if (event.type == 'text_delta') {
+							const oldText = last.text != null ? (last.text as string) : ''
+							const nextText = event.text != null ? (event.text as string) : ''
+							last.text = oldText + nextText
+							return
+						}
+						if (event.type == 'thinking_delta') {
+							const oldThinking = last.thinkingText != null ? (last.thinkingText as string) : ''
+							const nextThinking = event.thinkingText != null ? (event.thinkingText as string) : ''
+							last.thinkingText = oldThinking + nextThinking
+							return
+						}
+					}
+				}
+				this.streamEventQueue.push(event)
+			},
+
+			scheduleStreamFlush() {
+				if (this.streamFlushTimer != -1) { return }
+				const self = this
+				this.streamFlushTimer = setTimeout(() => {
+					self.streamFlushTimer = -1
+					self.flushStreamEvents()
+				}, STREAM_FLUSH_DELAY_MS)
+			},
+
+			flushStreamEvents() {
+				this.clearStreamFlushTimer()
+				if (this.streamEventQueue.length == 0) { return }
+				const pending = this.streamEventQueue
+				this.streamEventQueue = [] as AgentEvent[]
+				let messageChanged = false
+				for (let i = 0; i < pending.length; i++) {
+					if (reduceAgentEvent(this.messages, pending[i]) == true) {
+						messageChanged = true
+					}
+				}
+				if (messageChanged == true) {
+					this.scrollToBottom()
+				}
+			},
+
+			enqueueAgentEvent(event: AgentEvent) {
+				if (this.isBufferedAgentEvent(event) == true) {
+					this.appendBufferedAgentEvent(event)
+					this.scheduleStreamFlush()
+					return
+				}
+				this.flushStreamEvents()
+				this.handleAgentEvent(event)
+			},
+
 			/** 停止当前 AI 生成 */
 			stopGenerating() {
 				this.imageCaptionTaskId++
+				this.flushStreamEvents()
 				const stream = this.currentStream
 				if (stream != null) {
 					stream.abort()
@@ -905,8 +995,10 @@
 				}
 				reduceFinishAssistantMessage(this.messages, '')
 				finalizeAssistantTurn(this.messages, this.msgSegmentation)
-				this.scrollToBottom()
 				this.isGenerating = false
+				this.clearStreamFlushTimer()
+				this.clearStreamScrollTimer()
+				this.scrollToBottom()
 				this.saveCurrentConversation()
 			},
 
@@ -955,7 +1047,7 @@
 
 			/** 开启新对话 */
 			startNewConversation() {
-				if (this.isGenerating) {
+				if (this.isGenerating == true) {
 					uni.showToast({ position: 'bottom',  title: '请等待当前回复完成', icon: 'none' })
 					return
 				}
@@ -979,18 +1071,36 @@
 				saveChatConversation(this.conversationId, this.currentAgentId, this.getCurrentSystemPrompt(), this.messages)
 			},
 
+			performStreamScrollToBottom() {
+				this._streamScrollTick++
+				this.scrollTop = 100000 + this._streamScrollTick
+			},
+
+			scheduleStreamScroll() {
+				if (this.streamScrollTimer != -1) { return }
+				const self = this
+				this.streamScrollTimer = setTimeout(() => {
+					self.streamScrollTimer = -1
+					if (self.isGenerating == true) {
+						self.performStreamScrollToBottom()
+					} else {
+						self.scrollToBottom()
+					}
+				}, STREAM_SCROLL_DELAY_MS)
+			},
+
 			scrollToBottom() {
-				// 流式生成时使用计数器递增确保每次值不同，非生成时用 toggle 触发滚动
+				// 真机流式阶段 scroll-view 高频 scrollTop 会抖；生成中只按帧节流滚动。
 				if (this.isGenerating == true) {
-					this._streamScrollTick++
-					this.scrollTop = 100000 + this._streamScrollTick
-				} else {
-					this.scrollTop = 0
-					const self = this
-					setTimeout(() => {
-						self.scrollTop = 99999
-					}, 50)
+					this.scheduleStreamScroll()
+					return
 				}
+				this.clearStreamScrollTimer()
+				this.scrollTop = 0
+				const self = this
+				setTimeout(() => {
+					self.scrollTop = 99999
+				}, 50)
 			},
 
 			/** 获取当前智能体的系统提示词 */
@@ -1018,6 +1128,9 @@
 					this.appendLatestResponseSnapshot()
 					this.isGenerating = false
 					this.currentStream = null
+					this.clearStreamFlushTimer()
+					this.clearStreamScrollTimer()
+					this.scrollToBottom()
 					this.saveCurrentConversation()
 					this.maybeSynthesizeLatestAssistantSpeech()
 				}
@@ -1041,7 +1154,7 @@
 				)
 				this.currentStream = stream
 				stream.on((event: AgentEvent) => {
-					this.handleAgentEvent(event)
+					this.enqueueAgentEvent(event)
 				})
 			}
 
