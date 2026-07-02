@@ -8,7 +8,7 @@
 					<text class="task-type-icon">{{taskIcon(task['type'] as string)}}</text>
 					<text class="task-type-name">{{task['typeName']}}</text>
 				</view>
-				<text v-if="isMemoryTask(task)" class="task-desc">不设置时默认使用对话模型；设置后记忆整理 Agent 会单独使用该模型。</text>
+				<text v-if="isMemoryTask(task)" class="task-desc">不设置时默认使用对话模型；设置后记忆整理会单独使用该模型。</text>
 				<text v-if="isVisionTask(task)" class="task-desc">参考 AstrBot：图片会先用该模型转述为文字，再交给对话模型继续回答。</text>
 				<text v-if="isSpeechTask(task)" class="task-desc">{{speechTaskDesc(task)}}</text>
 
@@ -193,7 +193,7 @@
 			speechTaskDesc(task: UTSJSONObject): string {
 				const type = task['type'] as string | null
 				if (type == 'stt') {
-					return '语音输入会先用该模型转成文字，再发送给 Agent。'
+					return '语音输入会先用该模型转成文字，再发送到聊天。'
 				}
 				if (type == 'tts') {
 					return '助手回复会用该模型合成语音；可自动播放，也可长按助手消息播放。'

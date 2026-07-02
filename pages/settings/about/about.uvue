@@ -16,7 +16,7 @@
 			<view class="info-card">
 				<text class="info-title">应用简介</text>
 				<text class="info-desc">
-					NyxAI 是一款智能对话应用，基于先进大语言模型，支持多智能体切换、插件扩展、图片理解等能力，为你提供高效、自然的对话体验。
+					NyxAI 是一款智能对话应用，基于先进大语言模型，支持私聊 / 群聊、插件扩展、图片理解等能力，为你提供高效、自然的聊天体验。
 				</text>
 			</view>
 

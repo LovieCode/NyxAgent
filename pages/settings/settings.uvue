@@ -42,7 +42,7 @@
 						<oui-icon-unix name="experiment" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
 						<view class="menu-text">
 							<text class="menu-title">生成参数</text>
-							<text class="menu-desc">温度、输出上限、Agent 最大迭代、流式显示</text>
+							<text class="menu-desc">温度、输出上限、连续思考轮数、流式显示</text>
 						</view>
 					</view>
 					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
@@ -64,7 +64,7 @@
 						<oui-icon-unix name="book" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
 						<view class="menu-text">
 							<text class="menu-title">Skills</text>
-							<text class="menu-desc">纯文本技能包，多文档，按 Agent 启用</text>
+							<text class="menu-desc">纯文本技能包，多文档，按联系人启用</text>
 						</view>
 					</view>
 					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
@@ -75,7 +75,7 @@
 						<oui-icon-unix name="download" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
 						<view class="menu-text">
 							<text class="menu-title">导出全部数据</text>
-							<text class="menu-desc">ZIP 备份包：配置、对话、头像、Agent 工作区</text>
+							<text class="menu-desc">ZIP 备份包：配置、对话、头像、聊天工作区</text>
 						</view>
 					</view>
 					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
@@ -86,7 +86,7 @@
 						<oui-icon-unix name="upload" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
 						<view class="menu-text">
 							<text class="menu-title">导入备份包</text>
-							<text class="menu-desc">从 ZIP 恢复配置、对话与 Agent 工作区</text>
+							<text class="menu-desc">从 ZIP 恢复配置、对话与聊天工作区</text>
 						</view>
 					</view>
 					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
@@ -268,7 +268,7 @@
 			confirmExportAllData() {
 				uni.showModal({
 					title: '导出并分享全部数据',
-					content: '导出 ZIP 包包含 API Key、对话历史、头像、Agent 工作区和个人资料。导出完成后会打开系统分享面板，请只分享给可信目标。确定继续？',
+					content: '导出 ZIP 包包含 API Key、对话历史、头像、聊天工作区和个人资料。导出完成后会打开系统分享面板，请只分享给可信目标。确定继续？',
 					success: (res) => {
 						if (res.confirm == true) {
 							this.exportAllData()
@@ -281,7 +281,7 @@
 			confirmImportAllData() {
 				uni.showModal({
 					title: '导入备份包',
-					content: '导入会覆盖当前提供商、对话、智能体、设置、笔记、待办和 Agent 工作区。建议先导出当前数据。继续？',
+					content: '导入会覆盖当前提供商、对话、联系人、设置、笔记、待办和聊天工作区。建议先导出当前数据。继续？',
 					success: (res) => {
 						if (res.confirm == true) {
 							this.chooseImportZip()

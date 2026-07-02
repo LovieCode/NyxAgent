@@ -15,7 +15,7 @@
 				</view>
 				<view class="hero-info">
 					<text class="hero-title">故事 / 写作交流群</text>
-					<text class="hero-desc">默认模板：多 Agent 互相接话，一个隐藏调度负责控场。</text>
+					<text class="hero-desc">默认模板：多个群成员互相接话，一个隐藏调度负责控场。</text>
 				</view>
 				<text class="hero-action">创建</text>
 			</view>

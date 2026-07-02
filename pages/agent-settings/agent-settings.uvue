@@ -1,6 +1,6 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NavBar title="智能体设置" showBack @back="goBack" />
+		<NavBar title="聊天设置" showBack @back="goBack" />
 		<scroll-view class="container" :scroll-y="true">
 			<!-- 头部：头像 -->
 			<view class="profile-header" @click="pickAvatar">
@@ -22,18 +22,18 @@
 				class="flat-input"
 				type="text"
 				v-model="agentName"
-				placeholder="输入智能体名称"
+				placeholder="输入昵称"
 				placeholder-class="input-placeholder"
 				@input="hasUnsaved = true"
 			/>
 
 				<view class="card-header" style="margin-top:20rpx;">
 					<oui-icon-unix name="file-text" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
-					<text class="card-label">介绍</text>
-					<text class="card-hint">（会用于其他 Agent 读取）</text>
+					<text class="card-label">备注</text>
+					<text class="card-hint">（群聊里会用到）</text>
 				</view>
 				<view class="desc-wrap" @click="openDescEditor">
-					<text class="desc-preview" lines="2" text-overflow="ellipsis">{{agentDesc != '' ? agentDesc : '点击输入智能体介绍'}}</text>
+					<text class="desc-preview" lines="2" text-overflow="ellipsis">{{agentDesc != '' ? agentDesc : '点击输入联系人备注'}}</text>
 					<view class="desc-edit-btn">
 						<text class="desc-edit-text">全屏编辑</text>
 					</view>
@@ -143,7 +143,7 @@
 					<oui-icon-unix name="book" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
 					<text class="card-label">Skills</text>
 				</view>
-				<text class="skill-section-desc">为当前智能体启用纯文本技能包。不同 Agent 可以使用不同 Skills。</text>
+				<text class="skill-section-desc">为当前私聊启用纯文本技能包。不同联系人可以使用不同 Skills。</text>
 				<view v-if="allSkills.length == 0" class="panel-empty">
 					<text class="panel-empty-text">还没有 Skill，请到 设置 / Skills 创建。</text>
 				</view>
@@ -171,7 +171,7 @@
 					<oui-icon-unix name="setting" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
 					<text class="card-label">工具设置</text>
 				</view>
-				<text class="skill-section-desc">为当前智能体启用可调用工具。不启用的工具不会注入模型上下文，也不会被执行。</text>
+				<text class="skill-section-desc">为当前私聊启用可调用工具。不启用的工具不会注入模型上下文，也不会被执行。</text>
 				<view class="tool-list">
 					<view
 						v-for="(row, ri) in toolRows"
@@ -204,7 +204,7 @@
 					<text class="card-label">上下文截断</text>
 				</view>
 				<view class="context-tip">
-					<text class="context-tip-text">按权重计算上下文长度：用户消息 1 分，普通 Agent 回复 0.3 分，工具调用/结果 0.1 分。达到阈值会截断早期消息，并自动触发记忆整理。</text>
+					<text class="context-tip-text">按权重计算上下文长度：用户消息 1 分，普通回复 0.3 分，工具调用/结果 0.1 分。达到阈值会截断早期消息，并自动触发记忆整理。</text>
 				</view>
 				<view class="setting-row">
 					<view class="setting-text">
@@ -223,7 +223,7 @@
 				<view class="setting-row">
 					<view class="setting-text">
 						<text class="setting-title">启用缓存ID</text>
-						<text class="setting-desc">开启后请求会携带 cache_key（智能体ID:对话ID）</text>
+						<text class="setting-desc">开启后请求会携带 cache_key（联系人ID:对话ID）</text>
 					</view>
 					<rice-switch v-model="cacheEnabled" @change="hasUnsaved = true" />
 				</view>
@@ -260,7 +260,7 @@
 			<!-- 删除按钮 -->
 			<view class="delete-wrap">
 				<view class="delete-btn" @click="confirmDelete">
-					<text class="delete-btn-text">删除该智能体</text>
+					<text class="delete-btn-text">删除该私聊</text>
 				</view>
 			</view>
 		</scroll-view>
@@ -269,7 +269,7 @@
 
 <script lang="uts">
 	/**
-	 * 智能体设置页面 - 编辑名称/描述/头像/删除智能体
+	 * 私聊设置页面 - 编辑昵称/备注/头像/删除私聊
 	 */
 	import { getAgentById, updateAgent, deleteAgent, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, agentToolIdListContains, AGENT_TOOL_WORKSPACE_FILE, AGENT_TOOL_MEMORY_SEARCH, AGENT_TOOL_MEMORY_BUFFER_WRITE, AGENT_TOOL_WEB_SEARCH } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
@@ -439,7 +439,7 @@
 				const id = getRuntimeState('active_agent_id')
 				if (id == null || id == '') {
 					uni.showToast({ position: 'bottom', 
-						title: '未选择智能体',
+						title: '未选择联系人',
 						icon: 'none'
 					})
 					return
@@ -610,7 +610,7 @@
 			buildToolOptions(): UTSJSONObject[] {
 				const list: UTSJSONObject[] = []
 				list.push(this.buildToolOption(AGENT_TOOL_WORKSPACE_FILE, '工作区文件', '读写当前私聊或群聊会话工作区文件'))
-				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_SEARCH, '记忆搜索', '查询当前智能体可见记忆和历史记录'))
+				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_SEARCH, '记忆搜索', '查询当前联系人可见记忆和历史记录'))
 				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_BUFFER_WRITE, '短记忆缓存', '记录当前任务/临时要求/下一步，方便下轮接上'))
 				list.push(this.buildToolOption(AGENT_TOOL_WEB_SEARCH, '网络搜索', '联网搜索实时事实、资料和网页信息'))
 				return list
@@ -669,7 +669,7 @@
 				this.hasUnsaved = true
 			},
 
-			/** 上传/更换智能体头像 */
+			/** 上传/更换私聊头像 */
 			pickAvatar() {
 				uni.chooseImage({
 					count: 1,
@@ -692,7 +692,7 @@
 				})
 			},
 
-			/** 打开全屏编辑器编辑智能体描述 */
+			/** 打开全屏编辑器编辑联系人备注 */
 			openDescEditor() {
 				deleteRuntimeState('editor_draft')
 				deleteRuntimeState('editor_result')
@@ -704,7 +704,7 @@
 				setRuntimeState('editor_content', this.agentDesc)
 				setRuntimeState('editor_title', '编辑描述')
 				setRuntimeState('editor_target', 'desc')
-				setRuntimeState('editor_placeholder', '写一下这个智能体的人设、用途或备注')
+				setRuntimeState('editor_placeholder', '写一下这个联系人的人设、用途或备注')
 				uni.navigateTo({
 					url: '/pages/common/editor/editor'
 				})
@@ -748,7 +748,7 @@
 				const desc = this.agentDesc.trim()
 				if (name == '') {
 					uni.showToast({ position: 'bottom', 
-						title: '名称不能为空',
+						title: '昵称不能为空',
 						icon: 'none'
 					})
 					return false
@@ -802,12 +802,12 @@
 
 			confirmDelete() {
 				uni.showModal({
-					title: '删除智能体',
+					title: '删除私聊',
 					content: '确定要删除「' + this.agentName + '」吗？此操作无法撤销。',
 					success: (res) => {
 						if (res.confirm == true) {
 							deleteAgent(this.agentId)
-							// 如果删除的是当前选中的智能体，清除 active_agent_id
+							// 如果删除的是当前选中的私聊，清除 active_agent_id
 							const activeId = getRuntimeState('active_agent_id')
 							if (activeId == this.agentId) {
 								clearActiveAgentRuntimeId()
@@ -816,7 +816,7 @@
 								title: '已删除',
 								icon: 'success'
 							})
-							// 跳转到智能体列表页
+							// 跳转到会话列表页
 							uni.redirectTo({
 								url: '/pages/agents/agents'
 							})

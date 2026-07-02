@@ -4,13 +4,13 @@
 		<scroll-view class="container" :scroll-y="true">
 			<view class="hero-card">
 				<text class="hero-title">全局默认生成参数</text>
-				<text class="hero-desc">这里是普通对话和记忆整理的默认生成参数。修改后自动保存，记忆整理参数独立保存，不会被某个智能体的人格配置带偏。</text>
+				<text class="hero-desc">这里是普通对话和记忆整理的默认生成参数。修改后自动保存，记忆整理参数独立保存，不会被某个联系人的聊天配置带偏。</text>
 			</view>
 
 			<view class="card">
 				<view class="card-header">
 					<oui-icon-unix name="experiment" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
-					<text class="card-title">普通 Agent 参数</text>
+					<text class="card-title">普通聊天参数</text>
 				</view>
 				<text class="field-label">温度 temperature</text>
 				<input
@@ -36,7 +36,7 @@
 				/>
 				<text class="field-tip">限制单次回复长度，太低会被截断，太高会更吃额度。</text>
 
-				<text class="field-label" style="margin-top:24rpx;">Agent 最大迭代次数</text>
+				<text class="field-label" style="margin-top:24rpx;">连续思考轮数</text>
 				<input
 					class="flat-input"
 					type="text"
@@ -46,13 +46,13 @@
 					@input="autoSaveSettings"
 					@blur="normalizeAndSaveSettings"
 				/>
-				<text class="field-tip">Agent 每次「思考 → 工具 → 继续」算一轮。填 0 表示不限制，遇到“达到最大迭代次数”就调这里。</text>
+				<text class="field-tip">每次「思考 → 工具 → 继续」算一轮。填 0 表示不限制，遇到“达到最大迭代次数”就调这里。</text>
 			</view>
 
 			<view class="card">
 				<view class="card-header">
 					<oui-icon-unix name="robot" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
-					<text class="card-title">记忆整理 Agent</text>
+					<text class="card-title">记忆整理</text>
 				</view>
 				<text class="field-label">温度 temperature</text>
 				<input
@@ -95,8 +95,8 @@
 			<view class="card">
 				<view class="setting-row">
 					<view class="setting-text">
-						<text class="setting-title">普通 Agent 流式显示</text>
-						<text class="setting-desc">开启后边生成边显示；记忆整理 Agent 固定非流式，不受这里影响。</text>
+						<text class="setting-title">普通聊天流式显示</text>
+						<text class="setting-desc">开启后边生成边显示；记忆整理固定非流式，不受这里影响。</text>
 					</view>
 					<rice-switch v-model="streamEnabled" @change="autoSaveSettings" />
 				</view>

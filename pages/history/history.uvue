@@ -63,7 +63,7 @@
 				<view v-else class="empty-state">
 					<oui-icon-unix name="time-circle" size="96rpx" color="#D1D5DB" />
 					<text class="empty-text">暂无历史记录</text>
-					<text class="empty-hint">{{activeTab == 'group' ? '调度器和成员 Agent 的群聊上下文会记录在这里' : '开始对话后，记录将自动保存在这里'}}</text>
+					<text class="empty-hint">{{activeTab == 'group' ? '调度器和群成员的上下文会记录在这里' : '开始对话后，记录将自动保存在这里'}}</text>
 				</view>
 			</scroll-view>
 		</view>
@@ -335,7 +335,7 @@
 							if (preview == '') {
 								preview = contentRaw != null ? contentRaw : ''
 							}
-							if (preview == '') { preview = '查看隐藏调度 Agent 的真实上下文' }
+							if (preview == '') { preview = '查看隐藏调度的真实上下文' }
 							if (preview.length > 50) { preview = preview.substring(0, 50) + '...' }
 							result.push({
 								id: 'scheduler:' + group.id + ':' + session.id + ':' + messageId,
@@ -377,7 +377,7 @@
 						const publicIntent = publicIntentRaw != null ? publicIntentRaw : ''
 						const privateInstruction = privateInstructionRaw != null ? privateInstructionRaw : ''
 						let preview = publicIntent != '' ? publicIntent : privateInstruction
-						if (preview == '') { preview = '查看该智能体在群聊中实际收到的上下文' }
+						if (preview == '') { preview = '查看该成员在群聊中实际收到的上下文' }
 						if (preview.length > 50) { preview = preview.substring(0, 50) + '...' }
 						const requestSnapshot = record['requestSnapshot'] as UTSJSONObject | null
 						let messageCount = 0
@@ -745,7 +745,7 @@
 									previewJson = JSON.stringify(requestSnapshot, null, 2)
 								}
 								const messageCount = requestSnapshot['messageCount'] as number | null
-								subtitle = '隐藏调度 Agent 真实发送瞬间的请求体 · ' + (messageCount != null ? messageCount : 0) + ' 条 messages'
+								subtitle = '隐藏调度真实发送瞬间的请求体 · ' + (messageCount != null ? messageCount : 0) + ' 条 messages'
 							} else {
 								const runtimeMessages = schedulerMsg['runtimeMessages'] as UTSJSONObject[] | null
 								const contentRaw = schedulerMsg['content'] as string | null
@@ -757,7 +757,7 @@
 									runtimeMessages: runtimeMessages != null ? runtimeMessages : [],
 									response: contentRaw != null ? contentRaw : '',
 								} as UTSJSONObject, null, 2)
-								subtitle = '隐藏调度 Agent 记录：没有真实请求快照'
+								subtitle = '隐藏调度记录：没有真实请求快照'
 							}
 						}
 					} else if (itemType == 'legacy_group_message') {
@@ -769,7 +769,7 @@
 							const context = this.buildLegacyContextPreview(messages, messageIndexRaw)
 							previewJson = JSON.stringify({
 								type: 'legacy_group_message',
-								note: '旧数据没有保存私密调度上下文；这里只能展示该智能体发言前的公开群聊上下文。',
+								note: '旧数据没有保存私密调度上下文；这里只能展示该成员发言前的公开群聊上下文。',
 								contextMessages: context,
 							} as UTSJSONObject, null, 2)
 							subtitle = '旧群聊记录：只能还原公开上下文 · ' + context.length + ' 条'
@@ -789,11 +789,11 @@
 										previewJson = JSON.stringify(requestSnapshot, null, 2)
 									}
 									const messageCount = requestSnapshot['messageCount'] as number | null
-									subtitle = '该智能体上次真实发送瞬间的请求体 · ' + (messageCount != null ? messageCount : 0) + ' 条 messages'
+									subtitle = '该成员上次真实发送瞬间的请求体 · ' + (messageCount != null ? messageCount : 0) + ' 条 messages'
 								} else {
 									previewJson = JSON.stringify({
 										type: 'legacy_group_context_record',
-										note: '旧记录没有保存真实 request body 快照；请让该 Agent 再发言一次后查看。',
+										note: '旧记录没有保存真实 request body 快照；请让该成员再发言一次后查看。',
 									} as UTSJSONObject, null, 2)
 									subtitle = '旧群聊上下文记录：没有真实请求快照'
 								}
@@ -923,7 +923,7 @@
 			confirmClear() {
 				uni.showModal({
 					title: '清空历史记录',
-					content: this.activeTab == 'group' ? '确定要清空该智能体的群聊上下文快照吗？此操作无法撤销。' : '确定要清空所有对话历史吗？此操作无法撤销。',
+					content: this.activeTab == 'group' ? '确定要清空该成员的群聊上下文快照吗？此操作无法撤销。' : '确定要清空所有对话历史吗？此操作无法撤销。',
 					success: (res) => {
 						if (res.confirm == true) {
 							const list = this.currentHistoryList

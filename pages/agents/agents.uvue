@@ -15,8 +15,8 @@
 					<oui-icon-unix name="robot" size="36rpx" color="var(--rice-primary-color)" />
 				</view>
 				<view class="create-menu-info">
-					<text class="create-menu-title">新建智能体</text>
-					<text class="create-menu-desc">单人私聊，独立记忆和设置</text>
+					<text class="create-menu-title">新建私聊</text>
+					<text class="create-menu-desc">创建一个 AI 联系人</text>
 				</view>
 			</view>
 			<view class="create-menu-line"></view>
@@ -62,20 +62,20 @@
 					</view>
 					<view v-if="chatList.length == 0" class="empty-state">
 						<text class="empty-title">还没有会话</text>
-						<text class="empty-desc">点右上角 +，新建智能体或群聊。</text>
+						<text class="empty-desc">点右上角 +，新建私聊或群聊。</text>
 					</view>
 				</view>
 			</share-element>
 		</scroll-view>
 
-		<!-- 创建智能体弹窗 -->
+		<!-- 创建私聊弹窗 -->
 		<view v-if="showCreateDialog" class="dialog-overlay" @click="closeCreateDialog">
 			<view class="dialog-card" @click.stop>
 				<view class="dialog-handle"></view>
 				<view class="dialog-header">
 					<view class="dialog-title-wrap">
-						<text class="dialog-title">创建智能体</text>
-						<text class="dialog-subtitle">先选人设模板，再微调细节</text>
+						<text class="dialog-title">创建私聊</text>
+						<text class="dialog-subtitle">设置头像、昵称和说话方式</text>
 					</view>
 					<view class="dialog-close" @click="closeCreateDialog">
 						<oui-icon-unix name="close" size="40rpx" color="var(--rice-text-color-3)" />
@@ -97,7 +97,7 @@
 					<view class="dialog-section">
 						<view class="section-title-row">
 							<text class="dialog-label dialog-label-inline">快速模板</text>
-							<text class="dialog-label-sub">默认智能体风格</text>
+							<text class="dialog-label-sub">默认聊天风格</text>
 						</view>
 						<scroll-view class="template-scroll" :scroll-x="true" :show-scrollbar="false">
 							<view class="template-row">
@@ -122,8 +122,8 @@
 
 					<view class="dialog-section">
 						<text class="dialog-label">基础信息</text>
-						<input class="dialog-input" v-model="createData.name" placeholder="名字，比如：岚 / Debug 猫 / 论文搭子" placeholder-style="color:var(--rice-text-color-3)" />
-						<input class="dialog-input dialog-input-gap" v-model="createData.desc" placeholder="一句话说明它擅长什么" placeholder-style="color:var(--rice-text-color-3)" />
+						<input class="dialog-input" v-model="createData.name" placeholder="昵称，比如：小夜 / 零 / 千夏" placeholder-style="color:var(--rice-text-color-3)" />
+						<input class="dialog-input dialog-input-gap" v-model="createData.desc" placeholder="一句话备注它擅长什么" placeholder-style="color:var(--rice-text-color-3)" />
 					</view>
 
 					<view class="dialog-section">
@@ -150,7 +150,7 @@
 							<text class="section-action" @click="resetPromptByTemplate">重置模板</text>
 						</view>
 						<textarea class="prompt-input" v-model="createData.systemPrompt" placeholder="定义说话风格、能力边界和输出习惯。" placeholder-style="color:var(--rice-text-color-3)" />
-						<text class="field-tip">创建后还能在智能体设置里继续精修。</text>
+						<text class="field-tip">创建后还能在聊天设置里继续修改。</text>
 					</view>
 				</scroll-view>
 
@@ -165,18 +165,76 @@
 			</view>
 		</view>
 
+		<!-- 首启引导：不改聊天列表结构，只在没有可用模型时轻量提示。 -->
+		<view v-if="showFirstRunGuide" class="first-run-overlay" @click="dismissFirstRunGuide">
+			<view class="first-run-card" @click.stop>
+				<view class="dialog-handle"></view>
+				<view class="first-run-header">
+					<view class="first-run-title-wrap">
+						<text class="first-run-title">先接入一个模型</text>
+						<text class="first-run-desc">填一次 API Key，就能像普通聊天软件一样开始私聊和群聊。之后可以随时去设置里改。</text>
+					</view>
+					<view class="dialog-close" @click="dismissFirstRunGuide">
+						<oui-icon-unix name="close" size="40rpx" color="var(--rice-text-color-3)" />
+					</view>
+				</view>
+
+				<view class="first-run-section">
+					<text class="dialog-label">选择提供商</text>
+					<view class="first-run-provider-grid">
+						<view
+							v-for="(item, index) in firstRunProviderOptions"
+							:key="index"
+							class="first-run-provider"
+							:class="firstRunProviderIndex == index ? 'first-run-provider-active' : ''"
+							@click="selectFirstRunProvider(index)"
+						>
+							<text class="first-run-provider-name">{{ firstRunProviderName(item) }}</text>
+							<text class="first-run-provider-desc">{{ firstRunProviderDesc(item) }}</text>
+						</view>
+					</view>
+				</view>
+
+				<view class="first-run-section">
+					<text class="dialog-label">API Key</text>
+					<input class="dialog-input" v-model="firstRunApiKey" placeholder="粘贴你的 API Key" placeholder-style="color:var(--rice-text-color-3)" />
+				</view>
+
+				<view class="first-run-section">
+					<text class="dialog-label">接口地址</text>
+					<input class="dialog-input" v-model="firstRunBaseUrl" placeholder="https://api.deepseek.com" placeholder-style="color:var(--rice-text-color-3)" />
+					<text class="field-tip">默认地址已自动填好；自定义服务再改这里。</text>
+				</view>
+
+				<view class="first-run-section">
+					<text class="dialog-label">默认对话模型</text>
+					<input class="dialog-input" v-model="firstRunModel" placeholder="模型 ID" placeholder-style="color:var(--rice-text-color-3)" />
+				</view>
+
+				<view class="first-run-actions">
+					<view class="dialog-secondary-btn first-run-secondary" @click="openProviderSettingsFromGuide">
+						<text class="dialog-secondary-text">完整设置</text>
+					</view>
+					<view class="dialog-btn first-run-primary" @click="finishFirstRunGuide">
+						<text class="dialog-btn-text">{{ firstRunSaving ? '保存中...' : '保存并开始聊天' }}</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
 		<TabBar current="pages/agents/agents" />
 	</view>
 </template>
 
 <script lang="uts">
 	/**
-	 * 智能体列表页
+	 * 聊天会话列表页
 	 * 扁平化粉白主题
 	 */
 	import { getAgents, saveAgents, MINXI_BASE_STYLE } from '@/utils/agent.uts'
 	import { getAgentDir } from '@/utils/file-manager.uts'
-	import { deleteRuntimeState, getAppSetting, getConversationsByAgent, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+	import { deleteRuntimeState, getAppSetting, getConversationsByAgent, getRuntimeState, setAppSetting, setRuntimeState } from '@/utils/database.uts'
+	import { getAllProviders, saveProvider as saveLLMProvider, setActiveProvider, setDefaultTaskModel, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import {
 		type GroupChat,
 		createDefaultWritingGroupChat,
@@ -236,8 +294,39 @@
 			icon: 'star',
 			name: '自定义',
 			desc: '从空白人设开始配置',
-			prompt: '你是一个由用户自定义的智能体。请遵循用户设定的人设、能力范围和输出习惯，用中文自然回复。'
+			prompt: '你是一个由用户自定义的 AI 联系人。请遵循用户设定的人设、能力范围和输出习惯，用中文自然回复。'
 		} as UTSJSONObject
+	]
+	const FIRST_RUN_GUIDE_DONE_KEY = 'first_run_model_guide_done'
+	const FIRST_RUN_PROVIDER_OPTIONS: UTSJSONObject[] = [
+		{
+			id: 'deepseek',
+			name: 'DeepSeek',
+			desc: '推荐，地址已填好',
+			baseUrl: 'https://api.deepseek.com',
+			model: 'deepseek-v4-flash',
+		} as UTSJSONObject,
+		{
+			id: 'openai',
+			name: 'OpenAI',
+			desc: '适合 GPT 系列',
+			baseUrl: 'https://api.openai.com',
+			model: 'gpt-4o-mini',
+		} as UTSJSONObject,
+		{
+			id: 'openrouter',
+			name: 'OpenRouter',
+			desc: '聚合模型，模型名可改',
+			baseUrl: 'https://openrouter.ai/api',
+			model: 'openai/gpt-4o-mini',
+		} as UTSJSONObject,
+		{
+			id: 'custom',
+			name: '自定义',
+			desc: '兼容 OpenAI 格式',
+			baseUrl: '',
+			model: '',
+		} as UTSJSONObject,
 	]
 
 	export default {
@@ -248,6 +337,12 @@
 				chatList: [] as UTSJSONObject[],
 				showCreateMenu: false as boolean,
 				showCreateDialog: false as boolean,
+				showFirstRunGuide: false as boolean,
+				firstRunProviderIndex: 0 as number,
+				firstRunApiKey: '' as string,
+				firstRunBaseUrl: 'https://api.deepseek.com' as string,
+				firstRunModel: 'deepseek-v4-flash' as string,
+				firstRunSaving: false as boolean,
 				/** 创建表单数据 */
 				createData: {
 					templateKey: 'ai-assistant',
@@ -268,10 +363,14 @@
 				return CREATE_TEMPLATES
 			},
 
+			firstRunProviderOptions(): UTSJSONObject[] {
+				return FIRST_RUN_PROVIDER_OPTIONS
+			},
+
 			createPreviewName(): string {
 				const raw = this.createData['name'] as string | null
 				const name = raw != null ? raw.trim() : ''
-				return name != '' ? name : '未命名智能体'
+				return name != '' ? name : '未命名联系人'
 			},
 
 			createPreviewDesc(): string {
@@ -282,10 +381,12 @@
 		},
 		onLoad() {
 			this.loadChats()
+			this.checkFirstRunGuide()
 		},
 		onShow() {
 			this.loadChats()
 			this.consumeCreateAvatarCropResult()
+			this.checkFirstRunGuide()
 		},
 		methods: {
 			templateKey(tpl: UTSJSONObject): string {
@@ -326,6 +427,150 @@
 			createAvatar(): string {
 				const value = this.createData['avatar'] as string | null
 				return value != null ? value : ''
+			},
+
+			firstRunProviderName(item: UTSJSONObject): string {
+				const value = item['name'] as string | null
+				return value != null ? value : ''
+			},
+
+			firstRunProviderDesc(item: UTSJSONObject): string {
+				const value = item['desc'] as string | null
+				return value != null ? value : ''
+			},
+
+			getFirstRunProviderOption(): UTSJSONObject {
+				if (this.firstRunProviderIndex >= 0 && this.firstRunProviderIndex < FIRST_RUN_PROVIDER_OPTIONS.length) {
+					return FIRST_RUN_PROVIDER_OPTIONS[this.firstRunProviderIndex]
+				}
+				return FIRST_RUN_PROVIDER_OPTIONS[0]
+			},
+
+			selectFirstRunProvider(index: number): void {
+				if (index < 0 || index >= FIRST_RUN_PROVIDER_OPTIONS.length) { return }
+				this.firstRunProviderIndex = index
+				const item = FIRST_RUN_PROVIDER_OPTIONS[index]
+				const baseUrl = item['baseUrl'] as string | null
+				const model = item['model'] as string | null
+				this.firstRunBaseUrl = baseUrl != null ? baseUrl : ''
+				this.firstRunModel = model != null ? model : ''
+			},
+
+			hasReadyChatProvider(): boolean {
+				const providers = getAllProviders()
+				for (let i = 0; i < providers.length; i++) {
+					const provider = providers[i]
+					const enabled = provider['enabled'] as number | null
+					const apiKey = provider['api_key'] as string | null
+					if (enabled != null && enabled == 1 && apiKey != null && apiKey.trim() != '') {
+						return true
+					}
+				}
+				return false
+			},
+
+			checkFirstRunGuide(): void {
+				const done = getAppSetting(FIRST_RUN_GUIDE_DONE_KEY)
+				if (done == 'true') {
+					this.showFirstRunGuide = false
+					return
+				}
+				this.showFirstRunGuide = this.hasReadyChatProvider() == false
+			},
+
+			dismissFirstRunGuide(): void {
+				setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true')
+				this.showFirstRunGuide = false
+			},
+
+			openProviderSettingsFromGuide(): void {
+				setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true')
+				this.showFirstRunGuide = false
+				uni.navigateTo({ url: '/pages/settings/basic/basic' })
+			},
+
+			appendFirstRunModel(models: ModelInfo[], id: string, supportsVision: boolean, supportsToolCall: boolean, supportsReasoning: boolean): void {
+				if (id == '') { return }
+				for (let i = 0; i < models.length; i++) {
+					if (models[i].id == id) { return }
+				}
+				models.push({ id: id, supportsVision: supportsVision, supportsToolCall: supportsToolCall, supportsReasoning: supportsReasoning } as ModelInfo)
+			},
+
+			buildFirstRunModels(providerId: string, selectedModel: string): ModelInfo[] {
+				const models: ModelInfo[] = []
+				if (providerId == 'deepseek') {
+					this.appendFirstRunModel(models, selectedModel, false, true, false)
+					this.appendFirstRunModel(models, 'deepseek-v4-flash', false, true, false)
+					this.appendFirstRunModel(models, 'deepseek-v4-pro', false, true, true)
+				} else if (providerId == 'openai') {
+					this.appendFirstRunModel(models, selectedModel, true, true, false)
+					this.appendFirstRunModel(models, 'gpt-4o-mini', true, true, false)
+					this.appendFirstRunModel(models, 'gpt-4o', true, true, false)
+					this.appendFirstRunModel(models, 'gpt-4.1-mini', true, true, false)
+				} else {
+					this.appendFirstRunModel(models, selectedModel, false, false, false)
+				}
+				return models
+			},
+
+			syncFirstRunAgentModels(model: string): void {
+				if (model == '') { return }
+				const agents = getAgents()
+				let changed = false
+				for (let i = 0; i < agents.length; i++) {
+					const rawModel = agents[i]['model'] as string | null
+					const currentModel = rawModel != null ? rawModel : ''
+					if (currentModel == '' || currentModel == 'deepseek-v4-flash' || currentModel == 'deepseek-v4-pro') {
+						agents[i]['model'] = model
+						changed = true
+					}
+				}
+				if (changed == true) {
+					saveAgents(agents)
+				}
+			},
+
+			finishFirstRunGuide(): void {
+				if (this.firstRunSaving == true) { return }
+				const option = this.getFirstRunProviderOption()
+				const rawProviderId = option['id'] as string | null
+				const rawProviderName = option['name'] as string | null
+				const providerId = rawProviderId != null ? rawProviderId : 'custom'
+				const providerName = rawProviderName != null && rawProviderName != '' ? rawProviderName : '自定义'
+				const apiKey = this.firstRunApiKey.trim()
+				const apiBase = this.firstRunBaseUrl.trim()
+				const model = this.firstRunModel.trim()
+				if (apiKey == '') {
+					uni.showToast({ position: 'bottom', title: '先填 API Key', icon: 'none' })
+					return
+				}
+				if (apiBase == '') {
+					uni.showToast({ position: 'bottom', title: '先填接口地址', icon: 'none' })
+					return
+				}
+				if (model == '') {
+					uni.showToast({ position: 'bottom', title: '先填模型 ID', icon: 'none' })
+					return
+				}
+				this.firstRunSaving = true
+				try {
+					const models = this.buildFirstRunModels(providerId, model)
+					saveLLMProvider(providerId, providerName, apiBase, apiKey, models, true)
+					setActiveProvider(providerId)
+					setDefaultTaskModel('chat', providerId, model)
+					// COMPAT_LEGACY_MODEL_SETTINGS: 旧聊天创建逻辑还读 settings_*；默认模型页统一后可清空。
+					setAppSetting('settings_provider_id', providerId)
+					setAppSetting('settings_model', model)
+					this.syncFirstRunAgentModels(model)
+					setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true')
+					this.showFirstRunGuide = false
+					this.loadChats()
+					uni.showToast({ position: 'bottom', title: '已接入，可以开始聊天', icon: 'success' })
+				} catch (_e: any) {
+					uni.showToast({ position: 'bottom', title: '保存失败，请去完整设置里检查', icon: 'none' })
+				}
+				this.firstRunSaving = false
 			},
 
 			consumeCreateAvatarCropResult(): void {
@@ -439,7 +684,7 @@
 				this.chatList = result
 			},
 
-			/** 安全获取智能体头像路径 */
+			/** 安全获取私聊头像路径 */
 			getAgentAvatar(agent: UTSJSONObject): string {
 				const avatar = agent['avatar']
 				if (avatar != null) {
@@ -448,7 +693,7 @@
 				return ''
 			},
 
-			/** 获取智能体的状态描述（优先显示最新对话预览） */
+			/** 获取私聊状态描述（优先显示最新对话预览） */
 			getAgentStatus(agent: UTSJSONObject): string {
 				const id = agent['id'] as string
 				if (id == null || id == '') { return agent['desc'] as string }
@@ -629,7 +874,7 @@
 				this.createData['avatar'] = ''
 			},
 
-			/** 为新建智能体选择头像 */
+			/** 为新建私聊选择头像 */
 			pickCreateAvatar(): void {
 				uni.chooseImage({
 					count: 1,
@@ -655,7 +900,7 @@
 				})
 			},
 
-			/** 执行创建智能体 */
+			/** 执行创建私聊 */
 			doCreateAgent() {
 				const rawName = this.createData['name'] as string | null
 				const rawDesc = this.createData['desc'] as string | null
@@ -677,7 +922,7 @@
 				const rawAvatar = this.createData['avatar'] as string | null
 				const icon = rawIcon != null ? rawIcon : 'robot'
 				const avatar = rawAvatar != null ? rawAvatar : ''
-				const finalDesc = desc != '' ? desc : '自定义智能体'
+				const finalDesc = desc != '' ? desc : '自定义联系人'
 				const finalPrompt = systemPrompt != '' ? systemPrompt : this.templatePrompt(CREATE_TEMPLATES[0])
 
 				// 默认模型从 SQLite app_settings 读取，缺省时回退内置模型。
@@ -813,7 +1058,7 @@
 		margin-right: 24rpx;
 	}
 
-	/* 单个智能体行 */
+	/* 单个会话行 */
 	.agent-item {
 		flex-direction: row;
 		align-items: center;
@@ -924,7 +1169,7 @@
 		color: var(--rice-text-color-3);
 	}
 
-	/* ===== 创建智能体弹窗 ===== */
+	/* ===== 创建私聊弹窗 ===== */
 	.dialog-overlay {
 		position: fixed;
 		top: 0;
@@ -1212,5 +1457,110 @@
 		font-size: 32rpx;
 		font-weight: bold;
 		color: #FFFFFF;
+	}
+
+	/* ===== 首启模型引导 ===== */
+	.first-run-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(17, 24, 39, 0.34);
+		justify-content: flex-end;
+		align-items: stretch;
+		z-index: 1200;
+	}
+
+	.first-run-card {
+		background-color: #FFFFFF;
+		border-top-left-radius: 40rpx;
+		border-top-right-radius: 40rpx;
+		padding: 28rpx 36rpx 44rpx;
+		border-width: 1rpx;
+		border-style: solid;
+		border-color: rgba(251, 143, 171, 0.18);
+	}
+
+	.first-run-header {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: flex-start;
+		margin-bottom: 28rpx;
+	}
+
+	.first-run-title-wrap {
+		flex: 1;
+		flex-direction: column;
+		padding-right: 20rpx;
+	}
+
+	.first-run-title {
+		font-size: 38rpx;
+		font-weight: bold;
+		color: var(--rice-text-color);
+	}
+
+	.first-run-desc {
+		font-size: 25rpx;
+		line-height: 38rpx;
+		color: var(--rice-text-color-2);
+		margin-top: 10rpx;
+	}
+
+	.first-run-section {
+		margin-bottom: 26rpx;
+	}
+
+	.first-run-provider-grid {
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin-right: -12rpx;
+	}
+
+	.first-run-provider {
+		width: 268rpx;
+		border-radius: 24rpx;
+		padding: 22rpx;
+		margin-right: 12rpx;
+		margin-bottom: 12rpx;
+		background-color: #F9FAFB;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: #F3F4F6;
+		flex-direction: column;
+	}
+
+	.first-run-provider-active {
+		background-color: #FFF3F7;
+		border-color: rgba(251, 143, 171, 0.70);
+	}
+
+	.first-run-provider-name {
+		font-size: 28rpx;
+		font-weight: bold;
+		color: var(--rice-text-color);
+	}
+
+	.first-run-provider-desc {
+		font-size: 22rpx;
+		color: var(--rice-text-color-3);
+		margin-top: 8rpx;
+		lines: 1;
+		text-overflow: ellipsis;
+	}
+
+	.first-run-actions {
+		flex-direction: row;
+		align-items: center;
+		margin-top: 10rpx;
+	}
+
+	.first-run-secondary {
+		width: 196rpx;
+	}
+
+	.first-run-primary {
+		flex: 1;
 	}
 </style>

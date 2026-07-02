@@ -3,8 +3,8 @@
 		<NavBar title="记忆管理" showBack />
 		<scroll-view class="container" :scroll-y="true">
 			<view class="hero-card">
-				<text class="hero-title">Agent 记忆系统</text>
-				<text class="hero-desc">这里管理当前智能体的短缓存和重要信息库。短缓存最多 64 字，用来记录当前任务、临时要求或下一步动作，只会临时注入当前用户的下一次请求；重要信息按范围注入，不保存工具调用细节。</text>
+				<text class="hero-title">聊天记忆</text>
+				<text class="hero-desc">这里管理当前联系人的短缓存和重要信息库。短缓存最多 64 字，用来记录当前任务、临时要求或下一步动作，只会临时注入当前用户的下一次请求；重要信息按范围注入，不保存工具调用细节。</text>
 			</view>
 
 			<view class="card">
@@ -63,7 +63,7 @@
 								<text class="chip-text" :class="newTargetType == 'user' ? 'chip-text-active' : ''">当前用户</text>
 							</view>
 							<view class="chip" :class="newTargetType == 'agent' ? 'chip-active' : ''" @click="selectNewTargetType('agent')">
-								<text class="chip-text" :class="newTargetType == 'agent' ? 'chip-text-active' : ''">其他 Agent</text>
+								<text class="chip-text" :class="newTargetType == 'agent' ? 'chip-text-active' : ''">其他联系人</text>
 							</view>
 							<view class="chip" :class="newTargetType == 'custom' ? 'chip-active' : ''" @click="selectNewTargetType('custom')">
 								<text class="chip-text" :class="newTargetType == 'custom' ? 'chip-text-active' : ''">自定义对象</text>
@@ -135,7 +135,7 @@
 							<text class="chip-text" :class="viewTargetType == 'user' ? 'chip-text-active' : ''">当前用户</text>
 						</view>
 						<view class="chip" :class="viewTargetType == 'agent' ? 'chip-active' : ''" @click="selectViewTargetType('agent')">
-							<text class="chip-text" :class="viewTargetType == 'agent' ? 'chip-text-active' : ''">其他 Agent</text>
+							<text class="chip-text" :class="viewTargetType == 'agent' ? 'chip-text-active' : ''">其他联系人</text>
 						</view>
 						<view class="chip" :class="viewTargetType == 'custom' ? 'chip-active' : ''" @click="selectViewTargetType('custom')">
 							<text class="chip-text" :class="viewTargetType == 'custom' ? 'chip-text-active' : ''">自定义对象</text>
@@ -173,9 +173,9 @@
 
 			<view class="danger-card">
 				<text class="danger-title">危险区</text>
-				<text class="danger-desc">清空会归档当前智能体面向当前查看对象的所有可见重要记忆，短缓存不受影响。</text>
+				<text class="danger-desc">清空会归档当前联系人面向当前查看对象的所有可见重要记忆，短缓存不受影响。</text>
 				<view class="danger-btn" @click="confirmClearCore">
-					<text class="danger-btn-text">清空当前 Agent 记忆</text>
+					<text class="danger-btn-text">清空当前联系人记忆</text>
 				</view>
 			</view>
 
@@ -527,7 +527,7 @@
 			confirmClearCore() {
 				uni.showModal({
 					title: '清空记忆',
-					content: '确认清空当前 Agent 面向当前查看对象的可见重要记忆？',
+					content: '确认清空当前联系人面向当前查看对象的可见重要记忆？',
 					success: (res: any) => {
 						const raw = JSON.stringify(res)
 						if (raw == null || raw == '') { return }

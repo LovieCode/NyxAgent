@@ -7,7 +7,7 @@
 					<oui-icon-unix name="book" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
 					<text class="card-title">纯文本 Skills</text>
 				</view>
-				<text class="desc">Skill 是一组可复用的纯文本指令。支持一个 Skill 多个文档，保存后在「智能体设置」里给不同 Agent 单独启用。</text>
+				<text class="desc">Skill 是一组可复用的纯文本指令。支持一个 Skill 多个文档，保存后在「聊天设置」里给不同联系人单独启用。</text>
 				<text class="hint">规范：name 使用小写字母 / 数字 / 连字符；Markdown 可带 frontmatter：name、description。</text>
 				<view class="action-row">
 					<view class="primary-btn" @click="createNewSkill">
@@ -513,7 +513,7 @@
 				}
 				uni.showModal({
 					title: '删除 Skill',
-					content: '确定删除「' + this.skillName + '」吗？Agent 启用列表中会自动失效。',
+					content: '确定删除「' + this.skillName + '」吗？联系人启用列表中会自动失效。',
 					confirmColor: '#EF4444',
 					success: (res) => {
 						if (res.confirm == true) {

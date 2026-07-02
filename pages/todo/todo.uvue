@@ -111,7 +111,7 @@
 							</view>
 						</view>
 						<view class="agent-selector">
-							<text class="form-label">所属智能体</text>
+							<text class="form-label">所属联系人</text>
 							<view class="agent-options">
 								<view
 									v-for="(agent, agIdx) in agents"

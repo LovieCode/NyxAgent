@@ -10,7 +10,7 @@
 
 			<view class="card">
 				<text class="card-title">成员</text>
-				<text class="card-desc">直接复用私聊 Agent；踢出只影响之后发言，历史保留。</text>
+				<text class="card-desc">直接复用私聊联系人；踢出只影响之后发言，历史保留。</text>
 				<view v-for="(agent, index) in agentList" :key="agent['id']" class="member-row">
 					<view class="member-avatar" :class="'avatar-' + ((index % 5) + 1)">
 						<image v-if="getAgentAvatar(agent) != ''" :src="getAgentAvatar(agent)" class="member-avatar-img" mode="aspectFill" />
@@ -30,11 +30,11 @@
 				<view class="prompt-header">
 					<view class="prompt-header-left">
 						<text class="card-title" style="margin-bottom:0">调度提示词</text>
-						<text class="card-desc" style="margin-top:6rpx;margin-bottom:0">隐藏调度 Agent 的行为规则，决定谁发言、顺序和续轮逻辑。</text>
+						<text class="card-desc" style="margin-top:6rpx;margin-bottom:0">隐藏调度的行为规则，决定谁发言、顺序和续轮逻辑。</text>
 					</view>
 					<text class="reset-btn" @click="resetSchedulerPrompt">恢复默认</text>
 				</view>
-				<textarea class="prompt-input" v-model="schedulerPrompt" placeholder="调度 Agent 系统提示词" placeholder-style="color:var(--rice-text-color-3)" />
+				<textarea class="prompt-input" v-model="schedulerPrompt" placeholder="调度系统提示词" placeholder-style="color:var(--rice-text-color-3)" />
 			</view>
 
 			<view class="card">

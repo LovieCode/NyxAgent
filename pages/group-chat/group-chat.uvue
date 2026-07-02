@@ -36,7 +36,7 @@
 			</view>
 			<view v-if="visibleMessages.length == 0" class="empty-state">
 				<text class="empty-text">{{emptyTitle}}</text>
-				<text class="empty-hint">发一句话，调度 Agent 会在幕后安排成员接招。</text>
+				<text class="empty-hint">发一句话，后台调度会安排成员接招。</text>
 			</view>
 		</scroll-view>
 
@@ -663,12 +663,12 @@
 			chooseAgentForMemory(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
 				this.showToolPanel = false
-				this.chooseAgentAndRun('选择要查看记忆的 Agent', 'memory')
+				this.chooseAgentAndRun('选择要查看记忆的成员', 'memory')
 			},
 			chooseAgentForContext(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
 				this.showToolPanel = false
-				this.chooseAgentAndRun('选择要查看上下文的 Agent', 'context')
+				this.chooseAgentAndRun('选择要查看上下文的成员', 'context')
 			},
 			chooseAgentAndRun(_title: string, action: string): void {
 				const items = this.buildGroupMemberAgentItems()
@@ -679,7 +679,7 @@
 				const names: string[] = []
 				for (let i = 0; i < items.length; i++) {
 					const name = items[i]['name'] as string | null
-					names.push(name != null ? name : 'Agent')
+					names.push(name != null ? name : '联系人')
 				}
 				uni.showActionSheet({
 					itemList: names,
@@ -698,7 +698,7 @@
 			},
 			openMemoryForAgent(agentId: string): void {
 				if (agentId != 'scheduler' && getAgentById(agentId) == null) {
-					uni.showToast({ position: 'bottom', title: '该智能体已删除', icon: 'none' })
+					uni.showToast({ position: 'bottom', title: '该联系人已删除', icon: 'none' })
 					return
 				}
 				setMemoryRouteState(agentId, this.sessionId)
@@ -708,12 +708,12 @@
 				const session = this.session
 				if (session == null) { return }
 				if (agentId != 'scheduler' && getAgentById(agentId) == null) {
-					uni.showToast({ position: 'bottom', title: '该智能体已删除', icon: 'none' })
+					uni.showToast({ position: 'bottom', title: '该联系人已删除', icon: 'none' })
 					return
 				}
 				const preview = readLastLLMRequestSnapshot(agentId, session.id)
 				if (preview == null) {
-					uni.showToast({ position: 'bottom', title: '该 Agent 还没有真实请求快照', icon: 'none' })
+					uni.showToast({ position: 'bottom', title: '该成员还没有真实请求快照', icon: 'none' })
 					return
 				}
 				let previewText = ''
@@ -745,7 +745,7 @@
 				const id = msg['id'] as string | null
 				if (id == null || id == '') { return }
 				uni.showActionSheet({
-					itemList: ['撤回这条 Agent 消息', '跳转私聊'],
+					itemList: ['撤回这条成员消息', '跳转私聊'],
 					success: (res) => {
 						if (res.tapIndex == 0) {
 							revokeGroupAgentMessage(this.groupId, this.sessionId, id)
@@ -760,7 +760,7 @@
 				const agentId = msg['senderAgentId'] as string | null
 				if (agentId == null || agentId == '') { return }
 				if (getAgentById(agentId) == null) {
-					uni.showToast({ position: 'bottom', title: '该智能体已删除', icon: 'none' })
+					uni.showToast({ position: 'bottom', title: '该联系人已删除', icon: 'none' })
 					return
 				}
 				setActiveAgentRuntimeId(agentId)

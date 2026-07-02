@@ -9,7 +9,7 @@
 					<oui-icon-unix name="search" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
 					<text class="card-title">网络搜索</text>
 				</view>
-				<text class="plugin-desc">为 Agent 提供联网搜索能力。可选择免费 SearXNG 或调用 AI 提供商内置搜索（Grok / 豆包 等）。</text>
+				<text class="plugin-desc">为聊天提供联网搜索能力。可选择免费 SearXNG 或调用 AI 提供商内置搜索（Grok / 豆包 等）。</text>
 				<view class="setting-row" style="margin-top: 20rpx;">
 					<text class="setting-label">启用网络搜索</text>
 					<rice-switch v-model="webSearchEnabled" @change="saveSettings" />
