@@ -219,60 +219,60 @@
 <style>
 	.container {
 		flex: 1;
-		padding: 32rpx 24rpx 0;
+		padding: 16px 12px 0;
 	}
 
 	/* 头像区域 */
 	.avatar-section {
 		align-items: center;
-		padding: 48rpx 0 40rpx;
+		padding: 24px 0 20px;
 	}
 
 	.avatar-circle {
-		width: 160rpx;
-		height: 160rpx;
-		border-radius: 80rpx;
+		width: 80px;
+		height: 80px;
+		border-radius: 40px;
 		background-image: linear-gradient(to bottom right, #FB8FAB, #E8729A);
 		justify-content: center;
 		align-items: center;
-		margin-bottom: 16rpx;
+		margin-bottom: 8px;
 	}
 
 	.avatar-image {
-		width: 160rpx;
-		height: 160rpx;
-		border-radius: 80rpx;
-		margin-bottom: 16rpx;
+		width: 80px;
+		height: 80px;
+		border-radius: 40px;
+		margin-bottom: 8px;
 	}
 
 	.avatar-text {
-		font-size: 64rpx;
+		font-size: 32px;
 		color: #FFFFFF;
 		font-weight: bold;
 	}
 
 	.avatar-hint {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #9CA3AF;
 	}
 
 	/* 表单卡片 */
 	.form-card {
 		background-color: #FFFFFF;
-		border-radius: 32rpx;
-		padding: 0 24rpx;
+		border-radius: 16px;
+		padding: 0 12px;
 	}
 
 	.form-item {
 		flex-direction: row;
 		align-items: center;
-		padding: 12rpx 0;
-		min-height: 80rpx;
+		padding: 6px 0;
+		min-height: 40px;
 	}
 
 	.form-item-textarea {
 		align-items: flex-start;
-		padding: 12rpx 0;
+		padding: 6px 0;
 	}
 
 	.textarea-wrap {
@@ -283,71 +283,71 @@
 	/* 全屏编辑按钮 - 浮动在输入框右上角 */
 	.fullscreen-btn {
 		position: absolute;
-		top: 12rpx;
-		right: 12rpx;
-		padding: 8rpx 20rpx;
-		border-radius: 16rpx;
+		top: 6px;
+		right: 6px;
+		padding: 4px 10px;
+		border-radius: 8px;
 		background-color: var(--rice-primary-color-1);
 		justify-content: center;
 		align-items: center;
 	}
 
 	.fullscreen-btn-text {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: var(--rice-primary-color);
 		font-weight: bold;
 	}
 
 	.form-label {
-		font-size: 30rpx;
+		font-size: 15px;
 		color: #374151;
-		width: 140rpx;
+		width: 70px;
 		font-weight: bold;
 		flex-shrink: 0;
 	}
 
 	.form-input {
 		flex: 1;
-		font-size: 30rpx;
+		font-size: 15px;
 		color: #111827;
 		padding: 0;
-		height: 72rpx;
+		height: 36px;
 	}
 
 	.form-textarea {
 		flex: 1;
 		background-color: #F9FAFB;
-		border-radius: 24rpx;
-		padding: 16rpx 24rpx;
-		font-size: 30rpx;
+		border-radius: 12px;
+		padding: 8px 12px;
+		font-size: 15px;
 		color: #111827;
-		min-height: 72rpx;
-		line-height: 44rpx;
+		min-height: 36px;
+		line-height: 22px;
 	}
 
 	.form-divider {
-		height: 0.10rpx;
+		height: 1px;
 		background-color: #F3F4F6;
-		margin-left: 140rpx;
+		margin-left: 70px;
 	}
 
 	/* 保存按钮 */
 	.save-btn-wrap {
-		padding: 24rpx 0 80rpx;
+		padding: 12px 0 40px;
 		align-items: center;
 	}
 
 	.save-btn {
 		background-image: linear-gradient(to bottom right, #FB8FAB, #E8729A);
-		border-radius: 44rpx;
-		height: 88rpx;
-		width: 400rpx;
+		border-radius: 22px;
+		height: 44px;
+		width: 200px;
 		justify-content: center;
 		align-items: center;
 	}
 
 	.save-btn-text {
-		font-size: 32rpx;
+		font-size: 16px;
 		color: #FFFFFF;
 		font-weight: bold;
 	}

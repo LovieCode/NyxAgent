@@ -61,7 +61,7 @@
 
 				<!-- 空状态 -->
 				<view v-else class="empty-state">
-					<oui-icon-unix name="time-circle" size="96rpx" color="#D1D5DB" />
+					<oui-icon-unix name="time-circle" size="48px" color="#D1D5DB" />
 					<text class="empty-text">暂无历史记录</text>
 					<text class="empty-hint">{{activeTab == 'group' ? '调度器和群成员的上下文会记录在这里' : '开始对话后，记录将自动保存在这里'}}</text>
 				</view>
@@ -961,9 +961,9 @@
 	}
 
 	.nav-btn {
-		font-size: 28rpx;
+		font-size: 14px;
 		color: var(--rice-primary-color);
-		margin-left: 16rpx;
+		margin-left: 8px;
 		font-weight: bold;
 	}
 
@@ -986,7 +986,7 @@
 		width: 100%;
 		flex: 1;
 		background-color: #FFFFFF;
-		padding: 28rpx 32rpx 36rpx;
+		padding: 14px 16px 18px;
 		flex-direction: column;
 	}
 
@@ -994,71 +994,71 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		margin-bottom: 22rpx;
+		margin-bottom: 11px;
 		flex-shrink: 0;
 	}
 
 	.preview-title-wrap {
 		flex: 1;
 		flex-direction: column;
-		margin-right: 20rpx;
+		margin-right: 10px;
 	}
 
 	.preview-title {
-		font-size: 34rpx;
+		font-size: 17px;
 		font-weight: bold;
 		color: var(--rice-text-color);
 	}
 
 	.preview-subtitle {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: var(--rice-text-color-3);
-		margin-top: 8rpx;
+		margin-top: 4px;
 	}
 
 	.preview-close {
-		width: 64rpx;
-		height: 64rpx;
-		border-radius: 32rpx;
+		width: 32px;
+		height: 32px;
+		border-radius: 16px;
 		background-color: var(--rice-background-2);
 		align-items: center;
 		justify-content: center;
 	}
 
 	.preview-close-text {
-		font-size: 42rpx;
-		line-height: 50rpx;
+		font-size: 21px;
+		line-height: 25px;
 		color: var(--rice-text-color-2);
 	}
 
 	.preview-scroll {
 		flex: 1;
 		background-color: #111827;
-		border-radius: 24rpx;
-		padding: 24rpx;
+		border-radius: 12px;
+		padding: 12px;
 	}
 
 	.preview-json-text {
-		font-size: 24rpx;
-		line-height: 36rpx;
+		font-size: 12px;
+		line-height: 18px;
 		color: #E5E7EB;
 	}
 
 	.preview-actions {
 		flex-direction: row;
 		align-items: center;
-		margin-top: 24rpx;
+		margin-top: 12px;
 		flex-shrink: 0;
 	}
 
 	.preview-secondary-btn {
 		flex: 1;
-		height: 88rpx;
-		border-radius: 999rpx;
+		height: 44px;
+		border-radius: 500px;
 		align-items: center;
 		justify-content: center;
 		background-color: var(--rice-background-2);
-		margin-right: 16rpx;
+		margin-right: 8px;
 	}
 
 	.preview-secondary-btn-full {
@@ -1067,32 +1067,32 @@
 
 	.preview-primary-btn {
 		flex: 1;
-		height: 88rpx;
-		border-radius: 999rpx;
+		height: 44px;
+		border-radius: 500px;
 		align-items: center;
 		justify-content: center;
 		background-color: var(--rice-primary-color);
 	}
 
 	.preview-secondary-text {
-		font-size: 28rpx;
+		font-size: 14px;
 		font-weight: bold;
 		color: var(--rice-text-color-2);
 	}
 
 	.preview-primary-text {
-		font-size: 28rpx;
+		font-size: 14px;
 		font-weight: bold;
 		color: #FFFFFF;
 	}
 
 	.history-tabs {
 		flex-direction: row;
-		margin-left: 32rpx;
-		margin-right: 32rpx;
-		margin-top: 24rpx;
-		padding: 8rpx;
-		border-radius: 999rpx;
+		margin-left: 16px;
+		margin-right: 16px;
+		margin-top: 12px;
+		padding: 4px;
+		border-radius: 500px;
 		background-color: var(--rice-background-2);
 	}
 
@@ -1100,9 +1100,9 @@
 		flex: 1;
 		align-items: center;
 		justify-content: center;
-		padding-top: 18rpx;
-		padding-bottom: 18rpx;
-		border-radius: 999rpx;
+		padding-top: 9px;
+		padding-bottom: 9px;
+		border-radius: 500px;
 	}
 
 	.history-tab-active {
@@ -1110,7 +1110,7 @@
 	}
 
 	.history-tab-text {
-		font-size: 28rpx;
+		font-size: 14px;
 		color: var(--rice-text-color-3);
 		font-weight: bold;
 	}
@@ -1122,7 +1122,7 @@
 	/* 列表滚动区 */
 	.list-scroll {
 		flex: 1;
-		padding: 32rpx;
+		padding: 16px;
 	}
 
 	.list-content {
@@ -1132,10 +1132,10 @@
 	/* 历史记录卡片 */
 	.history-card {
 		background-color: var(--rice-background-2);
-		border-radius: 28rpx;
-		padding: 32rpx;
-		margin-bottom: 24rpx;
-		border-width: 2rpx;
+		border-radius: 14px;
+		padding: 16px;
+		margin-bottom: 12px;
+		border-width: 1px;
 		border-style: solid;
 		border-color: var(--rice-border-color);
 	}
@@ -1152,19 +1152,19 @@
 
 	/* 复选框列 */
 	.check-col {
-		width: 80rpx;
+		width: 40px;
 		height: 100%;
 		justify-content: center;
 		align-items: center;
-		margin-right: 16rpx;
-		padding-top: 4rpx;
+		margin-right: 8px;
+		padding-top: 2px;
 	}
 
 	.checkbox {
-		width: 44rpx;
-		height: 44rpx;
-		border-radius: 22rpx;
-		border-width: 4rpx;
+		width: 22px;
+		height: 22px;
+		border-radius: 11px;
+		border-width: 2px;
 		border-style: solid;
 		border-color: #D1D5DB;
 		justify-content: center;
@@ -1177,7 +1177,7 @@
 	}
 
 	.checkmark {
-		font-size: 28rpx;
+		font-size: 14px;
 		color: #FFFFFF;
 		font-weight: bold;
 	}
@@ -1190,28 +1190,28 @@
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 16rpx;
+		margin-bottom: 8px;
 	}
 
 	.card-title {
-		font-size: 32rpx;
+		font-size: 16px;
 		font-weight: bold;
 		color: var(--rice-text-color);
 		flex: 1;
 	}
 
 	.card-time {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: var(--rice-text-color-3);
-		margin-left: 16rpx;
+		margin-left: 8px;
 	}
 
 	.card-preview {
-		font-size: 28rpx;
+		font-size: 14px;
 		color: var(--rice-text-color-2);
 		lines: 1;
 		text-overflow: ellipsis;
-		margin-bottom: 20rpx;
+		margin-bottom: 10px;
 	}
 
 	.card-meta {
@@ -1220,20 +1220,20 @@
 	}
 
 	.meta-msgs {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: var(--rice-text-color-3);
-		margin-right: 24rpx;
+		margin-right: 12px;
 	}
 
 	.meta-model {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: var(--rice-primary-color);
 		background-color: var(--rice-primary-color-1);
-		padding-left: 12rpx;
-		padding-right: 12rpx;
-		padding-top: 4rpx;
-		padding-bottom: 4rpx;
-		border-radius: 12rpx;
+		padding-left: 6px;
+		padding-right: 6px;
+		padding-top: 2px;
+		padding-bottom: 2px;
+		border-radius: 6px;
 	}
 
 	/* 空状态 */
@@ -1241,20 +1241,20 @@
 		flex: 1;
 		justify-content: center;
 		align-items: center;
-		padding-top: 240rpx;
+		padding-top: 120px;
 	}
 
 	.empty-text {
-		font-size: 36rpx;
+		font-size: 18px;
 		color: var(--rice-text-color-3);
-		margin-top: 32rpx;
+		margin-top: 16px;
 		font-weight: bold;
 	}
 
 	.empty-hint {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: var(--rice-text-color-3);
-		margin-top: 12rpx;
+		margin-top: 6px;
 		text-align: center;
 	}
 </style>

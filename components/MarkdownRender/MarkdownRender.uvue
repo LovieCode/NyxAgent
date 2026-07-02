@@ -22,12 +22,12 @@
 
 <style>
 	.markdown-render {
-		padding: 16rpx;
+		padding: 8px;
 	}
 
 	.md-text {
-		font-size: 28rpx;
+		font-size: 14px;
 		color: #2D2030;
-		line-height: 44rpx;
+		line-height: 22px;
 	}
 </style>

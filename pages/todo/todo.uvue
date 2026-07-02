@@ -48,7 +48,7 @@
 										:model-value="(todo['completed'] as boolean)"
 										shape="round"
 										checked-color="#FB8FAB"
-										icon-size="40rpx"
+										icon-size="20px"
 										@change="toggleTodo(todo['id'] as string)"
 									/>
 								</view>
@@ -65,7 +65,7 @@
 									</view>
 								</view>
 								<view class="todo-right" @click.stop="deleteTodo(todo['id'] as string)">
-									<rice-icon name="delete" size="32rpx" color="#9CA3AF" />
+									<rice-icon name="delete" size="16px" color="#9CA3AF" />
 								</view>
 							</view>
 						</view>
@@ -791,17 +791,17 @@
 	/* Segment 切换栏 */
 	.segment-bar {
 		flex-direction: row;
-		padding: 16rpx 30rpx;
+		padding: 8px 15px;
 		background-color: #FFFFFF;
-		border-bottom-width: 0.10rpx;
+		border-bottom-width: 1px;
 		border-bottom-color: #F3F4F6;
 		border-bottom-style: solid;
 	}
 
 	.segment-tab {
-		padding: 12rpx 32rpx;
-		margin-right: 12rpx;
-		border-radius: 10rpx;
+		padding: 6px 16px;
+		margin-right: 6px;
+		border-radius: 5px;
 		background-color: #F3F4F6;
 	}
 
@@ -810,7 +810,7 @@
 	}
 
 	.segment-text {
-		font-size: 28rpx;
+		font-size: 14px;
 		color: #6B7280;
 	}
 
@@ -827,22 +827,22 @@
 	/* ===== 待办视图样式 ===== */
 	.todo-list {
 		flex: 1;
-		padding: 0 30rpx;
+		padding: 0 15px;
 	}
 
 	.filter-bar {
 		flex-direction: row;
-		padding: 16rpx 30rpx;
+		padding: 8px 15px;
 		background-color: #FFFFFF;
-		border-bottom-width: 0.10rpx;
+		border-bottom-width: 1px;
 		border-bottom-color: #F3F4F6;
 		border-bottom-style: solid;
 	}
 
 	.filter-tab {
-		padding: 12rpx 24rpx;
-		margin-right: 12rpx;
-		border-radius: 10rpx;
+		padding: 6px 12px;
+		margin-right: 6px;
+		border-radius: 5px;
 		background-color: #F3F4F6;
 	}
 
@@ -851,7 +851,7 @@
 	}
 
 	.filter-text {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: #6B7280;
 	}
 
@@ -863,15 +863,15 @@
 	.todo-item {
 		flex-direction: row;
 		align-items: flex-start;
-		padding: 16rpx 0;
-		border-bottom-width: 0.10rpx;
+		padding: 8px 0;
+		border-bottom-width: 1px;
 		border-bottom-color: #F3F4F6;
 		border-bottom-style: solid;
 	}
 
 	.todo-left {
-		padding-right: 16rpx;
-		padding-top: 4rpx;
+		padding-right: 8px;
+		padding-top: 2px;
 	}
 
 	.todo-content {
@@ -879,12 +879,12 @@
 	}
 
 	.todo-right {
-		padding-left: 12rpx;
+		padding-left: 6px;
 		justify-content: center;
 	}
 
 	.todo-title {
-		font-size: 28rpx;
+		font-size: 14px;
 		color: #111827;
 	}
 
@@ -895,42 +895,42 @@
 	.todo-meta {
 		flex-direction: row;
 		align-items: center;
-		margin-top: 8rpx;
+		margin-top: 4px;
 	}
 
 	.priority-urgent {
 		flex-direction: row;
 		align-items: center;
-		padding: 5rpx 12rpx;
-		border-radius: 999rpx;
+		padding: 3px 6px;
+		border-radius: 500px;
 		background-color: #FFF1F2;
-		border-width: 1rpx;
+		border-width: 1px;
 		border-style: solid;
 		border-color: #FFE4E6;
-		margin-right: 12rpx;
+		margin-right: 6px;
 	}
 
 	.priority-urgent-icon {
-		width: 24rpx;
-		height: 24rpx;
-		border-radius: 999rpx;
+		width: 12px;
+		height: 12px;
+		border-radius: 500px;
 		background-color: #FB7185;
 		color: #FFFFFF;
-		font-size: 18rpx;
+		font-size: 9px;
 		font-weight: bold;
 		text-align: center;
-		line-height: 24rpx;
-		margin-right: 7rpx;
+		line-height: 12px;
+		margin-right: 4px;
 	}
 
 	.priority-urgent-text {
-		font-size: 22rpx;
+		font-size: 11px;
 		font-weight: bold;
 		color: #E11D48;
 	}
 
 	.todo-time {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: #9CA3AF;
 	}
 
@@ -939,14 +939,14 @@
 	}
 
 	.priority-selector {
-		margin-top: 16rpx;
-		margin-bottom: 8rpx;
+		margin-top: 8px;
+		margin-bottom: 4px;
 	}
 
 	.form-label {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: #6B7280;
-		margin-bottom: 12rpx;
+		margin-bottom: 6px;
 	}
 
 	.priority-options {
@@ -954,11 +954,11 @@
 	}
 
 	.priority-option {
-		padding: 14rpx 30rpx;
-		border-radius: 999rpx;
+		padding: 7px 15px;
+		border-radius: 500px;
 		background-color: #F9FAFB;
-		margin-right: 14rpx;
-		border-width: 2rpx;
+		margin-right: 7px;
+		border-width: 1px;
 		border-style: solid;
 		border-color: #EEF2F7;
 	}
@@ -979,59 +979,59 @@
 	}
 
 	.priority-option-text {
-		font-size: 25rpx;
+		font-size: 13px;
 		font-weight: bold;
 		color: #374151;
 	}
 
 	/* ===== 笔记视图样式 ===== */
 	.search-bar {
-		padding: 0 12rpx 6rpx;
+		padding: 0 6px 3px;
 		background-color: #FFFFFF;
 	}
 
 	.notes-list {
 		flex: 1;
-		padding: 16rpx 30rpx;
+		padding: 8px 15px;
 	}
 
 	.empty-state {
 		flex: 1;
 		justify-content: center;
 		align-items: center;
-		padding-top: 200rpx;
+		padding-top: 100px;
 	}
 
 	.empty-text {
-		font-size: 28rpx;
+		font-size: 14px;
 		color: #9CA3AF;
 	}
 
 	.note-card {
 		background-color: #FFFFFF;
-		border-radius: 16rpx;
-		padding: 24rpx;
-		margin-bottom: 16rpx;
-		border-width: 0.10rpx;
+		border-radius: 8px;
+		padding: 12px;
+		margin-bottom: 8px;
+		border-width: 1px;
 		border-color: #E5E7EB;
 		border-style: solid;
 	}
 
 	.note-title {
-		font-size: 30rpx;
+		font-size: 15px;
 		font-weight: bold;
 		color: #111827;
-		margin-bottom: 10rpx;
+		margin-bottom: 5px;
 	}
 
 	.note-render-preview {
-		margin-bottom: 8rpx;
+		margin-bottom: 4px;
 	}
 
 	.note-render-line {
 		flex-direction: row;
 		align-items: center;
-		margin-bottom: 6rpx;
+		margin-bottom: 3px;
 	}
 
 	.note-render-todo {
@@ -1039,9 +1039,9 @@
 	}
 
 	.note-render-text {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: #6B7280;
-		line-height: 38rpx;
+		line-height: 19px;
 		lines: 1;
 		text-overflow: ellipsis;
 	}
@@ -1056,16 +1056,16 @@
 	}
 
 	.note-checkbox {
-		width: 28rpx;
-		height: 28rpx;
-		border-radius: 8rpx;
-		border-width: 2rpx;
+		width: 14px;
+		height: 14px;
+		border-radius: 4px;
+		border-width: 1px;
 		border-style: solid;
 		border-color: #F9A8C7;
 		background-color: #FFFFFF;
 		align-items: center;
 		justify-content: center;
-		margin-right: 10rpx;
+		margin-right: 5px;
 	}
 
 	.note-checkbox-checked {
@@ -1074,19 +1074,19 @@
 	}
 
 	.note-checkbox-mark {
-		font-size: 20rpx;
+		font-size: 10px;
 		color: #FFFFFF;
 		font-weight: bold;
 	}
 
 	.note-bullet {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: #FB8FAB;
-		margin-right: 10rpx;
+		margin-right: 5px;
 	}
 
 	.note-time {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: #9CA3AF;
 	}
 
@@ -1096,12 +1096,12 @@
 	}
 
 	.note-todo-count {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: #DB2777;
 		background-color: #FDE8EF;
-		border-radius: 999rpx;
-		padding: 4rpx 12rpx;
-		margin-left: 12rpx;
+		border-radius: 500px;
+		padding: 2px 6px;
+		margin-left: 6px;
 	}
 
 
@@ -1109,19 +1109,19 @@
 	.agent-section-header {
 		flex-direction: row;
 		align-items: center;
-		padding: 20rpx 0 10rpx 0;
+		padding: 10px 0 5px 0;
 	}
 
 	.agent-section-name {
-		font-size: 26rpx;
+		font-size: 13px;
 		font-weight: bold;
 		color: #DB2777;
 	}
 
 	/* ===== Agent 选择器 ===== */
 	.agent-selector {
-		margin-top: 16rpx;
-		margin-bottom: 8rpx;
+		margin-top: 8px;
+		margin-bottom: 4px;
 	}
 
 	.agent-options {
@@ -1130,12 +1130,12 @@
 	}
 
 	.agent-option {
-		padding: 10rpx 24rpx;
-		border-radius: 12rpx;
+		padding: 5px 12px;
+		border-radius: 6px;
 		background-color: #F3F4F6;
-		margin-right: 12rpx;
-		margin-bottom: 8rpx;
-		border-width: 2rpx;
+		margin-right: 6px;
+		margin-bottom: 4px;
+		border-width: 1px;
 		border-style: solid;
 		border-color: #E5E7EB;
 	}
@@ -1146,7 +1146,7 @@
 	}
 
 	.agent-option-text {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: #111827;
 	}
 </style>

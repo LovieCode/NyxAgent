@@ -10,7 +10,7 @@
 	>
 		<template #header>
 			<view class="note-title-field">
-				<input class="title-input" v-model="noteTitle" placeholder="未命名笔记" placeholder-style="color:#D1D5DB;font-size:34rpx;" @input="markDirty" />
+				<input class="title-input" v-model="noteTitle" placeholder="未命名笔记" placeholder-style="color:#D1D5DB;font-size:17px;" @input="markDirty" />
 			</view>
 		</template>
 	</FullscreenTextEditor>
@@ -168,9 +168,9 @@
 <style>
 	.note-title-field {
 		width: 100%;
-		padding: 2rpx 0 18rpx 0;
-		margin-bottom: 18rpx;
-		border-bottom-width: 1rpx;
+		padding: 1px 0 9px 0;
+		margin-bottom: 9px;
+		border-bottom-width: 1px;
 		border-bottom-style: solid;
 		border-bottom-color: #F3F4F6;
 	}
@@ -178,7 +178,7 @@
 	.title-input {
 		width: 100%;
 		align-self: stretch;
-		font-size: 38rpx;
+		font-size: 19px;
 		font-weight: bold;
 		color: #111827;
 		padding: 0;

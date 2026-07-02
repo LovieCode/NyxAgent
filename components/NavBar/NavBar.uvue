@@ -87,7 +87,7 @@
 
 <style>
 	.nb-status {
-		height: 0rpx;
+		height: 0px;
 		background-color: var(--rice-primary-color);
 	}
 
@@ -99,30 +99,30 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		padding-left: 20rpx;
-		padding-right: 20rpx;
-		padding-top: 48rpx;
-		padding-bottom: 24rpx;
-		height: 96rpx;
+		padding-left: 10px;
+		padding-right: 10px;
+		padding-top: 24px;
+		padding-bottom: 12px;
+		height: 48px;
 		background-color: var(--rice-primary-color);
 		/* background: linear-gradient(to bottom, rgb(238, 156, 167), rgb(255, 221, 225)); */
 	}
 
 	/* 阴影线 */
 	.nb-shadow {
-		height: 2rpx;
+		height: 1px;
 		background-color: rgba(0,0,0,0.06);
 	}
 
 	.nb-left {
-		width: 240rpx;
-		height: 96rpx;
+		width: 120px;
+		height: 48px;
 		flex-direction: row;
 		align-items: center;
 	}
 
 	.nb-title {
-		font-size: 38rpx;
+		font-size: 19px;
 		font-weight: bold;
 		color: var(--rice-text-color-white);
 	}
@@ -133,8 +133,8 @@
 	}
 
 	.nb-right {
-		width: 240rpx;
-		height: 96rpx;
+		width: 120px;
+		height: 48px;
 		flex-direction: row;
 		align-items: center;
 		justify-content: flex-end;
@@ -147,14 +147,14 @@
 	}
 
 	.back-arrow {
-		font-size: 48rpx;
+		font-size: 24px;
 		color: var(--rice-text-color-white);
 	}
 
 	.back-text {
-		font-size: 34rpx;
+		font-size: 17px;
 		color: var(--rice-text-color-white);
-		margin-left: 8rpx;
-		padding-top: 10rpx;
+		margin-left: 4px;
+		padding-top: 5px;
 	}
 </style>

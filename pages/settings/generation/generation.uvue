@@ -9,7 +9,7 @@
 
 			<view class="card">
 				<view class="card-header">
-					<oui-icon-unix name="experiment" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+					<oui-icon-unix name="experiment" size="14px" color="#6B7280" style="margin-right:6px" />
 					<text class="card-title">普通聊天参数</text>
 				</view>
 				<text class="field-label">温度 temperature</text>
@@ -18,31 +18,31 @@
 					type="text"
 					v-model="temperatureStr"
 					placeholder="0 - 2，默认 1"
-					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+					placeholder-style="color: #D1D5DB; font-size: 13px;"
 					@input="autoSaveSettings"
 					@blur="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">越低越稳，越高越发散。默认 1 更通用，写代码可手动调低。</text>
 
-				<text class="field-label" style="margin-top:24rpx;">输出上限 max_tokens</text>
+				<text class="field-label" style="margin-top:12px;">输出上限 max_tokens</text>
 				<input
 					class="flat-input"
 					type="text"
 					v-model="maxTokensStr"
 					placeholder="256 - 65536，默认 4096"
-					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+					placeholder-style="color: #D1D5DB; font-size: 13px;"
 					@input="autoSaveSettings"
 					@blur="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">限制单次回复长度，太低会被截断，太高会更吃额度。</text>
 
-				<text class="field-label" style="margin-top:24rpx;">连续思考轮数</text>
+				<text class="field-label" style="margin-top:12px;">连续思考轮数</text>
 				<input
 					class="flat-input"
 					type="text"
 					v-model="maxIterationsStr"
 					placeholder="0 - 100，默认 20"
-					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+					placeholder-style="color: #D1D5DB; font-size: 13px;"
 					@input="autoSaveSettings"
 					@blur="normalizeAndSaveSettings"
 				/>
@@ -51,7 +51,7 @@
 
 			<view class="card">
 				<view class="card-header">
-					<oui-icon-unix name="robot" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
+					<oui-icon-unix name="robot" size="14px" color="#6B7280" style="margin-right:6px" />
 					<text class="card-title">记忆整理</text>
 				</view>
 				<text class="field-label">温度 temperature</text>
@@ -60,31 +60,31 @@
 					type="text"
 					v-model="memoryTemperatureStr"
 					placeholder="0 - 2，默认 0.7"
-					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+					placeholder-style="color: #D1D5DB; font-size: 13px;"
 					@input="autoSaveSettings"
 					@blur="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">默认保持通用温度，避免部分模型温度过低时异常；需要更稳再手动调低。</text>
 
-				<text class="field-label" style="margin-top:24rpx;">输出上限 max_tokens</text>
+				<text class="field-label" style="margin-top:12px;">输出上限 max_tokens</text>
 				<input
 					class="flat-input"
 					type="text"
 					v-model="memoryMaxTokensStr"
 					placeholder="256 - 2048，默认 2048"
-					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+					placeholder-style="color: #D1D5DB; font-size: 13px;"
 					@input="autoSaveSettings"
 					@blur="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">记忆整理只需要简短总结，最高限制为 2048。</text>
 
-				<text class="field-label" style="margin-top:24rpx;">最大迭代次数</text>
+				<text class="field-label" style="margin-top:12px;">最大迭代次数</text>
 				<input
 					class="flat-input"
 					type="text"
 					v-model="memoryMaxIterationsStr"
 					placeholder="1 - 100，默认 20"
-					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+					placeholder-style="color: #D1D5DB; font-size: 13px;"
 					@input="autoSaveSettings"
 					@blur="normalizeAndSaveSettings"
 				/>
@@ -207,67 +207,67 @@
 <style>
 	.container {
 		flex: 1;
-		padding: 32rpx;
+		padding: 16px;
 	}
 
 	.hero-card {
 		background-color: #FFFFFF;
-		border-radius: 20rpx;
-		padding: 32rpx;
-		margin-bottom: 24rpx;
+		border-radius: 10px;
+		padding: 16px;
+		margin-bottom: 12px;
 	}
 
 	.hero-title {
-		font-size: 32rpx;
+		font-size: 16px;
 		font-weight: bold;
 		color: #111827;
-		margin-bottom: 12rpx;
+		margin-bottom: 6px;
 	}
 
 	.hero-desc {
-		font-size: 25rpx;
+		font-size: 13px;
 		color: #6B7280;
-		line-height: 38rpx;
+		line-height: 19px;
 	}
 
 	.card {
 		background-color: #FFFFFF;
-		border-radius: 20rpx;
-		padding: 32rpx;
-		margin-bottom: 24rpx;
+		border-radius: 10px;
+		padding: 16px;
+		margin-bottom: 12px;
 	}
 
 	.card-header {
 		flex-direction: row;
 		align-items: center;
-		margin-bottom: 22rpx;
+		margin-bottom: 11px;
 	}
 
 	.card-title {
-		font-size: 30rpx;
+		font-size: 15px;
 		font-weight: bold;
 		color: #111827;
 	}
 
 	.field-label {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: #374151;
 		font-weight: bold;
-		margin-bottom: 12rpx;
+		margin-bottom: 6px;
 	}
 
 	.field-tip {
-		font-size: 23rpx;
+		font-size: 12px;
 		color: #9CA3AF;
-		line-height: 34rpx;
-		margin-top: 10rpx;
+		line-height: 17px;
+		margin-top: 5px;
 	}
 
 	.flat-input {
 		background-color: #F9FAFB;
-		border-radius: 14rpx;
-		padding: 24rpx;
-		font-size: 28rpx;
+		border-radius: 7px;
+		padding: 12px;
+		font-size: 14px;
 		color: #111827;
 	}
 
@@ -279,36 +279,36 @@
 
 	.setting-text {
 		flex: 1;
-		padding-right: 24rpx;
+		padding-right: 12px;
 	}
 
 	.setting-title {
-		font-size: 28rpx;
+		font-size: 14px;
 		font-weight: bold;
 		color: #111827;
-		margin-bottom: 8rpx;
+		margin-bottom: 4px;
 	}
 
 	.setting-desc {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #6B7280;
-		line-height: 36rpx;
+		line-height: 18px;
 	}
 
 	.save-wrap {
-		padding: 20rpx 0 60rpx 0;
+		padding: 10px 0 30px 0;
 	}
 
 	.save-btn {
 		background-color: var(--rice-primary-color);
-		border-radius: 16rpx;
-		padding: 28rpx 0;
+		border-radius: 8px;
+		padding: 14px 0;
 		align-items: center;
 		justify-content: center;
 	}
 
 	.save-btn-text {
-		font-size: 30rpx;
+		font-size: 15px;
 		font-weight: bold;
 		color: #FFFFFF;
 	}

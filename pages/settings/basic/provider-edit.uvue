@@ -83,7 +83,7 @@
 						placeholder="搜索模型..."
 						placeholder-style="color:#9CA3AF"
 					/>
-					<scroll-view class="picker-list" :scroll-y="true" style="max-height:320rpx;">
+					<scroll-view class="picker-list" :scroll-y="true" style="max-height:160px;">
 						<view v-for="(mid, pidx) in fetchedModelIds" :key="pidx">
 							<view v-if="modelMatchesSearch(mid)" class="picker-row" @click="toggleModelSelection(pidx)">
 							<view class="picker-checkbox" :class="selectedModelIndexes[pidx] == true ? 'picker-checkbox-on' : ''">
@@ -132,7 +132,7 @@
 							<input class="detail-field-input" type="text" v-model="m.name" placeholder="DeepSeek V4 Flash" placeholder-class="ph" @blur="autoSaveProvider" />
 						</view>
 						<view class="detail-row">
-							<view class="detail-field" style="flex:1;margin-right:12rpx;">
+							<view class="detail-field" style="flex:1;margin-right:6px;">
 								<text class="detail-field-label">上下文窗口 (tokens)</text>
 								<input class="detail-field-input" type="number" v-model="m.ctxStr" placeholder="128000" placeholder-class="ph" @blur="autoSaveProvider" />
 							</view>
@@ -567,45 +567,45 @@
 <style>
 	.container {
 		flex: 1;
-		padding: 32rpx;
+		padding: 16px;
 	}
 
 	.guide-card {
 		background-color: #FFF7FA;
-		border-radius: 24rpx;
-		padding: 28rpx;
-		margin-bottom: 24rpx;
-		border-width: 2rpx;
+		border-radius: 12px;
+		padding: 14px;
+		margin-bottom: 12px;
+		border-width: 1px;
 		border-style: solid;
 		border-color: rgba(251, 143, 171, 0.22);
 	}
 
 	.guide-title {
-		font-size: 30rpx;
+		font-size: 15px;
 		font-weight: bold;
 		color: #111827;
-		margin-bottom: 10rpx;
+		margin-bottom: 5px;
 	}
 
 	.guide-desc {
-		font-size: 25rpx;
-		line-height: 38rpx;
+		font-size: 13px;
+		line-height: 19px;
 		color: #6B7280;
 	}
 
 	.card {
 		background-color: #FFFFFF;
-		border-radius: 20rpx;
-		padding: 32rpx;
-		margin-bottom: 24rpx;
+		border-radius: 10px;
+		padding: 16px;
+		margin-bottom: 12px;
 	}
 
 	/* 字段 */
 	.field-label {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: #6B7280;
-		margin-top: 20rpx;
-		margin-bottom: 8rpx;
+		margin-top: 10px;
+		margin-bottom: 4px;
 	}
 
 	.field-label:first-child {
@@ -614,9 +614,9 @@
 
 	.field-input {
 		background-color: #F9FAFB;
-		border-radius: 14rpx;
-		padding: 20rpx;
-		font-size: 28rpx;
+		border-radius: 7px;
+		padding: 10px;
+		font-size: 14px;
 		color: #111827;
 	}
 
@@ -629,49 +629,49 @@
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 20rpx;
+		margin-bottom: 10px;
 	}
 
 	.model-card-title {
-		font-size: 30rpx;
+		font-size: 15px;
 		font-weight: bold;
 		color: #111827;
 	}
 
 	.fetch-btn {
 		background-color: #FB8FAB;
-		border-radius: 10rpx;
-		padding: 10rpx 20rpx;
+		border-radius: 5px;
+		padding: 5px 10px;
 	}
 
 	.fetch-btn-text {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #FFFFFF;
 		font-weight: bold;
 	}
 
 	.fetching-row {
-		padding: 24rpx 0;
+		padding: 12px 0;
 		align-items: center;
 	}
 
 	.fetching-text {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: #9CA3AF;
 	}
 
 	/* 模型卡片 */
 	.model-card {
 		background-color: #F9FAFB;
-		border-radius: 14rpx;
-		margin-bottom: 12rpx;
+		border-radius: 7px;
+		margin-bottom: 6px;
 		overflow: hidden;
 	}
 
 	.model-row {
 		flex-direction: row;
 		align-items: center;
-		padding: 16rpx 12rpx;
+		padding: 8px 6px;
 	}
 
 	.model-row-left {
@@ -681,9 +681,9 @@
 	}
 
 	.model-index {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: #9CA3AF;
-		width: 40rpx;
+		width: 20px;
 		text-align: center;
 	}
 
@@ -693,15 +693,15 @@
 	}
 
 	.model-summary-id {
-		font-size: 28rpx;
+		font-size: 14px;
 		font-weight: bold;
 		color: #111827;
 	}
 
 	.model-summary-meta {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: #9CA3AF;
-		margin-top: 4rpx;
+		margin-top: 2px;
 	}
 
 	.model-row-right {
@@ -710,59 +710,59 @@
 	}
 
 	.model-expand-icon {
-		font-size: 28rpx;
+		font-size: 14px;
 		color: #9CA3AF;
-		padding: 8rpx;
-		width: 40rpx;
+		padding: 4px;
+		width: 20px;
 		text-align: center;
 	}
 
 	.model-del-btn {
-		font-size: 32rpx;
+		font-size: 16px;
 		color: #EF4444;
-		padding: 8rpx 12rpx;
+		padding: 4px 6px;
 	}
 
 	/* 展开详情 */
 	.model-detail {
-		padding: 0 12rpx 16rpx 12rpx;
-		border-top-width: 0.10rpx;
+		padding: 0 6px 8px 6px;
+		border-top-width: 1px;
 		border-top-style: solid;
 		border-top-color: #E5E7EB;
 	}
 
 	.detail-field {
-		margin-top: 14rpx;
+		margin-top: 7px;
 	}
 
 	.detail-field-label {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #6B7280;
-		margin-bottom: 6rpx;
+		margin-bottom: 3px;
 	}
 
 	.detail-field-input {
 		background-color: #FFFFFF;
-		border-radius: 10rpx;
-		padding: 16rpx;
-		font-size: 26rpx;
+		border-radius: 5px;
+		padding: 8px;
+		font-size: 13px;
 		color: #111827;
 	}
 
 	.detail-params-input {
 		font-family: monospace;
-		font-size: 24rpx;
+		font-size: 12px;
 	}
 
 	.detail-field-hint {
-		font-size: 20rpx;
+		font-size: 10px;
 		color: #9CA3AF;
-		margin-top: 4rpx;
+		margin-top: 2px;
 	}
 
 	.detail-row {
 		flex-direction: row;
-		margin-top: 14rpx;
+		margin-top: 7px;
 	}
 
 	.model-vision-row {
@@ -773,76 +773,76 @@
 
 	.add-model-btn {
 		background-color: #F9FAFB;
-		border-radius: 12rpx;
-		border-width: 2rpx;
+		border-radius: 6px;
+		border-width: 1px;
 		border-style: dashed;
 		border-color: #D1D5DB;
-		padding: 18rpx;
+		padding: 9px;
 		align-items: center;
-		margin-top: 8rpx;
+		margin-top: 4px;
 	}
 
 	.add-model-text {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: #6B7280;
 	}
 
 	.save-wrap {
-		padding: 20rpx 0 60rpx 0;
+		padding: 10px 0 30px 0;
 	}
 
 	/* 模型选择器 */
 	.model-picker {
 		background-color: #F9FAFB;
-		border-radius: 14rpx;
-		padding: 18rpx;
-		margin-bottom: 16rpx;
+		border-radius: 7px;
+		padding: 9px;
+		margin-bottom: 8px;
 	}
 
 	.picker-header {
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 12rpx;
+		margin-bottom: 6px;
 	}
 
 	.picker-title {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #374151;
 		flex: 1;
 	}
 
 	.picker-select-all {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: var(--rice-primary-color);
-		padding: 4rpx 10rpx;
+		padding: 2px 5px;
 	}
 
 	.picker-search {
 		background-color: #FFFFFF;
-		border-radius: 10rpx;
-		padding: 14rpx 16rpx;
-		font-size: 24rpx;
+		border-radius: 5px;
+		padding: 7px 8px;
+		font-size: 12px;
 		color: #111827;
-		margin-bottom: 10rpx;
+		margin-bottom: 5px;
 	}
 
 	.picker-list {
-		margin-bottom: 12rpx;
+		margin-bottom: 6px;
 	}
 
 	.picker-row {
 		flex-direction: row;
 		align-items: center;
-		padding: 10rpx 8rpx;
+		padding: 5px 4px;
 	}
 
 	.picker-checkbox {
-		width: 32rpx;
-		height: 32rpx;
-		border-radius: 6rpx;
-		border: 2rpx solid #D1D5DB;
-		margin-right: 12rpx;
+		width: 16px;
+		height: 16px;
+		border-radius: 3px;
+		border: 1px solid #D1D5DB;
+		margin-right: 6px;
 		align-items: center;
 		justify-content: center;
 	}
@@ -853,13 +853,13 @@
 	}
 
 	.picker-checkmark {
-		font-size: 20rpx;
+		font-size: 10px;
 		color: #FFFFFF;
 		font-weight: bold;
 	}
 
 	.picker-model-id {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #111827;
 		flex: 1;
 	}
@@ -871,28 +871,28 @@
 	}
 
 	.picker-cancel {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #6B7280;
-		padding: 10rpx 20rpx;
-		margin-right: 16rpx;
+		padding: 5px 10px;
+		margin-right: 8px;
 	}
 
 	.picker-confirm {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #FFFFFF;
 		background-color: var(--rice-primary-color);
-		border-radius: 10rpx;
-		padding: 10rpx 24rpx;
+		border-radius: 5px;
+		padding: 5px 12px;
 		font-weight: bold;
 	}
 
 	.picker-empty {
-		padding: 30rpx;
+		padding: 15px;
 		align-items: center;
 	}
 
 	.picker-empty-text {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #9CA3AF;
 	}
 </style>

@@ -219,7 +219,7 @@
 		overflow: hidden;
 		position: relative;
 		background-color: #000000;
-		border-width: 4rpx;
+		border-width: 2px;
 		border-style: solid;
 		border-color: rgba(255,255,255,0.7);
 	}
@@ -236,10 +236,10 @@
 	}
 
 	.done-btn {
-		font-size: 30rpx;
+		font-size: 15px;
 		color: #FFFFFF;
 		font-weight: bold;
-		padding: 16rpx 8rpx;
+		padding: 8px 4px;
 	}
 
 </style>

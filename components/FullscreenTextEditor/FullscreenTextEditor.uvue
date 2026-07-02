@@ -15,7 +15,7 @@
 				v-model="localText"
 				:disabled="readOnly"
 				:placeholder="placeholder"
-				placeholder-style="color:#D1D5DB;font-size:30rpx;"
+				placeholder-style="color:#D1D5DB;font-size:15px;"
 				:auto-height="false"
 				@input="handleInput"
 			/>
@@ -107,16 +107,16 @@
 		width: 100%;
 		flex-direction: column;
 		background-color: #FFFFFF;
-		padding: 24rpx 28rpx 18rpx;
+		padding: 12px 14px 9px;
 	}
 
 	.editor-meta {
 		width: 100%;
-		padding: 0 0 18rpx 0;
+		padding: 0 0 9px 0;
 	}
 
 	.editor-meta-text {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: #9CA3AF;
 		lines: 1;
 		text-overflow: ellipsis;
@@ -126,9 +126,9 @@
 		flex: 1;
 		width: 100%;
 		align-self: stretch;
-		font-size: 30rpx;
+		font-size: 15px;
 		color: #111827;
-		line-height: 48rpx;
+		line-height: 24px;
 		padding: 0;
 		background-color: transparent;
 	}
@@ -138,18 +138,18 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		padding-top: 16rpx;
+		padding-top: 8px;
 	}
 
 	.footer-text {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: #9CA3AF;
 	}
 
 	.done-btn {
-		font-size: 30rpx;
+		font-size: 15px;
 		color: #FFFFFF;
 		font-weight: bold;
-		padding: 16rpx 8rpx;
+		padding: 8px 4px;
 	}
 </style>

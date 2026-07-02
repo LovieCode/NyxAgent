@@ -3,7 +3,7 @@
 		<NavBar title="群聊">
 			<template #right>
 				<view class="add-btn" @click="createWritingGroup">
-					<oui-icon-unix name="plus" size="44rpx" color="#FFFFFF" />
+					<oui-icon-unix name="plus" size="22px" color="#FFFFFF" />
 				</view>
 			</template>
 		</NavBar>
@@ -11,7 +11,7 @@
 		<scroll-view class="group-scroll" :scroll-y="true">
 			<view class="hero-card" @click="createWritingGroup">
 				<view class="hero-icon">
-					<oui-icon-unix name="edit" size="56rpx" color="#FFFFFF" />
+					<oui-icon-unix name="edit" size="28px" color="#FFFFFF" />
 				</view>
 				<view class="hero-info">
 					<text class="hero-title">故事 / 写作交流群</text>
@@ -23,7 +23,7 @@
 			<view class="list-content">
 				<view v-for="(group, index) in groupList" :key="group.id" class="group-item" @click="openGroup(group)">
 					<view class="group-avatar" :class="'avatar-' + ((index % 5) + 1)">
-						<oui-icon-unix name="robot" size="48rpx" color="#FFFFFF" />
+						<oui-icon-unix name="robot" size="24px" color="#FFFFFF" />
 					</view>
 					<view class="group-info">
 						<view class="group-top">
@@ -32,7 +32,7 @@
 						</view>
 						<text class="group-desc">{{getGroupSummary(group)}}</text>
 					</view>
-					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
+					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 				</view>
 				<view v-if="groupList.length == 0" class="empty-state">
 					<text class="empty-title">还没有群聊</text>
@@ -103,29 +103,29 @@
 </script>
 
 <style>
-	.add-btn { width: 80rpx; height: 80rpx; justify-content: center; align-items: center; }
+	.add-btn { width: 40px; height: 40px; justify-content: center; align-items: center; }
 	.group-scroll { flex: 1; }
-	.hero-card { flex-direction: row; align-items: center; margin: 20rpx 24rpx 8rpx; padding: 28rpx; border-radius: 36rpx; background-color: var(--rice-primary-color); }
-	.hero-icon { width: 104rpx; height: 104rpx; border-radius: 32rpx; background-color: rgba(255,255,255,0.18); justify-content: center; align-items: center; margin-right: 24rpx; }
+	.hero-card { flex-direction: row; align-items: center; margin: 10px 12px 4px; padding: 14px; border-radius: 18px; background-color: var(--rice-primary-color); }
+	.hero-icon { width: 52px; height: 52px; border-radius: 16px; background-color: rgba(255,255,255,0.18); justify-content: center; align-items: center; margin-right: 12px; }
 	.hero-info { flex: 1; flex-direction: column; }
-	.hero-title { font-size: 34rpx; color: #FFFFFF; font-weight: bold; }
-	.hero-desc { font-size: 24rpx; color: rgba(255,255,255,0.78); margin-top: 8rpx; lines: 2; }
-	.hero-action { color: #FFFFFF; font-size: 26rpx; font-weight: bold; margin-left: 18rpx; }
-	.list-content { flex-direction: column; background-color: var(--rice-background-2); margin: 16rpx 24rpx 24rpx; border-radius: 36rpx; overflow: hidden; }
-	.group-item { flex-direction: row; align-items: center; padding: 28rpx 32rpx; border-bottom-width: 0.10rpx; border-bottom-color: var(--rice-border-color); border-bottom-style: solid; }
-	.group-avatar { width: 96rpx; height: 96rpx; border-radius: 28rpx; justify-content: center; align-items: center; margin-right: 28rpx; }
+	.hero-title { font-size: 17px; color: #FFFFFF; font-weight: bold; }
+	.hero-desc { font-size: 12px; color: rgba(255,255,255,0.78); margin-top: 4px; lines: 2; }
+	.hero-action { color: #FFFFFF; font-size: 13px; font-weight: bold; margin-left: 9px; }
+	.list-content { flex-direction: column; background-color: var(--rice-background-2); margin: 8px 12px 12px; border-radius: 18px; overflow: hidden; }
+	.group-item { flex-direction: row; align-items: center; padding: 14px 16px; border-bottom-width: 1px; border-bottom-color: var(--rice-border-color); border-bottom-style: solid; }
+	.group-avatar { width: 48px; height: 48px; border-radius: 14px; justify-content: center; align-items: center; margin-right: 14px; }
 	.avatar-1 { background-color: var(--rice-primary-color); }
 	.avatar-2 { background-color: #60A5FA; }
 	.avatar-3 { background-color: #34D399; }
 	.avatar-4 { background-color: #FBBF24; }
 	.avatar-5 { background-color: #A78BFA; }
 	.group-info { flex: 1; flex-direction: column; }
-	.group-top { flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 8rpx; }
-	.group-name { font-size: 32rpx; font-weight: bold; color: var(--rice-text-color); }
-	.group-time { font-size: 22rpx; color: var(--rice-text-color-3); }
-	.group-desc { font-size: 26rpx; color: var(--rice-text-color-3); lines: 1; text-overflow: ellipsis; }
-	.group-arrow { font-size: 44rpx; color: var(--rice-text-color-3); margin-left: 16rpx; }
-	.empty-state { padding: 80rpx 32rpx; align-items: center; justify-content: center; flex-direction: column; }
-	.empty-title { font-size: 30rpx; font-weight: bold; color: var(--rice-text-color); }
-	.empty-desc { margin-top: 8rpx; font-size: 24rpx; color: var(--rice-text-color-3); }
+	.group-top { flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+	.group-name { font-size: 16px; font-weight: bold; color: var(--rice-text-color); }
+	.group-time { font-size: 11px; color: var(--rice-text-color-3); }
+	.group-desc { font-size: 13px; color: var(--rice-text-color-3); lines: 1; text-overflow: ellipsis; }
+	.group-arrow { font-size: 22px; color: var(--rice-text-color-3); margin-left: 8px; }
+	.empty-state { padding: 40px 16px; align-items: center; justify-content: center; flex-direction: column; }
+	.empty-title { font-size: 15px; font-weight: bold; color: var(--rice-text-color); }
+	.empty-desc { margin-top: 4px; font-size: 12px; color: var(--rice-text-color-3); }
 </style>

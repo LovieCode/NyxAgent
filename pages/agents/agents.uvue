@@ -3,7 +3,7 @@
 		<NavBar title="聊天">
 			<template #right>
 				<view class="add-btn" @click.stop="toggleCreateMenu">
-					<oui-icon-unix name="plus" size="44rpx" color="#FFFFFF" />
+					<oui-icon-unix name="plus" size="22px" color="#FFFFFF" />
 				</view>
 			</template>
 		</NavBar>
@@ -12,7 +12,7 @@
 		<view v-if="showCreateMenu" class="create-menu-card">
 			<view class="create-menu-item" @click="createAgentFromMenu">
 				<view class="create-menu-icon">
-					<oui-icon-unix name="robot" size="36rpx" color="var(--rice-primary-color)" />
+					<oui-icon-unix name="robot" size="18px" color="var(--rice-primary-color)" />
 				</view>
 				<view class="create-menu-info">
 					<text class="create-menu-title">新建私聊</text>
@@ -22,7 +22,7 @@
 			<view class="create-menu-line"></view>
 			<view class="create-menu-item" @click="createWritingGroup">
 				<view class="create-menu-icon">
-					<oui-icon-unix name="edit" size="36rpx" color="var(--rice-primary-color)" />
+					<oui-icon-unix name="edit" size="18px" color="var(--rice-primary-color)" />
 				</view>
 				<view class="create-menu-info">
 					<text class="create-menu-title">新建群聊</text>
@@ -44,7 +44,7 @@
 						<!-- 左侧头像：私聊可显示自定义头像，群聊使用模板图标 -->
 						<image v-if="getChatAvatar(item) != ''" :src="getChatAvatar(item)" class="agent-avatar-img" mode="aspectFill" />
 						<view v-else :class="'agent-avatar avatar-' + ((index % 5) + 1)">
-							<oui-icon-unix :name="getChatIcon(item)" size="48rpx" color="var(--rice-background-2)" />
+							<oui-icon-unix :name="getChatIcon(item)" size="24px" color="var(--rice-background-2)" />
 						</view>
 						<!-- 中间文字 -->
 						<view class="agent-info">
@@ -58,7 +58,7 @@
 							<text class="agent-desc">{{ getChatDesc(item) }}</text>
 						</view>
 						<!-- 右侧箭头 -->
-						<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
+						<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 					</view>
 					<view v-if="chatList.length == 0" class="empty-state">
 						<text class="empty-title">还没有会话</text>
@@ -78,7 +78,7 @@
 						<text class="dialog-subtitle">设置头像、昵称和说话方式</text>
 					</view>
 					<view class="dialog-close" @click="closeCreateDialog">
-						<oui-icon-unix name="close" size="40rpx" color="var(--rice-text-color-3)" />
+						<oui-icon-unix name="close" size="20px" color="var(--rice-text-color-3)" />
 					</view>
 				</view>
 
@@ -86,7 +86,7 @@
 					<view class="create-preview-card">
 						<image v-if="createAvatar() != ''" :src="createAvatar()" class="preview-avatar-img" mode="aspectFill" />
 						<view v-else class="preview-avatar">
-							<oui-icon-unix :name="createIcon()" size="60rpx" color="#FFFFFF" />
+							<oui-icon-unix :name="createIcon()" size="30px" color="#FFFFFF" />
 						</view>
 						<view class="preview-info">
 							<text class="preview-name">{{createPreviewName}}</text>
@@ -109,7 +109,7 @@
 									@click="selectCreateTemplate(tpl)"
 								>
 									<view class="template-card-icon" :class="createTemplateKey() == templateKey(tpl) ? 'template-card-icon-active' : ''">
-										<oui-icon-unix :name="templateIcon(tpl)" size="40rpx" :color="createTemplateKey() == templateKey(tpl) ? '#FFFFFF' : 'var(--rice-primary-color)'" />
+										<oui-icon-unix :name="templateIcon(tpl)" size="20px" :color="createTemplateKey() == templateKey(tpl) ? '#FFFFFF' : 'var(--rice-primary-color)'" />
 									</view>
 									<view class="template-card-info">
 										<text class="template-card-name">{{templateName(tpl)}}</text>
@@ -138,7 +138,7 @@
 								:class="['icon-item', createData.icon == icon ? 'icon-item-active' : '']"
 								@click="createData.icon = icon"
 							>
-								<oui-icon-unix :name="icon" size="44rpx" :color="createData.icon == icon ? '#FFFFFF' : 'var(--rice-text-color-2)'" />
+								<oui-icon-unix :name="icon" size="22px" :color="createData.icon == icon ? '#FFFFFF' : 'var(--rice-text-color-2)'" />
 							</view>
 						</view>
 						<text v-if="createAvatar() != ''" class="field-tip" @click="clearCreateAvatar">已选择自定义头像，点这里移除</text>
@@ -175,7 +175,7 @@
 						<text class="first-run-desc">填一次 API Key，就能像普通聊天软件一样开始私聊和群聊。之后可以随时去设置里改。</text>
 					</view>
 					<view class="dialog-close" @click="dismissFirstRunGuide">
-						<oui-icon-unix name="close" size="40rpx" color="var(--rice-text-color-3)" />
+						<oui-icon-unix name="close" size="20px" color="var(--rice-text-color-3)" />
 					</view>
 				</view>
 
@@ -929,8 +929,8 @@
 
 <style>
 	.add-btn {
-		width: 80rpx;
-		height: 80rpx;
+		width: 40px;
+		height: 40px;
 		justify-content: center;
 		align-items: center;
 	}
@@ -947,14 +947,14 @@
 
 	.create-menu-card {
 		position: fixed;
-		top: 104rpx;
-		right: 24rpx;
-		width: 392rpx;
+		top: 52px;
+		right: 12px;
+		width: 196px;
 		background-color: #FFFFFF;
-		border-radius: 28rpx;
-		padding: 12rpx;
+		border-radius: 14px;
+		padding: 6px;
 		z-index: 21;
-		border-width: 1rpx;
+		border-width: 1px;
 		border-color: rgba(31, 41, 55, 0.08);
 		border-style: solid;
 	}
@@ -962,18 +962,18 @@
 	.create-menu-item {
 		flex-direction: row;
 		align-items: center;
-		padding: 20rpx;
-		border-radius: 22rpx;
+		padding: 10px;
+		border-radius: 11px;
 	}
 
 	.create-menu-icon {
-		width: 72rpx;
-		height: 72rpx;
-		border-radius: 22rpx;
+		width: 36px;
+		height: 36px;
+		border-radius: 11px;
 		background-color: rgba(251, 143, 171, 0.12);
 		justify-content: center;
 		align-items: center;
-		margin-right: 18rpx;
+		margin-right: 9px;
 	}
 
 	.create-menu-info {
@@ -982,22 +982,22 @@
 	}
 
 	.create-menu-title {
-		font-size: 28rpx;
+		font-size: 14px;
 		font-weight: bold;
 		color: var(--rice-text-color);
 	}
 
 	.create-menu-desc {
-		margin-top: 4rpx;
-		font-size: 22rpx;
+		margin-top: 2px;
+		font-size: 11px;
 		color: var(--rice-text-color-3);
 	}
 
 	.create-menu-line {
-		height: 1rpx;
+		height: 1px;
 		background-color: var(--rice-border-color);
-		margin-left: 20rpx;
-		margin-right: 20rpx;
+		margin-left: 10px;
+		margin-right: 10px;
 	}
 
 	/* 列表滚动区 */
@@ -1008,38 +1008,38 @@
 	.list-content {
 		flex-direction: column;
 		background-color: var(--rice-background-2);
-		margin-top: 16rpx;
-		border-radius: 36rpx;
-		margin-left: 24rpx;
-		margin-right: 24rpx;
+		margin-top: 8px;
+		border-radius: 18px;
+		margin-left: 12px;
+		margin-right: 12px;
 	}
 
 	/* 单个会话行 */
 	.agent-item {
 		flex-direction: row;
 		align-items: center;
-		padding: 28rpx 32rpx;
-		border-bottom-width: 0.10rpx;
+		padding: 14px 16px;
+		border-bottom-width: 1px;
 		border-bottom-color: var(--rice-border-color);
 		border-bottom-style: solid;
 	}
 
 	/* 左侧头像 - 纯色背景 */
 	.agent-avatar {
-		width: 96rpx;
-		height: 96rpx;
-		border-radius: 28rpx;
+		width: 48px;
+		height: 48px;
+		border-radius: 14px;
 		justify-content: center;
 		align-items: center;
-		margin-right: 28rpx;
+		margin-right: 14px;
 	}
 
 	/* 自定义头像图片 */
 	.agent-avatar-img {
-		width: 96rpx;
-		height: 96rpx;
-		border-radius: 28rpx;
-		margin-right: 28rpx;
+		width: 48px;
+		height: 48px;
+		border-radius: 14px;
+		margin-right: 14px;
 	}
 
 	.avatar-1 { background-color: var(--rice-primary-color); }
@@ -1058,11 +1058,11 @@
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 8rpx;
+		margin-bottom: 4px;
 	}
 
 	.agent-name {
-		font-size: 32rpx;
+		font-size: 16px;
 		font-weight: bold;
 		color: var(--rice-text-color);
 	}
@@ -1074,26 +1074,26 @@
 	}
 
 	.agent-time {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: var(--rice-text-color-3);
-		margin-left: 16rpx;
+		margin-left: 8px;
 	}
 
 	.chat-type-badge {
-		margin-left: 12rpx;
-		padding-left: 10rpx;
-		padding-right: 10rpx;
-		padding-top: 4rpx;
-		padding-bottom: 4rpx;
-		border-radius: 999rpx;
+		margin-left: 6px;
+		padding-left: 5px;
+		padding-right: 5px;
+		padding-top: 2px;
+		padding-bottom: 2px;
+		border-radius: 500px;
 		background-color: rgba(251, 143, 171, 0.14);
 		color: var(--rice-primary-color);
-		font-size: 20rpx;
+		font-size: 10px;
 		font-weight: bold;
 	}
 
 	.agent-desc {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: var(--rice-text-color-3);
 		lines: 1;
 		text-overflow: ellipsis;
@@ -1101,27 +1101,27 @@
 
 	/* 右侧箭头 */
 	.agent-arrow {
-		font-size: 44rpx;
+		font-size: 22px;
 		color: var(--rice-text-color-3);
-		margin-left: 16rpx;
+		margin-left: 8px;
 	}
 
 	.empty-state {
-		padding: 80rpx 32rpx;
+		padding: 40px 16px;
 		align-items: center;
 		justify-content: center;
 		flex-direction: column;
 	}
 
 	.empty-title {
-		font-size: 30rpx;
+		font-size: 15px;
 		font-weight: bold;
 		color: var(--rice-text-color);
 	}
 
 	.empty-desc {
-		margin-top: 8rpx;
-		font-size: 24rpx;
+		margin-top: 4px;
+		font-size: 12px;
 		color: var(--rice-text-color-3);
 	}
 
@@ -1143,7 +1143,7 @@
 		flex: 1;
 		flex-direction: column;
 		background-color: #FFFFFF;
-		padding: 28rpx 36rpx 40rpx;
+		padding: 14px 18px 20px;
 	}
 
 	.dialog-handle {
@@ -1154,12 +1154,12 @@
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 28rpx;
+		margin-bottom: 14px;
 		flex-shrink: 0;
 	}
 
 	.dialog-title {
-		font-size: 36rpx;
+		font-size: 18px;
 		font-weight: bold;
 		color: var(--rice-text-color);
 	}
@@ -1169,14 +1169,14 @@
 	}
 
 	.dialog-subtitle {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: var(--rice-text-color-3);
-		margin-top: 8rpx;
+		margin-top: 4px;
 	}
 
 	.dialog-close {
-		width: 64rpx;
-		height: 64rpx;
+		width: 32px;
+		height: 32px;
 		justify-content: center;
 		align-items: center;
 	}
@@ -1189,20 +1189,20 @@
 		flex-direction: row;
 		align-items: center;
 		background-color: #FFF7FA;
-		border-radius: 36rpx;
-		padding: 24rpx;
-		margin-bottom: 36rpx;
-		border-width: 2rpx;
+		border-radius: 18px;
+		padding: 12px;
+		margin-bottom: 18px;
+		border-width: 1px;
 		border-color: rgba(251, 143, 171, 0.22);
 		border-style: solid;
 	}
 
 	.preview-avatar,
 	.preview-avatar-img {
-		width: 104rpx;
-		height: 104rpx;
-		border-radius: 32rpx;
-		margin-right: 28rpx;
+		width: 52px;
+		height: 52px;
+		border-radius: 16px;
+		margin-right: 14px;
 	}
 
 	.preview-avatar {
@@ -1217,35 +1217,35 @@
 	}
 
 	.preview-name {
-		font-size: 34rpx;
+		font-size: 17px;
 		font-weight: bold;
 		color: var(--rice-text-color);
-		margin-bottom: 10rpx;
+		margin-bottom: 5px;
 	}
 
 	.preview-desc {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: var(--rice-text-color-2);
 		lines: 2;
 		text-overflow: ellipsis;
 	}
 
 	.dialog-section {
-		margin-bottom: 40rpx;
+		margin-bottom: 20px;
 	}
 
 	.dialog-label {
-		font-size: 26rpx;
+		font-size: 13px;
 		font-weight: bold;
 		color: var(--rice-text-color-2);
-		margin-bottom: 16rpx;
+		margin-bottom: 8px;
 	}
 
 	.section-title-row {
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		margin-bottom: 16rpx;
+		margin-bottom: 8px;
 	}
 
 	.dialog-label-inline {
@@ -1253,14 +1253,14 @@
 	}
 
 	.section-action {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: var(--rice-primary-color);
 		font-weight: bold;
-		padding: 8rpx 0;
+		padding: 4px 0;
 	}
 
 	.dialog-label-sub {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: var(--rice-text-color-3);
 	}
 
@@ -1270,18 +1270,18 @@
 
 	.template-row {
 		flex-direction: row;
-		padding-bottom: 12rpx;
+		padding-bottom: 6px;
 	}
 
 	.template-card {
-		width: 336rpx;
+		width: 168px;
 		flex-direction: row;
 		align-items: center;
-		padding: 24rpx;
-		border-radius: 36rpx;
+		padding: 12px;
+		border-radius: 18px;
 		background-color: #F9FAFB;
-		margin-right: 20rpx;
-		border-width: 2rpx;
+		margin-right: 10px;
+		border-width: 1px;
 		border-color: #F3F4F6;
 		border-style: solid;
 	}
@@ -1292,13 +1292,13 @@
 	}
 
 	.template-card-icon {
-		width: 76rpx;
-		height: 76rpx;
-		border-radius: 26rpx;
+		width: 38px;
+		height: 38px;
+		border-radius: 13px;
 		background-color: rgba(251, 143, 171, 0.12);
 		justify-content: center;
 		align-items: center;
-		margin-right: 20rpx;
+		margin-right: 10px;
 	}
 
 	.template-card-icon-active {
@@ -1311,14 +1311,14 @@
 	}
 
 	.template-card-name {
-		font-size: 28rpx;
+		font-size: 14px;
 		font-weight: bold;
 		color: var(--rice-text-color);
-		margin-bottom: 8rpx;
+		margin-bottom: 4px;
 	}
 
 	.template-card-desc {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: var(--rice-text-color-3);
 		lines: 2;
 		text-overflow: ellipsis;
@@ -1331,14 +1331,14 @@
 	}
 
 	.icon-item {
-		width: 88rpx;
-		height: 88rpx;
-		border-radius: 20rpx;
+		width: 44px;
+		height: 44px;
+		border-radius: 10px;
 		background-color: var(--rice-background);
 		justify-content: center;
 		align-items: center;
-		margin-right: 16rpx;
-		margin-bottom: 16rpx;
+		margin-right: 8px;
+		margin-bottom: 8px;
 	}
 
 	.icon-item-active {
@@ -1346,55 +1346,55 @@
 	}
 	/* 弹窗输入框 */
 	.dialog-input {
-		height: 80rpx;
+		height: 40px;
 		background-color: var(--rice-background);
-		border-radius: 20rpx;
-		padding-left: 24rpx;
-		padding-right: 24rpx;
-		font-size: 30rpx;
+		border-radius: 10px;
+		padding-left: 12px;
+		padding-right: 12px;
+		font-size: 15px;
 		color: var(--rice-text-color);
 	}
 
 	.dialog-input-gap {
-		margin-top: 20rpx;
+		margin-top: 10px;
 	}
 
 	.prompt-input {
-		min-height: 192rpx;
+		min-height: 96px;
 		background-color: var(--rice-background);
-		border-radius: 24rpx;
-		padding: 24rpx;
-		font-size: 28rpx;
+		border-radius: 12px;
+		padding: 12px;
+		font-size: 14px;
 		color: var(--rice-text-color);
-		line-height: 40rpx;
+		line-height: 20px;
 	}
 
 	.field-tip {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: var(--rice-text-color-3);
-		margin-top: 16rpx;
-		line-height: 36rpx;
+		margin-top: 8px;
+		line-height: 18px;
 	}
 
 	.dialog-footer {
 		flex-direction: row;
 		align-items: center;
-		margin-top: 12rpx;
+		margin-top: 6px;
 		flex-shrink: 0;
 	}
 
 	.dialog-secondary-btn {
-		width: 184rpx;
-		border-radius: 24rpx;
-		padding: 28rpx;
+		width: 92px;
+		border-radius: 12px;
+		padding: 14px;
 		align-items: center;
 		justify-content: center;
 		background-color: #F3F4F6;
-		margin-right: 20rpx;
+		margin-right: 10px;
 	}
 
 	.dialog-secondary-text {
-		font-size: 30rpx;
+		font-size: 15px;
 		font-weight: bold;
 		color: var(--rice-text-color-2);
 	}
@@ -1403,14 +1403,14 @@
 	.dialog-btn {
 		flex: 1;
 		background-color: var(--rice-primary-color);
-		border-radius: 24rpx;
-		padding: 28rpx;
+		border-radius: 12px;
+		padding: 14px;
 		align-items: center;
 		justify-content: center;
 	}
 
 	.dialog-btn-text {
-		font-size: 32rpx;
+		font-size: 16px;
 		font-weight: bold;
 		color: #FFFFFF;
 	}
@@ -1430,10 +1430,10 @@
 
 	.first-run-card {
 		background-color: #FFFFFF;
-		border-top-left-radius: 40rpx;
-		border-top-right-radius: 40rpx;
-		padding: 28rpx 36rpx 44rpx;
-		border-width: 1rpx;
+		border-top-left-radius: 20px;
+		border-top-right-radius: 20px;
+		padding: 14px 18px 22px;
+		border-width: 1px;
 		border-style: solid;
 		border-color: rgba(251, 143, 171, 0.18);
 	}
@@ -1442,52 +1442,52 @@
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: flex-start;
-		margin-bottom: 28rpx;
+		margin-bottom: 14px;
 	}
 
 	.first-run-title-wrap {
 		flex: 1;
 		flex-direction: column;
-		padding-right: 20rpx;
+		padding-right: 10px;
 	}
 
 	.first-run-title {
-		font-size: 38rpx;
+		font-size: 19px;
 		font-weight: bold;
 		color: var(--rice-text-color);
 	}
 
 	.first-run-desc {
-		font-size: 25rpx;
-		line-height: 38rpx;
+		font-size: 13px;
+		line-height: 19px;
 		color: var(--rice-text-color-2);
-		margin-top: 10rpx;
+		margin-top: 5px;
 	}
 
 	.first-run-section {
-		margin-bottom: 26rpx;
+		margin-bottom: 13px;
 	}
 
 	.first-run-hint-card {
 		background-color: #FFF7FA;
-		border-radius: 24rpx;
-		padding: 24rpx;
-		margin-bottom: 26rpx;
-		border-width: 2rpx;
+		border-radius: 12px;
+		padding: 12px;
+		margin-bottom: 13px;
+		border-width: 1px;
 		border-style: solid;
 		border-color: rgba(251, 143, 171, 0.20);
 	}
 
 	.first-run-hint-title {
-		font-size: 27rpx;
+		font-size: 14px;
 		font-weight: bold;
 		color: var(--rice-text-color);
-		margin-bottom: 8rpx;
+		margin-bottom: 4px;
 	}
 
 	.first-run-hint-desc {
-		font-size: 24rpx;
-		line-height: 36rpx;
+		font-size: 12px;
+		line-height: 18px;
 		color: var(--rice-text-color-2);
 	}
 
@@ -1498,18 +1498,18 @@
 	.first-run-provider-row {
 		flex-direction: row;
 		width: 100%;
-		margin-right: -12rpx;
-		margin-bottom: 12rpx;
+		margin-right: -6px;
+		margin-bottom: 6px;
 	}
 
 	.first-run-provider {
 		flex: 1;
-		width: 0rpx;
-		border-radius: 24rpx;
-		padding: 20rpx;
-		margin-right: 12rpx;
+		width: 0px;
+		border-radius: 12px;
+		padding: 10px;
+		margin-right: 6px;
 		background-color: #F9FAFB;
-		border-width: 2rpx;
+		border-width: 1px;
 		border-style: solid;
 		border-color: #F3F4F6;
 		flex-direction: column;
@@ -1521,7 +1521,7 @@
 	}
 
 	.first-run-provider-name {
-		font-size: 28rpx;
+		font-size: 14px;
 		font-weight: bold;
 		color: var(--rice-text-color);
 		lines: 1;
@@ -1529,9 +1529,9 @@
 	}
 
 	.first-run-provider-desc {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: var(--rice-text-color-3);
-		margin-top: 8rpx;
+		margin-top: 4px;
 		lines: 1;
 		text-overflow: ellipsis;
 	}
@@ -1539,11 +1539,11 @@
 	.first-run-actions {
 		flex-direction: row;
 		align-items: center;
-		margin-top: 10rpx;
+		margin-top: 5px;
 	}
 
 	.first-run-secondary {
-		width: 196rpx;
+		width: 98px;
 	}
 
 	.first-run-primary {

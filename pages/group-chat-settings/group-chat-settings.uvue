@@ -14,7 +14,7 @@
 				<view v-for="(agent, index) in agentList" :key="agent['id']" class="member-row">
 					<view class="member-avatar" :class="'avatar-' + ((index % 5) + 1)">
 						<image v-if="getAgentAvatar(agent) != ''" :src="getAgentAvatar(agent)" class="member-avatar-img" mode="aspectFill" />
-						<oui-icon-unix v-else :name="agent['icon']" size="38rpx" color="#FFFFFF" />
+						<oui-icon-unix v-else :name="agent['icon']" size="19px" color="#FFFFFF" />
 					</view>
 					<view class="member-info">
 						<text class="member-name">{{agent['name']}}</text>
@@ -30,7 +30,7 @@
 				<view class="prompt-header">
 					<view class="prompt-header-left">
 						<text class="card-title" style="margin-bottom:0">调度提示词</text>
-						<text class="card-desc" style="margin-top:6rpx;margin-bottom:0">隐藏调度的行为规则，决定谁发言、顺序和续轮逻辑。</text>
+						<text class="card-desc" style="margin-top:3px;margin-bottom:0">隐藏调度的行为规则，决定谁发言、顺序和续轮逻辑。</text>
 					</view>
 					<text class="reset-btn" @click="resetSchedulerPrompt">恢复默认</text>
 				</view>
@@ -41,7 +41,7 @@
 				<view class="prompt-header">
 					<view class="prompt-header-left">
 						<text class="card-title" style="margin-bottom:0">共享提示词</text>
-						<text class="card-desc" style="margin-top:6rpx;margin-bottom:0">注入每个成员的上下文，规定公开发言的风格和约束。</text>
+						<text class="card-desc" style="margin-top:3px;margin-bottom:0">注入每个成员的上下文，规定公开发言的风格和约束。</text>
 					</view>
 					<text class="reset-btn" @click="resetSharedPrompt">恢复默认</text>
 				</view>
@@ -212,28 +212,28 @@
 
 <style>
 	.settings-scroll { flex: 1; }
-	.card { margin: 20rpx 24rpx 0; padding: 28rpx; border-radius: 32rpx; background-color: var(--rice-background-2); flex-direction: column; }
-	.save-card { margin-bottom: 40rpx; }
-	.card-title { font-size: 32rpx; font-weight: bold; color: var(--rice-text-color); margin-bottom: 18rpx; }
-	.card-desc { font-size: 24rpx; color: var(--rice-text-color-3); margin-bottom: 18rpx; }
-	.text-input { height: 78rpx; border-radius: 24rpx; background-color: var(--rice-background); padding: 0 22rpx; font-size: 28rpx; color: var(--rice-text-color); }
-	.prompt-header { flex-direction: row; align-items: flex-start; margin-bottom: 18rpx; }
+	.card { margin: 10px 12px 0; padding: 14px; border-radius: 16px; background-color: var(--rice-background-2); flex-direction: column; }
+	.save-card { margin-bottom: 20px; }
+	.card-title { font-size: 16px; font-weight: bold; color: var(--rice-text-color); margin-bottom: 9px; }
+	.card-desc { font-size: 12px; color: var(--rice-text-color-3); margin-bottom: 9px; }
+	.text-input { height: 39px; border-radius: 12px; background-color: var(--rice-background); padding: 0 11px; font-size: 14px; color: var(--rice-text-color); }
+	.prompt-header { flex-direction: row; align-items: flex-start; margin-bottom: 9px; }
 	.prompt-header-left { flex: 1; flex-direction: column; }
-	.reset-btn { font-size: 24rpx; color: var(--rice-primary-color); padding-left: 20rpx; padding-top: 4rpx; }
-	.member-row { flex-direction: row; align-items: center; padding: 18rpx 0; border-bottom-width: 0.10rpx; border-bottom-color: var(--rice-border-color); border-bottom-style: solid; }
-	.member-avatar { width: 76rpx; height: 76rpx; border-radius: 24rpx; justify-content: center; align-items: center; margin-right: 18rpx; overflow: hidden; }
-	.member-avatar-img { width: 76rpx; height: 76rpx; border-radius: 24rpx; }
+	.reset-btn { font-size: 12px; color: var(--rice-primary-color); padding-left: 10px; padding-top: 2px; }
+	.member-row { flex-direction: row; align-items: center; padding: 9px 0; border-bottom-width: 1px; border-bottom-color: var(--rice-border-color); border-bottom-style: solid; }
+	.member-avatar { width: 38px; height: 38px; border-radius: 12px; justify-content: center; align-items: center; margin-right: 9px; overflow: hidden; }
+	.member-avatar-img { width: 38px; height: 38px; border-radius: 12px; }
 	.avatar-1 { background-color: var(--rice-primary-color); }
 	.avatar-2 { background-color: #60A5FA; }
 	.avatar-3 { background-color: #34D399; }
 	.avatar-4 { background-color: #FBBF24; }
 	.avatar-5 { background-color: #A78BFA; }
 	.member-info { flex: 1; flex-direction: column; }
-	.member-name { font-size: 28rpx; color: var(--rice-text-color); font-weight: bold; }
-	.member-desc { margin-top: 6rpx; font-size: 22rpx; color: var(--rice-text-color-3); lines: 1; text-overflow: ellipsis; }
-	.member-action { padding: 12rpx 22rpx; border-radius: 999rpx; background-color: var(--rice-primary-color); }
+	.member-name { font-size: 14px; color: var(--rice-text-color); font-weight: bold; }
+	.member-desc { margin-top: 3px; font-size: 11px; color: var(--rice-text-color-3); lines: 1; text-overflow: ellipsis; }
+	.member-action { padding: 6px 11px; border-radius: 500px; background-color: var(--rice-primary-color); }
 	.member-action-on { background-color: #FEF2F2; }
-	.member-action-text { color: #FFFFFF; font-size: 24rpx; font-weight: bold; }
+	.member-action-text { color: #FFFFFF; font-size: 12px; font-weight: bold; }
 	.member-action-text-on { color: #EF4444; }
-	.prompt-input { min-height: 240rpx; border-radius: 24rpx; background-color: var(--rice-background); padding: 20rpx; font-size: 26rpx; color: var(--rice-text-color); line-height: 38rpx; }
+	.prompt-input { min-height: 120px; border-radius: 12px; background-color: var(--rice-background); padding: 10px; font-size: 13px; color: var(--rice-text-color); line-height: 19px; }
 </style>

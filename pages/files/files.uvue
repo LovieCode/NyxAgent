@@ -6,7 +6,7 @@
 			<scroll-view class="breadcrumb-bar" :scroll-x="true" :show-scrollbar="false">
 				<view class="breadcrumb-row">
 					<view class="breadcrumb-item" @click="goToRoot">
-						<oui-icon-unix name="folder" size="28rpx" color="#FB8FAB" />
+						<oui-icon-unix name="folder" size="14px" color="#FB8FAB" />
 						<text class="breadcrumb-text breadcrumb-text-active">根目录</text>
 					</view>
 					<view v-for="(seg, index) in pathSegments" :key="index" class="breadcrumb-segment">
@@ -40,7 +40,7 @@
 							<view class="file-icon">
 								<oui-icon-unix
 									:name="getFileIconName(item)"
-									size="44rpx"
+									size="22px"
 									:color="getFileIconColor(item)"
 								/>
 							</view>
@@ -53,7 +53,7 @@
 							</view>
 							</view>
 							<view class="file-arrow" v-if="item.isDirectory == true">
-								<oui-icon-unix name="right" size="32rpx" color="#D1D5DB" />
+								<oui-icon-unix name="right" size="16px" color="#D1D5DB" />
 							</view>
 						</view>
 					</template>
@@ -721,7 +721,7 @@
 	/* 面包屑导航 */
 	.breadcrumb-bar {
 		background-color: #FFFFFF;
-		border-bottom-width: 0.10rpx;
+		border-bottom-width: 1px;
 		border-bottom-color: #F3F4F6;
 		border-bottom-style: solid;
 	}
@@ -729,19 +729,19 @@
 	.breadcrumb-row {
 		flex-direction: row;
 		align-items: center;
-		padding: 16rpx 30rpx;
+		padding: 8px 15px;
 	}
 
 	.breadcrumb-item {
 		flex-direction: row;
 		align-items: center;
-		padding: 4rpx 8rpx;
+		padding: 2px 4px;
 	}
 
 	.breadcrumb-text {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: #6B7280;
-		margin-left: 6rpx;
+		margin-left: 3px;
 	}
 
 	.breadcrumb-text-active {
@@ -755,32 +755,32 @@
 	}
 
 	.breadcrumb-separator {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: #D1D5DB;
-		margin: 0 4rpx;
+		margin: 0 2px;
 	}
 
 	/* 文件列表 */
 	.file-list {
 		flex: 1;
-		padding: 8rpx 30rpx;
+		padding: 4px 15px;
 	}
 
 	.empty-state {
 		flex: 1;
 		justify-content: center;
 		align-items: center;
-		padding-top: 200rpx;
+		padding-top: 100px;
 	}
 
 	.empty-text {
-		font-size: 32rpx;
+		font-size: 16px;
 		color: #9CA3AF;
-		margin-bottom: 12rpx;
+		margin-bottom: 6px;
 	}
 
 	.empty-hint {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #D1D5DB;
 	}
 
@@ -788,19 +788,19 @@
 	.section-header {
 		flex-direction: row;
 		align-items: center;
-		padding: 20rpx 0 8rpx 0;
+		padding: 10px 0 4px 0;
 	}
 
 	.section-divider {
 		flex: 1;
-		height: 1rpx;
+		height: 1px;
 		background-color: #E5E7EB;
 	}
 
 	.section-label {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: #9CA3AF;
-		margin: 0 16rpx;
+		margin: 0 8px;
 		flex-shrink: 0;
 	}
 
@@ -808,18 +808,18 @@
 	.file-item {
 		flex-direction: row;
 		align-items: center;
-		padding: 20rpx 0;
-		border-bottom-width: 0.10rpx;
+		padding: 10px 0;
+		border-bottom-width: 1px;
 		border-bottom-color: #F3F4F6;
 		border-bottom-style: solid;
 	}
 
 	.file-icon {
-		width: 64rpx;
-		height: 64rpx;
+		width: 32px;
+		height: 32px;
 		justify-content: center;
 		align-items: center;
-		margin-right: 16rpx;
+		margin-right: 8px;
 	}
 
 	.file-info {
@@ -827,9 +827,9 @@
 	}
 
 	.file-name {
-		font-size: 28rpx;
+		font-size: 14px;
 		color: #111827;
-		margin-bottom: 4rpx;
+		margin-bottom: 2px;
 	}
 
 	.file-meta {
@@ -838,18 +838,18 @@
 	}
 
 	.file-meta-text {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: #9CA3AF;
 	}
 
 	.file-meta-time {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: #D1D5DB;
-		margin-left: 16rpx;
+		margin-left: 8px;
 	}
 
 	.file-arrow {
-		padding-left: 12rpx;
+		padding-left: 6px;
 		justify-content: center;
 	}
 

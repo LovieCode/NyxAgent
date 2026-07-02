@@ -15,7 +15,7 @@
 			<view class="card">
 				<!-- 名称 -->
 				<view class="card-header">
-					<oui-icon-unix name="edit" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<oui-icon-unix name="edit" size="11px" color="#6B7280" style="margin-right:5px" />
 					<text class="card-label">名称</text>
 				</view>
 			<input
@@ -27,8 +27,8 @@
 				@input="hasUnsaved = true"
 			/>
 
-				<view class="card-header" style="margin-top:20rpx;">
-					<oui-icon-unix name="file-text" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+				<view class="card-header" style="margin-top:10px;">
+					<oui-icon-unix name="file-text" size="11px" color="#6B7280" style="margin-right:5px" />
 					<text class="card-label">备注</text>
 					<text class="card-hint">（群聊里会用到）</text>
 				</view>
@@ -39,8 +39,8 @@
 					</view>
 				</view>
 
-				<view class="card-header" style="margin-top:20rpx;">
-					<oui-icon-unix name="info-circle" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+				<view class="card-header" style="margin-top:10px;">
+					<oui-icon-unix name="info-circle" size="11px" color="#6B7280" style="margin-right:5px" />
 					<text class="card-label">提示词</text>
 				</view>
 				<view class="desc-wrap" @click="openSystemPromptEditor">
@@ -53,9 +53,9 @@
 				</view>
 
 				<!-- 模型 -->
-				<view class="model-row" style="margin-top:20rpx;" @click="toggleModelPanel">
+				<view class="model-row" style="margin-top:10px;" @click="toggleModelPanel">
 					<view class="card-header" style="margin-bottom:0;">
-						<oui-icon-unix name="robot" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+						<oui-icon-unix name="robot" size="11px" color="#6B7280" style="margin-right:5px" />
 						<text class="card-label">对话模型</text>
 					</view>
 					<view class="model-right">
@@ -81,7 +81,7 @@
 						</view>
 					</scroll-view>
 
-					<text class="panel-label" style="margin-top:16rpx;">选择模型</text>
+					<text class="panel-label" style="margin-top:8px;">选择模型</text>
 					<view v-if="providerModels.length == 0" class="panel-empty">
 						<text class="panel-empty-text">请先在提供商管理中配置模型</text>
 					</view>
@@ -100,7 +100,7 @@
 
 				<view class="setting-divider"></view>
 				<view class="card-header">
-					<oui-icon-unix name="setting" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<oui-icon-unix name="setting" size="11px" color="#6B7280" style="margin-right:5px" />
 					<text class="card-label">生成参数</text>
 				</view>
 				<view class="setting-row">
@@ -140,7 +140,7 @@
 			<!-- Skills -->
 			<view class="card">
 				<view class="card-header">
-					<oui-icon-unix name="book" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<oui-icon-unix name="book" size="11px" color="#6B7280" style="margin-right:5px" />
 					<text class="card-label">Skills</text>
 				</view>
 				<text class="skill-section-desc">为当前私聊启用纯文本技能包。不同联系人可以使用不同 Skills。</text>
@@ -168,7 +168,7 @@
 			<!-- 工具设置 -->
 			<view class="card">
 				<view class="card-header">
-					<oui-icon-unix name="setting" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<oui-icon-unix name="setting" size="11px" color="#6B7280" style="margin-right:5px" />
 					<text class="card-label">工具设置</text>
 				</view>
 				<text class="skill-section-desc">为当前私聊启用可调用工具。不启用的工具不会注入模型上下文，也不会被执行。</text>
@@ -200,7 +200,7 @@
 			<!-- 上下文截断 -->
 			<view class="card">
 				<view class="card-header">
-					<oui-icon-unix name="scissors" size="22rpx" color="#6B7280" style="margin-right:10rpx" />
+					<oui-icon-unix name="scissors" size="11px" color="#6B7280" style="margin-right:5px" />
 					<text class="card-label">上下文截断</text>
 				</view>
 				<view class="context-tip">
@@ -865,27 +865,27 @@
 <style>
 	.container {
 		flex: 1;
-		padding: 32rpx;
+		padding: 16px;
 	}
 
 	/* 卡片 */
 	.card {
 		background-color: #FFFFFF;
-		border-radius: 20rpx;
-		padding: 32rpx;
-		margin-bottom: 24rpx;
+		border-radius: 10px;
+		padding: 16px;
+		margin-bottom: 12px;
 	}
 
 	/* 头部：头像 + 名称 */
 	.profile-header {
 		align-items: center;
-		padding: 40rpx 0 16rpx;
+		padding: 20px 0 8px;
 	}
 
 	.agent-avatar {
-		width: 200rpx;
-		height: 200rpx;
-		border-radius: 40rpx;
+		width: 100px;
+		height: 100px;
+		border-radius: 20px;
 	}
 
 	.agent-avatar-placeholder {
@@ -895,33 +895,33 @@
 	}
 
 	.agent-avatar-text {
-		font-size: 80rpx;
+		font-size: 40px;
 		color: #FFFFFF;
 		font-weight: bold;
 	}
 
 	.avatar-hint {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: var(--rice-text-color-3);
-		margin-top: 16rpx;
+		margin-top: 8px;
 	}
 
 	.flat-input {
 		background-color: var(--rice-background);
-		border-radius: 14rpx;
-		padding: 24rpx;
-		font-size: 28rpx;
+		border-radius: 7px;
+		padding: 12px;
+		font-size: 14px;
 		color: var(--rice-text-color);
 	}
 
 	.card-header {
 		flex-direction: row;
 		align-items: center;
-		margin-bottom: 16rpx;
+		margin-bottom: 8px;
 	}
 
 	.card-label {
-		font-size: 28rpx;
+		font-size: 14px;
 		font-weight: bold;
 		color: var(--rice-text-color);
 	}
@@ -930,35 +930,35 @@
 	.desc-wrap {
 		position: relative;
 		background-color: var(--rice-background);
-		border-radius: 14rpx;
-		padding: 16rpx 20rpx;
-		min-height: 80rpx;
+		border-radius: 7px;
+		padding: 8px 10px;
+		min-height: 40px;
 	}
 
 	.desc-preview {
-		font-size: 28rpx;
+		font-size: 14px;
 		color: var(--rice-text-color);
-		line-height: 40rpx;
+		line-height: 20px;
 	}
 
 	.prompt-scroll {
-		max-height: 240rpx;
+		max-height: 120px;
 		overflow: hidden;
 	}
 
 	.desc-edit-btn {
 		position: absolute;
-		top: 8rpx;
-		right: 8rpx;
-		padding: 4rpx 12rpx;
-		border-radius: 10rpx;
+		top: 4px;
+		right: 4px;
+		padding: 2px 6px;
+		border-radius: 5px;
 		background-color: var(--rice-primary-color-1);
 		justify-content: center;
 		align-items: center;
 	}
 
 	.desc-edit-text {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: var(--rice-primary-color);
 		font-weight: bold;
 	}
@@ -984,46 +984,46 @@
 	}
 
 	.model-value {
-		font-size: 28rpx;
+		font-size: 14px;
 		color: var(--rice-primary-color-7);
 		font-weight: bold;
 	}
 
 	.model-arrow {
-		font-size: 32rpx;
+		font-size: 16px;
 		color: var(--rice-text-color-3);
-		padding-left: 8rpx;
+		padding-left: 4px;
 	}
 
 	/* 展开模型面板 */
 	.model-panel {
-		margin-top: 20rpx;
-		padding-top: 20rpx;
-		border-top-width: 0.10rpx;
+		margin-top: 10px;
+		padding-top: 10px;
+		border-top-width: 1px;
 		border-top-style: solid;
 		border-top-color: #F3F4F6;
 	}
 
 	.panel-label {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #6B7280;
-		margin-bottom: 12rpx;
+		margin-bottom: 6px;
 	}
 
 	.panel-empty {
-		padding: 20rpx 0;
+		padding: 10px 0;
 	}
 
 	.panel-empty-text {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #9CA3AF;
 	}
 
 	.skill-section-desc {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #6B7280;
-		line-height: 36rpx;
-		margin-bottom: 16rpx;
+		line-height: 18px;
+		margin-bottom: 8px;
 	}
 
 	.skill-grid {
@@ -1032,13 +1032,13 @@
 	}
 
 	.skill-card {
-		width: 300rpx;
+		width: 150px;
 		background-color: var(--rice-background);
-		border-radius: 16rpx;
-		padding: 20rpx;
-		margin-right: 14rpx;
-		margin-bottom: 14rpx;
-		border-width: 2rpx;
+		border-radius: 8px;
+		padding: 10px;
+		margin-right: 7px;
+		margin-bottom: 7px;
+		border-width: 1px;
 		border-style: solid;
 		border-color: #F3F4F6;
 	}
@@ -1049,21 +1049,21 @@
 
 	.tool-row {
 		flex-direction: row;
-		margin-bottom: 10rpx;
+		margin-bottom: 5px;
 	}
 
 	.tool-card {
 		flex: 1;
 		background-color: var(--rice-background);
-		border-radius: 14rpx;
-		padding: 14rpx;
-		border-width: 2rpx;
+		border-radius: 7px;
+		padding: 7px;
+		border-width: 1px;
 		border-style: solid;
 		border-color: #F3F4F6;
 	}
 
 	.tool-card-spaced {
-		margin-left: 10rpx;
+		margin-left: 5px;
 	}
 
 	.tool-card-active {
@@ -1078,24 +1078,24 @@
 
 	.tool-card-text {
 		flex: 1;
-		padding-right: 8rpx;
+		padding-right: 4px;
 	}
 
 	.tool-card-name {
-		font-size: 24rpx;
+		font-size: 12px;
 		font-weight: bold;
 		color: #111827;
-		margin-bottom: 4rpx;
+		margin-bottom: 2px;
 	}
 
 	.tool-card-desc {
-		font-size: 20rpx;
+		font-size: 10px;
 		color: #6B7280;
-		line-height: 28rpx;
+		line-height: 14px;
 	}
 
 	.tool-card-check {
-		font-size: 26rpx;
+		font-size: 13px;
 		font-weight: bold;
 		color: var(--rice-primary-color);
 	}
@@ -1109,33 +1109,33 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		margin-bottom: 8rpx;
+		margin-bottom: 4px;
 	}
 
 	.skill-card-name {
-		font-size: 26rpx;
+		font-size: 13px;
 		font-weight: bold;
 		color: #111827;
 		flex: 1;
 	}
 
 	.skill-card-check {
-		font-size: 28rpx;
+		font-size: 14px;
 		font-weight: bold;
 		color: var(--rice-primary-color);
-		margin-left: 10rpx;
+		margin-left: 5px;
 	}
 
 	.skill-card-desc {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: #6B7280;
-		line-height: 32rpx;
+		line-height: 16px;
 	}
 
 	.skill-card-meta {
-		font-size: 20rpx;
+		font-size: 10px;
 		color: #9CA3AF;
-		margin-top: 10rpx;
+		margin-top: 5px;
 	}
 
 	.chip-scroll {
@@ -1148,10 +1148,10 @@
 
 	.chip {
 		background-color: #F3F4F6;
-		border-radius: 12rpx;
-		padding: 12rpx 24rpx;
-		margin: 4rpx;
-		border-width: 2rpx;
+		border-radius: 6px;
+		padding: 6px 12px;
+		margin: 2px;
+		border-width: 1px;
 		border-style: solid;
 		border-color: #E5E7EB;
 	}
@@ -1162,7 +1162,7 @@
 	}
 
 	.chip-text {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #374151;
 		white-space: nowrap;
 	}
@@ -1173,9 +1173,9 @@
 	}
 
 	.setting-divider {
-		height: 2rpx;
+		height: 1px;
 		background-color: #F3F4F6;
-		margin: 28rpx 0 20rpx;
+		margin: 14px 0 10px;
 	}
 
 	.setting-row {
@@ -1183,56 +1183,56 @@
 		justify-content: space-between;
 		align-items: center;
 		background-color: var(--rice-background);
-		border-radius: 14rpx;
-		padding: 20rpx;
+		border-radius: 7px;
+		padding: 10px;
 	}
 
 	.setting-text {
 		flex: 1;
-		padding-right: 20rpx;
+		padding-right: 10px;
 	}
 
 	.setting-title {
-		font-size: 28rpx;
+		font-size: 14px;
 		color: var(--rice-text-color);
 		font-weight: bold;
-		margin-bottom: 6rpx;
+		margin-bottom: 3px;
 	}
 
 	.setting-desc {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: var(--rice-text-color-3);
-		line-height: 32rpx;
+		line-height: 16px;
 	}
 
 	.context-tip {
 		background-color: rgba(124, 58, 237, 0.07);
-		border-radius: 14rpx;
-		padding: 16rpx 18rpx;
-		margin-bottom: 16rpx;
+		border-radius: 7px;
+		padding: 8px 9px;
+		margin-bottom: 8px;
 	}
 
 	.context-tip-text {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: var(--rice-text-color-2);
-		line-height: 34rpx;
+		line-height: 17px;
 	}
 
 	.generation-panel {
-		margin-top: 18rpx;
+		margin-top: 9px;
 	}
 
 	.param-row {
 		flex-direction: row;
-		margin-bottom: 14rpx;
+		margin-bottom: 7px;
 	}
 
 	.param-item {
 		flex: 1;
 		background-color: var(--rice-background);
-		border-radius: 14rpx;
-		padding: 18rpx;
-		margin-right: 12rpx;
+		border-radius: 7px;
+		padding: 9px;
+		margin-right: 6px;
 	}
 
 	.param-switch {
@@ -1241,41 +1241,41 @@
 		justify-content: space-between;
 		align-items: center;
 		background-color: var(--rice-background);
-		border-radius: 14rpx;
-		padding: 18rpx;
-		margin-right: 12rpx;
+		border-radius: 7px;
+		padding: 9px;
+		margin-right: 6px;
 	}
 
 	.param-label {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #6B7280;
-		margin-bottom: 10rpx;
+		margin-bottom: 5px;
 	}
 
 	.param-tip {
-		font-size: 20rpx;
+		font-size: 10px;
 		color: #9CA3AF;
 	}
 
 	.param-input {
 		background-color: #FFFFFF;
-		border-radius: 10rpx;
-		padding: 16rpx;
-		font-size: 26rpx;
+		border-radius: 5px;
+		padding: 8px;
+		font-size: 13px;
 		color: #111827;
 	}
 
 	.short-input {
-		width: 120rpx;
+		width: 60px;
 		flex-shrink: 0;
 	}
 
 	.model-pill {
 		background-color: #F3F4F6;
-		border-radius: 10rpx;
-		padding: 12rpx 20rpx;
-		margin: 4rpx;
-		border-width: 2rpx;
+		border-radius: 5px;
+		padding: 6px 10px;
+		margin: 2px;
+		border-width: 1px;
 		border-style: solid;
 		border-color: #E5E7EB;
 	}
@@ -1286,7 +1286,7 @@
 	}
 
 	.pill-text {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: #6B7280;
 	}
 
@@ -1297,41 +1297,41 @@
 
 	/* 保存按钮 */
 	.save-wrap {
-		padding: 8rpx 0;
+		padding: 4px 0;
 	}
 
 	.save-btn {
 		background-color: var(--rice-primary-color);
-		border-radius: 16rpx;
-		padding: 28rpx;
+		border-radius: 8px;
+		padding: 14px;
 		align-items: center;
 		justify-content: center;
 	}
 
 	.save-btn-text {
-		font-size: 30rpx;
+		font-size: 15px;
 		font-weight: bold;
 		color: #FFFFFF;
 	}
 
 	/* 删除按钮 */
 	.delete-wrap {
-		padding: 16rpx 0 60rpx 0;
+		padding: 8px 0 30px 0;
 	}
 
 	.delete-btn {
 		background-color: #FFFFFF;
-		border-radius: 16rpx;
-		padding: 28rpx;
+		border-radius: 8px;
+		padding: 14px;
 		align-items: center;
 		justify-content: center;
-		border-width: 2rpx;
+		border-width: 1px;
 		border-style: solid;
 		border-color: #FCA5A5;
 	}
 
 	.delete-btn-text {
-		font-size: 30rpx;
+		font-size: 15px;
 		font-weight: bold;
 		color: #EF4444;
 	}

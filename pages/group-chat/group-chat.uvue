@@ -4,10 +4,10 @@
 			<template #right>
 				<view style="flex-direction:row;align-items:center;">
 					<view class="nav-icon-btn" @click="goSessions">
-						<oui-icon-unix name="time-circle" size="40rpx" color="#FFFFFF" />
+						<oui-icon-unix name="time-circle" size="20px" color="#FFFFFF" />
 					</view>
-					<view class="nav-icon-btn" @click="goSettings" style="margin-left:8rpx;">
-						<oui-icon-unix name="setting" size="40rpx" color="#FFFFFF" />
+					<view class="nav-icon-btn" @click="goSettings" style="margin-left:4px;">
+						<oui-icon-unix name="setting" size="20px" color="#FFFFFF" />
 					</view>
 				</view>
 			</template>
@@ -43,13 +43,13 @@
 		<view class="chat-bottom">
 			<view class="input-bar">
 				<view class="toolbar-toggle" @click="toggleToolPanel">
-					<oui-icon-unix name="plus" size="36rpx" color="#374151" />
+					<oui-icon-unix name="plus" size="18px" color="#374151" />
 				</view>
 				<view class="input-wrap">
 					<textarea class="text-input" v-model="inputText" :style="{ height: inputHeight + 'px' }" placeholder="给群里发消息..." placeholder-style="color:var(--rice-text-color-3)" @linechange="onInputLineChange" :disabled="isGenerating == true" />
 				</view>
-				<rice-button v-if="isGenerating == false" type="primary" text="发送" size="small" shape="round" @click="sendMessage" style="margin-left:12rpx" />
-				<rice-button v-else type="primary" text="停止" size="small" shape="round" @click="stopDiscussion" style="margin-left:12rpx" />
+				<rice-button v-if="isGenerating == false" type="primary" text="发送" size="small" shape="round" @click="sendMessage" style="margin-left:6px" />
+				<rice-button v-else type="primary" text="停止" size="small" shape="round" @click="stopDiscussion" style="margin-left:6px" />
 			</view>
 			<view v-if="showToolPanel" class="toolbar-panel">
 				<view id="toolbar-slider-viewport" class="toolbar-slider-viewport" @touchstart="onToolbarTouchStart" @touchmove="onToolbarTouchMove" @touchend="onToolbarTouchEnd" @touchcancel="onToolbarTouchCancel">
@@ -57,35 +57,35 @@
 						<view class="toolbar-slide-page">
 							<view class="toolbar-grid">
 								<view class="toolbar-grid-item" @click="pickImage">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="image" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<view class="toolbar-grid-icon"><oui-icon-unix name="image" size="26px" color="var(--rice-primary-color)" /></view>
 									<text class="toolbar-grid-label">图片</text>
 								</view>
 								<view class="toolbar-grid-item" @click="takePhoto">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="camera" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<view class="toolbar-grid-icon"><oui-icon-unix name="camera" size="26px" color="var(--rice-primary-color)" /></view>
 									<text class="toolbar-grid-label">拍照</text>
 								</view>
 								<view class="toolbar-grid-item" @click="pickFile">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="file" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<view class="toolbar-grid-icon"><oui-icon-unix name="file" size="26px" color="var(--rice-primary-color)" /></view>
 									<text class="toolbar-grid-label">文件</text>
 								</view>
 								<view class="toolbar-grid-item" @click="chooseAgentForMemory">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="26px" color="var(--rice-primary-color)" /></view>
 									<text class="toolbar-grid-label">记忆管理</text>
 								</view>
 								<view class="toolbar-grid-item" @click="chooseAgentForContext">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="eye" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<view class="toolbar-grid-icon"><oui-icon-unix name="eye" size="26px" color="var(--rice-primary-color)" /></view>
 									<text class="toolbar-grid-label">原始上下文</text>
 								</view>
 								<view class="toolbar-grid-item" @click="openGroupWorkspace">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="folder" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<view class="toolbar-grid-icon"><oui-icon-unix name="folder" size="26px" color="var(--rice-primary-color)" /></view>
 									<text class="toolbar-grid-label">工作区</text>
 								</view>
 								<view class="toolbar-grid-item" @click="stopDiscussion">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="stop" size="52rpx" color="#EF4444" /></view>
+									<view class="toolbar-grid-icon"><oui-icon-unix name="stop" size="26px" color="#EF4444" /></view>
 									<text class="toolbar-grid-label">停止讨论</text>
 								</view>
 								<view class="toolbar-grid-item" @click="continueDiscussion">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="plus-circle" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<view class="toolbar-grid-icon"><oui-icon-unix name="plus-circle" size="26px" color="var(--rice-primary-color)" /></view>
 									<text class="toolbar-grid-label">继续讨论</text>
 								</view>
 							</view>
@@ -93,15 +93,15 @@
 						<view class="toolbar-slide-page">
 							<view class="toolbar-grid">
 								<view class="toolbar-grid-item" @click="goSessions">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="time-circle" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<view class="toolbar-grid-icon"><oui-icon-unix name="time-circle" size="26px" color="var(--rice-primary-color)" /></view>
 									<text class="toolbar-grid-label">会话分支</text>
 								</view>
 								<view class="toolbar-grid-item" @click="goSettings">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="setting" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<view class="toolbar-grid-icon"><oui-icon-unix name="setting" size="26px" color="var(--rice-primary-color)" /></view>
 									<text class="toolbar-grid-label">群聊设置</text>
 								</view>
 								<view class="toolbar-grid-item" @click="showDispatchHistory">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="52rpx" color="var(--rice-primary-color)" /></view>
+									<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="26px" color="var(--rice-primary-color)" /></view>
 									<text class="toolbar-grid-label">调度历史</text>
 								</view>
 							</view>
@@ -1182,29 +1182,29 @@
 </script>
 
 <style>
-	.nav-icon-btn { width: 72rpx; height: 72rpx; justify-content: center; align-items: center; }
-	.message-list { flex: 1; padding-top: 12rpx; }
-	.empty-state { flex: 1; align-items: center; justify-content: center; padding-top: 180rpx; flex-direction: column; }
-	.empty-text { font-size: 32rpx; color: var(--rice-text-color); font-weight: bold; }
-	.empty-hint { margin-top: 12rpx; font-size: 24rpx; color: var(--rice-text-color-3); }
-	.chat-bottom { flex-shrink: 0; background-color: var(--rice-background-2); border-top-width: 2rpx; border-top-color: var(--rice-border-color); border-top-style: solid; }
-	.input-bar { flex-direction: row; align-items: center; padding-left: 12rpx; padding-right: 16rpx; padding-top: 12rpx; padding-bottom: 12rpx; }
-	.toolbar-toggle { width: 64rpx; height: 64rpx; border-radius: 32rpx; justify-content: center; align-items: center; }
-	.input-wrap { flex: 1; flex-direction: row; align-items: flex-end; background-color: var(--rice-background); border-radius: 32rpx; padding-left: 16rpx; padding-right: 16rpx; margin-left: 12rpx; margin-right: 12rpx; }
-	.text-input { width: 100%; min-height: 64rpx; max-height: 400rpx; padding-left: 8rpx; padding-right: 8rpx; padding-top: 16rpx; padding-bottom: 16rpx; font-size: 30rpx; color: var(--rice-text-color); background-color: transparent; line-height: 44rpx; }
-	.toolbar-panel { background-color: var(--rice-background); padding: 24rpx 16rpx 16rpx 16rpx; }
+	.nav-icon-btn { width: 36px; height: 36px; justify-content: center; align-items: center; }
+	.message-list { flex: 1; padding-top: 6px; }
+	.empty-state { flex: 1; align-items: center; justify-content: center; padding-top: 90px; flex-direction: column; }
+	.empty-text { font-size: 16px; color: var(--rice-text-color); font-weight: bold; }
+	.empty-hint { margin-top: 6px; font-size: 12px; color: var(--rice-text-color-3); }
+	.chat-bottom { flex-shrink: 0; background-color: var(--rice-background-2); border-top-width: 1px; border-top-color: var(--rice-border-color); border-top-style: solid; }
+	.input-bar { flex-direction: row; align-items: center; padding-left: 6px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; }
+	.toolbar-toggle { width: 32px; height: 32px; border-radius: 16px; justify-content: center; align-items: center; }
+	.input-wrap { flex: 1; flex-direction: row; align-items: flex-end; background-color: var(--rice-background); border-radius: 16px; padding-left: 8px; padding-right: 8px; margin-left: 6px; margin-right: 6px; }
+	.text-input { width: 100%; min-height: 32px; max-height: 200px; padding-left: 4px; padding-right: 4px; padding-top: 8px; padding-bottom: 8px; font-size: 15px; color: var(--rice-text-color); background-color: transparent; line-height: 22px; }
+	.toolbar-panel { background-color: var(--rice-background); padding: 12px 8px 8px 8px; }
 	.toolbar-slider-viewport { width: 100%; overflow: hidden; }
 	.toolbar-slider-track { width: 200%; flex-direction: row; }
 	.toolbar-slider-track-anim { transition-property: transform; transition-duration: 180ms; transition-timing-function: ease-out; }
 	.toolbar-slide-page { width: 50%; flex-shrink: 0; }
 	.toolbar-grid { flex-direction: row; justify-content: flex-start; flex-wrap: wrap; }
-	.toolbar-grid-item { width: 25%; align-items: center; margin-bottom: 24rpx; }
-	.toolbar-grid-icon { width: 104rpx; height: 104rpx; border-radius: 28rpx; background-color: var(--rice-background-2); justify-content: center; align-items: center; margin-bottom: 8rpx; }
-	.toolbar-grid-label { font-size: 24rpx; color: var(--rice-text-color-2); }
-	.toolbar-pager { flex-direction: row; align-items: center; justify-content: center; height: 42rpx; }
-	.toolbar-page-arrow { width: 56rpx; height: 42rpx; justify-content: center; align-items: center; margin-left: 8rpx; margin-right: 8rpx; }
+	.toolbar-grid-item { width: 25%; align-items: center; margin-bottom: 12px; }
+	.toolbar-grid-icon { width: 52px; height: 52px; border-radius: 14px; background-color: var(--rice-background-2); justify-content: center; align-items: center; margin-bottom: 4px; }
+	.toolbar-grid-label { font-size: 12px; color: var(--rice-text-color-2); }
+	.toolbar-pager { flex-direction: row; align-items: center; justify-content: center; height: 21px; }
+	.toolbar-page-arrow { width: 28px; height: 21px; justify-content: center; align-items: center; margin-left: 4px; margin-right: 4px; }
 	.toolbar-page-arrow-disabled { opacity: 0.25; }
-	.toolbar-page-arrow-text { font-size: 34rpx; color: var(--rice-text-color-2); line-height: 38rpx; }
-	.toolbar-page-dot { width: 10rpx; height: 10rpx; border-radius: 5rpx; background-color: #D1D5DB; margin-left: 8rpx; margin-right: 8rpx; }
-	.toolbar-page-dot-active { width: 28rpx; background-color: var(--rice-primary-color); }
+	.toolbar-page-arrow-text { font-size: 17px; color: var(--rice-text-color-2); line-height: 19px; }
+	.toolbar-page-dot { width: 5px; height: 5px; border-radius: 3px; background-color: #D1D5DB; margin-left: 4px; margin-right: 4px; }
+	.toolbar-page-dot-active { width: 14px; background-color: var(--rice-primary-color); }
 </style>

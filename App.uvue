@@ -86,7 +86,7 @@
 		--app-bubble-user-from: #FB8FAB;
 		--app-bubble-user-to: #E8729A;
 
-		/* 柔和阴影（ucss 不支持 box-shadow，用浅边框模拟层次） */
+		/* 柔和阴影：ucss 阴影兼容性弱，用浅边框模拟层次 */
 		--app-hairline: #F0F0F2;
 		--app-soft-border: rgba(251, 143, 171, 0.16);
 	}
@@ -98,6 +98,7 @@
 	}
 
 	/* ===== 全局公共样式 ===== */
+	/* COMPAT_CSS_DIFF_WEB: uni-app x App 端与 Web CSS 存在差异，固定视觉尺寸统一用 px，避免宽屏设备按响应式单位放大。未来重做设计系统时可搜索此标记清理。 */
 	.uni-row { flex-direction: row; }
 	.uni-column { flex-direction: column; }
 
@@ -112,34 +113,34 @@
 	.page-content {
 		flex: 1;
 		background-color: #F5F5F7;
-		border-radius: 40rpx;
-		margin-left: 0rpx;
-		margin-right: 0rpx;
-		margin-top: 0rpx;
+		border-radius: 20px;
+		margin-left: 0px;
+		margin-right: 0px;
+		margin-top: 0px;
 		overflow: hidden;
 	}
 
 	/* 通用卡片 */
 	.card {
 		background-color: #FFFFFF;
-		border-radius: 32rpx;
-		padding: 32rpx;
-		margin-bottom: 24rpx;
-		border-width: 2rpx;
+		border-radius: 16px;
+		padding: 16px;
+		margin-bottom: 12px;
+		border-width: 1px;
 		border-color: #F0F0F2;
 		border-style: solid;
 	}
 
 	/* 通用标题 */
 	.page-title {
-		font-size: 48rpx;
+		font-size: 24px;
 		font-weight: bold;
 		color: #111827;
 	}
 
 	/* 通用次要文字 */
 	.text-muted {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: #9CA3AF;
 	}
 </style>

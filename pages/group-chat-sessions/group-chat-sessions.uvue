@@ -3,7 +3,7 @@
 		<NavBar title="群聊会话" showBack @back="goBack">
 			<template #right>
 				<view class="add-btn" @click="createSession">
-					<oui-icon-unix name="plus" size="44rpx" color="#FFFFFF" />
+					<oui-icon-unix name="plus" size="22px" color="#FFFFFF" />
 				</view>
 			</template>
 		</NavBar>
@@ -17,7 +17,7 @@
 			<view class="session-list">
 				<view v-for="(session, index) in sessionList" :key="session.id" class="session-item" :class="activeSessionId == session.id ? 'session-item-active' : ''" @click="switchSession(session)">
 					<view class="session-icon" :class="activeSessionId == session.id ? 'session-icon-active' : ''">
-						<oui-icon-unix name="file-text" size="42rpx" :color="activeSessionId == session.id ? '#FFFFFF' : 'var(--rice-primary-color)'" />
+						<oui-icon-unix name="file-text" size="21px" :color="activeSessionId == session.id ? '#FFFFFF' : 'var(--rice-primary-color)'" />
 					</view>
 					<view class="session-info">
 						<view class="session-top">
@@ -158,32 +158,32 @@
 </script>
 
 <style>
-	.add-btn { width: 80rpx; height: 80rpx; justify-content: center; align-items: center; }
+	.add-btn { width: 40px; height: 40px; justify-content: center; align-items: center; }
 	.session-scroll { flex: 1; }
-	.hint-card { margin: 20rpx 24rpx 0; padding: 28rpx; border-radius: 32rpx; background-color: var(--rice-primary-color); flex-direction: column; }
-	.hint-title { color: #FFFFFF; font-size: 32rpx; font-weight: bold; }
-	.hint-text { color: rgba(255,255,255,0.78); font-size: 24rpx; margin-top: 10rpx; line-height: 36rpx; }
-	.session-list { margin: 16rpx 24rpx 32rpx; border-radius: 36rpx; background-color: var(--rice-background-2); overflow: hidden; }
-	.session-item { flex-direction: row; align-items: center; padding: 26rpx; border-bottom-width: 0.10rpx; border-bottom-color: var(--rice-border-color); border-bottom-style: solid; }
+	.hint-card { margin: 10px 12px 0; padding: 14px; border-radius: 16px; background-color: var(--rice-primary-color); flex-direction: column; }
+	.hint-title { color: #FFFFFF; font-size: 16px; font-weight: bold; }
+	.hint-text { color: rgba(255,255,255,0.78); font-size: 12px; margin-top: 5px; line-height: 18px; }
+	.session-list { margin: 8px 12px 16px; border-radius: 18px; background-color: var(--rice-background-2); overflow: hidden; }
+	.session-item { flex-direction: row; align-items: center; padding: 13px; border-bottom-width: 1px; border-bottom-color: var(--rice-border-color); border-bottom-style: solid; }
 	.session-item-active { background-color: #FFF7FA; }
-	.session-icon { width: 76rpx; height: 76rpx; border-radius: 24rpx; background-color: var(--rice-background); justify-content: center; align-items: center; margin-right: 18rpx; }
+	.session-icon { width: 38px; height: 38px; border-radius: 12px; background-color: var(--rice-background); justify-content: center; align-items: center; margin-right: 9px; }
 	.session-icon-active { background-color: var(--rice-primary-color); }
 	.session-info { flex: 1; flex-direction: column; }
 	.session-top { flex-direction: row; align-items: center; }
-	.session-title { font-size: 30rpx; color: var(--rice-text-color); font-weight: bold; max-width: 360rpx; lines: 1; text-overflow: ellipsis; }
-	.active-badge { margin-left: 12rpx; color: var(--rice-primary-color); font-size: 22rpx; font-weight: bold; }
-	.session-desc { margin-top: 8rpx; font-size: 22rpx; color: var(--rice-text-color-3); }
-	.session-actions { flex-direction: row; align-items: center; margin-left: 10rpx; }
-	.session-action { font-size: 24rpx; color: var(--rice-primary-color); padding: 10rpx; }
+	.session-title { font-size: 15px; color: var(--rice-text-color); font-weight: bold; max-width: 180px; lines: 1; text-overflow: ellipsis; }
+	.active-badge { margin-left: 6px; color: var(--rice-primary-color); font-size: 11px; font-weight: bold; }
+	.session-desc { margin-top: 4px; font-size: 11px; color: var(--rice-text-color-3); }
+	.session-actions { flex-direction: row; align-items: center; margin-left: 5px; }
+	.session-action { font-size: 12px; color: var(--rice-primary-color); padding: 5px; }
 	.danger { color: #EF4444; }
 	.preview-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(17,24,39,0.38); z-index: 1000; justify-content: flex-end; }
-	.preview-card { width: 100%; flex: 1; background-color: #FFFFFF; padding: 28rpx 32rpx 36rpx; flex-direction: column; }
-	.preview-header { flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 22rpx; flex-shrink: 0; }
-	.preview-title-wrap { flex: 1; flex-direction: column; margin-right: 20rpx; }
-	.preview-title { font-size: 34rpx; font-weight: bold; color: var(--rice-text-color); }
-	.preview-subtitle { font-size: 24rpx; color: var(--rice-text-color-3); margin-top: 8rpx; }
-	.preview-close { width: 64rpx; height: 64rpx; border-radius: 32rpx; background-color: var(--rice-background-2); align-items: center; justify-content: center; }
-	.preview-close-text { font-size: 42rpx; line-height: 50rpx; color: var(--rice-text-color-2); }
-	.preview-scroll { flex: 1; background-color: #111827; border-radius: 24rpx; padding: 24rpx; }
-	.preview-json-text { font-size: 24rpx; line-height: 36rpx; color: #E5E7EB; }
+	.preview-card { width: 100%; flex: 1; background-color: #FFFFFF; padding: 14px 16px 18px; flex-direction: column; }
+	.preview-header { flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 11px; flex-shrink: 0; }
+	.preview-title-wrap { flex: 1; flex-direction: column; margin-right: 10px; }
+	.preview-title { font-size: 17px; font-weight: bold; color: var(--rice-text-color); }
+	.preview-subtitle { font-size: 12px; color: var(--rice-text-color-3); margin-top: 4px; }
+	.preview-close { width: 32px; height: 32px; border-radius: 16px; background-color: var(--rice-background-2); align-items: center; justify-content: center; }
+	.preview-close-text { font-size: 21px; line-height: 25px; color: var(--rice-text-color-2); }
+	.preview-scroll { flex: 1; background-color: #111827; border-radius: 12px; padding: 12px; }
+	.preview-json-text { font-size: 12px; line-height: 18px; color: #E5E7EB; }
 </style>

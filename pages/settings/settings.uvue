@@ -6,101 +6,101 @@
 			<view class="settings-menu">
 				<view class="menu-item" @click="goSubPage('profile')">
 					<view class="menu-item-left">
-						<oui-icon-unix name="user" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
+						<oui-icon-unix name="user" size="14px" color="#6B7280" style="margin-right:10px" />
 						<view class="menu-text">
 							<text class="menu-title">用户资料</text>
 							<text class="menu-desc">昵称、头像、个人简介</text>
 						</view>
 					</view>
-					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
+					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('basic')">
 					<view class="menu-item-left">
-						<oui-icon-unix name="setting" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
+						<oui-icon-unix name="setting" size="14px" color="#6B7280" style="margin-right:10px" />
 						<view class="menu-text">
 							<text class="menu-title">提供商管理</text>
 							<text class="menu-desc">管理多个 LLM 提供商、API 密钥</text>
 						</view>
 					</view>
-					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
+					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('default-models')">
 					<view class="menu-item-left">
-						<oui-icon-unix name="robot" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
+						<oui-icon-unix name="robot" size="14px" color="#6B7280" style="margin-right:10px" />
 						<view class="menu-text">
 							<text class="menu-title">默认模型</text>
 							<text class="menu-desc">对话、识图、语音识别、语音合成模型分配</text>
 						</view>
 					</view>
-					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
+					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('generation')">
 					<view class="menu-item-left">
-						<oui-icon-unix name="experiment" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
+						<oui-icon-unix name="experiment" size="14px" color="#6B7280" style="margin-right:10px" />
 						<view class="menu-text">
 							<text class="menu-title">生成参数</text>
 							<text class="menu-desc">温度、输出上限、连续思考轮数、流式显示</text>
 						</view>
 					</view>
-					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
+					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('plugin')">
 					<view class="menu-item-left">
-						<oui-icon-unix name="appstore" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
+						<oui-icon-unix name="appstore" size="14px" color="#6B7280" style="margin-right:10px" />
 						<view class="menu-text">
 							<text class="menu-title">插件设置</text>
 							<text class="menu-desc">GitHub 代理、下载配置</text>
 						</view>
 					</view>
-					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
+					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('skills')">
 					<view class="menu-item-left">
-						<oui-icon-unix name="book" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
+						<oui-icon-unix name="book" size="14px" color="#6B7280" style="margin-right:10px" />
 						<view class="menu-text">
 							<text class="menu-title">Skills</text>
 							<text class="menu-desc">纯文本技能包，多文档，按联系人启用</text>
 						</view>
 					</view>
-					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
+					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="confirmExportAllData">
 					<view class="menu-item-left">
-						<oui-icon-unix name="download" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
+						<oui-icon-unix name="download" size="14px" color="#6B7280" style="margin-right:10px" />
 						<view class="menu-text">
 							<text class="menu-title">导出全部数据</text>
 							<text class="menu-desc">ZIP 备份包：配置、对话、头像、聊天工作区</text>
 						</view>
 					</view>
-					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
+					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="confirmImportAllData">
 					<view class="menu-item-left">
-						<oui-icon-unix name="upload" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
+						<oui-icon-unix name="upload" size="14px" color="#6B7280" style="margin-right:10px" />
 						<view class="menu-text">
 							<text class="menu-title">导入备份包</text>
 							<text class="menu-desc">从 ZIP 恢复配置、对话与聊天工作区</text>
 						</view>
 					</view>
-					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
+					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('about')">
 					<view class="menu-item-left">
-						<oui-icon-unix name="infomation" size="28rpx" color="#6B7280" style="margin-right:20rpx" />
+						<oui-icon-unix name="infomation" size="14px" color="#6B7280" style="margin-right:10px" />
 						<view class="menu-text">
 							<text class="menu-title">关于</text>
 							<text class="menu-desc">版本信息</text>
 						</view>
 					</view>
-					<oui-icon-unix name="right" size="28rpx" color="var(--rice-text-color-3)" />
+					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 				</view>
 			</view>
 		</scroll-view>
@@ -403,30 +403,30 @@
 <style>
 	.container {
 		flex: 1;
-		padding: 16rpx;
+		padding: 8px;
 	}
 
 	/* 通用卡片容器 */
 	.card {
 		background-color: #FFFFFF;
-		border-radius: 20rpx;
-		padding: 32rpx;
-		margin-bottom: 24rpx;
+		border-radius: 10px;
+		padding: 16px;
+		margin-bottom: 12px;
 	}
 
 	.card-header {
 		flex-direction: row;
 		align-items: center;
-		margin-bottom: 20rpx;
+		margin-bottom: 10px;
 	}
 
 	.card-icon {
-		font-size: 28rpx;
-		margin-right: 12rpx;
+		font-size: 14px;
+		margin-right: 6px;
 	}
 
 	.card-title {
-		font-size: 30rpx;
+		font-size: 15px;
 		font-weight: bold;
 		color: #111827;
 	}
@@ -442,27 +442,27 @@
 	}
 
 	.toggle-vis-btn {
-		width: 88rpx;
-		height: 88rpx;
+		width: 44px;
+		height: 44px;
 		justify-content: center;
 		align-items: center;
-		margin-left: 8rpx;
+		margin-left: 4px;
 	}
 
 	.toggle-vis-icon {
-		font-size: 48rpx;
+		font-size: 24px;
 	}
 
 	/* 扁平输入框 */
 	.input-wrap {
-		margin-top: 8rpx;
+		margin-top: 4px;
 	}
 
 	.flat-input {
 		background-color: #F9FAFB;
-		border-radius: 14rpx;
-		padding: 24rpx;
-		font-size: 28rpx;
+		border-radius: 7px;
+		padding: 12px;
+		font-size: 14px;
 		color: #111827;
 	}
 
@@ -471,23 +471,23 @@
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
-		padding: 12rpx 0;
+		padding: 6px 0;
 	}
 
 	.setting-label {
-		font-size: 28rpx;
+		font-size: 14px;
 		color: #374151;
 	}
 
 	.setting-value {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: #9CA3AF;
 	}
 
 	/* 设置菜单 */
 	.settings-menu {
 		background-color: #FFFFFF;
-		border-radius: 20rpx;
+		border-radius: 10px;
 		overflow: hidden;
 	}
 
@@ -495,7 +495,7 @@
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
-		padding: 28rpx 32rpx;
+		padding: 14px 16px;
 	}
 
 	.menu-item-left {
@@ -509,27 +509,27 @@
 	}
 
 	.menu-title {
-		font-size: 28rpx;
+		font-size: 14px;
 		font-weight: bold;
 		color: #111827;
 	}
 
 	.menu-desc {
-		font-size: 22rpx;
+		font-size: 11px;
 		color: #9CA3AF;
-		margin-top: 4rpx;
+		margin-top: 2px;
 	}
 
 	.menu-arrow {
-		font-size: 32rpx;
+		font-size: 16px;
 		color: #D1D5DB;
-		padding-left: 16rpx;
+		padding-left: 8px;
 	}
 
 	.menu-divider {
-		height: 0.10rpx;
+		height: 1px;
 		background-color: #F3F4F6;
-		margin-left: 84rpx;
+		margin-left: 42px;
 	}
 
 	/* 提供商网格 */
@@ -540,10 +540,10 @@
 
 	.provider-chip {
 		background-color: #F3F4F6;
-		border-radius: 12rpx;
-		padding: 14rpx 28rpx;
-		margin: 8rpx;
-		border-width: 2rpx;
+		border-radius: 6px;
+		padding: 7px 14px;
+		margin: 4px;
+		border-width: 1px;
 		border-style: solid;
 		border-color: #E5E7EB;
 	}
@@ -554,7 +554,7 @@
 	}
 
 	.chip-label {
-		font-size: 26rpx;
+		font-size: 13px;
 		color: #374151;
 	}
 
@@ -566,9 +566,9 @@
 
 	.model-pill {
 		background-color: #F3F4F6;
-		border-radius: 10rpx;
-		padding: 14rpx 22rpx;
-		margin: 6rpx;
+		border-radius: 5px;
+		padding: 7px 11px;
+		margin: 3px;
 	}
 
 	.pill-active {
@@ -576,7 +576,7 @@
 	}
 
 	.pill-text {
-		font-size: 24rpx;
+		font-size: 12px;
 		color: #6B7280;
 	}
 
@@ -587,11 +587,11 @@
 
 	/* 保存按钮容器 */
 	.save-wrap {
-		padding: 20rpx 0 60rpx 0;
+		padding: 10px 0 30px 0;
 	}
 
 	/* rice-cell-group 间距 */
 	.rice-cell-group + .rice-cell-group {
-		margin-top: 24rpx;
+		margin-top: 12px;
 	}
 </style>
