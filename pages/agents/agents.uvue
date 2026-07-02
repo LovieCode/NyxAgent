@@ -302,7 +302,7 @@
 	const FIRST_RUN_PROVIDER_EDIT_PRESET_KEY = 'provider_edit_preset'
 	const FIRST_RUN_PROVIDER_EDIT_ID_KEY = 'provider_edit_id'
 	// DEV_ONLY_FORCE_FIRST_RUN_GUIDE: 临时强制展示首启引导，验完 UI 后改回 false。
-	const DEV_ONLY_FORCE_FIRST_RUN_GUIDE = true
+	const DEV_ONLY_FORCE_FIRST_RUN_GUIDE = false
 	const FIRST_RUN_PROVIDER_OPTIONS: UTSJSONObject[] = [
 		{
 			id: 'deepseek',
