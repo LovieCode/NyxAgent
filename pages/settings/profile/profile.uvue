@@ -1,6 +1,6 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NavBar title="用户资料" showBack />
+		<NavBar title="用户资料" showBack @back="goBack" />
 		<scroll-view class="container" :scroll-y="true">
 
 			<!-- 头像区域 -->
@@ -16,23 +16,23 @@
 			<view class="form-card">
 				<view class="form-item">
 					<text class="form-label">昵称</text>
-					<input class="form-input" v-model="nickname" placeholder="输入昵称" placeholder-style="color:#9CA3AF" />
+					<input class="form-input" v-model="nickname" placeholder="输入昵称" placeholder-style="color:#9CA3AF" @input="hasUnsaved = true" />
 				</view>
 				<view class="form-divider"></view>
 				<view class="form-item">
 					<text class="form-label">简介</text>
-					<input class="form-input" v-model="bio" placeholder="一句话介绍自己" placeholder-style="color:#9CA3AF" />
+					<input class="form-input" v-model="bio" placeholder="一句话介绍自己" placeholder-style="color:#9CA3AF" @input="hasUnsaved = true" />
 				</view>
 				<view class="form-divider"></view>
 				<view class="form-item">
 					<text class="form-label">邮箱</text>
-					<input class="form-input" v-model="email" placeholder="邮箱地址" placeholder-style="color:#9CA3AF" inputmode="email" />
+					<input class="form-input" v-model="email" placeholder="邮箱地址" placeholder-style="color:#9CA3AF" inputmode="email" @input="hasUnsaved = true" />
 				</view>
 				<view class="form-divider"></view>
 				<view class="form-item form-item-textarea">
 					<text class="form-label">个人简介</text>
 					<view class="textarea-wrap">
-						<textarea class="form-textarea" v-model="description" placeholder="详细介绍一下自己…" placeholder-style="color:#9CA3AF" />
+						<textarea class="form-textarea" v-model="description" placeholder="详细介绍一下自己…" placeholder-style="color:#9CA3AF" @input="hasUnsaved = true" />
 						<view class="fullscreen-btn" @click="openFullEditor">
 							<text class="fullscreen-btn-text">全屏编辑</text>
 						</view>
@@ -63,7 +63,9 @@
 				email: '' as string,
 				description: '' as string,
 				/** 头像路径（空字符串表示使用默认文字头像） */
-				avatarPath: '' as string
+				avatarPath: '' as string,
+				hasUnsaved: false as boolean,
+				isConfirmingLeave: false as boolean,
 			}
 		},
 		computed: {
@@ -77,6 +79,13 @@
 		},
 		onLoad() {
 			this.loadProfile()
+		},
+		onBackPress(): boolean {
+			if (this.hasUnsaved == false) {
+				return false
+			}
+			this.confirmLeave()
+			return true
 		},
 		onShow() {
 			// 检查全屏编辑器是否有返回结果
@@ -94,8 +103,7 @@
 					uni.removeStorageSync('editor_title')
 					uni.removeStorageSync('editor_placeholder')
 					uni.removeStorageSync('editor_readonly')
-					// 自动保存
-					this.saveProfile()
+					this.hasUnsaved = true
 				}
 			}
 			// 检查裁剪页面是否有返回结果
@@ -121,16 +129,47 @@
 				this.description = (v4 != null && v4 != '') ? v4 : ''
 				const avatar = uni.getStorageSync('profile_avatar') as string
 				this.avatarPath = (avatar != null) ? avatar : ''
+				this.hasUnsaved = false
 			},
 			saveProfile() {
 				uni.setStorageSync('profile_nickname', this.nickname)
 				uni.setStorageSync('profile_bio', this.bio)
 				uni.setStorageSync('profile_email', this.email)
 				uni.setStorageSync('profile_description', this.description)
+				this.hasUnsaved = false
 				uni.showToast({ position: 'bottom', 
 					title: '已保存',
 					icon: 'success'
 				})
+			},
+			confirmLeave() {
+				if (this.isConfirmingLeave == true) { return }
+				this.isConfirmingLeave = true
+				uni.showModal({
+					title: '有未保存资料',
+					content: '个人资料已修改，要保存后退出吗？',
+					cancelText: '不保存',
+					confirmText: '保存',
+					success: (res) => {
+						this.isConfirmingLeave = false
+						if (res.confirm == true) {
+							this.saveProfile()
+						} else {
+							this.hasUnsaved = false
+						}
+						uni.navigateBack()
+					},
+					fail: () => {
+						this.isConfirmingLeave = false
+					}
+				})
+			},
+			goBack() {
+				if (this.hasUnsaved == false) {
+					uni.navigateBack()
+					return
+				}
+				this.confirmLeave()
 			},
 			/** 弹出选择头像（拍照或从相册选取）*/
 			pickAvatar() {

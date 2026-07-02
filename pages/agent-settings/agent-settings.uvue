@@ -252,7 +252,7 @@
 
 			<!-- 保存按钮 -->
 			<view class="save-wrap">
-				<view class="save-btn" @click="saveSettings">
+				<view class="save-btn" @click="saveSettingsAndBack">
 					<text class="save-btn-text">保存修改</text>
 				</view>
 			</view>
@@ -271,7 +271,7 @@
 	/**
 	 * 智能体设置页面 - 编辑名称/描述/头像/删除智能体
 	 */
-	import { getAgentById, updateAgent, deleteAgent, updateAgentAvatar, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, agentToolIdListContains, AGENT_TOOL_WORKSPACE_FILE, AGENT_TOOL_MEMORY_SEARCH, AGENT_TOOL_MEMORY_BUFFER_WRITE, AGENT_TOOL_WEB_SEARCH } from '@/utils/agent.uts'
+	import { getAgentById, updateAgent, deleteAgent, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, agentToolIdListContains, AGENT_TOOL_WORKSPACE_FILE, AGENT_TOOL_MEMORY_SEARCH, AGENT_TOOL_MEMORY_BUFFER_WRITE, AGENT_TOOL_WEB_SEARCH } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { updateSystemPromptForAgent } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
@@ -419,10 +419,10 @@
 			const cropResult = uni.getStorageSync('crop_result') as string
 			if (cropTarget == 'agent_avatar' && cropResult != null && cropResult != '') {
 				this.agentAvatar = cropResult
-				updateAgentAvatar(this.agentId, cropResult)
 				uni.removeStorageSync('crop_result')
 				uni.removeStorageSync('crop_target')
 				uni.removeStorageSync('crop_image_path')
+				this.hasUnsaved = true
 			}
 		},
 		/** Android 系统返回键 / iOS 滑动返回 */
@@ -742,7 +742,7 @@
 				this.hasUnsaved = true
 			},
 
-			saveSettings() {
+			saveSettingsOnly(): boolean {
 				const name = this.agentName.trim()
 				const desc = this.agentDesc.trim()
 				if (name == '') {
@@ -750,9 +750,9 @@
 						title: '名称不能为空',
 						icon: 'none'
 					})
-					return
+					return false
 				}
-				updateAgent(this.agentId, name, desc, '', this.agentSystemPrompt)
+				updateAgent(this.agentId, name, desc, this.agentAvatar, this.agentSystemPrompt)
 				updateAgentModel(this.agentId, this.currentModel)
 				const globalGeneration = getGlobalGenerationSettings()
 				let temperature: number | null = null
@@ -789,6 +789,13 @@
 					title: '已保存',
 					icon: 'success'
 				})
+				return true
+			},
+
+			saveSettingsAndBack() {
+				if (this.saveSettingsOnly() == false) {
+					return
+				}
 				uni.navigateBack()
 			},
 
@@ -835,7 +842,9 @@
 					success: (res) => {
 						this.isConfirmingLeave = false
 						if (res.confirm == true) {
-							this.saveSettings()
+							if (this.saveSettingsOnly() == true) {
+								uni.navigateBack()
+							}
 						} else {
 							this.hasUnsaved = false
 							uni.navigateBack()

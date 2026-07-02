@@ -4,7 +4,7 @@
 		<scroll-view class="container" :scroll-y="true">
 			<view class="hero-card">
 				<text class="hero-title">全局默认生成参数</text>
-				<text class="hero-desc">这里是普通对话和记忆整理的默认生成参数。记忆整理参数独立保存，不会被某个智能体的人格配置带偏。</text>
+				<text class="hero-desc">这里是普通对话和记忆整理的默认生成参数。修改后自动保存，记忆整理参数独立保存，不会被某个智能体的人格配置带偏。</text>
 			</view>
 
 			<view class="card">
@@ -19,6 +19,8 @@
 					v-model="temperatureStr"
 					placeholder="0 - 2，默认 1"
 					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+					@input="autoSaveSettings"
+					@blur="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">越低越稳，越高越发散。默认 1 更通用，写代码可手动调低。</text>
 
@@ -29,6 +31,8 @@
 					v-model="maxTokensStr"
 					placeholder="256 - 65536，默认 4096"
 					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+					@input="autoSaveSettings"
+					@blur="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">限制单次回复长度，太低会被截断，太高会更吃额度。</text>
 
@@ -39,6 +43,8 @@
 					v-model="maxIterationsStr"
 					placeholder="0 - 100，默认 20"
 					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+					@input="autoSaveSettings"
+					@blur="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">Agent 每次「思考 → 工具 → 继续」算一轮。填 0 表示不限制，遇到“达到最大迭代次数”就调这里。</text>
 			</view>
@@ -55,6 +61,8 @@
 					v-model="memoryTemperatureStr"
 					placeholder="0 - 2，默认 0.7"
 					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+					@input="autoSaveSettings"
+					@blur="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">默认保持通用温度，避免部分模型温度过低时异常；需要更稳再手动调低。</text>
 
@@ -65,6 +73,8 @@
 					v-model="memoryMaxTokensStr"
 					placeholder="256 - 2048，默认 2048"
 					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+					@input="autoSaveSettings"
+					@blur="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">记忆整理只需要简短总结，最高限制为 2048。</text>
 
@@ -75,6 +85,8 @@
 					v-model="memoryMaxIterationsStr"
 					placeholder="1 - 100，默认 20"
 					placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+					@input="autoSaveSettings"
+					@blur="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">记忆整理会查历史、查记忆、写短缓存/长期记忆。默认 20，系统提示也会同步标注。</text>
 				<text class="field-tip">记忆整理固定非流式运行，避免后台维护过程刷屏。</text>
@@ -86,13 +98,7 @@
 						<text class="setting-title">普通 Agent 流式显示</text>
 						<text class="setting-desc">开启后边生成边显示；记忆整理 Agent 固定非流式，不受这里影响。</text>
 					</view>
-					<rice-switch v-model="streamEnabled" />
-				</view>
-			</view>
-
-			<view class="save-wrap">
-				<view class="save-btn" @click="saveSettings">
-					<text class="save-btn-text">保存设置</text>
+					<rice-switch v-model="streamEnabled" @change="autoSaveSettings" />
 				</view>
 			</view>
 		</scroll-view>
@@ -152,7 +158,7 @@
 				this.memoryMaxIterationsStr = memorySettings.maxIterations + ''
 			},
 
-			saveSettings() {
+			buildCurrentSettings(): UTSJSONObject {
 				const oldSettings = getGlobalGenerationSettings()
 				const oldMemorySettings = getMemoryOrganizerGenerationSettings()
 				const settings: GenerationSettings = {
@@ -167,6 +173,24 @@
 					maxIterations: this.parseIntSetting(this.memoryMaxIterationsStr, oldMemorySettings.maxIterations, 1, 100),
 					streamEnabled: false,
 				}
+				return {
+					settings: settings,
+					memorySettings: memorySettings,
+				} as UTSJSONObject
+			},
+
+			autoSaveSettings() {
+				const built = this.buildCurrentSettings()
+				const settings = built['settings'] as GenerationSettings
+				const memorySettings = built['memorySettings'] as GenerationSettings
+				saveGlobalGenerationSettings(settings)
+				saveMemoryOrganizerGenerationSettings(memorySettings)
+			},
+
+			normalizeAndSaveSettings() {
+				const built = this.buildCurrentSettings()
+				const settings = built['settings'] as GenerationSettings
+				const memorySettings = built['memorySettings'] as GenerationSettings
 				saveGlobalGenerationSettings(settings)
 				saveMemoryOrganizerGenerationSettings(memorySettings)
 				this.temperatureStr = settings.temperature + ''
@@ -175,10 +199,6 @@
 				this.memoryTemperatureStr = memorySettings.temperature + ''
 				this.memoryMaxTokensStr = memorySettings.maxTokens + ''
 				this.memoryMaxIterationsStr = memorySettings.maxIterations + ''
-				uni.showToast({ position: 'bottom', 
-					title: '已保存',
-					icon: 'success'
-				})
 			},
 		}
 	}

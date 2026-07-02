@@ -22,6 +22,8 @@
 					v-model="editName"
 					placeholder="例如 DeepSeek"
 					placeholder-class="ph"
+					@input="autoSaveProvider"
+					@blur="autoSaveProvider"
 				/>
 
 				<!-- API Key -->
@@ -32,6 +34,8 @@
 					v-model="editApiKey"
 					placeholder="输入 API Key"
 					placeholder-class="ph"
+					@input="autoSaveProvider"
+					@blur="autoSaveProvider"
 				/>
 
 				<!-- 接口地址 -->
@@ -42,6 +46,8 @@
 					v-model="editApiBase"
 					placeholder="留空使用默认地址"
 					placeholder-class="ph"
+					@input="autoSaveProvider"
+					@blur="autoSaveProvider"
 				/>
 			</view>
 
@@ -114,38 +120,38 @@
 					<view v-if="m.expanded" class="model-detail">
 						<view class="detail-field">
 							<text class="detail-field-label">模型 ID</text>
-							<input class="detail-field-input" type="text" v-model="m.id" placeholder="deepseek-v4-flash" placeholder-class="ph" />
+							<input class="detail-field-input" type="text" v-model="m.id" placeholder="deepseek-v4-flash" placeholder-class="ph" @blur="autoSaveProvider" />
 						</view>
 						<view class="detail-field">
 							<text class="detail-field-label">显示名称</text>
-							<input class="detail-field-input" type="text" v-model="m.name" placeholder="DeepSeek V4 Flash" placeholder-class="ph" />
+							<input class="detail-field-input" type="text" v-model="m.name" placeholder="DeepSeek V4 Flash" placeholder-class="ph" @blur="autoSaveProvider" />
 						</view>
 						<view class="detail-row">
 							<view class="detail-field" style="flex:1;margin-right:12rpx;">
 								<text class="detail-field-label">上下文窗口 (tokens)</text>
-								<input class="detail-field-input" type="number" v-model="m.ctxStr" placeholder="128000" placeholder-class="ph" />
+								<input class="detail-field-input" type="number" v-model="m.ctxStr" placeholder="128000" placeholder-class="ph" @blur="autoSaveProvider" />
 							</view>
 							<view class="detail-field" style="flex:1;">
 								<text class="detail-field-label">最大输出 (tokens)</text>
-								<input class="detail-field-input" type="number" v-model="m.maxTokensStr" placeholder="4096" placeholder-class="ph" />
+								<input class="detail-field-input" type="number" v-model="m.maxTokensStr" placeholder="4096" placeholder-class="ph" @blur="autoSaveProvider" />
 							</view>
 						</view>
 						<view class="detail-field">
 							<text class="detail-field-label">自定义参数 (JSON)</text>
-							<input class="detail-field-input detail-params-input" type="text" v-model="m.params" placeholder='{"key": "value"}' placeholder-class="ph" />
+							<input class="detail-field-input detail-params-input" type="text" v-model="m.params" placeholder='{"key": "value"}' placeholder-class="ph" @blur="autoSaveProvider" />
 							<text class="detail-field-hint">额外的 API 参数，例如温度、top_p 等</text>
 						</view>
 					<view class="detail-field model-vision-row">
 						<text class="detail-field-label">支持识图</text>
-						<rice-switch v-model="m.supportsVision" />
+						<rice-switch v-model="m.supportsVision" @change="autoSaveProvider" />
 					</view>
 					<view class="detail-field model-vision-row">
 						<text class="detail-field-label">支持工具调用</text>
-						<rice-switch v-model="m.supportsToolCall" />
+						<rice-switch v-model="m.supportsToolCall" @change="autoSaveProvider" />
 					</view>
 					<view class="detail-field model-vision-row">
 						<text class="detail-field-label">支持思维链</text>
-						<rice-switch v-model="m.supportsReasoning" />
+						<rice-switch v-model="m.supportsReasoning" @change="autoSaveProvider" />
 					</view>
 				</view>
 				</view>
@@ -157,8 +163,8 @@
 			</view>
 
 			<!-- 保存 -->
-			<view class="save-wrap">
-				<rice-button type="primary" text="保存" size="large" shape="round" @click="saveProvider" />
+			<view v-if="isNew" class="save-wrap">
+				<rice-button type="primary" text="保存创建" size="large" shape="round" @click="saveProviderAndBack" />
 			</view>
 		</scroll-view>
 	</view>
@@ -270,6 +276,7 @@
 			addModel() {
 				const m: ModelInfo = { id: '', ctxStr: '', maxTokensStr: '', expanded: true, supportsVision: false, supportsToolCall: false, supportsReasoning: false } as ModelInfo
 				this.editModels.push(m)
+				this.autoSaveProvider()
 			},
 
 			removeModel(index: number) {
@@ -280,6 +287,7 @@
 					}
 				}
 				this.editModels = newList
+				this.autoSaveProvider()
 			},
 
 			async fetchModels() {
@@ -376,10 +384,20 @@
 				this.fetchedModelIds = []
 				this.selectedModelIndexes = []
 				this.pickerSearchText = ''
+				this.autoSaveProvider()
 				uni.showToast({ position: 'bottom',  title: '已添加 ' + addedCount + ' 个模型', icon: 'success' })
 			},
 
-			saveProvider() {
+			autoSaveProvider() {
+				if (this.isNew == true) { return }
+				this.saveProvider(false)
+			},
+
+			saveProviderAndBack() {
+				this.saveProvider(true)
+			},
+
+			saveProvider(navigateAfterSave: boolean) {
 				if (this.editId == '') {
 					uni.showToast({ position: 'bottom',  title: '请输入标识', icon: 'none' })
 					return
@@ -416,6 +434,9 @@
 					validModels.push(m)
 				}
 				saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, true)
+				if (navigateAfterSave == false) {
+					return
+				}
 				uni.showToast({ position: 'bottom',  title: '已保存', icon: 'success' })
 
 				// 检查是否已设置默认聊天模型，没有则引导

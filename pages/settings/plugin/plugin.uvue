@@ -31,6 +31,8 @@
 							v-model="webSearchInstance"
 							placeholder="留空使用默认公共实例，或填入自建地址"
 							placeholder-style="color: #D1D5DB; font-size: 26rpx;"
+							@input="saveSettings"
+							@blur="saveSettings"
 						/>
 						<text class="input-hint">自建实例可避免查询日志泄露：docker run -d -p 8080:8080 searxng/searxng</text>
 					</view>
@@ -68,19 +70,14 @@
 				</view>
 				<view v-if="ghProxyEnabled" class="input-wrap" style="margin-top: 20rpx;">
 					<text class="input-label">代理域名</text>
-					<input
-						class="flat-input"
-						v-model="ghProxyDomain"
-						placeholder="https://ghproxy.example.com"
-						placeholder-style="color: #D1D5DB; font-size: 28rpx;"
-					/>
-				</view>
-			</view>
-
-			<!-- 保存按钮 -->
-			<view class="save-wrap">
-				<view class="save-btn" @click="saveSettings">
-					<text class="save-btn-text">保存设置</text>
+						<input
+							class="flat-input"
+							v-model="ghProxyDomain"
+							placeholder="https://ghproxy.example.com"
+							placeholder-style="color: #D1D5DB; font-size: 28rpx;"
+							@input="saveSettings"
+							@blur="saveSettings"
+						/>
 				</view>
 			</view>
 		</scroll-view>
@@ -138,10 +135,6 @@
 				uni.setStorageSync('settings_web_search_provider_id', this.webSearchProviderId)
 				uni.setStorageSync('settings_web_search_model', this.webSearchModel)
 				uni.setStorageSync('settings_web_search_instance', this.webSearchInstance)
-				uni.showToast({
-					title: '已保存',
-					icon: 'success'
-				})
 			},
 
 			selectProvider(provider: string) {
@@ -201,6 +194,7 @@
 
 			toggleGhProxy() {
 				// rice-switch 的 v-model 已自动同步值
+				this.saveSettings()
 			}
 		}
 	}

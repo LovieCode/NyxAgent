@@ -1,6 +1,6 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NavBar title="Skills" showBack />
+		<NavBar title="Skills" showBack @back="goBack" />
 		<scroll-view class="container" :scroll-y="true">
 			<view class="card">
 				<view class="card-header">
@@ -57,13 +57,13 @@
 						<oui-icon-unix name="edit" size="28rpx" color="#6B7280" style="margin-right:12rpx" />
 						<text class="card-title">编辑 Skill</text>
 					</view>
-					<rice-switch v-model="skillEnabled" />
+					<rice-switch v-model="skillEnabled" @change="markUnsaved" />
 				</view>
 
 				<text class="input-label">Name</text>
-				<input class="flat-input" v-model="skillName" placeholder="lowercase-name" placeholder-style="color:#D1D5DB;font-size:26rpx;" />
+				<input class="flat-input" v-model="skillName" placeholder="lowercase-name" placeholder-style="color:#D1D5DB;font-size:26rpx;" @input="markUnsaved" />
 				<text class="input-label">Description</text>
-				<textarea class="small-textarea" v-model="skillDescription" placeholder="描述这个 Skill 什么时候应该被使用" placeholder-style="color:#D1D5DB;font-size:26rpx;" />
+				<textarea class="small-textarea" v-model="skillDescription" placeholder="描述这个 Skill 什么时候应该被使用" placeholder-style="color:#D1D5DB;font-size:26rpx;" @input="markUnsaved" />
 
 				<view class="divider"></view>
 				<view class="card-header between">
@@ -84,7 +84,7 @@
 				</scroll-view>
 
 				<text class="input-label">文档标题 / 路径</text>
-				<input class="flat-input" v-model="docTitle" placeholder="SKILL.md" placeholder-style="color:#D1D5DB;font-size:26rpx;" />
+				<input class="flat-input" v-model="docTitle" placeholder="SKILL.md" placeholder-style="color:#D1D5DB;font-size:26rpx;" @input="markUnsaved" />
 				<text class="input-label">文档内容</text>
 				<view class="fullscreen-edit-card" @click="openDocContentEditor">
 					<view class="fullscreen-edit-header">
@@ -128,6 +128,10 @@
 				skillCreatedAt: 0 as number,
 				showImportPanel: false as boolean,
 				importMarkdown: '' as string,
+				hasUnsaved: false as boolean,
+				isConfirmingLeave: false as boolean,
+				pendingSkillAction: '' as string,
+				pendingSkillId: '' as string,
 			}
 		},
 		onLoad() {
@@ -136,7 +140,18 @@
 		onShow() {
 			this.consumeEditorResult()
 		},
+		onBackPress(): boolean {
+			if (this.hasUnsaved == false) {
+				return false
+			}
+			this.confirmLeave('')
+			return true
+		},
 		methods: {
+			markUnsaved() {
+				this.hasUnsaved = true
+			},
+
 			reloadSkills() {
 				this.skills = getSkills()
 				if (this.selectedSkillId == '' && this.skills.length > 0) {
@@ -169,6 +184,7 @@
 				const result = uni.getStorageSync('editor_result') as string | null
 				if (target == 'skill-doc-content') {
 					this.docContent = result != null ? result : ''
+					this.hasUnsaved = true
 				} else if (target == 'skill-import-markdown') {
 					this.importMarkdown = result != null ? result : ''
 				} else {
@@ -260,13 +276,46 @@
 				}
 				this.selectedDocIndex = 0
 				this.loadSelectedDocumentFields()
+				this.hasUnsaved = false
 			},
 
 			selectSkill(skill: UTSJSONObject) {
-				if (this.selectedSkillId != '' && this.selectedSkillId != readSkillId(skill)) {
-					this.saveCurrentSkillSilently()
+				const nextId = readSkillId(skill)
+				if (this.selectedSkillId != '' && this.selectedSkillId != nextId && this.hasUnsaved == true) {
+					this.pendingSkillAction = 'select'
+					this.pendingSkillId = nextId
+					this.confirmLeave('switch')
+					return
 				}
 				this.loadSkillToEditor(skill)
+			},
+
+			findSkillById(id: string): UTSJSONObject | null {
+				for (let i = 0; i < this.skills.length; i++) {
+					if (readSkillId(this.skills[i]) == id) {
+						return this.skills[i]
+					}
+				}
+				return null
+			},
+
+			runPendingSkillAction() {
+				const action = this.pendingSkillAction
+				const skillId = this.pendingSkillId
+				this.pendingSkillAction = ''
+				this.pendingSkillId = ''
+				if (action == 'select') {
+					const skill = this.findSkillById(skillId)
+					if (skill != null) {
+						this.loadSkillToEditor(skill)
+					}
+				} else if (action == 'new') {
+					this.createNewSkillNow()
+				} else if (action == 'import') {
+					this.importMarkdownSkillNow()
+				} else if (action == '') {
+					uni.navigateBack()
+				}
 			},
 
 			loadSelectedDocumentFields() {
@@ -310,6 +359,7 @@
 				this.documents.push(createSkillDocument('doc-' + (this.documents.length + 1) + '.md', ''))
 				this.selectedDocIndex = this.documents.length - 1
 				this.loadSelectedDocumentFields()
+				this.hasUnsaved = true
 			},
 
 			deleteCurrentDocument() {
@@ -328,6 +378,7 @@
 					this.selectedDocIndex = this.documents.length - 1
 				}
 				this.loadSelectedDocumentFields()
+				this.hasUnsaved = true
 			},
 
 			buildCurrentSkill(): UTSJSONObject {
@@ -352,20 +403,31 @@
 				}
 				upsertSkill(this.buildCurrentSkill())
 				this.skills = getSkills()
+				this.hasUnsaved = false
 			},
 
-			saveCurrentSkill() {
+			saveCurrentSkill(): boolean {
 				if (this.skillName.trim() == '') {
 					uni.showToast({ position: 'bottom', title: 'Name 不能为空', icon: 'none' })
-					return
+					return false
 				}
 				this.saveCurrentSkillSilently()
 				this.skillName = normalizeSkillName(this.skillName)
 				uni.showToast({ position: 'bottom', title: '已保存', icon: 'success' })
+				return true
 			},
 
 			createNewSkill() {
-				this.saveCurrentSkillSilently()
+				if (this.hasUnsaved == true) {
+					this.pendingSkillAction = 'new'
+					this.pendingSkillId = ''
+					this.confirmLeave('switch')
+					return
+				}
+				this.createNewSkillNow()
+			},
+
+			createNewSkillNow() {
 				const docs: UTSJSONObject[] = []
 				docs.push(createSkillDocument('SKILL.md', ''))
 				const skill = createSkillRecord('new-skill-' + Date.now(), '描述这个 Skill 适用的任务', docs)
@@ -384,7 +446,20 @@
 					uni.showToast({ position: 'bottom', title: '内容不能为空', icon: 'none' })
 					return
 				}
-				this.saveCurrentSkillSilently()
+				if (this.hasUnsaved == true) {
+					this.pendingSkillAction = 'import'
+					this.pendingSkillId = ''
+					this.confirmLeave('switch')
+					return
+				}
+				this.importMarkdownSkillNow()
+			},
+
+			importMarkdownSkillNow() {
+				const text = this.importMarkdown.trim()
+				if (text == '') {
+					return
+				}
 				const skill = createSkillFromMarkdown(text, 'imported-skill')
 				upsertSkill(skill)
 				this.importMarkdown = ''
@@ -392,6 +467,43 @@
 				this.skills = getSkills()
 				this.loadSkillToEditor(skill)
 				uni.showToast({ position: 'bottom', title: '已导入', icon: 'success' })
+			},
+
+			confirmLeave(mode: string) {
+				if (this.isConfirmingLeave == true) { return }
+				this.isConfirmingLeave = true
+				uni.showModal({
+					title: '有未保存 Skill',
+					content: '当前 Skill 内容已修改，要保存吗？',
+					cancelText: '不保存',
+					confirmText: '保存',
+					success: (res) => {
+						this.isConfirmingLeave = false
+						if (res.confirm == true) {
+							if (this.saveCurrentSkill() == false) {
+								return
+							}
+						} else {
+							this.hasUnsaved = false
+						}
+						if (mode == 'switch') {
+							this.runPendingSkillAction()
+						} else {
+							uni.navigateBack()
+						}
+					},
+					fail: () => {
+						this.isConfirmingLeave = false
+					}
+				})
+			},
+
+			goBack() {
+				if (this.hasUnsaved == false) {
+					uni.navigateBack()
+					return
+				}
+				this.confirmLeave('')
 			},
 
 			confirmDeleteSkill() {
