@@ -137,7 +137,7 @@ function writeArrayBufferToFile(path: string, data: ArrayBuffer): boolean {
 	if (path == '') { return false }
 	try {
 		const fm = uni.getFileSystemManager()
-		fm.writeFileSync(path, data)
+		fm.writeFileSync(path, data, 'binary')
 		return true
 	} catch (e: any) {
 		console.log('[Speech] 写入音频失败: ' + e)

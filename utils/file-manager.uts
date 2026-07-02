@@ -15,6 +15,11 @@ import { getAppSetting, getGroupChatRows } from '@/utils/database.uts'
 
 // #ifdef APP-ANDROID
 import File from 'java.io.File'
+import Charset from 'java.nio.charset.Charset'
+// #endif
+
+// #ifdef APP-ANDROID
+const UTF8_CHARSET = Charset.forName('UTF-8')
 // #endif
 
 /** 文件项信息 */
@@ -866,7 +871,7 @@ export function createFile(filePath: string): FileOpResult {
 		if (parent != null && !parent!.exists()) {
 			parent!.mkdirs()
 		}
-		file.writeText('')
+		file.writeText('', UTF8_CHARSET)
 		return okResult()
 	} catch (e: any) {
 		const msg = e != null ? ('' + e) : '创建文件失败'
@@ -904,7 +909,7 @@ export function writeContent(filePath: string, content: string): FileOpResult {
 		if (parent != null && !parent!.exists()) {
 			parent!.mkdirs()
 		}
-		file.writeText(content)
+		file.writeText(content, UTF8_CHARSET)
 		return okResult()
 	} catch (e: any) {
 		const msg = e != null ? ('' + e) : '写入文件失败'
@@ -944,7 +949,7 @@ export function readContent(filePath: string): string | null {
 		if (!file.exists() || file.isDirectory()) {
 			return null
 		}
-		return file.readText()
+		return file.readText(UTF8_CHARSET)
 	} catch (_e: any) {
 		return null
 	}

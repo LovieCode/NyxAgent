@@ -1153,6 +1153,15 @@ function ensureAppSettingsTable(db: xSqlite): void {
 	)
 }
 
+function legacyStorageValueToString(value: any | null): string {
+	if (value == null) { return '' }
+	try {
+		return '' + value
+	} catch (_e: any) {
+		return ''
+	}
+}
+
 /**
  * 获取应用设置值
  */
@@ -1171,10 +1180,10 @@ export function getAppSetting(key: string): string | null {
 		return null
 	}
 	// COMPAT_LEGACY_STORAGE_SETTINGS: 旧版本把 app setting 写在 uni.storage；当前只读兼容，未来可清空。
-	const legacyDirectVal = uni.getStorageSync(key) as string | null
-	if (legacyDirectVal != null && legacyDirectVal != '') { return legacyDirectVal }
-	const legacyPrefixedVal = uni.getStorageSync(SETTINGS_PREFIX + key) as string | null
-	return (legacyPrefixedVal != null && legacyPrefixedVal != '') ? legacyPrefixedVal : null
+	const legacyDirectVal = legacyStorageValueToString(uni.getStorageSync(key))
+	if (legacyDirectVal != '') { return legacyDirectVal }
+	const legacyPrefixedVal = legacyStorageValueToString(uni.getStorageSync(SETTINGS_PREFIX + key))
+	return legacyPrefixedVal != '' ? legacyPrefixedVal : null
 }
 
 /**

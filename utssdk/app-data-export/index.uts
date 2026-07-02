@@ -9,6 +9,7 @@ import ZipEntry from 'java.util.zip.ZipEntry'
 import ZipFile from 'java.util.zip.ZipFile'
 import ZipOutputStream from 'java.util.zip.ZipOutputStream'
 import FileOutputStream from 'java.io.FileOutputStream'
+import Charset from 'java.nio.charset.Charset'
 import Intent from 'android.content.Intent'
 import ClipData from 'android.content.ClipData'
 import ContentValues from 'android.content.ContentValues'
@@ -16,6 +17,10 @@ import MediaStore from 'android.provider.MediaStore'
 import Uri from 'android.net.Uri'
 import Build from 'android.os.Build'
 import Environment from 'android.os.Environment'
+// #endif
+
+// #ifdef APP-ANDROID
+const UTF8_CHARSET = Charset.forName('UTF-8')
 // #endif
 
 const MAX_ZIP_SOURCE_BYTES: number = 50 * 1024 * 1024
@@ -78,7 +83,7 @@ export function writeExportFile(fileName: string, content: string): string {
 			root.mkdirs()
 		}
 		const file = new File(root.absolutePath + '/' + fileName)
-		file.writeText(content)
+		file.writeText(content, UTF8_CHARSET)
 		return file.absolutePath as string
 	} catch (_e: any) {
 		return ''
@@ -167,7 +172,7 @@ export function writeExportZipFile(fileName: string, manifestJson: string, fileS
 		}
 		const zipFile = new File(root.absolutePath + '/' + fileName)
 		const tempManifest = new File(root.absolutePath + '/.export-manifest.tmp')
-		tempManifest.writeText(manifestJson)
+		tempManifest.writeText(manifestJson, UTF8_CHARSET)
 
 		const zip = new ZipOutputStream(new FileOutputStream(zipFile))
 		addFileEntry(zip, 'export.json', tempManifest)
@@ -187,7 +192,7 @@ export function writeExportZipFile(fileName: string, manifestJson: string, fileS
 						const rawContent = spec['content'] as string | null
 						if (rawContent != null && rawContent.length <= MAX_ZIP_TEXT_CHARS) {
 							const tempText = new File(root.absolutePath + '/.export-text-' + i + '.tmp')
-							tempText.writeText(rawContent)
+							tempText.writeText(rawContent, UTF8_CHARSET)
 							addFileEntry(zip, rawZipPath, tempText)
 							tempText.delete()
 						}
@@ -581,7 +586,7 @@ export function readImportManifest(zipPath: string): string {
 		const input = zip.getInputStream(entry)
 		const tempManifest = new File(root.absolutePath + '/.import-manifest.tmp')
 		tempManifest.writeBytes(input.readBytes())
-		const text = tempManifest.readText()
+		const text = tempManifest.readText(UTF8_CHARSET)
 		tempManifest.delete()
 		input.close()
 		zip.close()

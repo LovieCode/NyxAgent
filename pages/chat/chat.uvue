@@ -172,7 +172,7 @@
 				/** 当前播放中的 TTS 音频 */
 				playingSpeechPath: '' as string,
 				/** TTS 播放器实例 */
-				speechPlayer: null as any | null,
+				speechPlayer: null as InnerAudioContext | null,
 				/** AI 是否正在生成回复 */
 				isGenerating: false as boolean,
 				/** 当前 Agent 事件流，用于停止生成 */
