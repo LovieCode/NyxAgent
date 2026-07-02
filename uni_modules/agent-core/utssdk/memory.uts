@@ -6,6 +6,7 @@
  * 存储后端：laoqianjunzi-sqlite（agent_chat.db）
  */
 import { xSqlite, SQLiteResult } from '@/uni_modules/laoqianjunzi-sqlite'
+import { getAppSetting, setAppSetting } from '@/utils/database.uts'
 
 const DB_NAME = 'agent_chat.db'
 const MEMORY_ENABLED_KEY = 'settings_memory_enabled'
@@ -128,7 +129,7 @@ export function initMemoryTables(): void {
 }
 
 export function getMemoryEnabled(): boolean {
-	const raw = uni.getStorageSync(MEMORY_ENABLED_KEY) as string | null
+	const raw = getAppSetting(MEMORY_ENABLED_KEY)
 	if (raw == null || raw == '') {
 		return true
 	}
@@ -136,7 +137,7 @@ export function getMemoryEnabled(): boolean {
 }
 
 export function setMemoryEnabled(enabled: boolean): void {
-	uni.setStorageSync(MEMORY_ENABLED_KEY, enabled ? 'true' : 'false')
+	setAppSetting(MEMORY_ENABLED_KEY, enabled ? 'true' : 'false')
 }
 
 export function normalizeMemoryPersonId(personId: string): string {

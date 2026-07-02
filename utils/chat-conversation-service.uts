@@ -4,7 +4,7 @@
  * 负责 Agent 快照、历史加载、保存策略。页面别再直接知道 DB 细节。
  */
 
-import { saveConversation, getMessages, getConversationsByAgent } from '@/utils/database.uts'
+import { getAppSetting, saveConversation, getMessages, getConversationsByAgent } from '@/utils/database.uts'
 import { getAgentById } from '@/utils/agent.uts'
 import { getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
 import { consumeActiveConversationRuntimeId, getActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
@@ -19,9 +19,8 @@ import {
 } from '@/utils/chat-models.uts'
 
 export function loadChatUserProfile(): ChatUserProfile {
-	// COMPAT_LEGACY_STORAGE: 用户资料仍在旧 storage，未来资料表迁移时统一删除。
-	const nicknameRaw = uni.getStorageSync('profile_nickname') as string | null
-	const avatarRaw = uni.getStorageSync('profile_avatar') as string | null
+	const nicknameRaw = getAppSetting('profile_nickname')
+	const avatarRaw = getAppSetting('profile_avatar')
 	return {
 		nickname: (nicknameRaw != null && nicknameRaw != '') ? nicknameRaw : '用户',
 		avatar: avatarRaw != null ? avatarRaw : '',
@@ -120,8 +119,7 @@ function resolveDefaultChatModel(): string {
 			return rawModel
 		}
 	}
-	// COMPAT_LEGACY_STORAGE: 默认模型设置仍在旧 storage，未来迁移设置表后删除。
-	const globalModel = uni.getStorageSync('settings_model') as string | null
+	const globalModel = getAppSetting('settings_model')
 	if (globalModel != null && globalModel != '') {
 		return globalModel
 	}

@@ -11,6 +11,8 @@
  * - 其他平台：uni.env.USER_DATA_PATH
  */
 
+import { getAppSetting, getGroupChatRows } from '@/utils/database.uts'
+
 // #ifdef APP-ANDROID
 import File from 'java.io.File'
 // #endif
@@ -494,21 +496,16 @@ export function listRootContents(): FileItem[] {
 		}
 
 		// 第 3 组：群聊工作区（用群聊显示名替代 ID 文件夹名）
-		// 直接读 storage 避免和 group-chat-service.uts 形成循环引用。
+		// 直接读 SQLite，避免和 group-chat-service.uts 形成循环引用。
 		const groupDisplayNames: Map<string, string> = new Map<string, string>()
-		const groupListJson = uni.getStorageSync('group_chat_list') as string
-		if (groupListJson != null && groupListJson != '') {
-			try {
-				const groupList = JSON.parse(groupListJson) as UTSJSONObject[]
-				for (let j = 0; j < (groupList as any[]).length; j++) {
-					const item = groupList[j] as UTSJSONObject
-					const gid = item['id'] as string
-					const gname = item['name'] as string
-					if (gid != null && gid != '' && gname != null && gname != '') {
-						groupDisplayNames.set(gid, gname)
-					}
-				}
-			} catch (_e: any) { /* 解析失败则用文件夹名 */ }
+		const groupRows = getGroupChatRows()
+		for (let j = 0; j < groupRows.length; j++) {
+			const item = groupRows[j]
+			const gid = item['id'] as string
+			const gname = item['name'] as string
+			if (gid != null && gid != '' && gname != null && gname != '') {
+				groupDisplayNames.set(gid, gname)
+			}
 		}
 		const groupWorkspaceRoot = filesDir + '/group-workspaces'
 		const groupList = listDir(groupWorkspaceRoot)
@@ -529,9 +526,9 @@ export function listRootContents(): FileItem[] {
 		}
 
 		// 第 4 组：Agent 子目录（用智能体显示名替代 ID 文件夹名）
-		// 直接读 storage 避免循环引用 agent.uts
+		// 直接读 app_settings，避免循环引用 agent.uts。
 		const agentDisplayNames: Map<string, string> = new Map<string, string>()
-		const agentListJson = uni.getStorageSync('agent_list') as string
+		const agentListJson = getAppSetting('agent_list')
 		if (agentListJson != null && agentListJson != '') {
 			try {
 				const agentList = JSON.parse(agentListJson) as UTSJSONObject[]

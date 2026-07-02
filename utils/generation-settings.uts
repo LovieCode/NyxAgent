@@ -1,7 +1,8 @@
 /**
  * LLM 生成参数设置
- * 全局默认值放在 storage；单个智能体可覆盖。
+ * 全局默认值放在 SQLite app_settings；单个智能体可覆盖。
  */
+import { getAppSetting, setAppSetting } from '@/utils/database.uts'
 
 export type GenerationSettings = {
 	temperature: number
@@ -33,7 +34,7 @@ function clampNumber(value: number, min: number, max: number): number {
 }
 
 function readNumberStorage(key: string, fallback: number, min: number, max: number): number {
-	const raw = uni.getStorageSync(key) as string | null
+	const raw = getAppSetting(key)
 	if (raw == null || raw == '') {
 		return fallback
 	}
@@ -45,7 +46,7 @@ function readNumberStorage(key: string, fallback: number, min: number, max: numb
 }
 
 function readIntStorage(key: string, fallback: number, min: number, max: number): number {
-	const raw = uni.getStorageSync(key) as string | null
+	const raw = getAppSetting(key)
 	if (raw == null || raw == '') {
 		return fallback
 	}
@@ -57,7 +58,7 @@ function readIntStorage(key: string, fallback: number, min: number, max: number)
 }
 
 function readBoolStorage(key: string, fallback: boolean): boolean {
-	const raw = uni.getStorageSync(key) as string | null
+	const raw = getAppSetting(key)
 	if (raw == null || raw == '') {
 		return fallback
 	}
@@ -96,10 +97,10 @@ export function getGlobalGenerationSettings(): GenerationSettings {
 }
 
 export function saveGlobalGenerationSettings(settings: GenerationSettings): void {
-	uni.setStorageSync(GLOBAL_TEMPERATURE_KEY, clampNumber(settings.temperature, 0, 2) + '')
-	uni.setStorageSync(GLOBAL_MAX_TOKENS_KEY, clampNumber(settings.maxTokens, 256, 65536) + '')
-	uni.setStorageSync(GLOBAL_MAX_ITERATIONS_KEY, clampNumber(settings.maxIterations, 0, 100) + '')
-	uni.setStorageSync(GLOBAL_STREAM_ENABLED_KEY, settings.streamEnabled ? 'true' : 'false')
+	setAppSetting(GLOBAL_TEMPERATURE_KEY, clampNumber(settings.temperature, 0, 2) + '')
+	setAppSetting(GLOBAL_MAX_TOKENS_KEY, clampNumber(settings.maxTokens, 256, 65536) + '')
+	setAppSetting(GLOBAL_MAX_ITERATIONS_KEY, clampNumber(settings.maxIterations, 0, 100) + '')
+	setAppSetting(GLOBAL_STREAM_ENABLED_KEY, settings.streamEnabled ? 'true' : 'false')
 }
 
 export function getMemoryOrganizerGenerationSettings(): GenerationSettings {
@@ -112,9 +113,9 @@ export function getMemoryOrganizerGenerationSettings(): GenerationSettings {
 }
 
 export function saveMemoryOrganizerGenerationSettings(settings: GenerationSettings): void {
-	uni.setStorageSync(MEMORY_TEMPERATURE_KEY, clampNumber(settings.temperature, 0, 2) + '')
-	uni.setStorageSync(MEMORY_MAX_TOKENS_KEY, clampNumber(settings.maxTokens, 256, 2048) + '')
-	uni.setStorageSync(MEMORY_MAX_ITERATIONS_KEY, clampNumber(settings.maxIterations, 1, 100) + '')
+	setAppSetting(MEMORY_TEMPERATURE_KEY, clampNumber(settings.temperature, 0, 2) + '')
+	setAppSetting(MEMORY_MAX_TOKENS_KEY, clampNumber(settings.maxTokens, 256, 2048) + '')
+	setAppSetting(MEMORY_MAX_ITERATIONS_KEY, clampNumber(settings.maxIterations, 1, 100) + '')
 }
 
 export function getEffectiveGenerationSettings(agent: UTSJSONObject | null): GenerationSettings {

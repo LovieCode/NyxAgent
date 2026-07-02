@@ -2,12 +2,13 @@
  * 纯文本 Skills 管理
  *
  * 设计取向：
- * - Skill 本体放在 uni.storage，便于导入导出。
+ * - Skill 本体放在 SQLite app_settings，便于导入导出。
  * - Agent 只保存启用的 skillIds，避免全局开关污染不同 Agent。
  * - 不执行脚本，只把纯文本文档按 XML 风格注入系统上下文。
  */
 
 import { getAgentById } from '@/utils/agent.uts'
+import { getAppSetting, setAppSetting } from '@/utils/database.uts'
 
 export const SKILLS_STORAGE_KEY = 'skills_list'
 
@@ -294,7 +295,7 @@ function normalizeSkillRecord(skill: UTSJSONObject): UTSJSONObject {
 }
 
 export function getSkills(): UTSJSONObject[] {
-	const raw = uni.getStorageSync(SKILLS_STORAGE_KEY) as string | null
+	const raw = getAppSetting(SKILLS_STORAGE_KEY)
 	if (raw == null || raw == '') {
 		return []
 	}
@@ -311,7 +312,7 @@ export function getSkills(): UTSJSONObject[] {
 }
 
 export function saveSkills(skills: UTSJSONObject[]): void {
-	uni.setStorageSync(SKILLS_STORAGE_KEY, JSON.stringify(skills))
+	setAppSetting(SKILLS_STORAGE_KEY, JSON.stringify(skills))
 }
 
 export function upsertSkill(skill: UTSJSONObject): void {

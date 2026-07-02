@@ -37,6 +37,7 @@
 	 */
 
 	import { ref, onMounted } from 'vue'
+	import { getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 
 	const imagePath = ref('' as string)
 	const areaSize = ref(300 as number)
@@ -58,9 +59,9 @@
 	let loaded = false as boolean
 
 	onMounted(() => {
-		const pathRaw = uni.getStorageSync('crop_image_path')
-		if (pathRaw != null) {
-			imagePath.value = pathRaw as string
+		const pathRaw = getRuntimeState('crop_image_path')
+		if (pathRaw != '') {
+			imagePath.value = pathRaw
 		}
 		const win = uni.getWindowInfo()
 		const wwRaw = win['windowWidth']
@@ -188,7 +189,7 @@
 			success: (res) => {
 				const path = res.tempFilePath
 				if (path != null && path != '') {
-					uni.setStorageSync('crop_result', path)
+					setRuntimeState('crop_result', path)
 				}
 				uni.hideLoading()
 				uni.navigateBack()

@@ -1,6 +1,8 @@
+import { getAppSetting, removeAppSetting, setAppSetting } from '@/utils/database.uts'
+
 /**
- * storage 工具模块 - 本地存储管理
- * 提供统一的本地数据存取接口，封装 uni-app 存储API
+ * storage 工具模块 - 兼容旧本地存储调用
+ * 新写入统一落 SQLite app_settings，不再使用旧同步 storage 写入。
  */
 
 /**
@@ -9,7 +11,7 @@
  * @param value 存储值
  */
 export function setStorage(key : string, value : string) : void {
-	uni.setStorageSync(key, value)
+	setAppSetting(key, value)
 }
 
 /**
@@ -18,7 +20,11 @@ export function setStorage(key : string, value : string) : void {
  * @returns 存储的值，不存在则返回空字符串
  */
 export function getStorage(key : string) : string {
-	return uni.getStorageSync(key) as string
+	const value = getAppSetting(key)
+	if (value != null) { return value }
+	// COMPAT_LEGACY_STORAGE_READ: 兼容旧版本 uni.storage，未来清理 storage 迁移时删除。
+	const legacy = uni.getStorageSync(key) as string | null
+	return legacy != null ? legacy : ''
 }
 
 /**
@@ -26,6 +32,8 @@ export function getStorage(key : string) : string {
  * @param key 存储键名
  */
 export function removeStorage(key : string) : void {
+	removeAppSetting(key)
+	// COMPAT_LEGACY_STORAGE_REMOVE: 清掉旧版本残留 key，未来清理 storage 迁移时删除。
 	uni.removeStorageSync(key)
 }
 
@@ -33,5 +41,6 @@ export function removeStorage(key : string) : void {
  * 清空本地存储数据
  */
 export function clearStorage() : void {
+	// COMPAT_LEGACY_STORAGE_CLEAR: 仅保留给旧调用方清理历史 uni.storage，未来清空。
 	uni.clearStorageSync()
 }

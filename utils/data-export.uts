@@ -1,6 +1,6 @@
 /**
  * 全量数据导出工具
- * 聚合 SQLite、uni.storage、智能体配置和本地资源，生成可备份 ZIP 清单。
+ * 聚合 SQLite、app_settings、兼容 legacy uni.storage 和本地资源，生成可备份 ZIP 清单。
  */
 
 import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings, getDatabaseFilePathForExport, getAllMemoryBuffersForExport, getAllMemoryCoreForExport, getAllConversationTokenUsageStatsForExport, getAllMemoryCompactionStatesForExport, getAllGroupChatDataForExport } from '@/utils/database.uts'
@@ -24,7 +24,19 @@ function sanitizeFilePart(text: string): string {
 	return result
 }
 
-function readStorageValue(key: string): any | null {
+function findAppSettingValue(appSettings: UTSJSONObject[], key: string): string | null {
+	for (let i = 0; i < appSettings.length; i++) {
+		const row = appSettings[i]
+		const rowKey = row['key'] as string | null
+		if (rowKey == key) {
+			return row['value'] as string | null
+		}
+	}
+	return null
+}
+
+function readLegacyStorageValue(key: string): any | null {
+	// COMPAT_LEGACY_STORAGE_EXPORT: 仅导出旧版本残留 uni.storage；未来清空兼容层时整段删除。
 	const value = uni.getStorageSync(key)
 	if (value == null) {
 		return null
@@ -32,8 +44,14 @@ function readStorageValue(key: string): any | null {
 	return value
 }
 
-function addStorageValue(target: UTSJSONObject, key: string): void {
-	const value = readStorageValue(key)
+function addStorageValue(target: UTSJSONObject, key: string, appSettings: UTSJSONObject[]): void {
+	let value: any | null = findAppSettingValue(appSettings, key)
+	if (value == null && key.startsWith('app_setting_')) {
+		value = findAppSettingValue(appSettings, key.substring(12))
+	}
+	if (value == null) {
+		value = readLegacyStorageValue(key)
+	}
 	if (value != null) {
 		target[key] = value
 	}
@@ -109,6 +127,7 @@ function buildKnownStorageKeys(): string[] {
 function collectStorageKeys(): string[] {
 	const keys = buildKnownStorageKeys()
 	try {
+		// COMPAT_LEGACY_STORAGE_EXPORT: 仅枚举旧版本残留 uni.storage key；未来清空兼容层时整段删除。
 		const infoText = JSON.stringify(uni.getStorageInfoSync())
 		const info = JSON.parse(infoText) as UTSJSONObject
 		const dynamicKeys = info['keys'] as string[] | null
@@ -123,16 +142,16 @@ function collectStorageKeys(): string[] {
 	return keys
 }
 
-function collectKnownStorageByKeys(keys: string[]): UTSJSONObject {
+function collectKnownStorageByKeys(keys: string[], appSettings: UTSJSONObject[]): UTSJSONObject {
 	const storage: UTSJSONObject = {}
 	for (let i = 0; i < keys.length; i++) {
-		addStorageValue(storage, keys[i])
+		addStorageValue(storage, keys[i], appSettings)
 	}
 	return storage
 }
 
-function parseStorageArray(key: string): UTSJSONObject[] {
-	const value = uni.getStorageSync(key) as string | null
+function parseStorageArray(storage: UTSJSONObject, key: string): UTSJSONObject[] {
+	const value = storage[key] as string | null
 	if (value == null || value == '') {
 		return []
 	}
@@ -639,8 +658,9 @@ export function buildAllDataExport(): UTSJSONObject {
 	const conversationTokenUsageStats = getAllConversationTokenUsageStatsForExport()
 	const memoryCompactionStates = getAllMemoryCompactionStatesForExport()
 	const groupChatData = getAllGroupChatDataForExport()
+	const appSettings = getAllAppSettings()
 	const storageKeys = collectStorageKeys()
-	const storage = collectKnownStorageByKeys(storageKeys)
+	const storage = collectKnownStorageByKeys(storageKeys, appSettings)
 	const agents = getAgents()
 	const skills = getSkills()
 	const fileSpecs: UTSJSONObject[] = []
@@ -649,8 +669,8 @@ export function buildAllDataExport(): UTSJSONObject {
 	const agentFiles = collectAgentFiles(agents, fileSpecs)
 	const groupWorkspaceFiles = collectGroupWorkspaceFiles(fileSpecs)
 	appendKnowledgeWorkspaceFiles(agents, fileSpecs)
-	const notes = parseStorageArray('notes_list')
-	const todos = parseStorageArray('todo_list')
+	const notes = parseStorageArray(storage, 'notes_list')
+	const todos = parseStorageArray(storage, 'todo_list')
 	const assets = collectAssets(storage, agents, messages, fileSpecs)
 	return {
 		schemaVersion: EXPORT_SCHEMA_VERSION,
@@ -665,7 +685,7 @@ export function buildAllDataExport(): UTSJSONObject {
 			databaseFile: databaseFile,
 			storageKeys: storageKeys,
 			providers: getAllProviders(),
-			appSettings: getAllAppSettings(),
+			appSettings: appSettings,
 			defaultTaskModels: getAllDefaultTaskModels(),
 			agents: agents,
 			skills: skills,

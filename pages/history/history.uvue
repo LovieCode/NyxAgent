@@ -99,7 +99,7 @@
 	/**
 	 * 历史记录页面 - 展示过往对话列表，支持批量管理
 	 */
-	import { getConversations, getMessages, deleteConversation } from '@/utils/database.uts'
+	import { getAppSetting, getConversations, getMessages, deleteConversation } from '@/utils/database.uts'
 	import {
 		deleteGroupAgentContextRecord,
 		displaySessionTitle,
@@ -455,8 +455,8 @@
 				const name = senderName != null ? senderName.trim() : ''
 				if (senderType == 'user' || role == 'user') {
 					if (name != '' && name != '用户') { return name }
-					// COMPAT_LEGACY_STORAGE: 用户资料仍在旧 storage，未来资料表迁移时统一删除。
-					const raw = uni.getStorageSync('profile_nickname') as string | null
+					// 用户资料从 SQLite app_settings 读取。
+					const raw = getAppSetting('profile_nickname')
 					const profileName = raw != null ? raw.trim() : ''
 					return profileName != '' ? profileName : '用户'
 				}

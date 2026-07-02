@@ -37,6 +37,7 @@ import {
 	deleteGroupAgentContextRow,
 	deleteGroupMessageRows,
 	deleteGroupSessionDbRows,
+	getAppSetting,
 	getGroupAgentContextRows,
 	getGroupAgentMetricRows,
 	getGroupChatRowById,
@@ -1294,8 +1295,7 @@ function buildOpenTaskSummary(groupId: string, sessionId: string): string {
 }
 
 function readCurrentUserDisplayName(): string {
-	// COMPAT_LEGACY_STORAGE: 用户资料仍在旧 storage，未来资料表迁移时统一删除。
-	const raw = uni.getStorageSync('profile_nickname') as string | null
+	const raw = getAppSetting('profile_nickname')
 	const name = raw != null ? raw.trim() : ''
 	return name != '' ? name : '用户'
 }

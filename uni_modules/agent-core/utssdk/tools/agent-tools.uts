@@ -35,6 +35,7 @@ import {
 } from '../memory'
 import { getProviderApiConfig } from '../provider'
 import { getAgentById, isAgentToolEnabled } from '@/utils/agent.uts'
+import { getAppSetting } from '@/utils/database.uts'
 
 /** ToolResult 匹配 agent-core types */
 export type ToolResult = {
@@ -831,22 +832,25 @@ class WebSearchTool implements AgentTool {
 				return
 			}
 			// 检查是否启用
-			const wsEnabled = uni.getStorageSync('settings_web_search_enabled') as string
+			const wsEnabledRaw = getAppSetting('settings_web_search_enabled')
+			const wsEnabled = wsEnabledRaw != null ? wsEnabledRaw : ''
 			if (wsEnabled != 'true') {
 				resolve({ content: '网络搜索未启用，请在插件设置中开启。', isError: false } as ToolResult)
 				return
 			}
 			const limit = rawLimit != null ? rawLimit : 5
-			const provider = uni.getStorageSync('settings_web_search_provider') as string
+			const providerRaw = getAppSetting('settings_web_search_provider')
+			const provider = providerRaw != null ? providerRaw : ''
 			if (provider == 'grok') {
 				this.doAISearch(query, resolve)
 				return
 			}
 			// 默认 SearXNG
 			// 优先使用自定义实例，否则用公共实例
-			const customInstance = uni.getStorageSync('settings_web_search_instance') as string
+			const customInstanceRaw = getAppSetting('settings_web_search_instance')
+			const customInstance = customInstanceRaw != null ? customInstanceRaw : ''
 			let instances: string[]
-			if (customInstance != null && customInstance != '') {
+			if (customInstance != '') {
 				instances = [customInstance]
 			} else {
 				instances = [
@@ -865,8 +869,9 @@ class WebSearchTool implements AgentTool {
 	/** AI 搜索——从提供商列表读取配置，自动适配 Grok/豆包 API */
 	private doAISearch(query: string, resolve: (value: ToolResult) => void): void {
 		console.log('[WebSearch] AI 搜索开始: ' + query.substring(0, query.length < 60 ? query.length : 60))
-		const providerId = uni.getStorageSync('settings_web_search_provider_id') as string
-		if (providerId == null || providerId == '') {
+		const providerIdRaw = getAppSetting('settings_web_search_provider_id')
+		const providerId = providerIdRaw != null ? providerIdRaw : ''
+		if (providerId == '') {
 			console.log('[WebSearch] ← 未选择提供商')
 			resolve({ content: '未选择搜索提供商，请在插件设置中选择。', isError: true } as ToolResult)
 			return
@@ -890,8 +895,9 @@ class WebSearchTool implements AgentTool {
 		}
 		// 检测豆包 / 火山引擎 → 走 Responses API
 		const isDoubao = baseUrl.indexOf('volces.com') >= 0 || baseUrl.indexOf('volcengine.com') >= 0
-		let model = uni.getStorageSync('settings_web_search_model') as string
-		if (model == null || model == '') {
+		const modelRaw = getAppSetting('settings_web_search_model')
+		let model = modelRaw != null ? modelRaw : ''
+		if (model == '') {
 			model = isDoubao ? 'doubao-seed-1-6-250615' : 'grok-2'
 		}
 		if (isDoubao) {

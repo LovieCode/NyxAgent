@@ -1171,8 +1171,10 @@ export function getAppSetting(key: string): string | null {
 		return null
 	}
 	// COMPAT_LEGACY_STORAGE_SETTINGS: 旧版本把 app setting 写在 uni.storage；当前只读兼容，未来可清空。
-	const legacyVal = uni.getStorageSync(SETTINGS_PREFIX + key) as string
-	return (legacyVal != null && legacyVal != '') ? legacyVal : null
+	const legacyDirectVal = uni.getStorageSync(key) as string | null
+	if (legacyDirectVal != null && legacyDirectVal != '') { return legacyDirectVal }
+	const legacyPrefixedVal = uni.getStorageSync(SETTINGS_PREFIX + key) as string | null
+	return (legacyPrefixedVal != null && legacyPrefixedVal != '') ? legacyPrefixedVal : null
 }
 
 /**
@@ -1187,6 +1189,14 @@ export function setAppSetting(key: string, value: string): void {
 	} else {
 		db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [key, value])
 	}
+	db.close()
+}
+
+export function removeAppSetting(key: string): void {
+	if (key == '') { return }
+	const db = getDb()
+	ensureAppSettingsTable(db)
+	db.run('DELETE FROM app_settings WHERE key = ?', [key])
 	db.close()
 }
 
@@ -1257,6 +1267,14 @@ export function consumeRuntimeState(key: string): string {
 		return readStringField(rows[0], 'value')
 	}
 	return ''
+}
+
+export function deleteRuntimeState(key: string): void {
+	if (key == '') { return }
+	const db = getDb()
+	ensureAppRuntimeStateTable(db)
+	db.run('DELETE FROM app_runtime_state WHERE key = ?', [key])
+	db.close()
 }
 
 export function getGroupChatRows(): UTSJSONObject[] {

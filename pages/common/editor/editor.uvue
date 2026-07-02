@@ -14,10 +14,11 @@
 
 <script lang="uts">
 	import { readContent, writeContent, basename } from '@/utils/file-manager.uts'
+	import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 
 	/**
 	 * 通用全屏编辑路由适配器。
-	 * UI 由 FullscreenTextEditor 组件提供；本页只处理 storage/file 模式。
+	 * UI 由 FullscreenTextEditor 组件提供；本页只处理 runtime_state/file 模式。
 	 */
 	export default {
 		data() {
@@ -40,26 +41,26 @@
 		},
 		methods: {
 			loadEditorConfig() {
-				const rawMode = uni.getStorageSync('editor_mode') as string | null
+				const rawMode = getRuntimeState('editor_mode')
 				this.mode = rawMode == 'file' ? 'file' : 'text'
-				const targetText = uni.getStorageSync('editor_target') as string | null
-				const filePathText = uni.getStorageSync('editor_file_path') as string | null
-				this.target = targetText != null ? targetText : ''
-				this.filePath = filePathText != null ? filePathText : ''
+				const targetText = getRuntimeState('editor_target')
+				const filePathText = getRuntimeState('editor_file_path')
+				this.target = targetText
+				this.filePath = filePathText
 
-				const title = uni.getStorageSync('editor_title') as string | null
-				if (title != null && title != '') {
+				const title = getRuntimeState('editor_title')
+				if (title != '') {
 					this.navTitle = title
 				} else if (this.mode == 'file' && this.filePath != '') {
 					this.navTitle = basename(this.filePath)
 				}
 
-				const placeholderText = uni.getStorageSync('editor_placeholder') as string | null
-				if (placeholderText != null && placeholderText != '') {
+				const placeholderText = getRuntimeState('editor_placeholder')
+				if (placeholderText != '') {
 					this.placeholder = placeholderText
 				}
 
-				const readOnlyText = uni.getStorageSync('editor_readonly') as string | null
+				const readOnlyText = getRuntimeState('editor_readonly')
 				this.readOnly = readOnlyText == 'true'
 				this.draftKey = this.buildDraftKey()
 				this.subTitle = this.buildSubTitle()
@@ -73,8 +74,7 @@
 						content = fileContent != null ? fileContent : ''
 					}
 				} else {
-					const storedContent = uni.getStorageSync('editor_content') as string | null
-					content = storedContent != null ? storedContent : ''
+					content = getRuntimeState('editor_content')
 				}
 
 				this.editText = content
@@ -128,17 +128,15 @@
 				if (this.readOnly == true) {
 					return
 				}
-				const legacyDraft = uni.getStorageSync('editor_draft') as string | null
-				const scopedDraft = uni.getStorageSync(this.draftKey) as string | null
+				const legacyDraft = getRuntimeState('editor_draft')
+				const scopedDraft = getRuntimeState(this.draftKey)
 				let draft = legacyDraft
-				if (scopedDraft != null) {
-					if (scopedDraft != '') {
-						draft = scopedDraft
-					}
+				if (scopedDraft != '') {
+					draft = scopedDraft
 				}
-				if (draft != null) {
-					const safeDraft = draft as string
-					if (safeDraft != '' && safeDraft != content) {
+				if (draft != '') {
+					const safeDraft = draft
+					if (safeDraft != content) {
 						uni.showModal({
 							title: '恢复草稿',
 							content: '检测到上次未保存的内容，是否继续编辑？',
@@ -169,13 +167,13 @@
 				if (this.readOnly == true) {
 					return
 				}
-				uni.setStorageSync(this.draftKey, this.editText)
-				uni.setStorageSync('editor_draft', this.editText)
+				setRuntimeState(this.draftKey, this.editText)
+				setRuntimeState('editor_draft', this.editText)
 			},
 
 			clearDraft() {
-				uni.removeStorageSync(this.draftKey)
-				uni.removeStorageSync('editor_draft')
+				deleteRuntimeState(this.draftKey)
+				deleteRuntimeState('editor_draft')
 			},
 
 			onBack() {
@@ -213,8 +211,8 @@
 			},
 
 			saveTextAndBack() {
-				uni.setStorageSync('editor_result', this.editText)
-				uni.setStorageSync('editor_result_ready', 'true')
+				setRuntimeState('editor_result', this.editText)
+				setRuntimeState('editor_result_ready', 'true')
 				this.initialText = this.editText
 				this.dirty = false
 				this.clearDraft()
@@ -228,8 +226,8 @@
 				}
 				const result = writeContent(this.filePath, this.editText)
 				if (result.ok == true) {
-					uni.setStorageSync('editor_saved', 'true')
-					uni.setStorageSync('editor_saved_path', this.filePath)
+					setRuntimeState('editor_saved', 'true')
+					setRuntimeState('editor_saved_path', this.filePath)
 					this.initialText = this.editText
 					this.dirty = false
 					this.clearDraft()

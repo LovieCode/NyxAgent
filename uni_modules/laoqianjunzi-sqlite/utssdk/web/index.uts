@@ -12,6 +12,7 @@ type SqlJsLoaderConfig = {
 let sharedScriptReady = false
 let sharedSqlModule : any | null = null
 let sharedLoadingTask : Promise<void> | null = null
+const sharedSnapshotCache : UTSJSONObject = {}
 
 function buildOutcomeError(code : LqjSqlFailureCode, details : string | null = null) : LqjSqlOutcome {
 	const failure = new LqjSqlFailureImpl(code, details)
@@ -364,7 +365,8 @@ export class LqjSqlDepot {
 		try {
 			const targetAlias = alias == null || alias.trim().length == 0 ? this.alias : alias.trim()
 			const bytes = this.runtimeDb.export() as Uint8Array
-			uni.setStorageSync(this.storageKey(targetAlias), encodeBytesToBase64(bytes))
+			// COMPAT_WEB_SQLITE_MEMORY_SNAPSHOT: Web 端禁止 uni.storage 写入；同步快照只保留会话内存。
+			sharedSnapshotCache[this.storageKey(targetAlias)] = encodeBytesToBase64(bytes)
 			return {
 				grid : null,
 				fields : null,
@@ -383,7 +385,7 @@ export class LqjSqlDepot {
 	}
 
 	restoreSnapshot(alias : string) : Promise<LqjSqlOutcome> {
-		const encoded = uni.getStorageSync(this.storageKey(alias)) as string
+		const encoded = sharedSnapshotCache[this.storageKey(alias)] as string | null
 		if (encoded == null || encoded.length == 0) {
 			return Promise.resolve(buildOutcomeError(9803))
 		}

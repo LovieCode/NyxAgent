@@ -3,8 +3,9 @@
  *
  * 参考 AstrBot astrbot/core/utils/llm_metadata.py
  * 使用 models.dev/models.json（扁平结构，~130KB）替代 api.json（嵌套，~2.3MB）
- * 模型能力数据缓存到 uni.storage
+ * 模型能力数据缓存到 SQLite app_settings
  */
+import { getAppSetting, setAppSetting } from '@/utils/database.uts'
 
 /**
  * 模型能力描述
@@ -28,12 +29,12 @@ let cacheTimestamp: number = 0
  */
 export function ensureMetadataCache(): void {
 	if (metadataCache != null) return
-	const cached = uni.getStorageSync('llm_metadata_cache') as string | null
-	const cachedTime = uni.getStorageSync('llm_metadata_cache_time') as number | null
+	const cached = getAppSetting('llm_metadata_cache')
+	const cachedTimeRaw = getAppSetting('llm_metadata_cache_time')
 	if (cached != null && cached != '') {
 		try {
 			metadataCache = JSON.parse(cached) as UTSJSONObject
-			cacheTimestamp = cachedTime != null ? cachedTime : 0
+			cacheTimestamp = cachedTimeRaw != null && cachedTimeRaw != '' ? parseInt(cachedTimeRaw) : 0
 		} catch (_e: any) {}
 	}
 }
@@ -117,9 +118,8 @@ export function refreshMetadataCache(): Promise<boolean> {
 						const newCache = JSON.parse(raw) as UTSJSONObject
 						metadataCache = newCache
 						cacheTimestamp = Date.now()
-						// 存本地
-						uni.setStorageSync('llm_metadata_cache', raw)
-						uni.setStorageSync('llm_metadata_cache_time', cacheTimestamp)
+						setAppSetting('llm_metadata_cache', raw)
+						setAppSetting('llm_metadata_cache_time', cacheTimestamp + '')
 						console.log('[LLM-Meta] 元数据缓存已刷新')
 						resolve(true)
 					} catch (_e: any) {

@@ -112,6 +112,7 @@
 
 <script lang="uts">
 	import { getSkills, upsertSkill, deleteSkill, createSkillRecord, createSkillDocument, createSkillFromMarkdown, normalizeSkillName, readSkillId, readSkillName, readSkillDescription, readSkillEnabled, readSkillDocuments, readSkillDocumentTitle, readSkillDocumentContent, getSkillDocumentCount } from '@/utils/skills.uts'
+	import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 
 	export default {
 		data() {
@@ -176,12 +177,12 @@
 			},
 
 			consumeEditorResult() {
-				const ready = uni.getStorageSync('editor_result_ready') as string | null
+				const ready = getRuntimeState('editor_result_ready')
 				if (ready != 'true') {
 					return
 				}
-				const target = uni.getStorageSync('editor_target') as string | null
-				const result = uni.getStorageSync('editor_result') as string | null
+				const target = getRuntimeState('editor_target')
+				const result = getRuntimeState('editor_result')
 				if (target == 'skill-doc-content') {
 					this.docContent = result != null ? result : ''
 					this.hasUnsaved = true
@@ -194,18 +195,18 @@
 			},
 
 			clearEditorStorage() {
-				uni.removeStorageSync('editor_mode')
-				uni.removeStorageSync('editor_title')
-				uni.removeStorageSync('editor_content')
-				uni.removeStorageSync('editor_result')
-				uni.removeStorageSync('editor_result_ready')
-				uni.removeStorageSync('editor_target')
-				uni.removeStorageSync('editor_file_path')
-				uni.removeStorageSync('editor_saved')
-				uni.removeStorageSync('editor_saved_path')
-				uni.removeStorageSync('editor_readonly')
-				uni.removeStorageSync('editor_placeholder')
-				uni.removeStorageSync('editor_draft')
+				deleteRuntimeState('editor_mode')
+				deleteRuntimeState('editor_title')
+				deleteRuntimeState('editor_content')
+				deleteRuntimeState('editor_result')
+				deleteRuntimeState('editor_result_ready')
+				deleteRuntimeState('editor_target')
+				deleteRuntimeState('editor_file_path')
+				deleteRuntimeState('editor_saved')
+				deleteRuntimeState('editor_saved_path')
+				deleteRuntimeState('editor_readonly')
+				deleteRuntimeState('editor_placeholder')
+				deleteRuntimeState('editor_draft')
 			},
 
 			getDocContentPreview(): string {
@@ -233,11 +234,11 @@
 			openDocContentEditor() {
 				this.syncDocumentFields()
 				this.clearEditorStorage()
-				uni.setStorageSync('editor_mode', 'text')
-				uni.setStorageSync('editor_content', this.docContent)
-				uni.setStorageSync('editor_title', '编辑 Skill 文档')
-				uni.setStorageSync('editor_target', 'skill-doc-content')
-				uni.setStorageSync('editor_placeholder', '写入纯文本指令...')
+				setRuntimeState('editor_mode', 'text')
+				setRuntimeState('editor_content', this.docContent)
+				setRuntimeState('editor_title', '编辑 Skill 文档')
+				setRuntimeState('editor_target', 'skill-doc-content')
+				setRuntimeState('editor_placeholder', '写入纯文本指令...')
 				uni.navigateTo({
 					url: '/pages/common/editor/editor'
 				})
@@ -245,11 +246,11 @@
 
 			openImportMarkdownEditor() {
 				this.clearEditorStorage()
-				uni.setStorageSync('editor_mode', 'text')
-				uni.setStorageSync('editor_content', this.importMarkdown)
-				uni.setStorageSync('editor_title', '导入 SKILL.md')
-				uni.setStorageSync('editor_target', 'skill-import-markdown')
-				uni.setStorageSync('editor_placeholder', '粘贴 SKILL.md 内容...')
+				setRuntimeState('editor_mode', 'text')
+				setRuntimeState('editor_content', this.importMarkdown)
+				setRuntimeState('editor_title', '导入 SKILL.md')
+				setRuntimeState('editor_target', 'skill-import-markdown')
+				setRuntimeState('editor_placeholder', '粘贴 SKILL.md 内容...')
 				uni.navigateTo({
 					url: '/pages/common/editor/editor'
 				})

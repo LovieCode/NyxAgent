@@ -56,7 +56,7 @@ import { AgentEventStream, AgentEvent } from '@/utils/event.uts'
 import { buildImportantMemoryInjection, buildBufferInjection, getMemoryEnabled, saveMemoryManagerLog, MemoryManagerLog, getMemoryCompactionCursor, saveMemoryCompactionCursor } from './memory'
 import { buildAgentSkillsPrompt } from '@/utils/skills.uts'
 import { wrapUserContentForAgent, makeAgentContextBlock, type AgentContextBlock } from '@/utils/message-context.uts'
-import { addConversationTokenUsage, getConversationTokenUsageStats } from '@/utils/database.uts'
+import { addConversationTokenUsage, getAppSetting, getConversationTokenUsageStats, setAppSetting } from '@/utils/database.uts'
 
 const LAST_TOKEN_USAGE_KEY = 'last_token_usage'
 const LAST_LLM_CALL_KEY = 'last_llm_call'
@@ -1130,18 +1130,18 @@ function normalizeTokenUsage(usage: UTSJSONObject): UTSJSONObject {
 function saveLastTokenUsage(usage: UTSJSONObject): UTSJSONObject {
 	const obj = normalizeTokenUsage(usage)
 	const json = JSON.stringify(obj)
-	uni.setStorageSync(LAST_TOKEN_USAGE_KEY, json)
+	setAppSetting(LAST_TOKEN_USAGE_KEY, json)
 	console.log('[LLM] Token 用量已保存: ' + json)
 	return obj
 }
 
 function clearLastTokenUsage(): void {
-	uni.setStorageSync(LAST_TOKEN_USAGE_KEY, '')
+	setAppSetting(LAST_TOKEN_USAGE_KEY, '')
 }
 
 function readLastTokenUsageForCall(): UTSJSONObject | null {
 	try {
-		const rawUsage = uni.getStorageSync(LAST_TOKEN_USAGE_KEY) as string | null
+		const rawUsage = getAppSetting(LAST_TOKEN_USAGE_KEY)
 		if (rawUsage != null && rawUsage != '') {
 			return JSON.parse(rawUsage) as UTSJSONObject
 		}
@@ -1193,17 +1193,17 @@ function saveLastLLMRequestSnapshot(
 		requestBody: cloneJsonObject(body),
 	} as UTSJSONObject
 	const json = JSON.stringify(snapshot)
-	uni.setStorageSync(LAST_LLM_REQUEST_SNAPSHOT_KEY, json)
+	setAppSetting(LAST_LLM_REQUEST_SNAPSHOT_KEY, json)
 	const scopedKey = buildScopedLLMStorageKey(LAST_LLM_REQUEST_SNAPSHOT_KEY, agentId, conversationId)
 	if (scopedKey != LAST_LLM_REQUEST_SNAPSHOT_KEY) {
-		uni.setStorageSync(scopedKey, json)
+		setAppSetting(scopedKey, json)
 	}
 }
 
 export function readLastLLMRequestSnapshot(agentId: string = '', conversationId: string = ''): UTSJSONObject | null {
 	try {
 		const scopedKey = buildScopedLLMStorageKey(LAST_LLM_REQUEST_SNAPSHOT_KEY, agentId, conversationId)
-		const raw = uni.getStorageSync(scopedKey) as string | null
+		const raw = getAppSetting(scopedKey)
 		if (raw != null && raw != '') {
 			return JSON.parse(raw) as UTSJSONObject
 		}
@@ -1217,15 +1217,15 @@ export function readLastLLMRequestSnapshot(agentId: string = '', conversationId:
 export function appendResponseToSnapshot(agentId: string, conversationId: string, responseText: string, thinkingText: string = ''): void {
 	try {
 		const scopedKey = buildScopedLLMStorageKey(LAST_LLM_REQUEST_SNAPSHOT_KEY, agentId, conversationId)
-		const raw = uni.getStorageSync(scopedKey) as string | null
+		const raw = getAppSetting(scopedKey)
 		if (raw == null || raw == '') { return }
 		const snapshot = JSON.parse(raw) as UTSJSONObject
 		snapshot['responseText'] = responseText
 		snapshot['thinkingText'] = thinkingText
 		const updated = JSON.stringify(snapshot)
-		uni.setStorageSync(scopedKey, updated)
+		setAppSetting(scopedKey, updated)
 		if (scopedKey != LAST_LLM_REQUEST_SNAPSHOT_KEY) {
-			uni.setStorageSync(LAST_LLM_REQUEST_SNAPSHOT_KEY, updated)
+			setAppSetting(LAST_LLM_REQUEST_SNAPSHOT_KEY, updated)
 		}
 	} catch (_e: any) {}
 }
@@ -1275,7 +1275,7 @@ function saveLastLLMCall(
 		}
 	}
 	const json = JSON.stringify(obj)
-	uni.setStorageSync(LAST_LLM_CALL_KEY, json)
+	setAppSetting(LAST_LLM_CALL_KEY, json)
 }
 
 /**
@@ -2363,13 +2363,13 @@ export function buildAgentContextPreview(
 	let lastTokenUsage: UTSJSONObject | null = null
 	let lastCallInfo: UTSJSONObject | null = null
 	try {
-		const rawUsage = uni.getStorageSync(LAST_TOKEN_USAGE_KEY) as string | null
+		const rawUsage = getAppSetting(LAST_TOKEN_USAGE_KEY)
 		if (rawUsage != null && rawUsage != '') {
 			lastTokenUsage = JSON.parse(rawUsage) as UTSJSONObject
 		}
 	} catch (_e: any) {}
 	try {
-		const rawCall = uni.getStorageSync(LAST_LLM_CALL_KEY) as string | null
+		const rawCall = getAppSetting(LAST_LLM_CALL_KEY)
 		if (rawCall != null && rawCall != '') {
 			lastCallInfo = JSON.parse(rawCall) as UTSJSONObject
 		}

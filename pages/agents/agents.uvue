@@ -176,7 +176,7 @@
 	 */
 	import { getAgents, saveAgents, MINXI_BASE_STYLE } from '@/utils/agent.uts'
 	import { getAgentDir } from '@/utils/file-manager.uts'
-	import { getConversationsByAgent } from '@/utils/database.uts'
+	import { deleteRuntimeState, getAppSetting, getConversationsByAgent, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 	import {
 		type GroupChat,
 		createDefaultWritingGroupChat,
@@ -329,18 +329,18 @@
 			},
 
 			consumeCreateAvatarCropResult(): void {
-				// COMPAT_LEGACY_STORAGE: 头像裁剪页仍通过 uni.storage 传参，未来迁移 runtime-state 后删除。
-				const target = uni.getStorageSync('crop_target') as string
+				// 头像裁剪页通过 SQLite runtime_state 传参。
+				const target = getRuntimeState('crop_target')
 				if (target != 'create_agent_avatar') {
 					return
 				}
-				const cropResult = uni.getStorageSync('crop_result') as string
+				const cropResult = getRuntimeState('crop_result')
 				if (cropResult != null && cropResult != '') {
 					this.createData['avatar'] = cropResult
 				}
-				uni.removeStorageSync('crop_result')
-				uni.removeStorageSync('crop_target')
-				uni.removeStorageSync('crop_image_path')
+				deleteRuntimeState('crop_result')
+				deleteRuntimeState('crop_target')
+				deleteRuntimeState('crop_image_path')
 			},
 
 			parseChosenImagePath(res: any): string {
@@ -641,10 +641,10 @@
 							uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
 							return
 						}
-						// COMPAT_LEGACY_STORAGE: 裁剪组件旧协议，未来迁移 runtime-state 后删除。
-						uni.removeStorageSync('crop_result')
-						uni.setStorageSync('crop_target', 'create_agent_avatar')
-						uni.setStorageSync('crop_image_path', path)
+						// 裁剪组件协议走 SQLite runtime_state，避免临时状态写 uni.storage。
+						deleteRuntimeState('crop_result')
+						setRuntimeState('crop_target', 'create_agent_avatar')
+						setRuntimeState('crop_image_path', path)
 						uni.navigateTo({
 							url: '/pages/common/crop/crop'
 						})
@@ -680,8 +680,8 @@
 				const finalDesc = desc != '' ? desc : '自定义智能体'
 				const finalPrompt = systemPrompt != '' ? systemPrompt : this.templatePrompt(CREATE_TEMPLATES[0])
 
-				// COMPAT_LEGACY_STORAGE: 默认模型设置仍在旧 storage，未来迁移设置表后删除。
-				const defaultModel = uni.getStorageSync('settings_model') as string
+				// 默认模型从 SQLite app_settings 读取，缺省时回退内置模型。
+				const defaultModel = getAppSetting('settings_model')
 
 				const newAgent: UTSJSONObject = {
 					id: id,

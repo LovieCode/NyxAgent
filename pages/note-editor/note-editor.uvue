@@ -18,6 +18,7 @@
 
 <script lang="uts">
 	import { getAgents } from '@/utils/agent.uts'
+	import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 
 	const USER_AGENT_ENTRY: UTSJSONObject = {
 		id: '__user__',
@@ -58,20 +59,18 @@
 			},
 
 			loadEditorPayload() {
-				const rawId = uni.getStorageSync('note_editor_id') as string | null
-				const rawTitle = uni.getStorageSync('note_editor_title') as string | null
-				const rawContent = uni.getStorageSync('note_editor_content') as string | null
-				const rawAgentId = uni.getStorageSync('note_editor_agent_id') as string | null
-				this.noteId = rawId != null ? rawId : ''
-				this.noteTitle = rawTitle != null ? rawTitle : ''
-				this.noteContent = rawContent != null ? rawContent : ''
+				const rawId = getRuntimeState('note_editor_id')
+				const rawTitle = getRuntimeState('note_editor_title')
+				const rawContent = getRuntimeState('note_editor_content')
+				const rawAgentId = getRuntimeState('note_editor_agent_id')
+				this.noteId = rawId
+				this.noteTitle = rawTitle
+				this.noteContent = rawContent
 				this.initialTitle = this.noteTitle
 				this.initialContent = this.noteContent
 				let agentId = '__user__'
-				if (rawAgentId != null) {
-					if (rawAgentId != '') {
-						agentId = rawAgentId
-					}
+				if (rawAgentId != '') {
+					agentId = rawAgentId
 				}
 				this.initialAgentId = agentId
 				this.selectedAgentIndex = this.findAgentIndex(this.initialAgentId)
@@ -150,17 +149,17 @@
 					agentId: this.getSelectedAgentId(),
 					agentName: this.getSelectedAgentName(),
 				} as UTSJSONObject
-				uni.setStorageSync('note_editor_result', JSON.stringify(payload))
+				setRuntimeState('note_editor_result', JSON.stringify(payload))
 				this.clearEditorPayload()
 				this.dirty = false
 				uni.navigateBack()
 			},
 
 			clearEditorPayload() {
-				uni.removeStorageSync('note_editor_id')
-				uni.removeStorageSync('note_editor_title')
-				uni.removeStorageSync('note_editor_content')
-				uni.removeStorageSync('note_editor_agent_id')
+				deleteRuntimeState('note_editor_id')
+				deleteRuntimeState('note_editor_title')
+				deleteRuntimeState('note_editor_content')
+				deleteRuntimeState('note_editor_agent_id')
 			},
 		}
 	}

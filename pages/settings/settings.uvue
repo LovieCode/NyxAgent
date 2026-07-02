@@ -116,6 +116,7 @@
 
 	import { exportAllDataToFile, exportAllDataToJson, shareExportedDataFile, getLastShareExportErrorMessage } from '@/utils/data-export.uts'
 	import { importAllDataFromZip } from '@/utils/data-import.uts'
+	import { getAppSetting, setAppSetting } from '@/utils/database.uts'
 
 	export default {
 		data() {
@@ -207,27 +208,27 @@
 			},
 
 			loadSettings() {
-				let providerId = uni.getStorageSync('settings_provider_id') as string
+				let providerId = getAppSetting('settings_provider_id')
 				this.selectedProviderId = (providerId != null && providerId != '') ? providerId : 'deepseek'
-				let key = uni.getStorageSync('settings_api_key') as string
+				let key = getAppSetting('settings_api_key')
 				this.apiKey = (key != null) ? key : ''
-				let url = uni.getStorageSync('settings_base_url') as string
+				let url = getAppSetting('settings_base_url')
 				this.baseUrl = (url != null) ? url : ''
-				let model = uni.getStorageSync('settings_model') as string
+				let model = getAppSetting('settings_model')
 				this.selectedModel = (model != null && model != '') ? model : 'deepseek-v4-flash'
-				let proxyEnabled = uni.getStorageSync('settings_gh_proxy_enabled') as string
+				let proxyEnabled = getAppSetting('settings_gh_proxy_enabled')
 				this.ghProxyEnabled = (proxyEnabled != null && proxyEnabled == 'true')
-				let proxyDomain = uni.getStorageSync('settings_gh_proxy_domain') as string
+				let proxyDomain = getAppSetting('settings_gh_proxy_domain')
 				this.ghProxyDomain = (proxyDomain != null) ? proxyDomain : ''
 			},
 
 			saveSettings() {
-				uni.setStorageSync('settings_provider_id', this.selectedProviderId)
-				uni.setStorageSync('settings_api_key', this.apiKey)
-				uni.setStorageSync('settings_base_url', this.baseUrl)
-				uni.setStorageSync('settings_model', this.selectedModel)
-				uni.setStorageSync('settings_gh_proxy_enabled', this.ghProxyEnabled ? 'true' : 'false')
-				uni.setStorageSync('settings_gh_proxy_domain', this.ghProxyDomain)
+				setAppSetting('settings_provider_id', this.selectedProviderId)
+				setAppSetting('settings_api_key', this.apiKey)
+				setAppSetting('settings_base_url', this.baseUrl)
+				setAppSetting('settings_model', this.selectedModel)
+				setAppSetting('settings_gh_proxy_enabled', this.ghProxyEnabled ? 'true' : 'false')
+				setAppSetting('settings_gh_proxy_domain', this.ghProxyDomain)
 				uni.showToast({ position: 'bottom', 
 					title: '已保存',
 					icon: 'success'

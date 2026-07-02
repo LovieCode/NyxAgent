@@ -57,6 +57,7 @@
 <script lang="uts">
 	import { getAgentById, updateAgentModel } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, setDefaultTaskModel, getDefaultTaskModel, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { consumeRuntimeState, getAppSetting, setAppSetting } from '@/utils/database.uts'
 
 	export default {
 		data() {
@@ -86,10 +87,9 @@
 			}
 		},
 		onLoad() {
-			const pid = uni.getStorageSync('pending_agent_model_id') as string
+			const pid = consumeRuntimeState('pending_agent_model_id')
 			if (pid != null && pid != '') {
 				this.pendingAgentId = pid
-				uni.removeStorageSync('pending_agent_model_id')
 			}
 			this.loadData()
 		},
@@ -125,12 +125,14 @@
 					}
 				}
 
-				// 3. 回退到旧版 storage
+				// 3. 兼容旧版扁平 settings key（读取已统一落到 app_settings/legacy fallback）
 				if (providerId == '') {
-					providerId = uni.getStorageSync('settings_provider_id') as string
+					const legacyProviderId = getAppSetting('settings_provider_id')
+					providerId = legacyProviderId != null ? legacyProviderId : ''
 				}
 				if (modelId == '') {
-					modelId = uni.getStorageSync('settings_model') as string
+					const legacyModelId = getAppSetting('settings_model')
+					modelId = legacyModelId != null ? legacyModelId : ''
 				}
 
 				// 检查选中的提供商是否已启用，否则用第一个启用的
@@ -189,7 +191,7 @@
 					updateAgentModel(this.pendingAgentId, this.selectedProvider + '||' + this.selectedModel)
 				} else {
 					setDefaultTaskModel('chat', this.selectedProvider, this.selectedModel)
-					uni.setStorageSync('settings_model', this.selectedModel)
+					setAppSetting('settings_model', this.selectedModel)
 				}
 			}
 		}

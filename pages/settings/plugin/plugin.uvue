@@ -89,6 +89,7 @@
 	 * 插件设置子页面 - GitHub 代理 / 网络搜索配置
 	 */
 	import { getAllProviders, getProviderModels, parseModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { getAppSetting, setAppSetting } from '@/utils/database.uts'
 
 	export default {
 		data() {
@@ -109,32 +110,32 @@
 		},
 		methods: {
 			loadSettings() {
-				let proxyEnabled = uni.getStorageSync('settings_gh_proxy_enabled') as string
+				let proxyEnabled = getAppSetting('settings_gh_proxy_enabled')
 				this.ghProxyEnabled = (proxyEnabled != null && proxyEnabled == 'true')
-				let proxyDomain = uni.getStorageSync('settings_gh_proxy_domain') as string
+				let proxyDomain = getAppSetting('settings_gh_proxy_domain')
 				this.ghProxyDomain = (proxyDomain != null) ? proxyDomain : ''
-				let wsEnabled = uni.getStorageSync('settings_web_search_enabled') as string
+				let wsEnabled = getAppSetting('settings_web_search_enabled')
 				this.webSearchEnabled = (wsEnabled != null && wsEnabled == 'true')
-				let wsProvider = uni.getStorageSync('settings_web_search_provider') as string
+				let wsProvider = getAppSetting('settings_web_search_provider')
 				this.webSearchProvider = (wsProvider != null && wsProvider != '') ? wsProvider : 'searxng'
-				let wsProviderId = uni.getStorageSync('settings_web_search_provider_id') as string
+				let wsProviderId = getAppSetting('settings_web_search_provider_id')
 				this.webSearchProviderId = (wsProviderId != null) ? wsProviderId : ''
-				let wsModel = uni.getStorageSync('settings_web_search_model') as string
+				let wsModel = getAppSetting('settings_web_search_model')
 				this.webSearchModel = (wsModel != null) ? wsModel : ''
-				let wsInstance = uni.getStorageSync('settings_web_search_instance') as string
+				let wsInstance = getAppSetting('settings_web_search_instance')
 				this.webSearchInstance = (wsInstance != null) ? wsInstance : ''
 				this.providers = getAllProviders()
 				this.loadSearchProviderModels()
 			},
 
 			saveSettings() {
-				uni.setStorageSync('settings_gh_proxy_enabled', this.ghProxyEnabled ? 'true' : 'false')
-				uni.setStorageSync('settings_gh_proxy_domain', this.ghProxyDomain)
-				uni.setStorageSync('settings_web_search_enabled', this.webSearchEnabled ? 'true' : 'false')
-				uni.setStorageSync('settings_web_search_provider', this.webSearchProvider)
-				uni.setStorageSync('settings_web_search_provider_id', this.webSearchProviderId)
-				uni.setStorageSync('settings_web_search_model', this.webSearchModel)
-				uni.setStorageSync('settings_web_search_instance', this.webSearchInstance)
+				setAppSetting('settings_gh_proxy_enabled', this.ghProxyEnabled ? 'true' : 'false')
+				setAppSetting('settings_gh_proxy_domain', this.ghProxyDomain)
+				setAppSetting('settings_web_search_enabled', this.webSearchEnabled ? 'true' : 'false')
+				setAppSetting('settings_web_search_provider', this.webSearchProvider)
+				setAppSetting('settings_web_search_provider_id', this.webSearchProviderId)
+				setAppSetting('settings_web_search_model', this.webSearchModel)
+				setAppSetting('settings_web_search_instance', this.webSearchInstance)
 			},
 
 			selectProvider(provider: string) {

@@ -3,7 +3,7 @@
  * 从导出的 ZIP 备份包中恢复结构化数据与 Agent 工作区。
  */
 
-import { importDatabaseTables } from '@/utils/database.uts'
+import { importDatabaseTables, setAppSetting, setRuntimeState } from '@/utils/database.uts'
 import { saveAgents } from '@/utils/agent.uts'
 import { getAgentDir, joinPath, exists, createDir, writeContent } from '@/utils/file-manager.uts'
 import { readImportManifest, importAgentWorkspaceFiles, importBackupAssets, importGroupWorkspaceFiles } from '@/utssdk/app-data-export/index.uts'
@@ -167,13 +167,29 @@ function writeStorageObject(storage: UTSJSONObject, storageKeys: string[]): void
 		const key = keys[i]
 		const value = storage[key]
 		if (value != null) {
-			uni.setStorageSync(key, value)
+			const text = value as string
+			if (key.startsWith('app_setting_')) {
+				setAppSetting(key.substring(12), text)
+			} else if (
+				key == 'active_agent_id' ||
+				key == 'active_conversation_id' ||
+				key == 'memory_agent_id' ||
+				key == 'memory_conversation_id' ||
+				key == 'provider_edit_data' ||
+				key == 'pending_agent_model_id' ||
+				key.startsWith('editor_') ||
+				key.startsWith('crop_')
+			) {
+				setRuntimeState(key, text)
+			} else {
+				setAppSetting(key, text)
+			}
 		}
 	}
 }
 
 function restoreListStorage(key: string, list: UTSJSONObject[]): void {
-	uni.setStorageSync(key, JSON.stringify(list))
+	setAppSetting(key, JSON.stringify(list))
 }
 
 /** 导入 ZIP 备份包，成功返回摘要，失败返回空字符串。 */

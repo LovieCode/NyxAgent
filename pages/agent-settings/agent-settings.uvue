@@ -273,8 +273,9 @@
 	 */
 	import { getAgentById, updateAgent, deleteAgent, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, agentToolIdListContains, AGENT_TOOL_WORKSPACE_FILE, AGENT_TOOL_MEMORY_SEARCH, AGENT_TOOL_MEMORY_BUFFER_WRITE, AGENT_TOOL_WEB_SEARCH } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
-	import { updateSystemPromptForAgent } from '@/utils/database.uts'
+	import { deleteRuntimeState, getAppSetting, getRuntimeState, setRuntimeState, updateSystemPromptForAgent } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
+	import { clearActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
 	import { getSkills, getAgentSkillIds, filterExistingSkillIds, skillIdListContains, readSkillId, readSkillName, readSkillDescription, readSkillEnabled, getSkillDocumentCount } from '@/utils/skills.uts'
 
 	export default {
@@ -391,10 +392,10 @@
 			// 先从数据库加载（避免后续被覆盖）
 			this.loadAgent()
 			// 检查全屏编辑器是否有返回结果
-			const ready = uni.getStorageSync('editor_result_ready') as string | null
-			const result = uni.getStorageSync('editor_result') as string | null
+			const ready = getRuntimeState('editor_result_ready')
+			const result = getRuntimeState('editor_result')
 			if (ready == 'true' || (result != null && result != '')) {
-				const target = uni.getStorageSync('editor_target') as string | null
+				const target = getRuntimeState('editor_target')
 				if (target == 'systemPrompt' || target == 'desc' || target == null || target == '') {
 					const safeResult = result != null ? result : ''
 					if (target == 'systemPrompt') {
@@ -402,26 +403,26 @@
 					} else {
 						this.agentDesc = safeResult
 					}
-					uni.removeStorageSync('editor_result')
-					uni.removeStorageSync('editor_result_ready')
-					uni.removeStorageSync('editor_target')
-					uni.removeStorageSync('editor_mode')
-					uni.removeStorageSync('editor_content')
-					uni.removeStorageSync('editor_title')
-					uni.removeStorageSync('editor_placeholder')
-					uni.removeStorageSync('editor_readonly')
+					deleteRuntimeState('editor_result')
+					deleteRuntimeState('editor_result_ready')
+					deleteRuntimeState('editor_target')
+					deleteRuntimeState('editor_mode')
+					deleteRuntimeState('editor_content')
+					deleteRuntimeState('editor_title')
+					deleteRuntimeState('editor_placeholder')
+					deleteRuntimeState('editor_readonly')
 					// 标记有未保存的更改
 					this.hasUnsaved = true
 				}
 			}
 			// 检查裁剪页面是否有返回结果
-			const cropTarget = uni.getStorageSync('crop_target') as string
-			const cropResult = uni.getStorageSync('crop_result') as string
+			const cropTarget = getRuntimeState('crop_target')
+			const cropResult = getRuntimeState('crop_result')
 			if (cropTarget == 'agent_avatar' && cropResult != null && cropResult != '') {
 				this.agentAvatar = cropResult
-				uni.removeStorageSync('crop_result')
-				uni.removeStorageSync('crop_target')
-				uni.removeStorageSync('crop_image_path')
+				deleteRuntimeState('crop_result')
+				deleteRuntimeState('crop_target')
+				deleteRuntimeState('crop_image_path')
 				this.hasUnsaved = true
 			}
 		},
@@ -435,7 +436,7 @@
 		},
 		methods: {
 			loadAgent() {
-				const id = uni.getStorageSync('active_agent_id') as string
+				const id = getRuntimeState('active_agent_id')
 				if (id == null || id == '') {
 					uni.showToast({ position: 'bottom', 
 						title: '未选择智能体',
@@ -680,9 +681,9 @@
 						const parsed = JSON.parse(raw) as UTSJSONObject
 						const paths = parsed['tempFilePaths'] as string[]
 						if (paths != null && paths.length > 0) {
-							uni.removeStorageSync('crop_result')
-							uni.setStorageSync('crop_target', 'agent_avatar')
-							uni.setStorageSync('crop_image_path', paths[0])
+							deleteRuntimeState('crop_result')
+							setRuntimeState('crop_target', 'agent_avatar')
+							setRuntimeState('crop_image_path', paths[0])
 							uni.navigateTo({
 								url: '/pages/common/crop/crop'
 							})
@@ -693,17 +694,17 @@
 
 			/** 打开全屏编辑器编辑智能体描述 */
 			openDescEditor() {
-				uni.removeStorageSync('editor_draft')
-				uni.removeStorageSync('editor_result')
-				uni.removeStorageSync('editor_result_ready')
-				uni.removeStorageSync('editor_file_path')
-				uni.removeStorageSync('editor_saved')
-				uni.removeStorageSync('editor_saved_path')
-				uni.setStorageSync('editor_mode', 'text')
-				uni.setStorageSync('editor_content', this.agentDesc)
-				uni.setStorageSync('editor_title', '编辑描述')
-				uni.setStorageSync('editor_target', 'desc')
-				uni.setStorageSync('editor_placeholder', '写一下这个智能体的人设、用途或备注')
+				deleteRuntimeState('editor_draft')
+				deleteRuntimeState('editor_result')
+				deleteRuntimeState('editor_result_ready')
+				deleteRuntimeState('editor_file_path')
+				deleteRuntimeState('editor_saved')
+				deleteRuntimeState('editor_saved_path')
+				setRuntimeState('editor_mode', 'text')
+				setRuntimeState('editor_content', this.agentDesc)
+				setRuntimeState('editor_title', '编辑描述')
+				setRuntimeState('editor_target', 'desc')
+				setRuntimeState('editor_placeholder', '写一下这个智能体的人设、用途或备注')
 				uni.navigateTo({
 					url: '/pages/common/editor/editor'
 				})
@@ -711,24 +712,24 @@
 
 			/** 打开全屏编辑器编辑系统提示词 */
 			openSystemPromptEditor() {
-				uni.removeStorageSync('editor_draft')
-				uni.removeStorageSync('editor_result')
-				uni.removeStorageSync('editor_result_ready')
-				uni.removeStorageSync('editor_file_path')
-				uni.removeStorageSync('editor_saved')
-				uni.removeStorageSync('editor_saved_path')
-				uni.setStorageSync('editor_mode', 'text')
-				uni.setStorageSync('editor_content', this.agentSystemPrompt)
-				uni.setStorageSync('editor_title', '编辑提示词')
-				uni.setStorageSync('editor_target', 'systemPrompt')
-				uni.setStorageSync('editor_placeholder', '定义说话风格、能力边界和输出习惯')
+				deleteRuntimeState('editor_draft')
+				deleteRuntimeState('editor_result')
+				deleteRuntimeState('editor_result_ready')
+				deleteRuntimeState('editor_file_path')
+				deleteRuntimeState('editor_saved')
+				deleteRuntimeState('editor_saved_path')
+				setRuntimeState('editor_mode', 'text')
+				setRuntimeState('editor_content', this.agentSystemPrompt)
+				setRuntimeState('editor_title', '编辑提示词')
+				setRuntimeState('editor_target', 'systemPrompt')
+				setRuntimeState('editor_placeholder', '定义说话风格、能力边界和输出习惯')
 				uni.navigateTo({
 					url: '/pages/common/editor/editor'
 				})
 			},
 
 			loadModel() {
-				const model = uni.getStorageSync('settings_model') as string
+				const model = getAppSetting('settings_model')
 				if (model != null && model != '') {
 					this.currentModel = model
 				}
@@ -807,9 +808,9 @@
 						if (res.confirm == true) {
 							deleteAgent(this.agentId)
 							// 如果删除的是当前选中的智能体，清除 active_agent_id
-							const activeId = uni.getStorageSync('active_agent_id') as string
+							const activeId = getRuntimeState('active_agent_id')
 							if (activeId == this.agentId) {
-								uni.removeStorageSync('active_agent_id')
+								clearActiveAgentRuntimeId()
 							}
 							uni.showToast({ position: 'bottom', 
 								title: '已删除',

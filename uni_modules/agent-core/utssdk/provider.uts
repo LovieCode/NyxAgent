@@ -436,8 +436,8 @@ export function getDefaultTaskModel(type: string): UTSJSONObject | null {
 	if (val == null || val == '') {
 		// COMPAT_LEGACY_STORAGE_SETTINGS: 旧版本 chat 默认模型写在 uni.storage；当前只读兼容，未来可清空。
 		if (type == 'chat') {
-			const oldModel = uni.getStorageSync('settings_model') as string
-			const oldProvider = uni.getStorageSync('settings_provider_id') as string
+			const oldModel = getAppSetting('settings_model')
+			const oldProvider = getAppSetting('settings_provider_id')
 			if (oldModel != null && oldModel != '') {
 				return {
 					providerId: (oldProvider != null && oldProvider != '') ? oldProvider : 'deepseek',
@@ -556,13 +556,13 @@ export function resolveLLMConfig(providerId: string, model: string): LLMConfig |
 
 	// COMPAT_LEGACY_STORAGE_SETTINGS: 旧版入口仍可能只存在 storage 配置；这里保留只读兜底。
 	if (pid == '') {
-		const storageProvider = uni.getStorageSync('settings_provider_id') as string | null
+		const storageProvider = getAppSetting('settings_provider_id')
 		if (storageProvider != null) {
 			pid = storageProvider
 		}
 	}
 	if (mdl == '') {
-		const storageModel = uni.getStorageSync('settings_model') as string | null
+		const storageModel = getAppSetting('settings_model')
 		if (storageModel != null) {
 			mdl = storageModel
 		}
@@ -592,12 +592,12 @@ export function resolveLLMConfig(providerId: string, model: string): LLMConfig |
 		} as LLMConfig
 	}
 
-	const storageApiKey = uni.getStorageSync('settings_api_key') as string | null
+	const storageApiKey = getAppSetting('settings_api_key')
 	const apiKey = storageApiKey != null ? storageApiKey : ''
 	if (apiKey == '') {
 		return null
 	}
-	const storageBaseUrl = uni.getStorageSync('settings_base_url') as string | null
+	const storageBaseUrl = getAppSetting('settings_base_url')
 	let baseUrl = storageBaseUrl != null ? storageBaseUrl : ''
 	if (baseUrl == '') {
 		baseUrl = getDefaultUrl(pid)

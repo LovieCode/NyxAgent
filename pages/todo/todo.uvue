@@ -186,6 +186,7 @@
 	import { getAgentDir, getUserDir, migrateLegacyUserDir, readContent, writeContent, listDir, deleteItem, joinPath, type FileItem } from '@/utils/file-manager.uts'
 	import { renderKnowledgeMarkdown, countInlineTodos, parseTodoMarkdown, parseNoteMarkdown, buildTodoMarkdown, buildNoteMarkdown, type KnowledgeRenderBlock } from '@/utils/markdown.uts'
 	import { getAgents } from '@/utils/agent.uts'
+	import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 
 	/** 虚拟用户条目，显示在所有 agent 之前 */
 	const USER_AGENT_ENTRY: UTSJSONObject = {
@@ -602,31 +603,31 @@
 			},
 
 			clearNoteEditorStorage() {
-				uni.removeStorageSync('note_editor_id')
-				uni.removeStorageSync('note_editor_title')
-				uni.removeStorageSync('note_editor_content')
-				uni.removeStorageSync('note_editor_agent_id')
-				uni.removeStorageSync('note_editor_result')
+				deleteRuntimeState('note_editor_id')
+				deleteRuntimeState('note_editor_title')
+				deleteRuntimeState('note_editor_content')
+				deleteRuntimeState('note_editor_agent_id')
+				deleteRuntimeState('note_editor_result')
 			},
 
 			openNoteEditor(noteId: string, title: string, content: string, agentId: string) {
 				this.clearNoteEditorStorage()
-				uni.setStorageSync('note_editor_id', noteId)
-				uni.setStorageSync('note_editor_title', title)
-				uni.setStorageSync('note_editor_content', content)
-				uni.setStorageSync('note_editor_agent_id', agentId)
+				setRuntimeState('note_editor_id', noteId)
+				setRuntimeState('note_editor_title', title)
+				setRuntimeState('note_editor_content', content)
+				setRuntimeState('note_editor_agent_id', agentId)
 				uni.navigateTo({
 					url: '/pages/note-editor/note-editor'
 				})
 			},
 
 			consumeNoteEditorResult() {
-				const raw = uni.getStorageSync('note_editor_result') as string | null
+				const raw = getRuntimeState('note_editor_result')
 				if (raw == null || raw == '') {
 					return
 				}
 
-				uni.removeStorageSync('note_editor_result')
+				deleteRuntimeState('note_editor_result')
 
 				try {
 					const payload = JSON.parse(raw) as UTSJSONObject

@@ -4,7 +4,7 @@
  * 新路由参数统一写 SQLite，避免继续把临时状态散落到 uni.storage。
  * COMPAT_LEGACY_STORAGE 标记的分支只用于读取历史版本遗留 key，未来可整段删除。
  */
-import { consumeRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+import { consumeRuntimeState, deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 
 export const RUNTIME_ACTIVE_AGENT_ID_KEY = 'active_agent_id'
 export const RUNTIME_ACTIVE_CONVERSATION_ID_KEY = 'active_conversation_id'
@@ -28,6 +28,11 @@ function consumeLegacyStorageString(key: string): string {
 		return value
 	}
 	return ''
+}
+
+function clearLegacyStorageString(key: string): void {
+	// COMPAT_LEGACY_STORAGE_CLEAR: 仅清理旧版本残留路由 key；未来清空兼容层时删除。
+	uni.removeStorageSync(key)
 }
 
 export function setContextPreviewPayload(value: string): void {
@@ -85,8 +90,11 @@ export function getActiveAgentRuntimeId(): string {
 
 export function setActiveAgentRuntimeId(value: string): void {
 	setRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY, value)
-	// COMPAT_LEGACY_STORAGE: agent-settings 等旧页面仍读取 active_agent_id；全量迁移后删除这行。
-	uni.setStorageSync(RUNTIME_ACTIVE_AGENT_ID_KEY, value)
+}
+
+export function clearActiveAgentRuntimeId(): void {
+	deleteRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY)
+	clearLegacyStorageString(RUNTIME_ACTIVE_AGENT_ID_KEY)
 }
 
 export function getActiveConversationRuntimeId(): string {

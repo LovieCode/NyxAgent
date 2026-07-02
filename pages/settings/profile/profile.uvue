@@ -51,6 +51,8 @@
 </template>
 
 <script lang="uts">
+	import { deleteRuntimeState, getAppSetting, getRuntimeState, setAppSetting, setRuntimeState } from '@/utils/database.uts'
+
 	/**
 	 * 用户资料页面 - 扁平化粉白主题
 	 * 支持头像选择（拍照/相册）、资料编辑
@@ -89,53 +91,53 @@
 		},
 		onShow() {
 			// 检查全屏编辑器是否有返回结果
-			const ready = uni.getStorageSync('editor_result_ready') as string | null
-			const result = uni.getStorageSync('editor_result') as string | null
+			const ready = getRuntimeState('editor_result_ready')
+			const result = getRuntimeState('editor_result')
 			if (ready == 'true' || (result != null && result != '')) {
-				const target = uni.getStorageSync('editor_target') as string | null
+				const target = getRuntimeState('editor_target')
 				if (target == 'profile-description' || target == null || target == '') {
 					this.description = result != null ? result : ''
-					uni.removeStorageSync('editor_result')
-					uni.removeStorageSync('editor_result_ready')
-					uni.removeStorageSync('editor_target')
-					uni.removeStorageSync('editor_mode')
-					uni.removeStorageSync('editor_content')
-					uni.removeStorageSync('editor_title')
-					uni.removeStorageSync('editor_placeholder')
-					uni.removeStorageSync('editor_readonly')
+					deleteRuntimeState('editor_result')
+					deleteRuntimeState('editor_result_ready')
+					deleteRuntimeState('editor_target')
+					deleteRuntimeState('editor_mode')
+					deleteRuntimeState('editor_content')
+					deleteRuntimeState('editor_title')
+					deleteRuntimeState('editor_placeholder')
+					deleteRuntimeState('editor_readonly')
 					this.hasUnsaved = true
 				}
 			}
 			// 检查裁剪页面是否有返回结果
-			const cropTarget = uni.getStorageSync('crop_target') as string
-			const cropResult = uni.getStorageSync('crop_result') as string
+			const cropTarget = getRuntimeState('crop_target')
+			const cropResult = getRuntimeState('crop_result')
 			if (cropTarget == 'profile_avatar' && cropResult != null && cropResult != '') {
 				this.avatarPath = cropResult
-				uni.setStorageSync('profile_avatar', this.avatarPath)
-				uni.removeStorageSync('crop_result')
-				uni.removeStorageSync('crop_target')
-				uni.removeStorageSync('crop_image_path')
+				setAppSetting('profile_avatar', this.avatarPath)
+				deleteRuntimeState('crop_result')
+				deleteRuntimeState('crop_target')
+				deleteRuntimeState('crop_image_path')
 			}
 		},
 		methods: {
 			loadProfile() {
-				const v1 = uni.getStorageSync('profile_nickname') as string
+				const v1 = getAppSetting('profile_nickname')
 				this.nickname = (v1 != null && v1 != '') ? v1 : '用户'
-				const v2 = uni.getStorageSync('profile_bio') as string
+				const v2 = getAppSetting('profile_bio')
 				this.bio = (v2 != null && v2 != '') ? v2 : ''
-				const v3 = uni.getStorageSync('profile_email') as string
+				const v3 = getAppSetting('profile_email')
 				this.email = (v3 != null && v3 != '') ? v3 : ''
-				const v4 = uni.getStorageSync('profile_description') as string
+				const v4 = getAppSetting('profile_description')
 				this.description = (v4 != null && v4 != '') ? v4 : ''
-				const avatar = uni.getStorageSync('profile_avatar') as string
+				const avatar = getAppSetting('profile_avatar')
 				this.avatarPath = (avatar != null) ? avatar : ''
 				this.hasUnsaved = false
 			},
 			saveProfile() {
-				uni.setStorageSync('profile_nickname', this.nickname)
-				uni.setStorageSync('profile_bio', this.bio)
-				uni.setStorageSync('profile_email', this.email)
-				uni.setStorageSync('profile_description', this.description)
+				setAppSetting('profile_nickname', this.nickname)
+				setAppSetting('profile_bio', this.bio)
+				setAppSetting('profile_email', this.email)
+				setAppSetting('profile_description', this.description)
 				this.hasUnsaved = false
 				uni.showToast({ position: 'bottom', 
 					title: '已保存',
@@ -183,9 +185,9 @@
 						const parsed = JSON.parse(raw) as UTSJSONObject
 						const paths = parsed['tempFilePaths'] as string[]
 						if (paths != null && paths.length > 0) {
-							uni.removeStorageSync('crop_result')
-							uni.setStorageSync('crop_target', 'profile_avatar')
-							uni.setStorageSync('crop_image_path', paths[0])
+							deleteRuntimeState('crop_result')
+							setRuntimeState('crop_target', 'profile_avatar')
+							setRuntimeState('crop_image_path', paths[0])
 							uni.navigateTo({
 								url: '/pages/common/crop/crop'
 							})
@@ -195,17 +197,17 @@
 			},
 			/** 打开全屏编辑器 */
 			openFullEditor() {
-				uni.removeStorageSync('editor_draft')
-				uni.removeStorageSync('editor_result')
-				uni.removeStorageSync('editor_result_ready')
-				uni.removeStorageSync('editor_file_path')
-				uni.removeStorageSync('editor_saved')
-				uni.removeStorageSync('editor_saved_path')
-				uni.setStorageSync('editor_mode', 'text')
-				uni.setStorageSync('editor_content', this.description)
-				uni.setStorageSync('editor_title', '编辑个人简介')
-				uni.setStorageSync('editor_target', 'profile-description')
-				uni.setStorageSync('editor_placeholder', '详细介绍一下自己…')
+				deleteRuntimeState('editor_draft')
+				deleteRuntimeState('editor_result')
+				deleteRuntimeState('editor_result_ready')
+				deleteRuntimeState('editor_file_path')
+				deleteRuntimeState('editor_saved')
+				deleteRuntimeState('editor_saved_path')
+				setRuntimeState('editor_mode', 'text')
+				setRuntimeState('editor_content', this.description)
+				setRuntimeState('editor_title', '编辑个人简介')
+				setRuntimeState('editor_target', 'profile-description')
+				setRuntimeState('editor_placeholder', '详细介绍一下自己…')
 				uni.navigateTo({
 					url: '/pages/common/editor/editor'
 				})

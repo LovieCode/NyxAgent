@@ -1,9 +1,10 @@
 /**
  * 智能体数据管理
- * 使用 uni.storage 持久化智能体列表
+ * 使用 SQLite app_settings 持久化智能体列表
  */
 
 import { getAgentDir, deleteItem } from '@/utils/file-manager.uts'
+import { getAppSetting, setAppSetting } from '@/utils/database.uts'
 
 const DEFAULT_AGENT_PROMPT_VERSION_KEY = 'default_agent_prompt_version'
 const DEFAULT_AGENT_PROMPT_VERSION = 'minxi-default-v1'
@@ -97,7 +98,7 @@ function findDefaultAgent(id: string): UTSJSONObject | null {
 }
 
 function migrateDefaultAgentPrompts(agents: UTSJSONObject[]): UTSJSONObject[] {
-	const version = uni.getStorageSync(DEFAULT_AGENT_PROMPT_VERSION_KEY) as string | null
+	const version = getAppSetting(DEFAULT_AGENT_PROMPT_VERSION_KEY)
 	if (version == DEFAULT_AGENT_PROMPT_VERSION) {
 		return agents
 	}
@@ -119,13 +120,13 @@ function migrateDefaultAgentPrompts(agents: UTSJSONObject[]): UTSJSONObject[] {
 	if (changed == true) {
 		saveAgents(agents)
 	}
-	uni.setStorageSync(DEFAULT_AGENT_PROMPT_VERSION_KEY, DEFAULT_AGENT_PROMPT_VERSION)
+	setAppSetting(DEFAULT_AGENT_PROMPT_VERSION_KEY, DEFAULT_AGENT_PROMPT_VERSION)
 	return agents
 }
 
 /** 获取所有智能体 */
 export function getAgents(): UTSJSONObject[] {
-	const stored = uni.getStorageSync('agent_list') as string
+	const stored = getAppSetting('agent_list')
 	if (stored != null && stored != '') {
 		const list = JSON.parse(stored) as UTSJSONObject[]
 		if (list != null && (list as any[]).length > 0) {
@@ -134,7 +135,7 @@ export function getAgents(): UTSJSONObject[] {
 	}
 	// 首次使用，写入默认数据并初始化文件沙箱
 	saveAgents(defaultAgents)
-	uni.setStorageSync(DEFAULT_AGENT_PROMPT_VERSION_KEY, DEFAULT_AGENT_PROMPT_VERSION)
+	setAppSetting(DEFAULT_AGENT_PROMPT_VERSION_KEY, DEFAULT_AGENT_PROMPT_VERSION)
 	for (let i = 0; i < defaultAgents.length; i++) {
 		const id = defaultAgents[i]['id'] as string
 		if (id != null && id != '') {
@@ -146,7 +147,7 @@ export function getAgents(): UTSJSONObject[] {
 
 /** 保存智能体列表 */
 export function saveAgents(agents: UTSJSONObject[]): void {
-	uni.setStorageSync('agent_list', JSON.stringify(agents))
+	setAppSetting('agent_list', JSON.stringify(agents))
 }
 
 /** 根据 id 获取单个智能体 */
