@@ -309,11 +309,11 @@
 			model: 'gpt-4o-mini',
 		} as UTSJSONObject,
 		{
-			id: 'openrouter',
-			name: 'OpenRouter',
-			desc: '聚合模型，模型名可改',
-			baseUrl: 'https://openrouter.ai/api',
-			model: 'openai/gpt-4o-mini',
+			id: 'volcengine',
+			name: '豆包',
+			desc: '火山引擎，国内访问友好',
+			baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+			model: 'doubao-seed-1-6-flash-250615',
 		} as UTSJSONObject,
 		{
 			id: 'custom',
