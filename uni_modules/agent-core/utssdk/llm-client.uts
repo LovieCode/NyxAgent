@@ -1222,6 +1222,13 @@ export function appendResponseToSnapshot(agentId: string, conversationId: string
 		const snapshot = JSON.parse(raw) as UTSJSONObject
 		snapshot['responseText'] = responseText
 		snapshot['thinkingText'] = thinkingText
+		const usage = readLastTokenUsageForCall()
+		if (usage != null) {
+			snapshot['usage'] = cloneJsonObject(usage)
+		}
+		if (conversationId != '') {
+			snapshot['conversationTokenUsageStats'] = getConversationTokenUsageStats(conversationId)
+		}
 		const updated = JSON.stringify(snapshot)
 		setAppSetting(scopedKey, updated)
 		if (scopedKey != LAST_LLM_REQUEST_SNAPSHOT_KEY) {

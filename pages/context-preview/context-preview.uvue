@@ -75,6 +75,49 @@
 					</view>
 				</view>
 
+				<view class="summary-section">
+					<text class="summary-section-title">Token 用量</text>
+					<view class="summary-param-row usage-param-row">
+						<view class="summary-param-pill">
+							<text class="summary-param-label">prompt</text>
+							<text class="summary-param-value">{{usagePromptTokens}}</text>
+						</view>
+						<view class="summary-param-pill">
+							<text class="summary-param-label">completion</text>
+							<text class="summary-param-value">{{usageCompletionTokens}}</text>
+						</view>
+						<view class="summary-param-pill">
+							<text class="summary-param-label">total</text>
+							<text class="summary-param-value">{{usageTotalTokens}}</text>
+						</view>
+						<view class="summary-param-pill summary-param-pill-last">
+							<text class="summary-param-label">cache hit</text>
+							<text class="summary-param-value">{{usageCacheHitTokens}}</text>
+						</view>
+					</view>
+					<view class="summary-param-row">
+						<view class="summary-param-pill">
+							<text class="summary-param-label">calls</text>
+							<text class="summary-param-value">{{usageCallCount}}</text>
+						</view>
+						<view class="summary-param-pill">
+							<text class="summary-param-label">累计 prompt</text>
+							<text class="summary-param-value">{{usageAccumPromptTokens}}</text>
+						</view>
+						<view class="summary-param-pill">
+							<text class="summary-param-label">累计缓存</text>
+							<text class="summary-param-value">{{usageAccumCacheHitTokens}}</text>
+						</view>
+						<view class="summary-param-pill summary-param-pill-last">
+							<text class="summary-param-label">命中率</text>
+							<text class="summary-param-value">{{usageCacheHitRatio}}</text>
+						</view>
+					</view>
+					<view class="usage-note-row">
+						<text class="usage-note-text">上下文粗估：{{contextCharCount}} 字符 · ≈ {{contextEstimatedTokens}} tokens</text>
+					</view>
+				</view>
+
 				<view class="summary-section summary-section-last">
 					<text class="summary-section-title">快照信息</text>
 					<view class="last-call-panel">
@@ -149,6 +192,16 @@
 				lastCallError: '' as string,
 				snapshotCacheKey: '—' as string,
 				toolCount: 0 as number,
+				usagePromptTokens: '—' as string,
+				usageCompletionTokens: '—' as string,
+				usageTotalTokens: '—' as string,
+				usageCacheHitTokens: '—' as string,
+				usageCallCount: '—' as string,
+				usageAccumPromptTokens: '—' as string,
+				usageAccumCacheHitTokens: '—' as string,
+				usageCacheHitRatio: '—' as string,
+				contextCharCount: '—' as string,
+				contextEstimatedTokens: '—' as string,
 				settingsTemperature: '—' as string,
 				settingsMaxTokens: '—' as string,
 				settingsMaxIterations: '—' as string,
@@ -233,8 +286,13 @@
 				const rawToolCount = parsed['toolCount'] as number | null
 				this.toolCount = rawToolCount != null ? rawToolCount : 0
 				this.lastCallStatus = '已捕获'
+				const usage = parsed['usage'] as UTSJSONObject | null
+				this.applyTokenUsage(usage)
+				const usageStats = parsed['conversationTokenUsageStats'] as UTSJSONObject | null
+				this.applyConversationUsageStats(usageStats)
 				if (requestBody != null) {
 					const bodyText = JSON.stringify(requestBody, null, 2)
+					this.applyContextSize(bodyText)
 					const responseText = parsed['responseText'] as string | null
 					const thinkingText = parsed['thinkingText'] as string | null
 					this.responsePreviewText = responseText != null ? this.decodeDisplayEscapes(responseText) : ''
@@ -270,6 +328,52 @@
 			setTimeout(() => { this.measureScrollSize() }, 800)
 		},
 		methods: {
+			readNumberField(obj: UTSJSONObject | null, key: string): number | null {
+				if (obj == null) { return null }
+				return obj[key] as number | null
+			},
+
+			formatNumberValue(value: number | null): string {
+				if (value == null) { return '—' }
+				return '' + value
+			},
+
+			applyContextSize(bodyText: string): void {
+				const charCount = bodyText.length
+				this.contextCharCount = '' + charCount
+				// COMPAT_TOKEN_ESTIMATE: 未引入 tokenizer，原始上下文页只给粗估值；实际 billing 仍以 provider usage 为准。
+				this.contextEstimatedTokens = '' + Math.ceil(charCount / 3)
+			},
+
+			applyTokenUsage(usage: UTSJSONObject | null): void {
+				if (usage == null) { return }
+				const promptTokens = this.readNumberField(usage, 'prompt_tokens')
+				const completionTokens = this.readNumberField(usage, 'completion_tokens')
+				let totalTokens = this.readNumberField(usage, 'total_tokens')
+				const cacheHitTokens = this.readNumberField(usage, 'prompt_cache_hit_tokens')
+				if (totalTokens == null && promptTokens != null && completionTokens != null) {
+					totalTokens = promptTokens + completionTokens
+				}
+				this.usagePromptTokens = this.formatNumberValue(promptTokens)
+				this.usageCompletionTokens = this.formatNumberValue(completionTokens)
+				this.usageTotalTokens = this.formatNumberValue(totalTokens)
+				this.usageCacheHitTokens = this.formatNumberValue(cacheHitTokens)
+			},
+
+			applyConversationUsageStats(stats: UTSJSONObject | null): void {
+				if (stats == null) { return }
+				const promptTokens = this.readNumberField(stats, 'prompt_tokens')
+				const cacheHitTokens = this.readNumberField(stats, 'prompt_cache_hit_tokens')
+				const callCount = this.readNumberField(stats, 'call_count')
+				this.usageAccumPromptTokens = this.formatNumberValue(promptTokens)
+				this.usageAccumCacheHitTokens = this.formatNumberValue(cacheHitTokens)
+				this.usageCallCount = this.formatNumberValue(callCount)
+				if (promptTokens != null && cacheHitTokens != null && promptTokens > 0) {
+					const ratio = Math.round((cacheHitTokens / promptTokens) * 1000) / 10
+					this.usageCacheHitRatio = ratio + '%'
+				}
+			},
+
 			scheduleLayoutCache(): void {
 				setTimeout(() => {
 					this.cacheLayoutMetrics()
@@ -714,6 +818,23 @@
 
 	.summary-param-row {
 		flex-direction: row;
+	}
+
+	.usage-param-row {
+		margin-bottom: 8rpx;
+	}
+
+	.usage-note-row {
+		margin-top: 12rpx;
+		background-color: #F8FAFC;
+		border-radius: 16rpx;
+		padding: 14rpx 18rpx;
+	}
+
+	.usage-note-text {
+		font-size: 23rpx;
+		line-height: 34rpx;
+		color: #6B7280;
 	}
 
 	.summary-param-pill {
