@@ -197,7 +197,7 @@
 
 				<view class="first-run-hint-card">
 					<text class="first-run-hint-title">下一步会打开完整提供商编辑页</text>
-					<text class="first-run-hint-desc">在那里填写 API Key、点「获取模型列表」、勾选模型并保存。首页别塞低配编辑器，没必要硬凑。</text>
+					<text class="first-run-hint-desc">在那里填写 API Key、点「获取模型列表」、勾选模型并保存。保存后就能开始私聊和群聊。</text>
 				</view>
 
 				<view class="first-run-actions">
