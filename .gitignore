@@ -17,12 +17,15 @@ dist/
 
 # Local agent / AI tool workspace
 AstrBot/
+Agentopia/
 .omo/
 .codex/
 .agents/
 .trae/
 .claude/
 CLAUDE.md
+AGENTS1.md
+AGENTS.backup-*.md
 
 # OS
 .DS_Store
