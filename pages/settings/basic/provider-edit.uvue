@@ -1,7 +1,12 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NavBar :title="isNew ? '添加提供商' : '编辑提供商'" showBack @back="goBack" />
+		<NavBar :title="providerEditTitle" showBack @back="goBack" />
 		<scroll-view class="container" :scroll-y="true">
+			<view v-if="fromFirstRunGuide" class="guide-card">
+				<text class="guide-title">先把聊天模型接上</text>
+				<text class="guide-desc">填 API Key 后可以直接「获取模型列表」，勾选要用的模型。保存后会自动把第一个模型设为默认对话模型。</text>
+			</view>
+
 			<view class="card">
 				<!-- 标识 -->
 				<text class="field-label">标识 (ID)</text>
@@ -163,19 +168,23 @@
 			</view>
 
 			<!-- 保存 -->
-			<view v-if="isNew" class="save-wrap">
-				<rice-button type="primary" text="保存创建" size="large" shape="round" @click="saveProviderAndBack" />
+			<view v-if="showSaveButton" class="save-wrap">
+				<rice-button type="primary" :text="saveButtonText" size="large" shape="round" @click="saveProviderAndBack" />
 			</view>
 		</scroll-view>
 	</view>
 </template>
 
 <script lang="uts">
-	import { saveProvider, fetchProviderModels, parseModels, ModelInfo, getDefaultTaskModel, getProviderById, getDefaultProviderApiBase } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { saveProvider, fetchProviderModels, parseModels, ModelInfo, getDefaultTaskModel, getProviderById, getDefaultProviderApiBase, setActiveProvider, setDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { getModelCapabilities, refreshMetadataCache, isMetadataCacheStale, ensureMetadataCache } from '@/uni_modules/agent-core/utssdk/llm-metadata.uts'
-	import { consumeRuntimeState } from '@/utils/database.uts'
+	import { consumeRuntimeState, setAppSetting } from '@/utils/database.uts'
 
 	const PROVIDER_EDIT_RUNTIME_ID_KEY = 'provider_edit_id'
+	const PROVIDER_EDIT_SOURCE_KEY = 'provider_edit_source'
+	const PROVIDER_EDIT_SOURCE_FIRST_RUN = 'first_run_guide'
+	const PROVIDER_EDIT_PRESET_KEY = 'provider_edit_preset'
+	const FIRST_RUN_GUIDE_DONE_KEY = 'first_run_model_guide_done'
 
 	export default {
 			data() {
@@ -186,6 +195,7 @@
 				editApiKey: '' as string,
 				editApiBase: '' as string,
 				editModels: [] as ModelInfo[],
+				fromFirstRunGuide: false as boolean,
 				fetchingModels: false as boolean,
 				showModelPicker: false as boolean,
 				fetchedModelIds: [] as string[],
@@ -196,12 +206,28 @@
 		onLoad() {
 			// 预加载元数据缓存到内存，保证后续 getModelCapabilities 直接命中
 			ensureMetadataCache()
+			const source = consumeRuntimeState(PROVIDER_EDIT_SOURCE_KEY)
+			this.fromFirstRunGuide = source == PROVIDER_EDIT_SOURCE_FIRST_RUN
+			const preset = consumeRuntimeState(PROVIDER_EDIT_PRESET_KEY)
 			const editId = consumeRuntimeState(PROVIDER_EDIT_RUNTIME_ID_KEY)
 			if (editId != '') {
 				this.loadProviderForEdit(editId)
 			}
+			if (preset != '') {
+				this.applyProviderPreset(preset, editId == '')
+			}
 		},
 		computed: {
+			providerEditTitle(): string {
+				if (this.fromFirstRunGuide == true) { return '配置聊天模型' }
+				return this.isNew ? '添加提供商' : '编辑提供商'
+			},
+			showSaveButton(): boolean {
+				return this.isNew == true || this.fromFirstRunGuide == true
+			},
+			saveButtonText(): string {
+				return this.fromFirstRunGuide == true ? '保存并开始聊天' : '保存创建'
+			},
 			selectedModelCount(): number {
 				let count = 0
 				for (let i = 0; i < this.selectedModelIndexes.length; i++) {
@@ -230,6 +256,49 @@
 		methods: {
 			goBack() {
 				uni.navigateBack()
+			},
+
+			appendModelIfMissing(modelId: string): void {
+				if (modelId == '') { return }
+				for (let i = 0; i < this.editModels.length; i++) {
+					if (this.editModels[i].id == modelId) { return }
+				}
+				const caps = getModelCapabilities(modelId)
+				this.editModels.push({
+					id: modelId,
+					ctxStr: '',
+					maxTokensStr: '',
+					expanded: false,
+					supportsVision: caps.supportsVision,
+					supportsToolCall: caps.supportsToolCall,
+					supportsReasoning: caps.supportsReasoning,
+				} as ModelInfo)
+			},
+
+			applyProviderPreset(presetJson: string, overrideIdentity: boolean): void {
+				try {
+					const preset = JSON.parse(presetJson) as UTSJSONObject
+					const rawId = preset['id'] as string | null
+					const rawName = preset['name'] as string | null
+					const rawApiBase = preset['apiBase'] as string | null
+					const rawModel = preset['model'] as string | null
+					const id = rawId != null ? rawId : ''
+					const name = rawName != null ? rawName : ''
+					const apiBase = rawApiBase != null ? rawApiBase : ''
+					const model = rawModel != null ? rawModel : ''
+					if (overrideIdentity == true) {
+						this.isNew = true
+						this.editId = id
+						this.editName = name
+					} else if (this.editName == '' && name != '') {
+						this.editName = name
+					}
+					if (this.editApiBase == '' && apiBase != '') {
+						this.editApiBase = apiBase
+					}
+					this.appendModelIfMissing(model)
+				} catch (_e: any) {
+				}
 			},
 
 			loadProviderForEdit(id: string) {
@@ -408,6 +477,18 @@
 				if (this.editApiBase == '') {
 					this.editApiBase = getDefaultProviderApiBase(this.editId)
 				}
+				if (this.fromFirstRunGuide == true && navigateAfterSave == true) {
+					this.editApiKey = this.editApiKey.trim()
+					this.editApiBase = this.editApiBase.trim()
+					if (this.editApiKey == '') {
+						uni.showToast({ position: 'bottom',  title: '先填写 API Key', icon: 'none' })
+						return
+					}
+					if (this.editApiBase == '') {
+						uni.showToast({ position: 'bottom',  title: '先填写接口地址', icon: 'none' })
+						return
+					}
+				}
 				// 同步字符串 → 数字，清理空模型
 				const validModels: ModelInfo[] = []
 				for (let i = 0; i < this.editModels.length; i++) {
@@ -433,8 +514,26 @@
 					}
 					validModels.push(m)
 				}
+				if (this.fromFirstRunGuide == true && navigateAfterSave == true && validModels.length == 0) {
+					uni.showToast({ position: 'bottom',  title: '先添加或获取一个模型', icon: 'none' })
+					return
+				}
 				saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, true)
 				if (navigateAfterSave == false) {
+					return
+				}
+				if (this.fromFirstRunGuide == true) {
+					const defaultModel = validModels[0].id
+					setActiveProvider(this.editId)
+					setDefaultTaskModel('chat', this.editId, defaultModel)
+					// COMPAT_LEGACY_MODEL_SETTINGS: 旧聊天创建逻辑还读 settings_*；默认模型页统一后可清空。
+					setAppSetting('settings_provider_id', this.editId)
+					setAppSetting('settings_model', defaultModel)
+					setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true')
+					uni.showToast({ position: 'bottom',  title: '已接入，可以开始聊天', icon: 'success' })
+					setTimeout(() => {
+						uni.navigateBack()
+					}, 500)
 					return
 				}
 				uni.showToast({ position: 'bottom',  title: '已保存', icon: 'success' })
@@ -469,6 +568,29 @@
 	.container {
 		flex: 1;
 		padding: 32rpx;
+	}
+
+	.guide-card {
+		background-color: #FFF7FA;
+		border-radius: 24rpx;
+		padding: 28rpx;
+		margin-bottom: 24rpx;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: rgba(251, 143, 171, 0.22);
+	}
+
+	.guide-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #111827;
+		margin-bottom: 10rpx;
+	}
+
+	.guide-desc {
+		font-size: 25rpx;
+		line-height: 38rpx;
+		color: #6B7280;
 	}
 
 	.card {

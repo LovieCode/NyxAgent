@@ -195,28 +195,17 @@
 					</view>
 				</view>
 
-				<view class="first-run-section">
-					<text class="dialog-label">API Key</text>
-					<input class="dialog-input" v-model="firstRunApiKey" placeholder="粘贴你的 API Key" placeholder-style="color:var(--rice-text-color-3)" />
-				</view>
-
-				<view class="first-run-section">
-					<text class="dialog-label">接口地址</text>
-					<input class="dialog-input" v-model="firstRunBaseUrl" placeholder="https://api.deepseek.com" placeholder-style="color:var(--rice-text-color-3)" />
-					<text class="field-tip">默认地址已自动填好；自定义服务再改这里。</text>
-				</view>
-
-				<view class="first-run-section">
-					<text class="dialog-label">默认对话模型</text>
-					<input class="dialog-input" v-model="firstRunModel" placeholder="模型 ID" placeholder-style="color:var(--rice-text-color-3)" />
+				<view class="first-run-hint-card">
+					<text class="first-run-hint-title">下一步会打开完整提供商编辑页</text>
+					<text class="first-run-hint-desc">在那里填写 API Key、点「获取模型列表」、勾选模型并保存。首页别塞低配编辑器，没必要硬凑。</text>
 				</view>
 
 				<view class="first-run-actions">
-					<view class="dialog-secondary-btn first-run-secondary" @click="openProviderSettingsFromGuide">
-						<text class="dialog-secondary-text">完整设置</text>
+					<view class="dialog-secondary-btn first-run-secondary" @click="dismissFirstRunGuide">
+						<text class="dialog-secondary-text">稍后</text>
 					</view>
-					<view class="dialog-btn first-run-primary" @click="finishFirstRunGuide">
-						<text class="dialog-btn-text">{{ firstRunSaving ? '保存中...' : '保存并开始聊天' }}</text>
+					<view class="dialog-btn first-run-primary" @click="openProviderEditorFromGuide">
+						<text class="dialog-btn-text">去配置提供商</text>
 					</view>
 				</view>
 			</view>
@@ -234,7 +223,7 @@
 	import { getAgents, saveAgents, MINXI_BASE_STYLE } from '@/utils/agent.uts'
 	import { getAgentDir } from '@/utils/file-manager.uts'
 	import { deleteRuntimeState, getAppSetting, getConversationsByAgent, getRuntimeState, setAppSetting, setRuntimeState } from '@/utils/database.uts'
-	import { getAllProviders, saveProvider as saveLLMProvider, setActiveProvider, setDefaultTaskModel, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { getAllProviders } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import {
 		type GroupChat,
 		createDefaultWritingGroupChat,
@@ -298,6 +287,10 @@
 		} as UTSJSONObject
 	]
 	const FIRST_RUN_GUIDE_DONE_KEY = 'first_run_model_guide_done'
+	const FIRST_RUN_PROVIDER_EDIT_SOURCE_KEY = 'provider_edit_source'
+	const FIRST_RUN_PROVIDER_EDIT_SOURCE_VALUE = 'first_run_guide'
+	const FIRST_RUN_PROVIDER_EDIT_PRESET_KEY = 'provider_edit_preset'
+	const FIRST_RUN_PROVIDER_EDIT_ID_KEY = 'provider_edit_id'
 	// DEV_ONLY_FORCE_FIRST_RUN_GUIDE: 临时强制展示首启引导，验完 UI 后改回 false。
 	const DEV_ONLY_FORCE_FIRST_RUN_GUIDE = true
 	const FIRST_RUN_PROVIDER_OPTIONS: UTSJSONObject[] = [
@@ -341,10 +334,6 @@
 				showCreateDialog: false as boolean,
 				showFirstRunGuide: false as boolean,
 				firstRunProviderIndex: 0 as number,
-				firstRunApiKey: '' as string,
-				firstRunBaseUrl: 'https://api.deepseek.com' as string,
-				firstRunModel: 'deepseek-v4-flash' as string,
-				firstRunSaving: false as boolean,
 				/** 创建表单数据 */
 				createData: {
 					templateKey: 'ai-assistant',
@@ -451,11 +440,6 @@
 			selectFirstRunProvider(index: number): void {
 				if (index < 0 || index >= FIRST_RUN_PROVIDER_OPTIONS.length) { return }
 				this.firstRunProviderIndex = index
-				const item = FIRST_RUN_PROVIDER_OPTIONS[index]
-				const baseUrl = item['baseUrl'] as string | null
-				const model = item['model'] as string | null
-				this.firstRunBaseUrl = baseUrl != null ? baseUrl : ''
-				this.firstRunModel = model != null ? model : ''
 			},
 
 			hasReadyChatProvider(): boolean {
@@ -489,94 +473,39 @@
 				this.showFirstRunGuide = false
 			},
 
-			openProviderSettingsFromGuide(): void {
-				setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true')
-				this.showFirstRunGuide = false
-				uni.navigateTo({ url: '/pages/settings/basic/basic' })
+			firstRunProviderExists(providerId: string): boolean {
+				if (providerId == '') { return false }
+				const providers = getAllProviders()
+				for (let i = 0; i < providers.length; i++) {
+					const id = providers[i]['id'] as string | null
+					if (id == providerId) { return true }
+				}
+				return false
 			},
 
-			appendFirstRunModel(models: ModelInfo[], id: string, supportsVision: boolean, supportsToolCall: boolean, supportsReasoning: boolean): void {
-				if (id == '') { return }
-				for (let i = 0; i < models.length; i++) {
-					if (models[i].id == id) { return }
-				}
-				models.push({ id: id, supportsVision: supportsVision, supportsToolCall: supportsToolCall, supportsReasoning: supportsReasoning } as ModelInfo)
-			},
-
-			buildFirstRunModels(providerId: string, selectedModel: string): ModelInfo[] {
-				const models: ModelInfo[] = []
-				if (providerId == 'deepseek') {
-					this.appendFirstRunModel(models, selectedModel, false, true, false)
-					this.appendFirstRunModel(models, 'deepseek-v4-flash', false, true, false)
-					this.appendFirstRunModel(models, 'deepseek-v4-pro', false, true, true)
-				} else if (providerId == 'openai') {
-					this.appendFirstRunModel(models, selectedModel, true, true, false)
-					this.appendFirstRunModel(models, 'gpt-4o-mini', true, true, false)
-					this.appendFirstRunModel(models, 'gpt-4o', true, true, false)
-					this.appendFirstRunModel(models, 'gpt-4.1-mini', true, true, false)
-				} else {
-					this.appendFirstRunModel(models, selectedModel, false, false, false)
-				}
-				return models
-			},
-
-			syncFirstRunAgentModels(model: string): void {
-				if (model == '') { return }
-				const agents = getAgents()
-				let changed = false
-				for (let i = 0; i < agents.length; i++) {
-					const rawModel = agents[i]['model'] as string | null
-					const currentModel = rawModel != null ? rawModel : ''
-					if (currentModel == '' || currentModel == 'deepseek-v4-flash' || currentModel == 'deepseek-v4-pro') {
-						agents[i]['model'] = model
-						changed = true
-					}
-				}
-				if (changed == true) {
-					saveAgents(agents)
-				}
-			},
-
-			finishFirstRunGuide(): void {
-				if (this.firstRunSaving == true) { return }
+			openProviderEditorFromGuide(): void {
 				const option = this.getFirstRunProviderOption()
 				const rawProviderId = option['id'] as string | null
 				const rawProviderName = option['name'] as string | null
 				const providerId = rawProviderId != null ? rawProviderId : 'custom'
 				const providerName = rawProviderName != null && rawProviderName != '' ? rawProviderName : '自定义'
-				const apiKey = this.firstRunApiKey.trim()
-				const apiBase = this.firstRunBaseUrl.trim()
-				const model = this.firstRunModel.trim()
-				if (apiKey == '') {
-					uni.showToast({ position: 'bottom', title: '先填 API Key', icon: 'none' })
-					return
+				const apiBase = option['baseUrl'] as string | null
+				const model = option['model'] as string | null
+				const preset: UTSJSONObject = {
+					id: providerId,
+					name: providerName,
+					apiBase: apiBase != null ? apiBase : '',
+					model: model != null ? model : '',
+				} as UTSJSONObject
+				setRuntimeState(FIRST_RUN_PROVIDER_EDIT_SOURCE_KEY, FIRST_RUN_PROVIDER_EDIT_SOURCE_VALUE)
+				setRuntimeState(FIRST_RUN_PROVIDER_EDIT_PRESET_KEY, JSON.stringify(preset))
+				if (this.firstRunProviderExists(providerId) == true) {
+					setRuntimeState(FIRST_RUN_PROVIDER_EDIT_ID_KEY, providerId)
+				} else {
+					setRuntimeState(FIRST_RUN_PROVIDER_EDIT_ID_KEY, '')
 				}
-				if (apiBase == '') {
-					uni.showToast({ position: 'bottom', title: '先填接口地址', icon: 'none' })
-					return
-				}
-				if (model == '') {
-					uni.showToast({ position: 'bottom', title: '先填模型 ID', icon: 'none' })
-					return
-				}
-				this.firstRunSaving = true
-				try {
-					const models = this.buildFirstRunModels(providerId, model)
-					saveLLMProvider(providerId, providerName, apiBase, apiKey, models, true)
-					setActiveProvider(providerId)
-					setDefaultTaskModel('chat', providerId, model)
-					// COMPAT_LEGACY_MODEL_SETTINGS: 旧聊天创建逻辑还读 settings_*；默认模型页统一后可清空。
-					setAppSetting('settings_provider_id', providerId)
-					setAppSetting('settings_model', model)
-					this.syncFirstRunAgentModels(model)
-					setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true')
-					this.showFirstRunGuide = false
-					this.loadChats()
-					uni.showToast({ position: 'bottom', title: '已接入，可以开始聊天', icon: 'success' })
-				} catch (_e: any) {
-					uni.showToast({ position: 'bottom', title: '保存失败，请去完整设置里检查', icon: 'none' })
-				}
-				this.firstRunSaving = false
+				this.showFirstRunGuide = false
+				uni.navigateTo({ url: '/pages/settings/basic/provider-edit' })
 			},
 
 			consumeCreateAvatarCropResult(): void {
@@ -1516,6 +1445,29 @@
 
 	.first-run-section {
 		margin-bottom: 26rpx;
+	}
+
+	.first-run-hint-card {
+		background-color: #FFF7FA;
+		border-radius: 24rpx;
+		padding: 24rpx;
+		margin-bottom: 26rpx;
+		border-width: 2rpx;
+		border-style: solid;
+		border-color: rgba(251, 143, 171, 0.20);
+	}
+
+	.first-run-hint-title {
+		font-size: 27rpx;
+		font-weight: bold;
+		color: var(--rice-text-color);
+		margin-bottom: 8rpx;
+	}
+
+	.first-run-hint-desc {
+		font-size: 24rpx;
+		line-height: 36rpx;
+		color: var(--rice-text-color-2);
 	}
 
 	.first-run-provider-grid {
