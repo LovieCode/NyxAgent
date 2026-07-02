@@ -182,15 +182,25 @@
 				<view class="first-run-section">
 					<text class="dialog-label">选择提供商</text>
 					<view class="first-run-provider-grid">
-						<view
-							v-for="(item, index) in firstRunProviderOptions"
-							:key="index"
-							class="first-run-provider"
-							:class="firstRunProviderIndex == index ? 'first-run-provider-active' : ''"
-							@click="selectFirstRunProvider(index)"
-						>
-							<text class="first-run-provider-name">{{ firstRunProviderName(item) }}</text>
-							<text class="first-run-provider-desc">{{ firstRunProviderDesc(item) }}</text>
+						<view class="first-run-provider-row">
+							<view :class="firstRunProviderCardClass(0)" @click="selectFirstRunProvider(0)">
+								<text class="first-run-provider-name">{{ firstRunProviderName(firstRunProviderItem(0)) }}</text>
+								<text class="first-run-provider-desc">{{ firstRunProviderDesc(firstRunProviderItem(0)) }}</text>
+							</view>
+							<view :class="firstRunProviderCardClass(1)" @click="selectFirstRunProvider(1)">
+								<text class="first-run-provider-name">{{ firstRunProviderName(firstRunProviderItem(1)) }}</text>
+								<text class="first-run-provider-desc">{{ firstRunProviderDesc(firstRunProviderItem(1)) }}</text>
+							</view>
+						</view>
+						<view class="first-run-provider-row">
+							<view :class="firstRunProviderCardClass(2)" @click="selectFirstRunProvider(2)">
+								<text class="first-run-provider-name">{{ firstRunProviderName(firstRunProviderItem(2)) }}</text>
+								<text class="first-run-provider-desc">{{ firstRunProviderDesc(firstRunProviderItem(2)) }}</text>
+							</view>
+							<view :class="firstRunProviderCardClass(3)" @click="selectFirstRunProvider(3)">
+								<text class="first-run-provider-name">{{ firstRunProviderName(firstRunProviderItem(3)) }}</text>
+								<text class="first-run-provider-desc">{{ firstRunProviderDesc(firstRunProviderItem(3)) }}</text>
+							</view>
 						</view>
 					</view>
 				</view>
@@ -428,6 +438,17 @@
 			firstRunProviderDesc(item: UTSJSONObject): string {
 				const value = item['desc'] as string | null
 				return value != null ? value : ''
+			},
+
+			firstRunProviderItem(index: number): UTSJSONObject {
+				if (index >= 0 && index < FIRST_RUN_PROVIDER_OPTIONS.length) {
+					return FIRST_RUN_PROVIDER_OPTIONS[index]
+				}
+				return FIRST_RUN_PROVIDER_OPTIONS[0]
+			},
+
+			firstRunProviderCardClass(index: number): string {
+				return this.firstRunProviderIndex == index ? 'first-run-provider first-run-provider-active' : 'first-run-provider'
 			},
 
 			getFirstRunProviderOption(): UTSJSONObject {
@@ -1471,18 +1492,22 @@
 	}
 
 	.first-run-provider-grid {
+		flex-direction: column;
+	}
+
+	.first-run-provider-row {
 		flex-direction: row;
-		flex-wrap: wrap;
+		width: 100%;
 		margin-right: -12rpx;
+		margin-bottom: 12rpx;
 	}
 
 	.first-run-provider {
 		flex: 1;
-		width: 280rpx;
+		width: 0rpx;
 		border-radius: 24rpx;
 		padding: 20rpx;
 		margin-right: 12rpx;
-		margin-bottom: 12rpx;
 		background-color: #F9FAFB;
 		border-width: 2rpx;
 		border-style: solid;
