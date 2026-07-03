@@ -34,7 +34,7 @@
 				isRecording: false as boolean,
 				isTranscribing: false as boolean,
 				voiceSessionId: 0 as number,
-				statusText: '跨页面快捷语音输入。按住说话，识别后发给当前聊天；不在聊天页时发给当前私聊。' as string,
+				statusText: '眠汐快捷语音入口。按住说话，识别后发给当前聊天；不在聊天页时发给当前私聊。' as string,
 			}
 		},
 		methods: {
@@ -99,7 +99,7 @@
 			handleVoiceRecordStopped(tempPath: string): void {
 				if (tempPath == '') { return }
 				this.isTranscribing = true
-				this.statusText = '识别中，马上发给眠汐。'
+				this.statusText = '识别中，马上发送。'
 				transcribeAudio(tempPath).then((result) => {
 					this.isTranscribing = false
 					if (result.ok == true) {

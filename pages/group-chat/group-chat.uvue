@@ -36,7 +36,7 @@
 			</view>
 			<view v-if="visibleMessages.length == 0" class="empty-state">
 				<text class="empty-text">{{emptyTitle}}</text>
-				<text class="empty-hint">发一句话，眠汐会安排成员接招。</text>
+				<text class="empty-hint">发一句话，本群调度会安排成员接招。</text>
 			</view>
 		</scroll-view>
 
@@ -102,7 +102,7 @@
 								</view>
 								<view class="toolbar-grid-item" @click="showDispatchHistory">
 									<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="26px" color="var(--rice-primary-color)" /></view>
-									<text class="toolbar-grid-label">眠汐记录</text>
+									<text class="toolbar-grid-label">调度记录</text>
 								</view>
 							</view>
 						</view>
@@ -137,8 +137,6 @@
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { NYX_FLOAT_CONTEXT_GROUP, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
 	import {
-		GLOBAL_SCHEDULER_AGENT_ID,
-		GLOBAL_SCHEDULER_AGENT_NAME,
 		GROUP_MESSAGE_SENDER_AGENT,
 		GROUP_MESSAGE_SENDER_REVIEWER,
 		GROUP_MESSAGE_SENDER_SCHEDULER,
@@ -181,6 +179,10 @@
 		readAgentName,
 		readAgentInjectDatetime,
 		readAgentMsgSegmentation,
+		resolveGroupReviewerAgentId,
+		resolveGroupReviewerDisplayName,
+		resolveGroupSchedulerAgentId,
+		resolveGroupSchedulerDisplayName,
 		revokeGroupAgentMessage,
 		saveGroupAgentContextRecord,
 		saveGroupMessages,
@@ -735,9 +737,14 @@
 			buildGroupMemberAgentItems(): UTSJSONObject[] {
 				const members = getActiveGroupMembers(this.groupId)
 				const result: UTSJSONObject[] = []
+				const group = this.group
 				result.push({
-					agentId: GLOBAL_SCHEDULER_AGENT_ID,
-					name: GLOBAL_SCHEDULER_AGENT_NAME,
+					agentId: resolveGroupSchedulerAgentId(group),
+					name: resolveGroupSchedulerDisplayName(group),
+				} as UTSJSONObject)
+				result.push({
+					agentId: resolveGroupReviewerAgentId(group),
+					name: resolveGroupReviewerDisplayName(group),
 				} as UTSJSONObject)
 				for (let i = 0; i < members.length; i++) {
 					const agent = getAgentById(members[i].agentId)
@@ -785,7 +792,9 @@
 				})
 			},
 			openMemoryForAgent(agentId: string): void {
-				if (agentId != GLOBAL_SCHEDULER_AGENT_ID && getAgentById(agentId) == null) {
+				const groupSchedulerAgentId = resolveGroupSchedulerAgentId(this.group)
+				const groupReviewerAgentId = resolveGroupReviewerAgentId(this.group)
+				if (agentId != groupSchedulerAgentId && agentId != groupReviewerAgentId && getAgentById(agentId) == null) {
 					uni.showToast({ position: 'bottom', title: '该联系人已删除', icon: 'none' })
 					return
 				}
@@ -795,7 +804,9 @@
 			openContextForAgent(agentId: string): void {
 				const session = this.session
 				if (session == null) { return }
-				if (agentId != GLOBAL_SCHEDULER_AGENT_ID && getAgentById(agentId) == null) {
+				const groupSchedulerAgentId = resolveGroupSchedulerAgentId(this.group)
+				const groupReviewerAgentId = resolveGroupReviewerAgentId(this.group)
+				if (agentId != groupSchedulerAgentId && agentId != groupReviewerAgentId && getAgentById(agentId) == null) {
 					uni.showToast({ position: 'bottom', title: '该联系人已删除', icon: 'none' })
 					return
 				}
@@ -889,7 +900,7 @@
 					if (lines.length >= 200) { break }
 				}
 				if (lines.length == 0) {
-					uni.showToast({ position: 'bottom', title: '还没有眠汐记录', icon: 'none' })
+					uni.showToast({ position: 'bottom', title: '还没有调度记录', icon: 'none' })
 					return
 				}
 				setContextPreviewPayload(lines.join('\n'))
@@ -908,7 +919,7 @@
 				this.isGenerating = true
 				const schedulerStartedAt = Date.now()
 				const schedulerMessages = buildSchedulerRuntimeMessages(group, session, this.messages, reason, this.loopTurns)
-				const schedulerAgentId = GLOBAL_SCHEDULER_AGENT_ID
+				const schedulerAgentId = resolveGroupSchedulerAgentId(group)
 				let schedulerText = ''
 				let schedulerThinking = ''
 				const schedulerStream = agentChat(schedulerMessages, buildSchedulerSystemPrompt(), '', '', schedulerAgentId, 1, session.id, '')
@@ -999,7 +1010,7 @@
 				}
 				const reviewStartedAt = Date.now()
 				const reviewMessages = buildGroupReviewMessages(group, session, this.messages, reason, this.loopTurns)
-				const reviewerAgentId = 'reviewer'
+				const reviewerAgentId = resolveGroupReviewerAgentId(group)
 				let reviewText = ''
 				let reviewThinking = ''
 				const reviewStream = agentChat(reviewMessages, buildGroupReviewSystemPrompt(), '', '', reviewerAgentId, 1, session.id, '')
@@ -1197,7 +1208,8 @@
 				let schedulerThinking = ''
 				const reviewStartedAt = Date.now()
 				const reviewMessages = buildSchedulerReviewMessages(group, session, this.messages, agentId, agentName, keyword, candidateText)
-				const reviewStream = agentChat(reviewMessages, buildSchedulerReviewSystemPrompt(), '', '', GLOBAL_SCHEDULER_AGENT_ID, 1, session.id, '')
+				const schedulerAgentId = resolveGroupSchedulerAgentId(group)
+				const reviewStream = agentChat(reviewMessages, buildSchedulerReviewSystemPrompt(), '', '', schedulerAgentId, 1, session.id, '')
 				this.currentStream = reviewStream
 				reviewStream.on((event: AgentEvent) => {
 					if (event.type == 'text_delta' && event.text != null) {
@@ -1218,8 +1230,8 @@
 						}
 						this.currentStream = null
 						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerText)
-						appendResponseToSnapshot(GLOBAL_SCHEDULER_AGENT_ID, session.id, schedulerText, schedulerThinking)
-						const schedulerSnapshot = readLastLLMRequestSnapshot(GLOBAL_SCHEDULER_AGENT_ID, session.id)
+						appendResponseToSnapshot(schedulerAgentId, session.id, schedulerText, schedulerThinking)
+						const schedulerSnapshot = readLastLLMRequestSnapshot(schedulerAgentId, session.id)
 						if (schedulerSnapshot != null) {
 							const capturedAt = schedulerSnapshot['capturedAt'] as number | null
 							if (capturedAt != null && capturedAt >= reviewStartedAt) {

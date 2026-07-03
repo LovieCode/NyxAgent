@@ -63,7 +63,7 @@
 				<view v-else class="empty-state">
 					<oui-icon-unix name="time-circle" size="48px" color="#D1D5DB" />
 					<text class="empty-text">暂无历史记录</text>
-					<text class="empty-hint">{{activeTab == 'group' ? '眠汐和群成员的上下文会记录在这里' : '开始对话后，记录将自动保存在这里'}}</text>
+					<text class="empty-hint">{{activeTab == 'group' ? '群调度、群复盘和群成员的上下文会记录在这里' : '开始对话后，记录将自动保存在这里'}}</text>
 				</view>
 			</scroll-view>
 		</view>
@@ -107,6 +107,7 @@
 		getGroupChats,
 		getGroupMessages,
 		getGroupSessions,
+		GROUP_MESSAGE_SENDER_REVIEWER,
 		GROUP_MESSAGE_SENDER_SCHEDULER,
 		listGroupAgentContextRecords,
 		saveGroupMessages,
@@ -316,7 +317,11 @@
 						for (let mi = 0; mi < messages.length; mi++) {
 							const msg = messages[mi]
 							const senderType = msg['senderType'] as string | null
-							if (senderType != GROUP_MESSAGE_SENDER_SCHEDULER) { continue }
+							if (senderType != GROUP_MESSAGE_SENDER_SCHEDULER && senderType != GROUP_MESSAGE_SENDER_REVIEWER) { continue }
+							let internalLabel = '群调度'
+							if (senderType == GROUP_MESSAGE_SENDER_REVIEWER) {
+								internalLabel = '群复盘'
+							}
 							const messageIdRaw = msg['id'] as string | null
 							const messageId = messageIdRaw != null && messageIdRaw != '' ? messageIdRaw : 'index-' + mi.toString()
 							const timestampRaw = msg['timestamp'] as number | null
@@ -335,24 +340,25 @@
 							if (preview == '') {
 								preview = contentRaw != null ? contentRaw : ''
 							}
-							if (preview == '') { preview = '查看眠汐隐藏调度的真实上下文' }
+							if (preview == '') { preview = '查看' + internalLabel + '隐藏上下文' }
 							if (preview.length > 50) { preview = preview.substring(0, 50) + '...' }
+							const senderAgentIdRaw = msg['senderAgentId'] as string | null
 							result.push({
 								id: 'scheduler:' + group.id + ':' + session.id + ':' + messageId,
 								type: 'scheduler_context',
-								agent_id: '__scheduler__',
+								agent_id: senderAgentIdRaw != null && senderAgentIdRaw != '' ? senderAgentIdRaw : '__scheduler__',
 								group_id: group.id,
 								group_name: group.name,
 								session_id: session.id,
 								session_title: displaySessionTitle(session),
 								message_id: messageId,
 								message_index: mi,
-								title: group.name + ' / ' + displaySessionTitle(session) + ' / 眠汐',
+								title: group.name + ' / ' + displaySessionTitle(session) + ' / ' + internalLabel,
 								created_at: timestampRaw != null ? timestampRaw : session.updatedAt,
 								updated_at: timestampRaw != null ? timestampRaw : session.updatedAt,
 								message_count: messageCount,
 								preview: preview,
-								model: requestSnapshot != null ? '眠汐真实请求' : '眠汐记录',
+								model: requestSnapshot != null ? internalLabel + '真实请求' : internalLabel + '记录',
 							} as UTSJSONObject)
 						}
 					}
@@ -437,7 +443,7 @@
 						const msg = messages[i]
 						const senderType = msg['senderType'] as string | null
 						const rawId = msg['id'] as string | null
-						if (senderType == GROUP_MESSAGE_SENDER_SCHEDULER && rawId == messageId) {
+						if ((senderType == GROUP_MESSAGE_SENDER_SCHEDULER || senderType == GROUP_MESSAGE_SENDER_REVIEWER) && rawId == messageId) {
 							return msg
 						}
 					}
@@ -446,7 +452,7 @@
 				if (messageIndexRaw != null && messageIndexRaw >= 0 && messageIndexRaw < messages.length) {
 					const msg = messages[messageIndexRaw]
 					const senderType = msg['senderType'] as string | null
-					if (senderType == GROUP_MESSAGE_SENDER_SCHEDULER) { return msg }
+					if (senderType == GROUP_MESSAGE_SENDER_SCHEDULER || senderType == GROUP_MESSAGE_SENDER_REVIEWER) { return msg }
 				}
 				return null
 			},
@@ -736,6 +742,11 @@
 					if (itemType == 'scheduler_context') {
 						const schedulerMsg = this.findSchedulerMessage(item)
 						if (schedulerMsg != null) {
+							const senderType = schedulerMsg['senderType'] as string | null
+							let internalLabel = '群调度'
+							if (senderType == GROUP_MESSAGE_SENDER_REVIEWER) {
+								internalLabel = '群复盘'
+							}
 							const requestSnapshot = schedulerMsg['requestSnapshot'] as UTSJSONObject | null
 							if (requestSnapshot != null) {
 								const requestBody = requestSnapshot['requestBody'] as UTSJSONObject | null
@@ -745,19 +756,19 @@
 									previewJson = JSON.stringify(requestSnapshot, null, 2)
 								}
 								const messageCount = requestSnapshot['messageCount'] as number | null
-								subtitle = '眠汐真实发送瞬间的请求体 · ' + (messageCount != null ? messageCount : 0) + ' 条 messages'
+								subtitle = internalLabel + '真实发送瞬间的请求体 · ' + (messageCount != null ? messageCount : 0) + ' 条 messages'
 							} else {
 								const runtimeMessages = schedulerMsg['runtimeMessages'] as UTSJSONObject[] | null
 								const contentRaw = schedulerMsg['content'] as string | null
 								const triggerRaw = schedulerMsg['triggerReason'] as string | null
 								previewJson = JSON.stringify({
 									type: 'scheduler_context',
-									note: '旧眠汐记录没有保存真实 request body 快照；以下为可恢复的调度上下文和输出。',
+									note: '旧' + internalLabel + '记录没有保存真实 request body 快照；以下为可恢复的调度上下文和输出。',
 									triggerReason: triggerRaw != null ? triggerRaw : '',
 									runtimeMessages: runtimeMessages != null ? runtimeMessages : [],
 									response: contentRaw != null ? contentRaw : '',
 								} as UTSJSONObject, null, 2)
-								subtitle = '眠汐记录：没有真实请求快照'
+								subtitle = internalLabel + '记录：没有真实请求快照'
 							}
 						}
 					} else if (itemType == 'legacy_group_message') {
@@ -866,7 +877,7 @@
 					const senderType = msg['senderType'] as string | null
 					const rawId = msg['id'] as string | null
 					const fallbackId = 'index-' + i.toString()
-					if (senderType == GROUP_MESSAGE_SENDER_SCHEDULER && (rawId == messageKey || fallbackId == messageKey)) {
+					if ((senderType == GROUP_MESSAGE_SENDER_SCHEDULER || senderType == GROUP_MESSAGE_SENDER_REVIEWER) && (rawId == messageKey || fallbackId == messageKey)) {
 						continue
 					}
 					next.push(msg)
