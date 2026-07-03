@@ -133,6 +133,7 @@
 	import { reduceAgentEvent, finalizeAssistantTurn } from '@/utils/chat-message-reducer.uts'
 	import { detectSchedulerLeakCandidate, getSchedulerLeakHoldSize } from '@/utils/group-chat-moderation.uts'
 	import { setActiveAgentRuntimeId, setContextPreviewPayload, setFilesInitialPath, setMemoryRouteState } from '@/utils/runtime-state.uts'
+	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, type PickedLocalFile } from '@/utils/attachment-reader.uts'
 	import {
 		GROUP_MESSAGE_SENDER_AGENT,
 		GROUP_MESSAGE_SENDER_REVIEWER,
@@ -546,6 +547,14 @@
 				this.scrollToBottom()
 				return this.messages.length - 1
 			},
+			handlePickedGroupImagePath(imagePath: string, fallbackReason: string): void {
+				if (imagePath == '') {
+					uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
+					return
+				}
+				const msgIndex = this.addGroupImageMessage(imagePath)
+				this.startGenerationForImage(imagePath, fallbackReason, msgIndex)
+			},
 			startGroupGenerationForMedia(reason: string): void {
 				if (this.isGenerating == true) { return }
 				this.runScheduler(reason)
@@ -578,14 +587,13 @@
 					sourceType: ['album'],
 					sizeType: ['compressed'],
 					success: (res: any) => {
-						const raw = JSON.stringify(res)
-						if (raw == null || raw == '') { return }
-						const parsed = JSON.parse(raw) as UTSJSONObject
-						const paths = parsed['tempFilePaths'] as string[] | null
-						if (paths != null && paths.length > 0) {
-							const msgIndex = this.addGroupImageMessage(paths[0])
-							this.startGenerationForImage(paths[0], '用户发送了一张图片', msgIndex)
-						}
+						const imagePath = parsePickedImagePath(res)
+						this.handlePickedGroupImagePath(imagePath, '用户发送了一张图片')
+					},
+					fail: (err: any) => {
+						if (isChooseCancelError(err) == true) { return }
+						console.log('[GroupChat] chooseImage 相册失败，尝试 chooseMedia: ' + JSON.stringify(err))
+						this.pickGroupImageFromMediaFallback('用户发送了一张图片')
 					}
 				})
 			},
@@ -598,14 +606,12 @@
 					sourceType: ['camera'],
 					sizeType: ['compressed'],
 					success: (res: any) => {
-						const raw = JSON.stringify(res)
-						if (raw == null || raw == '') { return }
-						const parsed = JSON.parse(raw) as UTSJSONObject
-						const paths = parsed['tempFilePaths'] as string[] | null
-						if (paths != null && paths.length > 0) {
-							const msgIndex = this.addGroupImageMessage(paths[0])
-							this.startGenerationForImage(paths[0], '用户拍摄了一张照片', msgIndex)
-						}
+						const imagePath = parsePickedImagePath(res)
+						this.handlePickedGroupImagePath(imagePath, '用户拍摄了一张照片')
+					},
+					fail: (err: any) => {
+						if (isChooseCancelError(err) == true) { return }
+						uni.showToast({ position: 'bottom', title: '拍照失败', icon: 'none' })
 					}
 				})
 			},
@@ -616,33 +622,77 @@
 				uni.chooseFile({
 					count: 1,
 					success: (res: any) => {
-						const raw = JSON.stringify(res)
-						if (raw == null || raw == '') { return }
-						const parsed = JSON.parse(raw) as UTSJSONObject
-						this.addGroupFileMessage(parsed)
+						this.addGroupFileMessage(res)
+					},
+					fail: (err: any) => {
+						if (isChooseCancelError(err) == true) { return }
+						uni.showToast({ position: 'bottom', title: '选择文件失败', icon: 'none' })
 					}
 				})
 			},
-			addGroupFileMessage(fileInfo: UTSJSONObject): void {
-				const rawName = fileInfo['name'] as string | null
-				const rawPath = fileInfo['path'] as string | null
-				const tempFiles = fileInfo['tempFiles'] as UTSJSONObject[] | null
-				let name = rawName != null ? rawName : '文件'
-				let path = rawPath != null ? rawPath : ''
-				if (tempFiles != null && tempFiles.length > 0) {
-					const first = tempFiles[0]
-					const firstName = first['name'] as string | null
-					const firstPath = first['path'] as string | null
-					if (firstName != null && firstName != '') { name = firstName }
-					if (firstPath != null && firstPath != '') { path = firstPath }
+			pickGroupImageFromMediaFallback(fallbackReason: string): void {
+				uni.chooseMedia({
+					count: 1,
+					sourceType: ['album'],
+					success: (res: any) => {
+						const file: PickedLocalFile = parsePickedFileInfo(res)
+						if (file.path == '') {
+							uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
+							return
+						}
+						if (isPickedImageFile(file) == false) {
+							uni.showToast({ position: 'bottom', title: '请选择图片文件', icon: 'none' })
+							return
+						}
+						this.handlePickedGroupImagePath(file.path, fallbackReason)
+					},
+					fail: (err: any) => {
+						if (isChooseCancelError(err) == true) { return }
+						console.log('[GroupChat] chooseMedia 相册失败，切换文件选图: ' + JSON.stringify(err))
+						uni.showToast({ position: 'bottom', title: '相册打开失败，请从文件选择图片', icon: 'none' })
+						this.pickGroupImageFromFileFallback(fallbackReason)
+					}
+				})
+			},
+			pickGroupImageFromFileFallback(fallbackReason: string): void {
+				uni.chooseFile({
+					count: 1,
+					success: (res: any) => {
+						const file: PickedLocalFile = parsePickedFileInfo(res)
+						if (file.path == '') {
+							uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
+							return
+						}
+						if (isPickedImageFile(file) == false) {
+							uni.showToast({ position: 'bottom', title: '请选择图片文件', icon: 'none' })
+							return
+						}
+						this.handlePickedGroupImagePath(file.path, fallbackReason)
+					},
+					fail: (err: any) => {
+						if (isChooseCancelError(err) == true) { return }
+						uni.showToast({ position: 'bottom', title: '选择图片失败', icon: 'none' })
+					}
+				})
+			},
+			addGroupFileMessage(fileInfo: any): void {
+				const file = parsePickedFileInfo(fileInfo)
+				if (file.path == '') {
+					uni.showToast({ position: 'bottom', title: '未选择文件', icon: 'none' })
+					return
 				}
+				if (isPickedImageFile(file) == true) {
+					this.handlePickedGroupImagePath(file.path, '用户通过文件发送了一张图片')
+					return
+				}
+				const fileText = buildPickedFileContextText(file)
 				const profile = loadChatUserProfile()
 				this.userNickname = profile.nickname
 				this.userAvatar = profile.avatar
-				this.messages.push(createGroupUserFileMessage(this.groupId, this.sessionId, name, path, profile.nickname))
+				this.messages.push(createGroupUserFileMessage(this.groupId, this.sessionId, file.name, file.path, profile.nickname, fileText))
 				this.saveMessages()
 				this.scrollToBottom()
-				this.startGroupGenerationForMedia('用户发送了一个文件：' + name)
+				this.startGroupGenerationForMedia('用户发送了一个文件：' + file.name)
 			},
 			buildGroupMemberAgentItems(): UTSJSONObject[] {
 				const members = getActiveGroupMembers(this.groupId)

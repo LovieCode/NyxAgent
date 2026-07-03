@@ -133,12 +133,16 @@ export function setImageMessageCaption(message: UTSJSONObject, caption: string):
 	}
 }
 
-export function createFilePart(fileName: string, filePath: string): UTSJSONObject {
-	return {
+export function createFilePart(fileName: string, filePath: string, fileText: string = ''): UTSJSONObject {
+	const part = {
 		type: CHAT_PART_FILE,
 		filename: fileName,
 		path: filePath,
 	} as UTSJSONObject
+	if (fileText != '') {
+		part['text'] = fileText
+	}
+	return part
 }
 
 export function createLocationPart(locationText: string): UTSJSONObject {
@@ -207,8 +211,8 @@ export function createImageMessage(imagePath: string): UTSJSONObject {
 	return msg
 }
 
-export function createFileMessage(fileName: string, filePath: string): UTSJSONObject {
-	const msg = createChatMessage(CHAT_ROLE_USER, [createFilePart(fileName, filePath)], Date.now())
+export function createFileMessage(fileName: string, filePath: string, fileText: string = ''): UTSJSONObject {
+	const msg = createChatMessage(CHAT_ROLE_USER, [createFilePart(fileName, filePath, fileText)], Date.now())
 	msg['content'] = '[文件] ' + fileName
 	msg['msgType'] = CHAT_MESSAGE_TYPE_FILE
 	if (filePath != '') {

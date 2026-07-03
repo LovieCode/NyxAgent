@@ -1,0 +1,139 @@
+import { basename, isImageFile, isTextFile, readContent } from '@/utils/file-manager.uts'
+
+const MAX_ATTACHMENT_TEXT_CHARS = 18000
+
+export type PickedLocalFile = {
+	name: string
+	path: string
+	size: number
+	fileType: string
+}
+
+function emptyPickedFile(): PickedLocalFile {
+	return {
+		name: '文件',
+		path: '',
+		size: 0,
+		fileType: '',
+	} as PickedLocalFile
+}
+
+function readStringField(obj: UTSJSONObject, key: string): string {
+	const value = obj[key] as string | null
+	return value != null ? value : ''
+}
+
+function readNumberField(obj: UTSJSONObject, key: string): number {
+	const value = obj[key] as number | null
+	return value != null ? value : 0
+}
+
+function applyFileObject(target: PickedLocalFile, obj: UTSJSONObject): void {
+	let name = readStringField(obj, 'name')
+	if (name == '') { name = readStringField(obj, 'fileName') }
+	let path = readStringField(obj, 'path')
+	if (path == '') { path = readStringField(obj, 'tempFilePath') }
+	if (path == '') { path = readStringField(obj, 'url') }
+	let fileType = readStringField(obj, 'fileType')
+	if (fileType == '') { fileType = readStringField(obj, 'type') }
+	if (fileType == '') { fileType = readStringField(obj, 'mimeType') }
+	const size = readNumberField(obj, 'size')
+	if (name != '') { target.name = name }
+	if (path != '') { target.path = path }
+	if (fileType != '') { target.fileType = fileType }
+	if (size > 0) { target.size = size }
+}
+
+function parsePickedFileObject(parsed: UTSJSONObject): PickedLocalFile {
+	const result = emptyPickedFile()
+	applyFileObject(result, parsed)
+
+	const tempFiles = parsed['tempFiles'] as UTSJSONObject[] | null
+	if (tempFiles != null && tempFiles.length > 0) {
+		applyFileObject(result, tempFiles[0])
+	}
+
+	const tempFilePaths = parsed['tempFilePaths'] as string[] | null
+	if (result.path == '' && tempFilePaths != null && tempFilePaths.length > 0) {
+		result.path = tempFilePaths[0]
+	}
+
+	if (result.path == '') {
+		const tempFilePath = readStringField(parsed, 'tempFilePath')
+		if (tempFilePath != '') { result.path = tempFilePath }
+	}
+	if (result.name == '' || result.name == '文件') {
+		if (result.path != '') {
+			const baseName = basename(result.path)
+			if (baseName != '') { result.name = baseName }
+		}
+	}
+	return result
+}
+
+export function parsePickedFileInfo(res: any): PickedLocalFile {
+	try {
+		const raw = JSON.stringify(res)
+		if (raw == null || raw == '') { return emptyPickedFile() }
+		const parsed = JSON.parse(raw) as UTSJSONObject
+		return parsePickedFileObject(parsed)
+	} catch (_e: any) {
+		return emptyPickedFile()
+	}
+}
+
+export function parsePickedImagePath(res: any): string {
+	const file = parsePickedFileInfo(res)
+	return file.path
+}
+
+function isImageMime(fileType: string): boolean {
+	if (fileType == '') { return false }
+	const lower = fileType.toLowerCase()
+	return lower.startsWith('image/') || lower == 'image'
+}
+
+function isTextMime(fileType: string): boolean {
+	if (fileType == '') { return false }
+	const lower = fileType.toLowerCase()
+	return lower.startsWith('text/') ||
+		lower.indexOf('json') >= 0 ||
+		lower.indexOf('xml') >= 0 ||
+		lower.indexOf('yaml') >= 0 ||
+		lower.indexOf('javascript') >= 0
+}
+
+export function isPickedImageFile(file: PickedLocalFile): boolean {
+	if (isImageMime(file.fileType) == true) { return true }
+	if (isImageFile(file.name) == true) { return true }
+	return isImageFile(file.path)
+}
+
+export function isPickedTextFile(file: PickedLocalFile): boolean {
+	if (isTextMime(file.fileType) == true) { return true }
+	if (isTextFile(file.name) == true) { return true }
+	return isTextFile(file.path)
+}
+
+export function isChooseCancelError(err: any): boolean {
+	try {
+		const text = JSON.stringify(err).toLowerCase()
+		return text.indexOf('cancel') >= 0 || text.indexOf('取消') >= 0
+	} catch (_e: any) {
+		return false
+	}
+}
+
+export function buildPickedFileContextText(file: PickedLocalFile): string {
+	if (file.path == '') { return '' }
+	if (isPickedTextFile(file) == false) { return '' }
+	const content = readContent(file.path)
+	if (content == null || content == '') { return '' }
+	let body = content
+	let tail = ''
+	if (body.length > MAX_ATTACHMENT_TEXT_CHARS) {
+		body = body.substring(0, MAX_ATTACHMENT_TEXT_CHARS)
+		tail = '\n\n[内容过长，已截断前 ' + MAX_ATTACHMENT_TEXT_CHARS + ' 字符]'
+	}
+	return '文件名：' + file.name + '\n文件内容：\n' + body + tail
+}

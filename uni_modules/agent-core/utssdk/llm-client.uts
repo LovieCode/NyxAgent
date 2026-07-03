@@ -263,8 +263,12 @@ function getMessageApiText(msg: UTSJSONObject): string {
 		} else if (type == 'file') {
 			const filename = readPartString(part, 'filename') != '' ? readPartString(part, 'filename') : readPartString(part, 'name')
 			const path = readPartString(part, 'path')
+			const fileText = readPartString(part, 'text')
 			if (text != '') { text += '\n' }
 			text += '[文件] ' + (filename != '' ? filename : path)
+			if (fileText != '') {
+				text += '\n' + fileText
+			}
 		} else if (type == 'record' || type == 'voice' || type == 'audio') {
 			const path = readPartString(part, 'path') != '' ? readPartString(part, 'path') : readPartString(part, 'url')
 			if (text != '') { text += '\n' }

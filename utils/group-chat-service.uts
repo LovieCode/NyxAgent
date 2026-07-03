@@ -1077,8 +1077,8 @@ export function createGroupUserImageMessage(groupId: string, sessionId: string, 
 	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeUserDisplayName(userName), '', true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
 }
 
-export function createGroupUserFileMessage(groupId: string, sessionId: string, fileName: string, filePath: string, userName: string = ''): UTSJSONObject {
-	const base = createFileMessage(fileName, filePath)
+export function createGroupUserFileMessage(groupId: string, sessionId: string, fileName: string, filePath: string, userName: string = '', fileText: string = ''): UTSJSONObject {
+	const base = createFileMessage(fileName, filePath, fileText)
 	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeUserDisplayName(userName), '', true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
 }
 
