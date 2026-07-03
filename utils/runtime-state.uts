@@ -2,7 +2,6 @@
  * 运行期跨页状态。
  *
  * 新路由参数统一写 SQLite，避免继续把临时状态散落到 uni.storage。
- * COMPAT_LEGACY_STORAGE 标记的分支只用于读取历史版本遗留 key，未来可整段删除。
  */
 import { consumeRuntimeState, deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 
@@ -13,36 +12,13 @@ export const RUNTIME_FILES_INITIAL_PATH_KEY = 'files_initial_path'
 export const RUNTIME_MEMORY_AGENT_ID_KEY = 'memory_agent_id'
 export const RUNTIME_MEMORY_CONVERSATION_ID_KEY = 'memory_conversation_id'
 
-function readLegacyStorageString(key: string): string {
-	// COMPAT_LEGACY_STORAGE: 兼容旧版本 uni.storage 路由参数；未来清理 storage 迁移时删除。
-	const value = uni.getStorageSync(key) as string | null
-	if (value == null) { return '' }
-	return value
-}
-
-function consumeLegacyStorageString(key: string): string {
-	// COMPAT_LEGACY_STORAGE: 兼容旧版本一次性路由参数；未来清理 storage 迁移时删除。
-	const value = uni.getStorageSync(key) as string | null
-	if (value != null && value != '') {
-		uni.removeStorageSync(key)
-		return value
-	}
-	return ''
-}
-
-function clearLegacyStorageString(key: string): void {
-	// COMPAT_LEGACY_STORAGE_CLEAR: 仅清理旧版本残留路由 key；未来清空兼容层时删除。
-	uni.removeStorageSync(key)
-}
-
 export function setContextPreviewPayload(value: string): void {
 	setRuntimeState(RUNTIME_CONTEXT_PREVIEW_PAYLOAD_KEY, value)
 }
 
 export function consumeContextPreviewPayload(): string {
 	const value = consumeRuntimeState(RUNTIME_CONTEXT_PREVIEW_PAYLOAD_KEY)
-	if (value != '') { return value }
-	return readLegacyStorageString(RUNTIME_CONTEXT_PREVIEW_PAYLOAD_KEY)
+	return value
 }
 
 export function setFilesInitialPath(value: string): void {
@@ -51,8 +27,7 @@ export function setFilesInitialPath(value: string): void {
 
 export function consumeFilesInitialPath(): string {
 	const value = consumeRuntimeState(RUNTIME_FILES_INITIAL_PATH_KEY)
-	if (value != '') { return value }
-	return consumeLegacyStorageString(RUNTIME_FILES_INITIAL_PATH_KEY)
+	return value
 }
 
 export function setMemoryRouteState(agentId: string, conversationId: string): void {
@@ -62,14 +37,12 @@ export function setMemoryRouteState(agentId: string, conversationId: string): vo
 
 export function consumeMemoryRouteAgentId(): string {
 	const value = consumeRuntimeState(RUNTIME_MEMORY_AGENT_ID_KEY)
-	if (value != '') { return value }
-	return readLegacyStorageString(RUNTIME_MEMORY_AGENT_ID_KEY)
+	return value
 }
 
 export function consumeMemoryRouteConversationId(): string {
 	const value = consumeRuntimeState(RUNTIME_MEMORY_CONVERSATION_ID_KEY)
-	if (value != '') { return value }
-	return readLegacyStorageString(RUNTIME_MEMORY_CONVERSATION_ID_KEY)
+	return value
 }
 
 export function setActiveConversationRuntimeId(value: string): void {
@@ -78,14 +51,12 @@ export function setActiveConversationRuntimeId(value: string): void {
 
 export function consumeActiveConversationRuntimeId(): string {
 	const value = consumeRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY)
-	if (value != '') { return value }
-	return consumeLegacyStorageString(RUNTIME_ACTIVE_CONVERSATION_ID_KEY)
+	return value
 }
 
 export function getActiveAgentRuntimeId(): string {
 	const value = getRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY)
-	if (value != '') { return value }
-	return readLegacyStorageString(RUNTIME_ACTIVE_AGENT_ID_KEY)
+	return value
 }
 
 export function setActiveAgentRuntimeId(value: string): void {
@@ -94,11 +65,9 @@ export function setActiveAgentRuntimeId(value: string): void {
 
 export function clearActiveAgentRuntimeId(): void {
 	deleteRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY)
-	clearLegacyStorageString(RUNTIME_ACTIVE_AGENT_ID_KEY)
 }
 
 export function getActiveConversationRuntimeId(): string {
 	const value = getRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY)
-	if (value != '') { return value }
-	return readLegacyStorageString(RUNTIME_ACTIVE_CONVERSATION_ID_KEY)
+	return value
 }

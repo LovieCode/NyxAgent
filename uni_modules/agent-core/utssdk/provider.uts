@@ -434,7 +434,7 @@ export function getDefaultTaskModel(type: string): UTSJSONObject | null {
 	const key = TASK_KEY_PREFIX + type
 	const val = getAppSetting(key)
 	if (val == null || val == '') {
-		// COMPAT_LEGACY_STORAGE_SETTINGS: 旧版本 chat 默认模型写在 uni.storage；当前只读兼容，未来可清空。
+		// LEGACY_MODEL_SETTINGS: 旧版本默认对话模型可能只配置了 settings_model/settings_provider_id。
 		if (type == 'chat') {
 			const oldModel = getAppSetting('settings_model')
 			const oldProvider = getAppSetting('settings_provider_id')
@@ -475,7 +475,6 @@ export function setDefaultTaskModel(type: string, providerId: string, model: str
 		model: model,
 	})
 	setAppSetting(key, val)
-	// COMPAT_LEGACY_STORAGE_SETTINGS: 旧版 uni.storage 只读兼容，不再写入，避免默认模型配置绕过 SQLite。
 }
 
 export function getMemoryOrganizeTaskModel(): UTSJSONObject | null {
@@ -554,7 +553,7 @@ export function resolveLLMConfig(providerId: string, model: string): LLMConfig |
 		}
 	}
 
-	// COMPAT_LEGACY_STORAGE_SETTINGS: 旧版入口仍可能只存在 storage 配置；这里保留只读兜底。
+	// LEGACY_MODEL_SETTINGS: 未指定时继续读取全局 settings_*。
 	if (pid == '') {
 		const storageProvider = getAppSetting('settings_provider_id')
 		if (storageProvider != null) {

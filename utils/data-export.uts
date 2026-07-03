@@ -1,6 +1,6 @@
 /**
  * 全量数据导出工具
- * 聚合 SQLite、app_settings、兼容 legacy uni.storage 和本地资源，生成可备份 ZIP 清单。
+ * 聚合 SQLite、app_settings 和本地资源，生成可备份 ZIP 清单。
  */
 
 import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings, getDatabaseFilePathForExport, getAllMemoryBuffersForExport, getAllMemoryCoreForExport, getAllConversationTokenUsageStatsForExport, getAllMemoryCompactionStatesForExport, getAllGroupChatDataForExport } from '@/utils/database.uts'
@@ -35,22 +35,10 @@ function findAppSettingValue(appSettings: UTSJSONObject[], key: string): string 
 	return null
 }
 
-function readLegacyStorageValue(key: string): any | null {
-	// COMPAT_LEGACY_STORAGE_EXPORT: 仅导出旧版本残留 uni.storage；未来清空兼容层时整段删除。
-	const value = uni.getStorageSync(key)
-	if (value == null) {
-		return null
-	}
-	return value
-}
-
 function addStorageValue(target: UTSJSONObject, key: string, appSettings: UTSJSONObject[]): void {
 	let value: any | null = findAppSettingValue(appSettings, key)
 	if (value == null && key.startsWith('app_setting_')) {
 		value = findAppSettingValue(appSettings, key.substring(12))
-	}
-	if (value == null) {
-		value = readLegacyStorageValue(key)
 	}
 	if (value != null) {
 		target[key] = value
@@ -124,20 +112,13 @@ function buildKnownStorageKeys(): string[] {
 	]
 }
 
-function collectStorageKeys(): string[] {
+function collectStorageKeys(appSettings: UTSJSONObject[]): string[] {
 	const keys = buildKnownStorageKeys()
-	try {
-		// COMPAT_LEGACY_STORAGE_EXPORT: 仅枚举旧版本残留 uni.storage key；未来清空兼容层时整段删除。
-		const infoText = JSON.stringify(uni.getStorageInfoSync())
-		const info = JSON.parse(infoText) as UTSJSONObject
-		const dynamicKeys = info['keys'] as string[] | null
-		if (dynamicKeys != null) {
-			for (let i = 0; i < dynamicKeys.length; i++) {
-				appendUniqueKey(keys, dynamicKeys[i])
-			}
+	for (let i = 0; i < appSettings.length; i++) {
+		const rowKey = appSettings[i]['key'] as string | null
+		if (rowKey != null) {
+			appendUniqueKey(keys, rowKey)
 		}
-	} catch (_e: any) {
-		// getStorageInfoSync 不可用时，保留已知 key。
 	}
 	return keys
 }
@@ -647,7 +628,7 @@ function buildFileName(exportedAt: string): string {
 
 /**
  * 构建全量导出对象。
- * 注意：providers 中包含 api_key，storage 中也可能包含 legacy api key。
+ * 注意：providers 和 app_settings 中可能包含 API Key。
  */
 export function buildAllDataExport(): UTSJSONObject {
 	const exportedAt = new Date().toISOString()
@@ -659,7 +640,7 @@ export function buildAllDataExport(): UTSJSONObject {
 	const memoryCompactionStates = getAllMemoryCompactionStatesForExport()
 	const groupChatData = getAllGroupChatDataForExport()
 	const appSettings = getAllAppSettings()
-	const storageKeys = collectStorageKeys()
+	const storageKeys = collectStorageKeys(appSettings)
 	const storage = collectKnownStorageByKeys(storageKeys, appSettings)
 	const agents = getAgents()
 	const skills = getSkills()

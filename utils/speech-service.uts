@@ -157,7 +157,7 @@ export function transcribeAudio(audioPath: string): Promise<SpeechTextResult> {
 			return
 		}
 		const url = buildAudioApiUrl(config.baseUrl, '/audio/transcriptions')
-		// COMPAT_PROVIDER_AUDIO_API: OpenAI-compatible multipart 字段，部分 provider 可能要求 language/response_format。
+		// PROVIDER_AUDIO_API: OpenAI-compatible multipart 字段，部分 provider 可能要求 language/response_format。
 		uni.uploadFile({
 			url: url,
 			filePath: audioPath,
@@ -207,7 +207,7 @@ export function synthesizeSpeech(text: string): Promise<SpeechAudioResult> {
 		}
 		const outputPath = dir + '/tts_' + Date.now() + '.wav'
 		const url = buildAudioApiUrl(config.baseUrl, '/audio/speech')
-		// COMPAT_PROVIDER_AUDIO_API: 参考 AstrBot OpenAI TTS，默认 voice=alloy/response_format=wav。
+		// PROVIDER_AUDIO_API: 参考 AstrBot OpenAI TTS，默认 voice=alloy/response_format=wav。
 		const body: UTSJSONObject = {
 			model: config.model,
 			voice: 'alloy',

@@ -428,25 +428,21 @@ function dbRowToGroupMessage(row: UTSJSONObject): UTSJSONObject {
 }
 
 function legacyGetGroupChats(): GroupChat[] {
-	// COMPAT_LEGACY_STORAGE: 兼容旧群聊列表 storage，未来迁移窗口清理。
 	const raw = uni.getStorageSync(GROUP_CHAT_LIST_KEY) as string | null
 	return parseGroupChats(safeJsonText(raw))
 }
 
 function legacyGetGroupMembers(groupId: string): GroupChatMember[] {
-	// COMPAT_LEGACY_STORAGE: 兼容旧群聊成员 storage，未来迁移窗口清理。
 	const raw = uni.getStorageSync(storageMembersKey(groupId)) as string | null
 	return parseGroupMembers(safeJsonText(raw))
 }
 
 function legacyGetGroupSessions(groupId: string): GroupChatSession[] {
-	// COMPAT_LEGACY_STORAGE: 兼容旧群聊会话 storage，未来迁移窗口清理。
 	const raw = uni.getStorageSync(storageSessionsKey(groupId)) as string | null
 	return parseGroupSessions(safeJsonText(raw))
 }
 
 function legacyGetGroupMessages(groupId: string, sessionId: string): UTSJSONObject[] {
-	// COMPAT_LEGACY_STORAGE: 兼容旧群聊消息 storage，未来迁移窗口清理。
 	const raw = uni.getStorageSync(storageMessagesKey(groupId, sessionId)) as string | null
 	return parseGroupMessages(safeJsonText(raw))
 }
@@ -482,8 +478,7 @@ export function getGroupChats(): GroupChat[] {
 	for (let i = 0; i < rows.length; i++) {
 		result.push(dbRowToGroupChat(rows[i]))
 	}
-	if (result.length > 0) { return result }
-	return legacyGetGroupChats()
+	return result
 }
 
 export function saveGroupChats(groups: GroupChat[]): void {
@@ -496,10 +491,6 @@ export function getGroupChatById(groupId: string): GroupChat | null {
 	const row = getGroupChatRowById(groupId)
 	if (row != null) {
 		return dbRowToGroupChat(row)
-	}
-	const groups = legacyGetGroupChats()
-	for (let i = 0; i < groups.length; i++) {
-		if (groups[i].id == groupId) { return groups[i] }
 	}
 	return null
 }
@@ -550,8 +541,7 @@ export function getGroupMembers(groupId: string): GroupChatMember[] {
 	for (let i = 0; i < rows.length; i++) {
 		result.push(dbRowToGroupMember(rows[i]))
 	}
-	if (result.length > 0) { return result }
-	return legacyGetGroupMembers(groupId)
+	return result
 }
 
 export function saveGroupMembers(groupId: string, members: GroupChatMember[]): void {
@@ -632,8 +622,7 @@ export function getGroupSessions(groupId: string): GroupChatSession[] {
 	for (let i = 0; i < rows.length; i++) {
 		result.push(dbRowToGroupSession(rows[i]))
 	}
-	if (result.length > 0) { return result }
-	return legacyGetGroupSessions(groupId)
+	return result
 }
 
 export function saveGroupSessions(groupId: string, sessions: GroupChatSession[]): void {
@@ -733,10 +722,7 @@ export function setActiveGroupSession(groupId: string, sessionId: string): void 
 
 export function getActiveGroupChatId(): string {
 	const dbValue = getGroupChatState(ACTIVE_GROUP_CHAT_ID_KEY)
-	if (dbValue != '') { return dbValue }
-	// COMPAT_LEGACY_STORAGE: 兼容旧活跃群聊 ID，未来迁移窗口清理。
-	const legacy = uni.getStorageSync(ACTIVE_GROUP_CHAT_ID_KEY) as string | null
-	return legacy != null ? legacy : ''
+	return dbValue
 }
 
 export function setActiveGroupChat(groupId: string): void {
@@ -746,10 +732,7 @@ export function setActiveGroupChat(groupId: string): void {
 
 export function getActiveGroupSessionId(): string {
 	const dbValue = getGroupChatState(ACTIVE_GROUP_SESSION_ID_KEY)
-	if (dbValue != '') { return dbValue }
-	// COMPAT_LEGACY_STORAGE: 兼容旧活跃群聊会话 ID，未来迁移窗口清理。
-	const legacy = uni.getStorageSync(ACTIVE_GROUP_SESSION_ID_KEY) as string | null
-	return legacy != null ? legacy : ''
+	return dbValue
 }
 
 export function setActiveGroupSessionId(sessionId: string): void {
@@ -786,8 +769,7 @@ export function getGroupMessages(groupId: string, sessionId: string): UTSJSONObj
 	for (let i = 0; i < rows.length; i++) {
 		result.push(dbRowToGroupMessage(rows[i]))
 	}
-	if (result.length > 0) { return result }
-	return legacyGetGroupMessages(groupId, sessionId)
+	return result
 }
 
 export function saveGroupMessages(groupId: string, sessionId: string, messages: UTSJSONObject[]): void {
@@ -813,14 +795,6 @@ export function listGroupAgentContextRecords(agentId: string): UTSJSONObject[] {
 			const record = JSON.parse(payload) as UTSJSONObject
 			records.push(record)
 		} catch (_e: any) {
-		}
-	}
-	if (records.length == 0) {
-		// COMPAT_LEGACY_STORAGE: 兼容旧 Agent 原始上下文记录，未来迁移窗口清理。
-		const raw = uni.getStorageSync(storageAgentContextKey(agentId)) as string | null
-		const legacyRecords = parseAgentContextRecords(safeJsonText(raw))
-		for (let j = 0; j < legacyRecords.length; j++) {
-			records.push(legacyRecords[j])
 		}
 	}
 	records.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
@@ -851,6 +825,66 @@ export function saveGroupAgentContextRecord(record: UTSJSONObject): void {
 	const agentId = record['agentId'] as string | null
 	if (agentId == null || agentId == '') { return }
 	saveGroupAgentContextRow(record)
+}
+
+export function migrateLegacyGroupChatStorage(storageKeys: string[]): number {
+	let migrated = 0
+	const groups = legacyGetGroupChats()
+	if (groups.length > 0) {
+		saveGroupChats(groups)
+		migrated += groups.length
+	}
+
+	for (let i = 0; i < groups.length; i++) {
+		const groupId = groups[i].id
+		const members = legacyGetGroupMembers(groupId)
+		if (members.length > 0) {
+			saveGroupMembers(groupId, members)
+			migrated += members.length
+		}
+		const sessions = legacyGetGroupSessions(groupId)
+		if (sessions.length > 0) {
+			saveGroupSessions(groupId, sessions)
+			migrated += sessions.length
+		}
+		for (let j = 0; j < sessions.length; j++) {
+			const messages = legacyGetGroupMessages(groupId, sessions[j].id)
+			if (messages.length > 0) {
+				saveGroupMessages(groupId, sessions[j].id, messages)
+				migrated += messages.length
+			}
+		}
+	}
+
+	try {
+		const activeGroupId = uni.getStorageSync(ACTIVE_GROUP_CHAT_ID_KEY) as string | null
+		if (activeGroupId != null && activeGroupId != '') {
+			setGroupChatState(ACTIVE_GROUP_CHAT_ID_KEY, activeGroupId)
+			migrated++
+		}
+	} catch (_e: any) {
+	}
+	try {
+		const activeSessionId = uni.getStorageSync(ACTIVE_GROUP_SESSION_ID_KEY) as string | null
+		if (activeSessionId != null && activeSessionId != '') {
+			setGroupChatState(ACTIVE_GROUP_SESSION_ID_KEY, activeSessionId)
+			migrated++
+		}
+	} catch (_e2: any) {
+	}
+
+	const agentContextPrefix = 'group_agent_context_records_'
+	for (let k = 0; k < storageKeys.length; k++) {
+		const key = storageKeys[k]
+		if (key.startsWith(agentContextPrefix) == false) { continue }
+		const raw = uni.getStorageSync(key) as string | null
+		const records = parseAgentContextRecords(safeJsonText(raw))
+		for (let r = 0; r < records.length; r++) {
+			saveGroupAgentContextRecord(records[r])
+			migrated++
+		}
+	}
+	return migrated
 }
 
 function readActionText(action: UTSJSONObject, key: string): string {
@@ -1723,7 +1757,7 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 		injectDatetime: injectDatetime,
 		datetimePrefix: datetimePrefix,
 	})
-	// COMPAT_PROVIDER_SYSTEM_PROMPT: 不改动态 systemPrompt，也不在 messages 中途插 system；调度任务挂到 user 前置上下文以保留 prompt cache。
+	// PROVIDER_SYSTEM_PROMPT: 不改动态 systemPrompt，也不在 messages 中途插 system；调度任务挂到 user 前置上下文以保留 prompt cache。
 	attachMemberTaskContext(runtimeMessages, buildMemberTaskPrompt(group, session, action, agentName))
 	return runtimeMessages
 }

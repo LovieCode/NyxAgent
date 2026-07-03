@@ -526,7 +526,7 @@
 					const defaultModel = validModels[0].id
 					setActiveProvider(this.editId)
 					setDefaultTaskModel('chat', this.editId, defaultModel)
-					// COMPAT_LEGACY_MODEL_SETTINGS: 旧聊天创建逻辑还读 settings_*；默认模型页统一后可清空。
+					// LEGACY_MODEL_SETTINGS: 旧聊天创建逻辑还读 settings_*；默认模型页统一后可清空。
 					setAppSetting('settings_provider_id', this.editId)
 					setAppSetting('settings_model', defaultModel)
 					setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true')

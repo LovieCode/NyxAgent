@@ -365,7 +365,7 @@ export class LqjSqlDepot {
 		try {
 			const targetAlias = alias == null || alias.trim().length == 0 ? this.alias : alias.trim()
 			const bytes = this.runtimeDb.export() as Uint8Array
-			// COMPAT_WEB_SQLITE_MEMORY_SNAPSHOT: Web 端禁止 uni.storage 写入；同步快照只保留会话内存。
+			// WEB_SQLITE_MEMORY_SNAPSHOT: Web 端禁止 uni.storage 写入；同步快照只保留会话内存。
 			sharedSnapshotCache[this.storageKey(targetAlias)] = encodeBytesToBase64(bytes)
 			return {
 				grid : null,

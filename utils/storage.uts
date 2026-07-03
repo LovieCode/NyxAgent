@@ -1,9 +1,251 @@
-import { getAppSetting, removeAppSetting, setAppSetting } from '@/utils/database.uts'
+import { getAppSetting, removeAppSetting, setAppSetting, setRuntimeState } from '@/utils/database.uts'
+import { migrateLegacyGroupChatStorage } from '@/utils/group-chat-service.uts'
 
 /**
- * storage 工具模块 - 兼容旧本地存储调用
- * 新写入统一落 SQLite app_settings，不再使用旧同步 storage 写入。
+ * storage 工具模块。
+ * 新写入统一落 SQLite app_settings，不再使用 uni.storage 写入。
  */
+
+export type LegacyStorageMigrationResult = {
+	total: number
+	migrated: number
+	appSettings: number
+	runtimeStates: number
+	groupItems: number
+	removed: number
+	failed: number
+	complete: boolean
+	message: string
+}
+
+type LegacyStorageKeyScan = {
+	keys: string[]
+	complete: boolean
+}
+
+function appendUniqueKey(keys: string[], key: string): void {
+	if (key == '') { return }
+	for (let i = 0; i < keys.length; i++) {
+		if (keys[i] == key) { return }
+	}
+	keys.push(key)
+}
+
+function buildKnownLegacyStorageKeys(): string[] {
+	return [
+		'agent_list',
+		'active_agent_id',
+		'active_conversation_id',
+		'context_preview_payload',
+		'files_initial_path',
+		'settings_provider_id',
+		'settings_api_key',
+		'settings_base_url',
+		'settings_model',
+		'settings_gh_proxy_enabled',
+		'settings_gh_proxy_domain',
+		'settings_web_search_enabled',
+		'settings_web_search_provider',
+		'settings_web_search_provider_id',
+		'settings_web_search_model',
+		'settings_web_search_instance',
+		'settings_generation_temperature',
+		'settings_generation_max_tokens',
+		'settings_generation_max_iterations',
+		'settings_generation_stream_enabled',
+		'settings_memory_enabled',
+		'memory_agent_id',
+		'memory_conversation_id',
+		'app_setting_default_task_chat',
+		'app_setting_default_task_vision',
+		'app_setting_image_caption_prompt',
+		'app_setting_default_task_stt',
+		'app_setting_default_task_tts',
+		'profile_nickname',
+		'profile_bio',
+		'profile_email',
+		'profile_description',
+		'profile_avatar',
+		'skills_list',
+		'notes_list',
+		'todo_list',
+		'provider_edit_data',
+		'pending_agent_model_id',
+		'editor_title',
+		'editor_content',
+		'editor_draft',
+		'editor_target',
+		'editor_result',
+		'editor_mode',
+		'editor_file_path',
+		'editor_saved',
+		'editor_saved_path',
+		'editor_result_ready',
+		'editor_readonly',
+		'editor_placeholder',
+		'crop_image_path',
+		'crop_result',
+		'group_chat_list',
+		'active_group_chat_id',
+		'active_group_session_id',
+	]
+}
+
+function collectLegacyStorageKeys(): LegacyStorageKeyScan {
+	const keys = buildKnownLegacyStorageKeys()
+	let complete = false
+	try {
+		const infoText = JSON.stringify(uni.getStorageInfoSync())
+		const info = JSON.parse(infoText) as UTSJSONObject
+		const dynamicKeys = info['keys'] as string[] | null
+		if (dynamicKeys != null) {
+			for (let i = 0; i < dynamicKeys.length; i++) {
+				appendUniqueKey(keys, dynamicKeys[i])
+			}
+			complete = true
+		}
+	} catch (_e: any) {
+	}
+	return {
+		keys: keys,
+		complete: complete,
+	} as LegacyStorageKeyScan
+}
+
+function readLegacyStorageText(key: string): string | null {
+	if (key == '') { return null }
+	try {
+		const value = uni.getStorageSync(key)
+		if (value == null) { return null }
+		if (typeof value == 'string') {
+			return value as string
+		}
+		return JSON.stringify(value)
+	} catch (_e: any) {
+		return null
+	}
+}
+
+function isRuntimeStorageKey(key: string): boolean {
+	return key == 'active_agent_id' ||
+		key == 'active_conversation_id' ||
+		key == 'context_preview_payload' ||
+		key == 'files_initial_path' ||
+		key == 'memory_agent_id' ||
+		key == 'memory_conversation_id' ||
+		key == 'provider_edit_data' ||
+		key == 'pending_agent_model_id' ||
+		key.startsWith('editor_') ||
+		key.startsWith('crop_')
+}
+
+function isGroupChatStorageKey(key: string): boolean {
+	return key == 'group_chat_list' ||
+		key == 'active_group_chat_id' ||
+		key == 'active_group_session_id' ||
+		key.startsWith('group_chat_members_') ||
+		key.startsWith('group_chat_sessions_') ||
+		key.startsWith('group_chat_messages_') ||
+		key.startsWith('group_agent_context_records_')
+}
+
+function migrateLegacyStorageKey(key: string): string {
+	if (isGroupChatStorageKey(key) == true) { return '' }
+	const text = readLegacyStorageText(key)
+	if (text == null) { return '' }
+	if (key.startsWith('app_setting_')) {
+		setAppSetting(key.substring(12), text)
+		return 'app'
+	}
+	if (isRuntimeStorageKey(key) == true) {
+		setRuntimeState(key, text)
+		return 'runtime'
+	}
+	setAppSetting(key, text)
+	return 'app'
+}
+
+function removeLegacyStorageKeys(keys: string[], canClearAll: boolean): number {
+	let removed = 0
+	for (let i = 0; i < keys.length; i++) {
+		try {
+			const value = uni.getStorageSync(keys[i])
+			if (value != null) {
+				uni.removeStorageSync(keys[i])
+				removed++
+			}
+		} catch (_e: any) {
+		}
+	}
+	if (canClearAll == true) {
+		try {
+			uni.clearStorageSync()
+		} catch (_e2: any) {
+		}
+	}
+	return removed
+}
+
+function buildMigrationMessage(result: LegacyStorageMigrationResult): string {
+	let message = '已迁移旧 Storage：' + result.migrated + ' 项'
+	message += '\n设置：' + result.appSettings + '，运行态：' + result.runtimeStates + '，群聊记录：' + result.groupItems
+	message += '\n已清理旧 Storage key：' + result.removed
+	if (result.complete == false) {
+		message += '\n注意：Storage key 枚举失败，只处理了已知旧 key。'
+	}
+	if (result.failed > 0) {
+		message += '\n失败：' + result.failed + ' 项，请先不要卸载旧版本数据。'
+	}
+	return message
+}
+
+/**
+ * 一次性迁移旧 uni.storage 数据到 SQLite/结构化表。
+ * 正常业务路径不再读取旧 storage，需要迁移时由设置页手动触发。
+ */
+export function migrateAllLegacyStorageToNewLocation(): LegacyStorageMigrationResult {
+	const scan = collectLegacyStorageKeys()
+	const result: LegacyStorageMigrationResult = {
+		total: scan.keys.length,
+		migrated: 0,
+		appSettings: 0,
+		runtimeStates: 0,
+		groupItems: 0,
+		removed: 0,
+		failed: 0,
+		complete: scan.complete,
+		message: '',
+	}
+
+	try {
+		result.groupItems = migrateLegacyGroupChatStorage(scan.keys)
+		result.migrated += result.groupItems
+	} catch (_e: any) {
+		result.failed++
+	}
+
+	for (let i = 0; i < scan.keys.length; i++) {
+		const key = scan.keys[i]
+		try {
+			const kind = migrateLegacyStorageKey(key)
+			if (kind == 'app') {
+				result.appSettings++
+				result.migrated++
+			} else if (kind == 'runtime') {
+				result.runtimeStates++
+				result.migrated++
+			}
+		} catch (_e2: any) {
+			result.failed++
+		}
+	}
+
+	if (result.failed == 0) {
+		result.removed = removeLegacyStorageKeys(scan.keys, scan.complete)
+	}
+	result.message = buildMigrationMessage(result)
+	return result
+}
 
 /**
  * 存储数据到本地
@@ -21,10 +263,7 @@ export function setStorage(key : string, value : string) : void {
  */
 export function getStorage(key : string) : string {
 	const value = getAppSetting(key)
-	if (value != null) { return value }
-	// COMPAT_LEGACY_STORAGE_READ: 兼容旧版本 uni.storage，未来清理 storage 迁移时删除。
-	const legacy = uni.getStorageSync(key) as string | null
-	return legacy != null ? legacy : ''
+	return value != null ? value : ''
 }
 
 /**
@@ -33,14 +272,10 @@ export function getStorage(key : string) : string {
  */
 export function removeStorage(key : string) : void {
 	removeAppSetting(key)
-	// COMPAT_LEGACY_STORAGE_REMOVE: 清掉旧版本残留 key，未来清理 storage 迁移时删除。
-	uni.removeStorageSync(key)
 }
 
 /**
- * 清空本地存储数据
+ * 旧 storage API 已停用。保留空实现，避免误清 SQLite 主数据。
  */
 export function clearStorage() : void {
-	// COMPAT_LEGACY_STORAGE_CLEAR: 仅保留给旧调用方清理历史 uni.storage，未来清空。
-	uni.clearStorageSync()
 }

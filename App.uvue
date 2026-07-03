@@ -98,7 +98,7 @@
 	}
 
 	/* ===== 全局公共样式 ===== */
-	/* COMPAT_CSS_DIFF_WEB: uni-app x App 端与 Web CSS 存在差异，固定视觉尺寸统一用 px，避免宽屏设备按响应式单位放大。未来重做设计系统时可搜索此标记清理。 */
+	/* CSS_DIFF_WEB: uni-app x App 端与 Web CSS 存在差异，固定视觉尺寸统一用 px，避免宽屏设备按响应式单位放大。未来重做设计系统时可搜索此标记清理。 */
 	.uni-row { flex-direction: row; }
 	.uni-column { flex-direction: column; }
 

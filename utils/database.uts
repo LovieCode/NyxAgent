@@ -1143,23 +1143,12 @@ export function toggleProvider(id: string, enabled: boolean): void {
 
 // ==================== 应用设置（SQLite app_settings） ====================
 
-const SETTINGS_PREFIX = 'app_setting_'
-
 function ensureAppSettingsTable(db: xSqlite): void {
 	db.run(
 		'CREATE TABLE IF NOT EXISTS app_settings (' +
 		'key TEXT PRIMARY KEY,' +
 		'value TEXT NOT NULL DEFAULT \'\')'
 	)
-}
-
-function legacyStorageValueToString(value: any | null): string {
-	if (value == null) { return '' }
-	try {
-		return '' + value
-	} catch (_e: any) {
-		return ''
-	}
 }
 
 /**
@@ -1179,11 +1168,7 @@ export function getAppSetting(key: string): string | null {
 		}
 		return null
 	}
-	// COMPAT_LEGACY_STORAGE_SETTINGS: 旧版本把 app setting 写在 uni.storage；当前只读兼容，未来可清空。
-	const legacyDirectVal = legacyStorageValueToString(uni.getStorageSync(key))
-	if (legacyDirectVal != '') { return legacyDirectVal }
-	const legacyPrefixedVal = legacyStorageValueToString(uni.getStorageSync(SETTINGS_PREFIX + key))
-	return legacyPrefixedVal != '' ? legacyPrefixedVal : null
+	return null
 }
 
 /**

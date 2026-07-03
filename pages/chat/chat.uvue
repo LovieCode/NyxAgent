@@ -783,7 +783,7 @@
 					uni.showToast({ position: 'bottom',  title: '录音失败', icon: 'none' })
 				})
 				const startOpts: RecorderManagerStartOptions = {
-					// COMPAT_PROVIDER_AUDIO_API: OpenAI-compatible STT 优先 wav；部分平台录音格式支持不同，后续统一抽 provider 能力。
+					// PROVIDER_AUDIO_API: OpenAI-compatible STT 优先 wav；部分平台录音格式支持不同，后续统一抽 provider 能力。
 					format: 'wav',
 				}
 				recorder.start(startOpts)
@@ -818,8 +818,8 @@
 				const player = this.speechPlayer
 				if (player != null) {
 					try {
-						player.stop()
-						player.destroy()
+						player.pause()
+						player.src = ''
 					} catch (_e: any) {
 					}
 				}
@@ -837,7 +837,7 @@
 					return
 				}
 				this.stopSpeechPlayback()
-				// COMPAT_PROVIDER_AUDIO_API: TTS 当前落本地 wav 文件，使用 uni inner audio 统一播放。
+				// PROVIDER_AUDIO_API: TTS 当前落本地 wav 文件，使用 uni inner audio 统一播放。
 				const audio = uni.createInnerAudioContext()
 				this.speechPlayer = audio
 				this.playingSpeechPath = path

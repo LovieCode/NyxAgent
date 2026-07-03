@@ -70,6 +70,17 @@
 					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
+				<view class="menu-item" @click="confirmMigrateLegacyStorage">
+					<view class="menu-item-left">
+						<oui-icon-unix name="upload" size="14px" color="#6B7280" style="margin-right:10px" />
+						<view class="menu-text">
+							<text class="menu-title">迁移旧 Storage 数据</text>
+							<text class="menu-desc">把历史本地缓存转入 SQLite / 文件位置，并清理旧缓存</text>
+						</view>
+					</view>
+					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
+				</view>
+				<view class="menu-divider"></view>
 				<view class="menu-item" @click="confirmExportAllData">
 					<view class="menu-item-left">
 						<oui-icon-unix name="download" size="14px" color="#6B7280" style="margin-right:10px" />
@@ -117,6 +128,7 @@
 	import { exportAllDataToFile, exportAllDataToJson, shareExportedDataFile, getLastShareExportErrorMessage } from '@/utils/data-export.uts'
 	import { importAllDataFromZip } from '@/utils/data-import.uts'
 	import { getAppSetting, setAppSetting } from '@/utils/database.uts'
+	import { migrateAllLegacyStorageToNewLocation } from '@/utils/storage.uts'
 
 	export default {
 		data() {
@@ -131,7 +143,8 @@
 				expandBasic: true as boolean,
 				expandModel: true as boolean,
 				expandPlugin: true as boolean,
-				expandAbout: true as boolean
+				expandAbout: true as boolean,
+				isMigratingStorage: false as boolean
 			}
 		},
 		computed: {
@@ -288,6 +301,38 @@
 						}
 					}
 				})
+			},
+
+			confirmMigrateLegacyStorage() {
+				if (this.isMigratingStorage == true) { return }
+				uni.showModal({
+					title: '迁移旧 Storage 数据',
+					content: '会把旧版本遗留的 uni.storage 数据迁移到 SQLite / 结构化表，成功后清理旧 Storage。建议先导出全部数据。继续？',
+					success: (res) => {
+						if (res.confirm == true) {
+							this.migrateLegacyStorage()
+						}
+					}
+				})
+			},
+
+			migrateLegacyStorage() {
+				this.isMigratingStorage = true
+				try {
+					const result = migrateAllLegacyStorageToNewLocation()
+					this.isMigratingStorage = false
+					uni.showModal({
+						title: result.failed == 0 ? '迁移完成' : '迁移未完全完成',
+						content: result.message,
+						showCancel: false,
+						success: () => {
+							this.loadSettings()
+						}
+					})
+				} catch (_e: any) {
+					this.isMigratingStorage = false
+					uni.showToast({ position: 'bottom',  title: '迁移失败', icon: 'none' })
+				}
 			},
 
 			chooseImportZip() {

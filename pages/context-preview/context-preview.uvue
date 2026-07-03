@@ -341,7 +341,7 @@
 			applyContextSize(bodyText: string): void {
 				const charCount = bodyText.length
 				this.contextCharCount = '' + charCount
-				// COMPAT_TOKEN_ESTIMATE: 未引入 tokenizer，原始上下文页只给粗估值；实际 billing 仍以 provider usage 为准。
+				// TOKEN_ESTIMATE: 未引入 tokenizer，原始上下文页只给粗估值；实际 billing 仍以 provider usage 为准。
 				this.contextEstimatedTokens = '' + Math.ceil(charCount / 3)
 			},
 
