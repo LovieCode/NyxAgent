@@ -876,21 +876,18 @@
 		color: var(--rice-background-2);
 		line-height: 22px;
 		white-space: pre-wrap;
-		word-break: break-word;
 	}
 	.text-assistant {
 		font-size: 15px;
 		color: var(--rice-text-color);
 		line-height: 22px;
 		white-space: pre-wrap;
-		word-break: break-word;
 	}
 	.text-assistant-pre {
 		font-size: 15px;
 		color: var(--rice-text-color);
 		line-height: 22px;
 		white-space: pre-wrap;
-		word-break: break-word;
 	}
 	.text-tool {
 		font-size: 13px;

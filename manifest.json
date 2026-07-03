@@ -2,8 +2,8 @@
 	"name": "眠汐AI",
 	"appid": "__UNI__0F19B13",
 	"description": "NyxAI 眠汐AI - AI 私聊与群聊助手",
-	"versionName": "1.3.0",
-	"versionCode": "130",
+	"versionName": "1.4.0",
+	"versionCode": "140",
 	"uni-app-x": {
 		"vapor": true
 	},

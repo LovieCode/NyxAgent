@@ -168,7 +168,7 @@
 	 */
 	import { getAllProviders, getProviderModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { getAppSetting, setAppSetting } from '@/utils/database.uts'
-	import { getAstrBotConfig, saveAstrBotConfig, testAstrBotConnection, type AstrBotConfig } from '@/utils/astrbot-service.uts'
+	import { getAstrBotConfig, saveAstrBotSettings, testAstrBotConnection } from '@/utils/astrbot-service.uts'
 
 	export default {
 		data() {
@@ -229,14 +229,7 @@
 				setAppSetting('settings_web_search_provider_id', this.webSearchProviderId)
 				setAppSetting('settings_web_search_model', this.webSearchModel)
 				setAppSetting('settings_web_search_instance', this.webSearchInstance)
-				saveAstrBotConfig({
-					enabled: this.astrBotEnabled,
-					baseUrl: this.astrBotBaseUrl,
-					apiKey: this.astrBotApiKey,
-					username: this.astrBotUsername,
-					sessionId: this.astrBotSessionId,
-					configId: this.astrBotConfigId,
-				} as AstrBotConfig)
+				saveAstrBotSettings(this.astrBotEnabled, this.astrBotBaseUrl, this.astrBotApiKey, this.astrBotUsername, this.astrBotSessionId, this.astrBotConfigId)
 			},
 
 			testAstrBot(): void {

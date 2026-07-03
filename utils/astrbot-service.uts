@@ -70,7 +70,7 @@ export function getAstrBotConfig(): AstrBotConfig {
 		username: username != '' ? username : 'nyx-agent',
 		sessionId: readSetting(ASTRBOT_SESSION_ID_KEY),
 		configId: readSetting(ASTRBOT_CONFIG_ID_KEY),
-	} as AstrBotConfig
+	}
 }
 
 export function isAstrBotEnabled(): boolean {
@@ -78,13 +78,17 @@ export function isAstrBotEnabled(): boolean {
 	return config.enabled == true && config.baseUrl.trim() != '' && config.apiKey.trim() != ''
 }
 
+export function saveAstrBotSettings(enabled: boolean, baseUrl: string, apiKey: string, username: string, sessionId: string, configId: string): void {
+	setAppSetting(ASTRBOT_ENABLED_KEY, enabled == true ? 'true' : 'false')
+	setAppSetting(ASTRBOT_BASE_URL_KEY, normalizeAstrBotBaseUrl(baseUrl))
+	setAppSetting(ASTRBOT_API_KEY_KEY, apiKey.trim())
+	setAppSetting(ASTRBOT_USERNAME_KEY, username.trim() != '' ? username.trim() : 'nyx-agent')
+	setAppSetting(ASTRBOT_SESSION_ID_KEY, sessionId.trim())
+	setAppSetting(ASTRBOT_CONFIG_ID_KEY, configId.trim())
+}
+
 export function saveAstrBotConfig(config: AstrBotConfig): void {
-	setAppSetting(ASTRBOT_ENABLED_KEY, config.enabled == true ? 'true' : 'false')
-	setAppSetting(ASTRBOT_BASE_URL_KEY, normalizeAstrBotBaseUrl(config.baseUrl))
-	setAppSetting(ASTRBOT_API_KEY_KEY, config.apiKey.trim())
-	setAppSetting(ASTRBOT_USERNAME_KEY, config.username.trim() != '' ? config.username.trim() : 'nyx-agent')
-	setAppSetting(ASTRBOT_SESSION_ID_KEY, config.sessionId.trim())
-	setAppSetting(ASTRBOT_CONFIG_ID_KEY, config.configId.trim())
+	saveAstrBotSettings(config.enabled, config.baseUrl, config.apiKey, config.username, config.sessionId, config.configId)
 }
 
 function failTask(error: string): AstrBotTaskResult {
@@ -113,9 +117,12 @@ function okTask(text: string, sessionId: string, messageId: string, stats: strin
 
 function dataToText(data: any | null): string {
 	if (data == null) { return '' }
-	if (typeof data == 'string') { return data as string }
 	try {
-		return JSON.stringify(data)
+		const json = JSON.stringify(data)
+		if (json.startsWith('"') == true && json.endsWith('"') == true) {
+			return JSON.parse(json) as string
+		}
+		return json
 	} catch (_e: any) {
 		return ''
 	}
@@ -144,11 +151,38 @@ function appendSseEvent(events: UTSJSONObject[], line: string): void {
 
 function parseSseEvents(raw: string): UTSJSONObject[] {
 	const events: UTSJSONObject[] = []
-	const lines = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+	const lines = raw.split('\r\n').join('\n').split('\r').join('\n').split('\n')
 	for (let i = 0; i < lines.length; i++) {
 		appendSseEvent(events, lines[i])
 	}
 	return events
+}
+
+function encodeQueryText(text: string): string {
+	let result = ''
+	for (let i = 0; i < text.length; i++) {
+		const ch = text.substring(i, i + 1)
+		if (ch == ' ') {
+			result += '%20'
+		} else if (ch == '+') {
+			result += '%2B'
+		} else if (ch == '&') {
+			result += '%26'
+		} else if (ch == '=') {
+			result += '%3D'
+		} else if (ch == '?') {
+			result += '%3F'
+		} else if (ch == '#') {
+			result += '%23'
+		} else if (ch == '@') {
+			result += '%40'
+		} else if (ch == '%') {
+			result += '%25'
+		} else {
+			result += ch
+		}
+	}
+	return result
 }
 
 function truncateText(text: string, limit: number): string {
@@ -310,7 +344,7 @@ export function testAstrBotConnection(): Promise<AstrBotTaskResult> {
 			resolve(failTask('AstrBot 地址或 API Key 未配置'))
 			return
 		}
-		const url = buildUrl(config.baseUrl, '/api/v1/chat/sessions?username=' + encodeURIComponent(config.username) + '&page=1&page_size=1&platform_id=webchat')
+		const url = buildUrl(config.baseUrl, '/api/v1/chat/sessions?username=' + encodeQueryText(config.username) + '&page=1&page_size=1&platform_id=webchat')
 		uni.request({
 			url: url,
 			method: 'GET',
