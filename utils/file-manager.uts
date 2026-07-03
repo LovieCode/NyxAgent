@@ -442,10 +442,11 @@ export function getRootDirOptions(): RootDirOption[] {
 /**
  * 列出根目录内容：合并沙盒文件和 Agent 目录两个来源。
  *
- * 按来源分三组排序：
- *   1. 沙盒文件（外置 filesDir）— 原名显示
- *   2. 内部精选目录（sessions/exports 等）
- *   3. Agent 目录 — 每个子目录加 "[Agent] " 前缀
+ * 按来源分组排序：
+ *   1. 用户目录
+ *   2. Agent 目录 — 每个子目录加 "[Agent] " 前缀
+ *   3. 群聊目录 — 每个子目录加 "[Group] " 前缀
+ *   4. 其它目录（外置沙盒、内部精选目录）
  *
  * 用于文件管理页面的根视图。
  */
@@ -590,22 +591,22 @@ export function listRootContents(): FileItem[] {
 	sortGroup(groupItems)
 	sortGroup(agentItems)
 
-	// 按顺序拼接：用户目录 → 沙盒 → 内部目录 → 群聊 → Agent
+	// 按顺序拼接：用户目录 → Agent → 群聊 → 其它目录
 	const result: FileItem[] = []
 	for (let i = 0; i < userRootItems.length; i++) {
 		result.push(userRootItems[i])
+	}
+	for (let i = 0; i < agentItems.length; i++) {
+		result.push(agentItems[i])
+	}
+	for (let i = 0; i < groupItems.length; i++) {
+		result.push(groupItems[i])
 	}
 	for (let i = 0; i < sandboxItems.length; i++) {
 		result.push(sandboxItems[i])
 	}
 	for (let i = 0; i < internalItems.length; i++) {
 		result.push(internalItems[i])
-	}
-	for (let i = 0; i < groupItems.length; i++) {
-		result.push(groupItems[i])
-	}
-	for (let i = 0; i < agentItems.length; i++) {
-		result.push(agentItems[i])
 	}
 	return result
 }

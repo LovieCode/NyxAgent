@@ -602,7 +602,7 @@
 				if (item.name.startsWith('[Agent]')) {
 					return 'Agent 目录'
 				}
-				return '文件目录'
+				return '其他目录'
 			},
 
 			getGroupWorkspacesRootPath(): string {
