@@ -1,28 +1,28 @@
 <template>
-	<view>
-		<view v-if="!noStatusBar" class="nb-status">
+	<view class="nb-root">
+		<view v-if="!noStatusBar" class="nb-status" :style="{ height: statusBarHeight + 'px' }">
 			<share-element v-if="shareKey != ''" :share-key="shareKey">
-				<view :style="{ height: statusBarHeight + 'px' }"></view>
+				<view class="nb-status-fill" :style="{ height: statusBarHeight + 'px' }"></view>
 			</share-element>
-			<view v-else :style="{ height: statusBarHeight + 'px' }"></view>
+			<view v-else class="nb-status-fill" :style="{ height: statusBarHeight + 'px' }"></view>
 		</view>
-	<view class="nb-wrap">
+		<view class="nb-wrap">
 			<view class="nb-header">
-			<view class="nb-left">
-				<slot name="left">
-					<view v-if="showBack" class="back-btn" @click="onBack">
-						<text class="back-arrow">‹</text>
-						<text class="back-text">{{backText}}</text>
-					</view>
-				</slot>
+				<view class="nb-left">
+					<slot name="left">
+						<view v-if="showBack" class="back-btn" @click="onBack">
+							<text class="back-arrow">‹</text>
+							<text class="back-text">{{backText}}</text>
+						</view>
+					</slot>
+				</view>
+				<text :class="['nb-title', leftAligned ? '' : 'nb-title-center']">{{title}}</text>
+				<view class="nb-right">
+					<slot name="right"></slot>
+				</view>
 			</view>
-			<text :class="['nb-title', leftAligned ? '' : 'nb-title-center']">{{title}}</text>
-			<view class="nb-right">
-				<slot name="right"></slot>
-			</view>
+			<view class="nb-shadow"></view>
 		</view>
-		<view class="nb-shadow"></view>
-	</view>
 	</view>
 </template>
 
@@ -62,9 +62,17 @@
 		},
 		created() {
 			try {
-				const sysInfo = uni.getSystemInfoSync()
-				const raw = sysInfo.statusBarHeight
-				this.statusBarHeight = raw > 20 ? raw - 8 : raw
+				// #ifndef WEB
+				const windowInfo = uni.getWindowInfo()
+				let top = windowInfo.statusBarHeight
+				if (windowInfo.safeAreaInsets.top > top) {
+					top = windowInfo.safeAreaInsets.top
+				}
+				this.statusBarHeight = top > 0 ? top : 0
+				// #endif
+				// #ifdef WEB
+				this.statusBarHeight = 0
+				// #endif
 			} catch (_e: any) {
 				this.statusBarHeight = 0
 			}
@@ -86,8 +94,20 @@
 </script>
 
 <style>
+	.nb-root {
+		flex-direction: column;
+		flex-shrink: 0;
+		background-color: var(--rice-primary-color);
+	}
+
 	.nb-status {
-		height: 0px;
+		flex-direction: column;
+		flex-shrink: 0;
+		background-color: var(--rice-primary-color);
+	}
+
+	.nb-status-fill {
+		flex-shrink: 0;
 		background-color: var(--rice-primary-color);
 	}
 
@@ -101,11 +121,10 @@
 		justify-content: space-between;
 		padding-left: 10px;
 		padding-right: 10px;
-		padding-top: 24px;
-		padding-bottom: 12px;
-		height: 48px;
+		padding-top: 0px;
+		padding-bottom: 0px;
+		height: 56px;
 		background-color: var(--rice-primary-color);
-		/* background: linear-gradient(to bottom, rgb(238, 156, 167), rgb(255, 221, 225)); */
 	}
 
 	/* 阴影线 */
@@ -116,7 +135,7 @@
 
 	.nb-left {
 		width: 120px;
-		height: 48px;
+		height: 56px;
 		flex-direction: row;
 		align-items: center;
 	}
@@ -134,7 +153,7 @@
 
 	.nb-right {
 		width: 120px;
-		height: 48px;
+		height: 56px;
 		flex-direction: row;
 		align-items: center;
 		justify-content: flex-end;
