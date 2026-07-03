@@ -675,6 +675,89 @@ export function importDatabaseTables(
 	db.close()
 }
 
+function findProviderApiKeyInRows(rows: UTSJSONObject[], id: string): string {
+	if (id == '') {
+		return ''
+	}
+	for (let i = 0; i < rows.length; i++) {
+		const rowId = rows[i]['id'] as string | null
+		if (rowId == id) {
+			const apiKey = rows[i]['api_key'] as string | null
+			if (apiKey != null) {
+				return apiKey
+			}
+		}
+	}
+	return ''
+}
+
+function findSettingValueInRows(rows: UTSJSONObject[], key: string): string {
+	if (key == '') {
+		return ''
+	}
+	for (let i = 0; i < rows.length; i++) {
+		const rowKey = rows[i]['key'] as string | null
+		if (rowKey == key) {
+			const value = rows[i]['value'] as string | null
+			if (value != null) {
+				return value
+			}
+		}
+	}
+	return ''
+}
+
+/** 仅覆盖导入配置类表，不触碰对话、消息、记忆和群聊数据。 */
+export function importSettingsTables(providers: UTSJSONObject[], appSettings: UTSJSONObject[], preserveEmptyApiKeys: boolean): void {
+	initDatabase()
+	const db = getDb()
+	let oldProviderKeys: UTSJSONObject[] = []
+	let oldApiSettings: UTSJSONObject[] = []
+	if (preserveEmptyApiKeys == true) {
+		oldProviderKeys = rowsToObjects(db.query('SELECT id, api_key FROM providers'))
+		oldApiSettings = rowsToObjects(db.query('SELECT key, value FROM app_settings WHERE key = ?', ['settings_api_key']))
+	}
+	db.run('DELETE FROM providers')
+	db.run('DELETE FROM app_settings')
+
+	for (let i = 0; i < providers.length; i++) {
+		const item = providers[i]
+		const providerId = readStringField(item, 'id')
+		let apiKey = readStringField(item, 'api_key')
+		if (preserveEmptyApiKeys == true && apiKey == '') {
+			apiKey = findProviderApiKeyInRows(oldProviderKeys, providerId)
+		}
+		db.run(
+			'INSERT OR REPLACE INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+			[
+				providerId,
+				readStringField(item, 'name'),
+				readStringField(item, 'api_base'),
+				apiKey,
+				readStringField(item, 'models'),
+				readNumberField(item, 'enabled'),
+				readNumberField(item, 'created_at'),
+				readNumberField(item, 'updated_at'),
+			]
+		)
+	}
+
+	for (let i = 0; i < appSettings.length; i++) {
+		const item = appSettings[i]
+		const key = readStringField(item, 'key')
+		let value = readStringField(item, 'value')
+		if (preserveEmptyApiKeys == true && key == 'settings_api_key' && value == '') {
+			value = findSettingValueInRows(oldApiSettings, key)
+		}
+		db.run(
+			'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
+			[key, value]
+		)
+	}
+
+	db.close()
+}
+
 export function addConversationTokenUsage(conversationId: string, promptTokens: number, promptCacheHitTokens: number): void {
 	const cid = conversationId.trim()
 	if (cid == '') {

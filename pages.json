@@ -113,6 +113,12 @@
 			}
 		},
 		{
+			"path": "pages/settings/data/data",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/settings/about/about",
 			"style": {
 				"navigationStyle": "custom"

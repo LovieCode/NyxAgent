@@ -1,0 +1,508 @@
+<template>
+	<view class="page-shell rice-theme-light">
+		<NavBar title="数据与备份" showBack />
+		<scroll-view class="container" :scroll-y="true">
+			<view class="hero-card">
+				<text class="hero-title">数据与备份</text>
+				<text class="hero-desc">备份就是存档点。安全备份会移除已知 API Key；完整迁移备份适合换机，但别乱分享。</text>
+			</view>
+
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="download" size="14px" color="#6B7280" style="margin-right:6px" />
+					<text class="card-title">备份当前数据</text>
+				</view>
+				<view class="action-row" @click="confirmExportSafe">
+					<view class="action-main">
+						<text class="action-title">安全备份</text>
+						<text class="action-desc">不导出已知 API Key，也不会附带原始 SQLite 数据库文件。</text>
+					</view>
+					<text class="action-badge">推荐</text>
+				</view>
+				<view class="inner-divider"></view>
+				<view class="action-row" @click="confirmExportFull">
+					<view class="action-main">
+						<text class="action-title danger-title">完整迁移备份</text>
+						<text class="action-desc">包含 API Key、聊天记录、文件和原始数据库，只建议自己换机使用。</text>
+					</view>
+					<text class="action-arrow">›</text>
+				</view>
+			</view>
+
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="upload" size="14px" color="#6B7280" style="margin-right:6px" />
+					<text class="card-title">从备份恢复</text>
+				</view>
+				<view class="action-row" @click="chooseImportZip">
+					<view class="action-main">
+						<text class="action-title">选择备份 ZIP</text>
+						<text class="action-desc">选择后先预览内容，不会立刻写入数据。</text>
+					</view>
+					<text class="action-arrow">›</text>
+				</view>
+				<view class="preview-box">
+					<view class="preview-head">
+						<text class="preview-title">导入预览</text>
+						<text v-if="selectedBackupHasApiKeys == true" class="danger-chip">含密钥</text>
+					</view>
+					<text class="preview-text">{{previewText}}</text>
+				</view>
+				<view v-if="selectedImportPath != ''" class="button-row">
+					<view class="secondary-button" @click="confirmImportSettingsOnly">
+						<text class="secondary-button-text">仅恢复设置</text>
+					</view>
+					<view class="danger-button" @click="confirmImportOverwrite">
+						<text class="danger-button-text">覆盖恢复全部</text>
+					</view>
+				</view>
+			</view>
+
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="setting" size="14px" color="#6B7280" style="margin-right:6px" />
+					<text class="card-title">数据维护</text>
+				</view>
+				<view class="action-row" @click="confirmMigrateLegacyStorage">
+					<view class="action-main">
+						<text class="action-title">迁移旧 Storage 数据</text>
+						<text class="action-desc">把旧版缓存迁移到 SQLite / 文件位置，并清理兼容遗留数据。</text>
+					</view>
+					<text class="action-arrow">›</text>
+				</view>
+			</view>
+
+			<view class="bottom-space"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script lang="uts">
+	import { buildDataExportOptions, exportAllDataToFileWithOptions, exportAllDataToJsonWithOptions, shareExportedDataFile, getLastShareExportErrorMessage } from '@/utils/data-export.uts'
+	import { previewImportBackup, importAllDataFromZip, importSettingsOnlyFromZip } from '@/utils/data-import.uts'
+	import { migrateAllLegacyStorageToNewLocation } from '@/utils/storage.uts'
+
+	export default {
+		data() {
+			return {
+				selectedImportPath: '' as string,
+				previewText: '还没选择备份包。点上面的「选择备份 ZIP」先看内容，别盲导。' as string,
+				selectedBackupHasApiKeys: false as boolean,
+				isBusy: false as boolean,
+				isMigratingStorage: false as boolean,
+			}
+		},
+		methods: {
+			confirmExportSafe() {
+				if (this.isBusy == true) { return }
+				uni.showModal({
+					title: '导出安全备份',
+					content: '会导出配置、聊天记录、头像和工作区文件，但会移除已知 API Key，并跳过原始 SQLite 数据库文件。继续？',
+					success: (res) => {
+						if (res.confirm == true) {
+							this.exportData(false)
+						}
+					}
+				})
+			},
+
+			confirmExportFull() {
+				if (this.isBusy == true) { return }
+				uni.showModal({
+					title: '导出完整迁移备份',
+					content: '完整备份包含 API Key、聊天记录、文件和原始数据库。只建议自己换机使用，不要发给别人。继续？',
+					success: (res) => {
+						if (res.confirm == true) {
+							this.exportData(true)
+						}
+					}
+				})
+			},
+
+			exportData(includeApiKeys: boolean) {
+				this.isBusy = true
+				try {
+					const options = buildDataExportOptions(includeApiKeys)
+					const path = exportAllDataToFileWithOptions(options)
+					if (path != '') {
+						this.isBusy = false
+						this.shareOrCopyExportPath(path)
+						return
+					}
+					const json = exportAllDataToJsonWithOptions(options)
+					this.isBusy = false
+					this.copyExportJson(json)
+				} catch (_e: any) {
+					this.isBusy = false
+					uni.showToast({ position: 'bottom', title: '导出失败', icon: 'none' })
+				}
+			},
+
+			shareOrCopyExportPath(path: string) {
+				const shared = shareExportedDataFile(path)
+				if (shared == true) {
+					return
+				}
+				const shareError = getLastShareExportErrorMessage()
+				const shareFailTip = shareError != '' ? ('系统分享失败：' + shareError + '\nZIP 路径已复制：\n' + path) : ('系统分享面板没有打开，ZIP 路径已复制：\n' + path)
+				uni.setClipboardData({
+					data: path,
+					success: () => {
+						uni.showModal({
+							title: '分享失败',
+							content: shareFailTip,
+							showCancel: false
+						})
+					},
+					fail: () => {
+						uni.showModal({
+							title: '分享失败',
+							content: shareError != '' ? ('系统分享失败：' + shareError + '\nZIP 已导出：\n' + path) : ('系统分享面板没有打开，ZIP 已导出：\n' + path),
+							showCancel: false
+						})
+					}
+				})
+			},
+
+			copyExportJson(json: string) {
+				uni.setClipboardData({
+					data: json,
+					success: () => {
+						uni.showToast({ position: 'bottom', title: '已复制导出清单', icon: 'success' })
+					},
+					fail: () => {
+						uni.showToast({ position: 'bottom', title: '导出失败', icon: 'none' })
+					}
+				})
+			},
+
+			chooseImportZip() {
+				if (this.isBusy == true) { return }
+				uni.chooseFile({
+					count: 1,
+					success: (res: any) => {
+						const path = this.parseChosenFilePath(res)
+						if (path == '') {
+							uni.showToast({ position: 'bottom', title: '未选择文件', icon: 'none' })
+							return
+						}
+						this.loadImportPreview(path)
+					},
+					fail: () => {
+						uni.showToast({ position: 'bottom', title: '选择文件失败', icon: 'none' })
+					}
+				})
+			},
+
+			parseChosenFilePath(res: any): string {
+				try {
+					const raw = JSON.stringify(res)
+					const parsed = JSON.parse(raw) as UTSJSONObject
+					const tempFilePaths = parsed['tempFilePaths'] as string[] | null
+					if (tempFilePaths != null && tempFilePaths.length > 0) {
+						return tempFilePaths[0]
+					}
+					const tempFiles = parsed['tempFiles'] as UTSJSONObject[] | null
+					if (tempFiles != null && tempFiles.length > 0) {
+						const first = tempFiles[0]
+						const path = first['path'] as string | null
+						if (path != null) {
+							return path
+						}
+					}
+				} catch (_e: any) {
+				}
+				return ''
+			},
+
+			loadImportPreview(path: string) {
+				const result = previewImportBackup(path)
+				if (result.ok != true) {
+					this.selectedImportPath = ''
+					this.selectedBackupHasApiKeys = false
+					this.previewText = '预览失败：' + result.error
+					uni.showToast({ position: 'bottom', title: '预览失败', icon: 'none' })
+					return
+				}
+				this.selectedImportPath = path
+				this.selectedBackupHasApiKeys = result.apiKeys
+				this.previewText = result.summary
+			},
+
+			confirmImportSettingsOnly() {
+				if (this.isBusy == true) { return }
+				if (this.selectedImportPath == '') {
+					uni.showToast({ position: 'bottom', title: '先选择备份包', icon: 'none' })
+					return
+				}
+				uni.showModal({
+					title: '仅恢复设置',
+					content: '会覆盖提供商、默认模型、用户资料、Agent、Skills、笔记和待办，不会覆盖聊天记录。建议先备份当前数据。继续？',
+					success: (res) => {
+						if (res.confirm == true) {
+							this.importSettingsOnly()
+						}
+					}
+				})
+			},
+
+			confirmImportOverwrite() {
+				if (this.isBusy == true) { return }
+				if (this.selectedImportPath == '') {
+					uni.showToast({ position: 'bottom', title: '先选择备份包', icon: 'none' })
+					return
+				}
+				uni.showModal({
+					title: '覆盖恢复全部数据',
+					content: '这会覆盖当前提供商、设置、对话、记忆、群聊、Agent、Skills 和工作区文件。建议先导出当前数据。继续？',
+					success: (res) => {
+						if (res.confirm == true) {
+							this.importAllData()
+						}
+					}
+				})
+			},
+
+			importSettingsOnly() {
+				this.isBusy = true
+				try {
+					const summary = importSettingsOnlyFromZip(this.selectedImportPath)
+					this.isBusy = false
+					if (summary == '') {
+						uni.showToast({ position: 'bottom', title: '导入失败', icon: 'none' })
+						return
+					}
+					uni.showModal({
+						title: '恢复完成',
+						content: summary,
+						showCancel: false
+					})
+				} catch (_e: any) {
+					this.isBusy = false
+					uni.showToast({ position: 'bottom', title: '导入失败', icon: 'none' })
+				}
+			},
+
+			importAllData() {
+				this.isBusy = true
+				try {
+					const summary = importAllDataFromZip(this.selectedImportPath)
+					this.isBusy = false
+					if (summary == '') {
+						uni.showToast({ position: 'bottom', title: '导入失败', icon: 'none' })
+						return
+					}
+					uni.showModal({
+						title: '导入完成',
+						content: summary,
+						showCancel: false
+					})
+				} catch (_e: any) {
+					this.isBusy = false
+					uni.showToast({ position: 'bottom', title: '导入失败', icon: 'none' })
+				}
+			},
+
+			confirmMigrateLegacyStorage() {
+				if (this.isMigratingStorage == true) { return }
+				uni.showModal({
+					title: '迁移旧 Storage 数据',
+					content: '会把旧版本遗留的 uni.storage 数据迁移到 SQLite / 结构化表，成功后清理旧缓存。建议先做一次安全备份。继续？',
+					success: (res) => {
+						if (res.confirm == true) {
+							this.migrateLegacyStorage()
+						}
+					}
+				})
+			},
+
+			migrateLegacyStorage() {
+				this.isMigratingStorage = true
+				try {
+					const result = migrateAllLegacyStorageToNewLocation()
+					this.isMigratingStorage = false
+					uni.showModal({
+						title: result.failed == 0 ? '迁移完成' : '迁移未完全完成',
+						content: result.message,
+						showCancel: false
+					})
+				} catch (_e: any) {
+					this.isMigratingStorage = false
+					uni.showToast({ position: 'bottom', title: '迁移失败', icon: 'none' })
+				}
+			}
+		}
+	}
+</script>
+
+<style>
+	.container {
+		flex: 1;
+		padding: 16px;
+	}
+
+	.hero-card {
+		background-color: #FFF7FB;
+		border-radius: 18px;
+		padding: 18px;
+		margin-bottom: 14px;
+		border: 1px solid #FCE7F3;
+	}
+
+	.hero-title {
+		font-size: 20px;
+		font-weight: 700;
+		color: #111827;
+		margin-bottom: 8px;
+	}
+
+	.hero-desc {
+		font-size: 13px;
+		line-height: 20px;
+		color: #6B7280;
+	}
+
+	.card {
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		padding: 14px;
+		margin-bottom: 14px;
+		border: 1px solid #F3F4F6;
+		box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
+	}
+
+	.card-header {
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 8px;
+	}
+
+	.card-title {
+		font-size: 14px;
+		font-weight: 700;
+		color: #111827;
+	}
+
+	.action-row {
+		flex-direction: row;
+		align-items: center;
+		padding: 12px 0;
+	}
+
+	.action-main {
+		flex: 1;
+	}
+
+	.action-title {
+		font-size: 15px;
+		font-weight: 600;
+		color: #111827;
+		margin-bottom: 4px;
+	}
+
+	.danger-title {
+		color: #B91C1C;
+	}
+
+	.action-desc {
+		font-size: 12px;
+		line-height: 18px;
+		color: #6B7280;
+	}
+
+	.action-badge {
+		padding: 4px 8px;
+		border-radius: 999px;
+		background-color: #ECFDF5;
+		color: #059669;
+		font-size: 11px;
+		font-weight: 700;
+	}
+
+	.action-arrow {
+		font-size: 24px;
+		color: #D1D5DB;
+		padding-left: 10px;
+	}
+
+	.inner-divider {
+		height: 1px;
+		background-color: #F3F4F6;
+	}
+
+	.preview-box {
+		margin-top: 10px;
+		padding: 12px;
+		border-radius: 14px;
+		background-color: #F9FAFB;
+		border: 1px solid #F3F4F6;
+	}
+
+	.preview-head {
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 8px;
+	}
+
+	.preview-title {
+		flex: 1;
+		font-size: 13px;
+		font-weight: 700;
+		color: #374151;
+	}
+
+	.preview-text {
+		font-size: 12px;
+		line-height: 19px;
+		color: #4B5563;
+	}
+
+	.danger-chip {
+		padding: 3px 7px;
+		border-radius: 999px;
+		background-color: #FEF2F2;
+		color: #DC2626;
+		font-size: 11px;
+		font-weight: 700;
+	}
+
+	.button-row {
+		flex-direction: row;
+		margin-top: 12px;
+	}
+
+	.secondary-button {
+		flex: 1;
+		height: 42px;
+		border-radius: 12px;
+		background-color: #F3F4F6;
+		align-items: center;
+		justify-content: center;
+		margin-right: 8px;
+	}
+
+	.secondary-button-text {
+		font-size: 13px;
+		font-weight: 700;
+		color: #374151;
+	}
+
+	.danger-button {
+		flex: 1;
+		height: 42px;
+		border-radius: 12px;
+		background-color: #DC2626;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.danger-button-text {
+		font-size: 13px;
+		font-weight: 700;
+		color: #FFFFFF;
+	}
+
+	.bottom-space {
+		height: 24px;
+	}
+</style>

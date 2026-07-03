@@ -14,6 +14,16 @@ import { writeExportZipFile, shareExportFile, getLastShareExportError } from '@/
 const EXPORT_SCHEMA_VERSION = 1
 const MAX_EXPORT_FILE_BYTES: number = 50 * 1024 * 1024
 
+export type DataExportOptions = {
+	includeApiKeys: boolean
+}
+
+export function buildDataExportOptions(includeApiKeys: boolean): DataExportOptions {
+	return {
+		includeApiKeys: includeApiKeys,
+	} as DataExportOptions
+}
+
 function sanitizeFilePart(text: string): string {
 	let result = text
 	result = result.replace(/:/g, '-')
@@ -622,15 +632,59 @@ function stripFileSpecContent(specs: UTSJSONObject[]): UTSJSONObject[] {
 	return result
 }
 
-function buildFileName(exportedAt: string): string {
-	return 'agent-full-export-' + sanitizeFilePart(exportedAt) + '.zip'
+function cloneExportObject(item: UTSJSONObject): UTSJSONObject {
+	try {
+		return JSON.parse(JSON.stringify(item)) as UTSJSONObject
+	} catch (_e: any) {
+		return {} as UTSJSONObject
+	}
+}
+
+function sanitizeProvidersForExport(providers: UTSJSONObject[], options: DataExportOptions): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < providers.length; i++) {
+		const clean = cloneExportObject(providers[i])
+		if (options.includeApiKeys == false) {
+			clean['api_key'] = ''
+		}
+		result.push(clean)
+	}
+	return result
+}
+
+function sanitizeAppSettingsForExport(appSettings: UTSJSONObject[], options: DataExportOptions): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < appSettings.length; i++) {
+		const clean = cloneExportObject(appSettings[i])
+		const key = clean['key'] as string | null
+		if (options.includeApiKeys == false && key == 'settings_api_key') {
+			clean['value'] = ''
+		}
+		result.push(clean)
+	}
+	return result
+}
+
+function sanitizeStorageForExport(storage: UTSJSONObject, options: DataExportOptions): UTSJSONObject {
+	const clean = cloneExportObject(storage)
+	if (options.includeApiKeys == false) {
+		clean['settings_api_key'] = ''
+		// 临时编辑缓存可能携带 API Key，安全备份里直接丢弃。
+		clean['provider_edit_data'] = ''
+	}
+	return clean
+}
+
+function buildFileName(exportedAt: string, includeApiKeys: boolean): string {
+	const prefix = includeApiKeys == true ? 'agent-full-export-' : 'agent-safe-export-'
+	return prefix + sanitizeFilePart(exportedAt) + '.zip'
 }
 
 /**
  * 构建全量导出对象。
  * 注意：providers 和 app_settings 中可能包含 API Key。
  */
-export function buildAllDataExport(): UTSJSONObject {
+export function buildAllDataExportWithOptions(options: DataExportOptions): UTSJSONObject {
 	const exportedAt = new Date().toISOString()
 	const conversations = getAllConversationsForExport()
 	const messages = getAllMessagesForExport()
@@ -639,13 +693,17 @@ export function buildAllDataExport(): UTSJSONObject {
 	const conversationTokenUsageStats = getAllConversationTokenUsageStatsForExport()
 	const memoryCompactionStates = getAllMemoryCompactionStatesForExport()
 	const groupChatData = getAllGroupChatDataForExport()
-	const appSettings = getAllAppSettings()
-	const storageKeys = collectStorageKeys(appSettings)
-	const storage = collectKnownStorageByKeys(storageKeys, appSettings)
+	const rawAppSettings = getAllAppSettings()
+	const appSettings = sanitizeAppSettingsForExport(rawAppSettings, options)
+	const storageKeys = collectStorageKeys(rawAppSettings)
+	const storage = sanitizeStorageForExport(collectKnownStorageByKeys(storageKeys, rawAppSettings), options)
 	const agents = getAgents()
 	const skills = getSkills()
 	const fileSpecs: UTSJSONObject[] = []
-	const databaseFile = appendDatabaseFile(fileSpecs)
+	let databaseFile: UTSJSONObject | null = null
+	if (options.includeApiKeys == true) {
+		databaseFile = appendDatabaseFile(fileSpecs)
+	}
 	const userFiles = collectUserFiles(fileSpecs)
 	const agentFiles = collectAgentFiles(agents, fileSpecs)
 	const groupWorkspaceFiles = collectGroupWorkspaceFiles(fileSpecs)
@@ -653,19 +711,22 @@ export function buildAllDataExport(): UTSJSONObject {
 	const notes = parseStorageArray(storage, 'notes_list')
 	const todos = parseStorageArray(storage, 'todo_list')
 	const assets = collectAssets(storage, agents, messages, fileSpecs)
+	const providers = sanitizeProvidersForExport(getAllProviders(), options)
 	return {
 		schemaVersion: EXPORT_SCHEMA_VERSION,
 		exportedAt: exportedAt,
 		app: 'agent',
 		format: 'zip',
+		backupMode: options.includeApiKeys == true ? 'full' : 'safe',
+		containsApiKeys: options.includeApiKeys,
 		manifestFile: 'export.json',
 		maxFileBytes: MAX_EXPORT_FILE_BYTES,
-		warning: 'This export may contain API keys, conversation history, prompts and personal data.',
+		warning: options.includeApiKeys == true ? 'This export may contain API keys, conversation history, prompts and personal data.' : 'This safe export removes known API keys but still contains conversation history, prompts, files and personal data.',
 		files: fileSpecs,
 		data: {
 			databaseFile: databaseFile,
 			storageKeys: storageKeys,
-			providers: getAllProviders(),
+			providers: providers,
 			appSettings: appSettings,
 			defaultTaskModels: getAllDefaultTaskModels(),
 			agents: agents,
@@ -688,12 +749,16 @@ export function buildAllDataExport(): UTSJSONObject {
 	} as UTSJSONObject
 }
 
+export function buildAllDataExport(): UTSJSONObject {
+	return buildAllDataExportWithOptions(buildDataExportOptions(true))
+}
+
 /**
  * 导出到本地文件。APP-ANDROID 返回文件路径；其他平台返回空字符串。
  */
-export function exportAllDataToFile(): string {
+export function exportAllDataToFileWithOptions(options: DataExportOptions): string {
 	const exportedAt = new Date().toISOString()
-	const payload = buildAllDataExport()
+	const payload = buildAllDataExportWithOptions(options)
 	payload['exportedAt'] = exportedAt
 	const files = payload['files'] as UTSJSONObject[] | null
 	const filesJson = files != null ? JSON.stringify(files) : '[]'
@@ -701,20 +766,28 @@ export function exportAllDataToFile(): string {
 		payload['files'] = stripFileSpecContent(files)
 	}
 	const json = JSON.stringify(payload)
-	const fileName = buildFileName(exportedAt)
+	const fileName = buildFileName(exportedAt, options.includeApiKeys)
 	return writeExportZipFile(fileName, json, filesJson)
+}
+
+export function exportAllDataToFile(): string {
+	return exportAllDataToFileWithOptions(buildDataExportOptions(true))
 }
 
 /**
  * 剪贴板兜底：文件系统不可用时使用。
  */
-export function exportAllDataToJson(): string {
-	const payload = buildAllDataExport()
+export function exportAllDataToJsonWithOptions(options: DataExportOptions): string {
+	const payload = buildAllDataExportWithOptions(options)
 	const files = payload['files'] as UTSJSONObject[] | null
 	if (files != null) {
 		payload['files'] = stripFileSpecContent(files)
 	}
 	return JSON.stringify(payload)
+}
+
+export function exportAllDataToJson(): string {
+	return exportAllDataToJsonWithOptions(buildDataExportOptions(true))
 }
 
 /** 分享已导出的 ZIP 文件。 */

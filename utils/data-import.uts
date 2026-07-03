@@ -3,10 +3,28 @@
  * 从导出的 ZIP 备份包中恢复结构化数据与 Agent 工作区。
  */
 
-import { importDatabaseTables, setAppSetting, setRuntimeState } from '@/utils/database.uts'
+import { importDatabaseTables, importSettingsTables, setAppSetting, setRuntimeState } from '@/utils/database.uts'
 import { saveAgents } from '@/utils/agent.uts'
 import { getAgentDir, joinPath, exists, createDir, writeContent } from '@/utils/file-manager.uts'
 import { readImportManifest, importAgentWorkspaceFiles, importBackupAssets, importGroupWorkspaceFiles } from '@/utssdk/app-data-export/index.uts'
+
+export type ImportBackupSummary = {
+	ok: boolean
+	path: string
+	app: string
+	exportedAt: string
+	version: string
+	agents: number
+	skills: number
+	providers: number
+	conversations: number
+	messages: number
+	groups: number
+	assets: number
+	apiKeys: boolean
+	summary: string
+	error: string
+}
 
 function readObjectArray(obj: UTSJSONObject, key: string): UTSJSONObject[] {
 	const value = obj[key] as UTSJSONObject[] | null
@@ -77,6 +95,148 @@ function readStringArray(obj: UTSJSONObject, key: string): string[] {
 		return []
 	}
 	return value
+}
+
+function buildImportBackupError(path: string, error: string): ImportBackupSummary {
+	return {
+		ok: false,
+		path: path,
+		app: '',
+		exportedAt: '',
+		version: '',
+		agents: 0,
+		skills: 0,
+		providers: 0,
+		conversations: 0,
+		messages: 0,
+		groups: 0,
+		assets: 0,
+		apiKeys: false,
+		summary: '',
+		error: error,
+	} as ImportBackupSummary
+}
+
+function hasProviderApiKeys(providers: UTSJSONObject[]): boolean {
+	for (let i = 0; i < providers.length; i++) {
+		const value = providers[i]['api_key'] as string | null
+		if (value != null && value != '') {
+			return true
+		}
+	}
+	return false
+}
+
+function hasAppSettingsApiKey(appSettings: UTSJSONObject[]): boolean {
+	for (let i = 0; i < appSettings.length; i++) {
+		const key = appSettings[i]['key'] as string | null
+		const value = appSettings[i]['value'] as string | null
+		if (key == 'settings_api_key' && value != null && value != '') {
+			return true
+		}
+	}
+	return false
+}
+
+function hasStorageApiKey(storage: UTSJSONObject | null): boolean {
+	if (storage == null) {
+		return false
+	}
+	const value = storage['settings_api_key'] as string | null
+	if (value != null && value != '') {
+		return true
+	}
+	return false
+}
+
+function countBackupGroups(groupChatData: UTSJSONObject | null): number {
+	if (groupChatData == null) {
+		return 0
+	}
+	return readObjectArray(groupChatData, 'groupChats').length
+}
+
+function backupContainsApiKeys(root: UTSJSONObject, providers: UTSJSONObject[], appSettings: UTSJSONObject[], storage: UTSJSONObject | null): boolean {
+	const flag = root['containsApiKeys'] as boolean | null
+	if (flag == true) {
+		return true
+	}
+	if (hasProviderApiKeys(providers) == true) {
+		return true
+	}
+	if (hasAppSettingsApiKey(appSettings) == true) {
+		return true
+	}
+	return hasStorageApiKey(storage)
+}
+
+function buildPreviewText(exportedAt: string, version: string, providers: number, agents: number, skills: number, conversations: number, messages: number, groups: number, assets: number, apiKeys: boolean): string {
+	const keyText = apiKeys == true ? '完整备份（含 API Key）' : '安全备份（不含 API Key）'
+	return '备份类型：' + keyText +
+		'\n导出时间：' + (exportedAt != '' ? exportedAt : '未知') +
+		'\nSchema：' + (version != '' ? version : '未知') +
+		'\n提供商：' + providers + ' 个' +
+		'\nAgent：' + agents + ' 个，Skills：' + skills + ' 个' +
+		'\n私聊：' + conversations + ' 条对话 / ' + messages + ' 条消息' +
+		'\n群聊：' + groups + ' 个' +
+		'\n资源文件：' + assets + ' 个'
+}
+
+function isSettingsOnlyStorageKey(key: string): boolean {
+	if (key.startsWith('settings_')) {
+		return true
+	}
+	if (key.startsWith('app_setting_')) {
+		return true
+	}
+	if (key.startsWith('profile_')) {
+		return true
+	}
+	if (key == 'agent_list' || key == 'active_agent_id' || key == 'skills_list' || key == 'notes_list' || key == 'todo_list') {
+		return true
+	}
+	return false
+}
+
+function buildSettingsOnlyStorageKeys(sourceKeys: string[]): string[] {
+	let keys = sourceKeys
+	if (keys.length == 0) {
+		keys = buildFallbackStorageKeys()
+	}
+	const result: string[] = []
+	for (let i = 0; i < keys.length; i++) {
+		const key = keys[i]
+		if (isSettingsOnlyStorageKey(key) == true) {
+			result.push(key)
+		}
+	}
+	return result
+}
+
+function filterEmptySensitiveStorageKeys(keys: string[], storage: UTSJSONObject): string[] {
+	const result: string[] = []
+	for (let i = 0; i < keys.length; i++) {
+		const key = keys[i]
+		if (key == 'settings_api_key') {
+			const value = storage[key] as string | null
+			if (value == null || value == '') {
+				continue
+			}
+		}
+		result.push(key)
+	}
+	return result
+}
+
+function filterSettingsAssets(assets: UTSJSONObject[]): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < assets.length; i++) {
+		const kind = assets[i]['kind'] as string | null
+		if (kind == 'profileAvatar' || kind == 'cropSource' || kind == 'cropResult' || kind == 'agentAvatar') {
+			result.push(assets[i])
+		}
+	}
+	return result
 }
 
 function updateMappedStorageAssets(storage: UTSJSONObject, assetMap: UTSJSONObject): void {
@@ -190,6 +350,111 @@ function writeStorageObject(storage: UTSJSONObject, storageKeys: string[]): void
 
 function restoreListStorage(key: string, list: UTSJSONObject[]): void {
 	setAppSetting(key, JSON.stringify(list))
+}
+
+/** 只读取备份包信息，不写入任何数据。 */
+export function previewImportBackup(zipPath: string): ImportBackupSummary {
+	const manifestJson = readImportManifest(zipPath)
+	if (manifestJson == '') {
+		return buildImportBackupError(zipPath, '无法读取备份清单')
+	}
+	try {
+		const root = JSON.parse(manifestJson) as UTSJSONObject
+		const data = root['data'] as UTSJSONObject | null
+		if (data == null) {
+			return buildImportBackupError(zipPath, '备份包缺少 data 字段')
+		}
+		const providers = readObjectArray(data, 'providers')
+		const conversations = readObjectArray(data, 'conversations')
+		const messages = readObjectArray(data, 'messages')
+		const appSettings = readObjectArray(data, 'appSettings')
+		const agents = readObjectArray(data, 'agents')
+		const skills = readObjectArray(data, 'skills')
+		const assets = readObjectArray(data, 'assets')
+		const storage = data['storage'] as UTSJSONObject | null
+		const groupChatData = data['groupChatData'] as UTSJSONObject | null
+		const exportedAt = root['exportedAt'] as string | null
+		const schemaVersion = root['schemaVersion'] as number | null
+		const app = root['app'] as string | null
+		const apiKeys = backupContainsApiKeys(root, providers, appSettings, storage)
+		const versionText = schemaVersion != null ? (schemaVersion + '') : ''
+		const exportedAtText = exportedAt != null ? exportedAt : ''
+		const groups = countBackupGroups(groupChatData)
+		const summary = buildPreviewText(exportedAtText, versionText, providers.length, agents.length, skills.length, conversations.length, messages.length, groups, assets.length, apiKeys)
+		return {
+			ok: true,
+			path: zipPath,
+			app: app != null ? app : '',
+			exportedAt: exportedAtText,
+			version: versionText,
+			agents: agents.length,
+			skills: skills.length,
+			providers: providers.length,
+			conversations: conversations.length,
+			messages: messages.length,
+			groups: groups,
+			assets: assets.length,
+			apiKeys: apiKeys,
+			summary: summary,
+			error: '',
+		} as ImportBackupSummary
+	} catch (_e: any) {
+		return buildImportBackupError(zipPath, '备份清单解析失败')
+	}
+}
+
+/** 仅恢复设置、提供商、个人资料、Agent、Skills、笔记和待办，不覆盖聊天记录。 */
+export function importSettingsOnlyFromZip(zipPath: string): string {
+	const manifestJson = readImportManifest(zipPath)
+	if (manifestJson == '') {
+		return ''
+	}
+	try {
+		const root = JSON.parse(manifestJson) as UTSJSONObject
+		const data = root['data'] as UTSJSONObject | null
+		if (data == null) {
+			return ''
+		}
+		const providers = readObjectArray(data, 'providers')
+		const appSettings = readObjectArray(data, 'appSettings')
+		const agents = readObjectArray(data, 'agents')
+		const skills = readObjectArray(data, 'skills')
+		const notes = readObjectArray(data, 'notes')
+		const todos = readObjectArray(data, 'todos')
+		const storage = data['storage'] as UTSJSONObject | null
+		let storageKeys = buildSettingsOnlyStorageKeys(readStringArray(data, 'storageKeys'))
+		const assets = filterSettingsAssets(readObjectArray(data, 'assets'))
+		const assetMap = importBackupAssets(zipPath, assets)
+
+		if (storage != null) {
+			storageKeys = filterEmptySensitiveStorageKeys(storageKeys, storage)
+			updateMappedStorageAssets(storage, assetMap)
+		}
+		updateMappedAgentAssets(agents, assetMap)
+		if (storage != null) {
+			storage['agent_list'] = JSON.stringify(agents)
+			if (skills.length > 0) {
+				storage['skills_list'] = JSON.stringify(skills)
+			}
+			storage['notes_list'] = JSON.stringify(notes)
+			storage['todo_list'] = JSON.stringify(todos)
+		}
+
+		if (providers.length > 0 || appSettings.length > 0) {
+			importSettingsTables(providers, appSettings, true)
+		}
+		if (agents.length > 0) {
+			saveAgents(agents)
+		}
+		restoreListStorage('notes_list', notes)
+		restoreListStorage('todo_list', todos)
+		if (storage != null) {
+			writeStorageObject(storage, storageKeys)
+		}
+		return '已恢复设置：提供商 ' + providers.length + ' 个，Agent ' + agents.length + ' 个，Skills ' + skills.length + ' 个，笔记 ' + notes.length + ' 条，待办 ' + todos.length + ' 条，资源 ' + assets.length + ' 个。聊天记录未覆盖。'
+	} catch (_e: any) {
+		return ''
+	}
 }
 
 /** 导入 ZIP 备份包，成功返回摘要，失败返回空字符串。 */
