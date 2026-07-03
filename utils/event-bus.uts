@@ -51,8 +51,23 @@ class EventBus {
 	 * 移除指定事件的监听器
 	 * @param eventName 事件名称
 	 */
-	off(eventName : string) : void {
-		this.events[eventName] = null
+	off(eventName : string, callback: EventCallback | null = null) : void {
+		if (callback == null) {
+			this.events[eventName] = null
+			return
+		}
+		const callbacks = this.events[eventName] as Array<EventCallback> | null
+		if (callbacks == null) {
+			return
+		}
+		for (let i = callbacks.length - 1; i >= 0; i--) {
+			if (callbacks[i] == callback) {
+				callbacks.splice(i, 1)
+			}
+		}
+		if (callbacks.length == 0) {
+			this.events[eventName] = null
+		}
 	}
 }
 

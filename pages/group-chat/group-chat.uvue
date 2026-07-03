@@ -36,7 +36,7 @@
 			</view>
 			<view v-if="visibleMessages.length == 0" class="empty-state">
 				<text class="empty-text">{{emptyTitle}}</text>
-				<text class="empty-hint">发一句话，后台调度会安排成员接招。</text>
+				<text class="empty-hint">发一句话，眠汐会安排成员接招。</text>
 			</view>
 		</scroll-view>
 
@@ -102,7 +102,7 @@
 								</view>
 								<view class="toolbar-grid-item" @click="showDispatchHistory">
 									<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="26px" color="var(--rice-primary-color)" /></view>
-									<text class="toolbar-grid-label">调度历史</text>
+									<text class="toolbar-grid-label">眠汐记录</text>
 								</view>
 							</view>
 						</view>
@@ -134,7 +134,11 @@
 	import { detectSchedulerLeakCandidate, getSchedulerLeakHoldSize } from '@/utils/group-chat-moderation.uts'
 	import { setActiveAgentRuntimeId, setContextPreviewPayload, setFilesInitialPath, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, type PickedLocalFile } from '@/utils/attachment-reader.uts'
+	import { eventBus } from '@/utils/event-bus.uts'
+	import { NYX_FLOAT_CONTEXT_GROUP, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
 	import {
+		GLOBAL_SCHEDULER_AGENT_ID,
+		GLOBAL_SCHEDULER_AGENT_NAME,
 		GROUP_MESSAGE_SENDER_AGENT,
 		GROUP_MESSAGE_SENDER_REVIEWER,
 		GROUP_MESSAGE_SENDER_SCHEDULER,
@@ -184,6 +188,8 @@
 		setActiveGroupSessionId,
 		syncGroupStreamingMessage,
 	} from '@/utils/group-chat-service.uts'
+
+	let groupNyxFloatVoiceCallback: (() => void) | null = null
 
 	export default {
 		data() {
@@ -239,10 +245,30 @@
 		onLoad() {
 			this.loadUserProfile()
 			this.loadGroup()
+			groupNyxFloatVoiceCallback = () => {
+				this.consumeNyxFloatVoiceText()
+			}
+			const callback = groupNyxFloatVoiceCallback
+			if (callback != null) {
+				eventBus.on(NYX_FLOAT_VOICE_EVENT, callback)
+			}
 		},
 		onShow() {
 			this.loadUserProfile()
 			this.loadGroup()
+			activateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
+			this.consumeNyxFloatVoiceText()
+		},
+		onHide() {
+			deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
+		},
+		onUnload() {
+			const callback = groupNyxFloatVoiceCallback
+			if (callback != null) {
+				eventBus.off(NYX_FLOAT_VOICE_EVENT, callback)
+			}
+			groupNyxFloatVoiceCallback = null
+			deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
 		},
 		methods: {
 			loadUserProfile(): void {
@@ -516,6 +542,18 @@
 				this.loopTurns = 0
 				this.runScheduler('用户发送消息')
 			},
+			consumeNyxFloatVoiceText(): void {
+				if (readNyxFloatVoiceContext() != NYX_FLOAT_CONTEXT_GROUP) { return }
+				const content = consumePendingNyxFloatVoiceText()
+				if (content == '') { return }
+				if (this.isGenerating == true) {
+					this.inputText = content
+					uni.showToast({ position: 'bottom', title: '已填入输入框，等本轮结束再发', icon: 'none' })
+					return
+				}
+				this.inputText = content
+				this.sendMessage()
+			},
 			continueDiscussion(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
 				if (this.isGenerating == true) { return }
@@ -698,8 +736,8 @@
 				const members = getActiveGroupMembers(this.groupId)
 				const result: UTSJSONObject[] = []
 				result.push({
-					agentId: 'scheduler',
-					name: '调度',
+					agentId: GLOBAL_SCHEDULER_AGENT_ID,
+					name: GLOBAL_SCHEDULER_AGENT_NAME,
 				} as UTSJSONObject)
 				for (let i = 0; i < members.length; i++) {
 					const agent = getAgentById(members[i].agentId)
@@ -747,7 +785,7 @@
 				})
 			},
 			openMemoryForAgent(agentId: string): void {
-				if (agentId != 'scheduler' && getAgentById(agentId) == null) {
+				if (agentId != GLOBAL_SCHEDULER_AGENT_ID && getAgentById(agentId) == null) {
 					uni.showToast({ position: 'bottom', title: '该联系人已删除', icon: 'none' })
 					return
 				}
@@ -757,7 +795,7 @@
 			openContextForAgent(agentId: string): void {
 				const session = this.session
 				if (session == null) { return }
-				if (agentId != 'scheduler' && getAgentById(agentId) == null) {
+				if (agentId != GLOBAL_SCHEDULER_AGENT_ID && getAgentById(agentId) == null) {
 					uni.showToast({ position: 'bottom', title: '该联系人已删除', icon: 'none' })
 					return
 				}
@@ -851,7 +889,7 @@
 					if (lines.length >= 200) { break }
 				}
 				if (lines.length == 0) {
-					uni.showToast({ position: 'bottom', title: '还没有调度记录', icon: 'none' })
+					uni.showToast({ position: 'bottom', title: '还没有眠汐记录', icon: 'none' })
 					return
 				}
 				setContextPreviewPayload(lines.join('\n'))
@@ -870,7 +908,7 @@
 				this.isGenerating = true
 				const schedulerStartedAt = Date.now()
 				const schedulerMessages = buildSchedulerRuntimeMessages(group, session, this.messages, reason, this.loopTurns)
-				const schedulerAgentId = 'scheduler'
+				const schedulerAgentId = GLOBAL_SCHEDULER_AGENT_ID
 				let schedulerText = ''
 				let schedulerThinking = ''
 				const schedulerStream = agentChat(schedulerMessages, buildSchedulerSystemPrompt(), '', '', schedulerAgentId, 1, session.id, '')
@@ -1159,7 +1197,7 @@
 				let schedulerThinking = ''
 				const reviewStartedAt = Date.now()
 				const reviewMessages = buildSchedulerReviewMessages(group, session, this.messages, agentId, agentName, keyword, candidateText)
-				const reviewStream = agentChat(reviewMessages, buildSchedulerReviewSystemPrompt(), '', '', 'scheduler', 1, session.id, '')
+				const reviewStream = agentChat(reviewMessages, buildSchedulerReviewSystemPrompt(), '', '', GLOBAL_SCHEDULER_AGENT_ID, 1, session.id, '')
 				this.currentStream = reviewStream
 				reviewStream.on((event: AgentEvent) => {
 					if (event.type == 'text_delta' && event.text != null) {
@@ -1180,8 +1218,8 @@
 						}
 						this.currentStream = null
 						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerText)
-						appendResponseToSnapshot('scheduler', session.id, schedulerText, schedulerThinking)
-						const schedulerSnapshot = readLastLLMRequestSnapshot('scheduler', session.id)
+						appendResponseToSnapshot(GLOBAL_SCHEDULER_AGENT_ID, session.id, schedulerText, schedulerThinking)
+						const schedulerSnapshot = readLastLLMRequestSnapshot(GLOBAL_SCHEDULER_AGENT_ID, session.id)
 						if (schedulerSnapshot != null) {
 							const capturedAt = schedulerSnapshot['capturedAt'] as number | null
 							if (capturedAt != null && capturedAt >= reviewStartedAt) {

@@ -154,9 +154,12 @@
 	import { setContextPreviewPayload, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import { transcribeAudio, synthesizeSpeech } from '@/utils/speech-service.uts'
 	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, type PickedLocalFile } from '@/utils/attachment-reader.uts'
+	import { eventBus } from '@/utils/event-bus.uts'
+	import { NYX_FLOAT_CONTEXT_CHAT, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
 
 	const STREAM_FLUSH_DELAY_MS = 48
 	const STREAM_SCROLL_DELAY_MS = 96
+	let chatNyxFloatVoiceCallback: (() => void) | null = null
 
 	export default {
 		data() {
@@ -260,12 +263,21 @@
 					this.showToolPanel = false
 				}
 			})
+			chatNyxFloatVoiceCallback = () => {
+				this.consumeNyxFloatVoiceText()
+			}
+			const callback = chatNyxFloatVoiceCallback
+			if (callback != null) {
+				eventBus.on(NYX_FLOAT_VOICE_EVENT, callback)
+			}
 		},
 
 		onShow() {
 			// 每次显示页面时刷新智能体信息和用户昵称
 			this.loadUserNickname()
 			this.loadCurrentAgent()
+			activateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_CHAT)
+			this.consumeNyxFloatVoiceText()
 		},
 
 		onReady() {
@@ -279,6 +291,7 @@
 			this.clearStreamScrollTimer()
 			this.stopSpeechPlayback()
 			this.saveCurrentConversation()
+			deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_CHAT)
 		},
 
 		onUnload() {
@@ -288,6 +301,12 @@
 			this.clearStreamScrollTimer()
 			this.stopSpeechPlayback()
 			uni.offKeyboardHeightChange()
+			const callback = chatNyxFloatVoiceCallback
+			if (callback != null) {
+				eventBus.off(NYX_FLOAT_VOICE_EVENT, callback)
+			}
+			chatNyxFloatVoiceCallback = null
+			deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_CHAT)
 		},
 
 		methods: {
@@ -421,8 +440,8 @@
 
 			/** 长按消息弹出操作菜单 */
 			onMessageLongpress(index: number) {
-				if (this.isGenerating) { return }
-				if (this.messageActionSheetOpen) { return }
+				if (this.isGenerating == true) { return }
+				if (this.messageActionSheetOpen == true) { return }
 				const msg = this.messages[index]
 				if (msg == null) { return }
 				const roleRaw = msg['role']
@@ -631,6 +650,18 @@
 				this.inputText = ''
 				this.scrollToBottom()
 				this.simulateAIResponse(content)
+			},
+
+			consumeNyxFloatVoiceText(): void {
+				if (readNyxFloatVoiceContext() != NYX_FLOAT_CONTEXT_CHAT) { return }
+				const content = consumePendingNyxFloatVoiceText()
+				if (content == '') { return }
+				if (this.isGenerating == true || this.isTranscribing == true) {
+					this.inputText = content
+					uni.showToast({ position: 'bottom', title: '已填入输入框，等当前回复结束再发', icon: 'none' })
+					return
+				}
+				this.sendTranscribedVoiceMessage(content)
 			},
 
 			// ===== 工具栏 =====

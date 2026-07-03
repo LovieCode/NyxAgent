@@ -11,6 +11,8 @@ export const RUNTIME_CONTEXT_PREVIEW_PAYLOAD_KEY = 'context_preview_payload'
 export const RUNTIME_FILES_INITIAL_PATH_KEY = 'files_initial_path'
 export const RUNTIME_MEMORY_AGENT_ID_KEY = 'memory_agent_id'
 export const RUNTIME_MEMORY_CONVERSATION_ID_KEY = 'memory_conversation_id'
+export const RUNTIME_NYX_FLOAT_VOICE_TEXT_KEY = 'nyx_float_voice_text'
+export const RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY = 'nyx_float_voice_context'
 
 export function setContextPreviewPayload(value: string): void {
 	setRuntimeState(RUNTIME_CONTEXT_PREVIEW_PAYLOAD_KEY, value)
@@ -70,4 +72,27 @@ export function clearActiveAgentRuntimeId(): void {
 export function getActiveConversationRuntimeId(): string {
 	const value = getRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY)
 	return value
+}
+
+export function setNyxFloatVoiceText(value: string): void {
+	setRuntimeState(RUNTIME_NYX_FLOAT_VOICE_TEXT_KEY, value)
+}
+
+export function consumeNyxFloatVoiceText(): string {
+	return consumeRuntimeState(RUNTIME_NYX_FLOAT_VOICE_TEXT_KEY)
+}
+
+export function setNyxFloatVoiceContext(value: string): void {
+	setRuntimeState(RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY, value)
+}
+
+export function getNyxFloatVoiceContext(): string {
+	return getRuntimeState(RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY)
+}
+
+export function clearNyxFloatVoiceContext(value: string): void {
+	const current = getRuntimeState(RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY)
+	if (current == value) {
+		deleteRuntimeState(RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY)
+	}
 }

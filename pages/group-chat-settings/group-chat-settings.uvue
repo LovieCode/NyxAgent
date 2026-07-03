@@ -29,12 +29,12 @@
 			<view class="card">
 				<view class="prompt-header">
 					<view class="prompt-header-left">
-						<text class="card-title" style="margin-bottom:0">调度提示词</text>
-						<text class="card-desc" style="margin-top:3px;margin-bottom:0">隐藏调度的行为规则，决定谁发言、顺序和续轮逻辑。</text>
+						<text class="card-title" style="margin-bottom:0">眠汐全局调度提示词</text>
+						<text class="card-desc" style="margin-top:3px;margin-bottom:0">对所有群聊生效，决定谁发言、顺序和续轮逻辑。</text>
 					</view>
 					<text class="reset-btn" @click="resetSchedulerPrompt">恢复默认</text>
 				</view>
-				<textarea class="prompt-input" v-model="schedulerPrompt" placeholder="调度系统提示词" placeholder-style="color:var(--rice-text-color-3)" />
+				<textarea class="prompt-input" v-model="schedulerPrompt" placeholder="眠汐全局调度提示词" placeholder-style="color:var(--rice-text-color-3)" />
 			</view>
 
 			<view class="card">
@@ -60,15 +60,18 @@
 	import { getAgents } from '@/utils/agent.uts'
 	import {
 		type GroupChat,
+		GLOBAL_SCHEDULER_AGENT_ID,
 		addGroupMember,
 		buildDefaultSchedulerPrompt,
 		buildDefaultSharedPrompt,
 		getActiveGroupMembers,
 		getActiveGroupChatId,
+		getGlobalSchedulerPrompt,
 		getGroupChatById,
 		isAgentInGroup,
 		removeGroupMember,
 		saveGroupChat,
+		saveGlobalSchedulerPrompt,
 	} from '@/utils/group-chat-service.uts'
 
 	export default {
@@ -104,7 +107,7 @@
 				if (group == null) { return }
 				this.group = group
 				this.groupName = group.name
-				this.schedulerPrompt = group.schedulerPrompt != '' ? group.schedulerPrompt : buildDefaultSchedulerPrompt()
+				this.schedulerPrompt = getGlobalSchedulerPrompt()
 				this.sharedPrompt = group.sharedPrompt != '' ? group.sharedPrompt : buildDefaultSharedPrompt()
 				this.captureSavedState()
 			},
@@ -193,14 +196,16 @@
 					return false
 				}
 				group.name = name
-				group.schedulerAgentId = ''
-				group.schedulerPrompt = this.schedulerPrompt.trim() != '' ? this.schedulerPrompt.trim() : buildDefaultSchedulerPrompt()
+				group.schedulerAgentId = GLOBAL_SCHEDULER_AGENT_ID
+				// LEGACY_COMPAT: 旧版群级 schedulerPrompt 字段不再参与调度，保存为空避免继续分叉。
+				group.schedulerPrompt = ''
 				group.sharedPrompt = this.sharedPrompt.trim() != '' ? this.sharedPrompt.trim() : buildDefaultSharedPrompt()
 				group.updatedAt = Date.now()
+				saveGlobalSchedulerPrompt(this.schedulerPrompt)
 				saveGroupChat(group)
 				this.group = group
 				this.groupName = group.name
-				this.schedulerPrompt = group.schedulerPrompt
+				this.schedulerPrompt = getGlobalSchedulerPrompt()
 				this.sharedPrompt = group.sharedPrompt
 				this.captureSavedState()
 				uni.showToast({ position: 'bottom', title: '已保存', icon: 'success' })

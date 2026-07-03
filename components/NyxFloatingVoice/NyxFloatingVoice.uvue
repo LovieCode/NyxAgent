@@ -1,0 +1,233 @@
+<template>
+	<view>
+		<view v-if="panelOpen == true" class="nyx-panel">
+			<text class="nyx-panel-title">眠汐语音</text>
+			<text class="nyx-panel-desc">{{statusText}}</text>
+			<view
+				class="nyx-hold-btn"
+				:class="isRecording == true ? 'nyx-hold-btn-active' : ''"
+				@touchstart="startVoice"
+				@touchend="stopVoice"
+				@touchcancel="stopVoice"
+			>
+				<text class="nyx-hold-text" :class="isRecording == true ? 'nyx-hold-text-active' : ''">{{isRecording == true ? '松开发送' : '按住说话'}}</text>
+			</view>
+		</view>
+		<view class="nyx-float" :class="isRecording == true ? 'nyx-float-active' : ''" @click="togglePanel">
+			<text class="nyx-face">眠</text>
+			<text v-if="isTranscribing == true" class="nyx-dot">识别中</text>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	import { getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { transcribeAudio } from '@/utils/speech-service.uts'
+	import { getActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
+	import { publishNyxFloatVoiceText, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
+
+	export default {
+		name: 'NyxFloatingVoice',
+		data() {
+			return {
+				panelOpen: false as boolean,
+				isRecording: false as boolean,
+				isTranscribing: false as boolean,
+				voiceSessionId: 0 as number,
+				statusText: '跨页面快捷语音输入。按住说话，识别后发给当前聊天；不在聊天页时发给当前私聊。' as string,
+			}
+		},
+		methods: {
+			togglePanel(): void {
+				if (this.isRecording == true || this.isTranscribing == true) { return }
+				this.panelOpen = !this.panelOpen
+			},
+
+			hasValidDefaultTaskModel(type: string): boolean {
+				const config = getDefaultTaskModel(type)
+				if (config == null) { return false }
+				const providerIdRaw = config['providerId'] as string | null
+				const modelRaw = config['model'] as string | null
+				const providerId = providerIdRaw != null ? providerIdRaw : ''
+				const model = modelRaw != null ? modelRaw : ''
+				return providerId != '' && model != ''
+			},
+
+			startVoice(): void {
+				if (this.isTranscribing == true) { return }
+				if (this.isRecording == true) { return }
+				if (this.hasValidDefaultTaskModel('stt') == false) {
+					uni.showToast({ position: 'bottom', title: '请先配置语音识别模型', icon: 'none' })
+					return
+				}
+				this.isRecording = true
+				this.statusText = '正在听，松开后识别。'
+				this.voiceSessionId++
+				const sessionId = this.voiceSessionId
+				const recorder = uni.getRecorderManager()
+				recorder.onStop((res: any): void => {
+					if (sessionId != this.voiceSessionId) { return }
+					this.isRecording = false
+					const raw = JSON.stringify(res)
+					if (raw == '') { return }
+					const parsed = JSON.parse(raw) as UTSJSONObject
+					const rawTempPath = parsed['tempFilePath'] as string | null
+					const tempPath = rawTempPath != null ? rawTempPath : ''
+					if (tempPath != '') {
+						this.handleVoiceRecordStopped(tempPath)
+					}
+				})
+				recorder.onError((err: any): void => {
+					if (sessionId != this.voiceSessionId) { return }
+					this.isRecording = false
+					this.statusText = '录音失败，再试一次。'
+					console.log('[NyxFloatVoice] 录音失败: ' + err)
+					uni.showToast({ position: 'bottom', title: '录音失败', icon: 'none' })
+				})
+				const startOpts: RecorderManagerStartOptions = {
+					format: 'wav',
+				}
+				recorder.start(startOpts)
+			},
+
+			stopVoice(): void {
+				if (this.isRecording == false) { return }
+				const recorder = uni.getRecorderManager()
+				recorder.stop()
+			},
+
+			handleVoiceRecordStopped(tempPath: string): void {
+				if (tempPath == '') { return }
+				this.isTranscribing = true
+				this.statusText = '识别中，马上发给眠汐。'
+				transcribeAudio(tempPath).then((result) => {
+					this.isTranscribing = false
+					if (result.ok == true) {
+						this.dispatchRecognizedText(result.text)
+						return
+					}
+					this.statusText = '识别失败：' + result.error
+					uni.showToast({ position: 'bottom', title: result.error, icon: 'none' })
+				})
+			},
+
+			dispatchRecognizedText(text: string): void {
+				const content = text.trim()
+				if (content == '') {
+					this.statusText = '没听清，再来一次。'
+					return
+				}
+				const context = readNyxFloatVoiceContext()
+				if (context != '') {
+					publishNyxFloatVoiceText(content)
+					this.panelOpen = false
+					this.statusText = '已发给当前聊天。'
+					return
+				}
+				const activeAgentId = getActiveAgentRuntimeId()
+				if (activeAgentId == '') {
+					this.statusText = '先选一个联系人，再用语音球。'
+					uni.showToast({ position: 'bottom', title: '先选择一个联系人', icon: 'none' })
+					return
+				}
+				publishNyxFloatVoiceText(content)
+				this.panelOpen = false
+				this.statusText = '已发给当前私聊。'
+				uni.navigateTo({
+					url: '/pages/chat/chat'
+				})
+			}
+		}
+	}
+</script>
+
+<style>
+	.nyx-float {
+		position: fixed;
+		right: 16px;
+		bottom: 96px;
+		width: 54px;
+		height: 54px;
+		border-radius: 27px;
+		background-color: #FB8FAB;
+		align-items: center;
+		justify-content: center;
+		z-index: 997;
+		border-width: 2px;
+		border-color: #FFFFFF;
+		border-style: solid;
+		box-shadow: 0 10px 24px rgba(251, 143, 171, 0.28);
+	}
+
+	.nyx-float-active {
+		background-color: #EF4444;
+	}
+
+	.nyx-face {
+		font-size: 18px;
+		font-weight: 800;
+		color: #FFFFFF;
+	}
+
+	.nyx-dot {
+		position: absolute;
+		top: -18px;
+		right: -4px;
+		padding: 2px 6px;
+		border-radius: 999px;
+		background-color: #111827;
+		color: #FFFFFF;
+		font-size: 10px;
+	}
+
+	.nyx-panel {
+		position: fixed;
+		right: 16px;
+		bottom: 158px;
+		width: 220px;
+		padding: 14px;
+		border-radius: 18px;
+		background-color: #FFFFFF;
+		border-width: 1px;
+		border-color: #FCE7F3;
+		border-style: solid;
+		z-index: 997;
+		box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14);
+	}
+
+	.nyx-panel-title {
+		font-size: 15px;
+		font-weight: 800;
+		color: #111827;
+		margin-bottom: 6px;
+	}
+
+	.nyx-panel-desc {
+		font-size: 12px;
+		line-height: 18px;
+		color: #6B7280;
+		margin-bottom: 12px;
+	}
+
+	.nyx-hold-btn {
+		height: 42px;
+		border-radius: 21px;
+		background-color: #FDE8EF;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.nyx-hold-btn-active {
+		background-color: #EF4444;
+	}
+
+	.nyx-hold-text {
+		font-size: 13px;
+		font-weight: 700;
+		color: #DB2777;
+	}
+
+	.nyx-hold-text-active {
+		color: #FFFFFF;
+	}
+</style>

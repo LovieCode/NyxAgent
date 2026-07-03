@@ -1,0 +1,34 @@
+/**
+ * 眠汐全局悬浮语音入口。
+ * 只负责 App 内页面间投递识别结果，不使用 uni.storage。
+ */
+
+import { eventBus } from '@/utils/event-bus.uts'
+import { setNyxFloatVoiceText, consumeNyxFloatVoiceText, setNyxFloatVoiceContext, getNyxFloatVoiceContext, clearNyxFloatVoiceContext } from '@/utils/runtime-state.uts'
+
+export const NYX_FLOAT_VOICE_EVENT = 'nyx_float_voice_ready'
+export const NYX_FLOAT_CONTEXT_CHAT = 'chat'
+export const NYX_FLOAT_CONTEXT_GROUP = 'group'
+
+export function publishNyxFloatVoiceText(text: string): void {
+	const content = text.trim()
+	if (content == '') { return }
+	setNyxFloatVoiceText(content)
+	eventBus.emit(NYX_FLOAT_VOICE_EVENT)
+}
+
+export function consumePendingNyxFloatVoiceText(): string {
+	return consumeNyxFloatVoiceText()
+}
+
+export function activateNyxFloatVoiceContext(context: string): void {
+	setNyxFloatVoiceContext(context)
+}
+
+export function readNyxFloatVoiceContext(): string {
+	return getNyxFloatVoiceContext()
+}
+
+export function deactivateNyxFloatVoiceContext(context: string): void {
+	clearNyxFloatVoiceContext(context)
+}

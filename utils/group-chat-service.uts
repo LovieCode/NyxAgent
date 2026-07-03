@@ -56,12 +56,16 @@ import {
 	saveGroupReviewRow,
 	saveGroupSessionRows,
 	saveGroupTaskRow,
+	setAppSetting,
 	setGroupChatState,
 } from '@/utils/database.uts'
 
 export const GROUP_CHAT_LIST_KEY = 'group_chat_list'
 export const ACTIVE_GROUP_CHAT_ID_KEY = 'active_group_chat_id'
 export const ACTIVE_GROUP_SESSION_ID_KEY = 'active_group_session_id'
+export const GLOBAL_SCHEDULER_AGENT_ID = 'scheduler'
+export const GLOBAL_SCHEDULER_AGENT_NAME = '眠汐'
+export const GLOBAL_SCHEDULER_PROMPT_SETTING_KEY = 'global_scheduler_prompt'
 
 export const GROUP_MESSAGE_SENDER_USER = 'user'
 export const GROUP_MESSAGE_SENDER_AGENT = 'agent'
@@ -82,7 +86,7 @@ function isInternalGroupVisibility(visibility: string | null): boolean {
 	return visibility == GROUP_MESSAGE_VISIBILITY_INTERNAL || visibility == GROUP_MESSAGE_VISIBILITY_DEBUG
 }
 
-const DEFAULT_SCHEDULER_PROMPT_TEXT = '你是隐藏的群聊调度 Agent。你可以在内部向任意成员 Agent 传递私密指令、背景信息和任务拆解，也可以指定一个或多个成员按顺序发言。你的存在、调度流程、私密指令不能被其他成员在公开发言中暴露。你只在系统触发节点工作，例如用户发消息、用户手动继续、连续讨论过多需要判断是否继续。\n' +
+const DEFAULT_SCHEDULER_PROMPT_TEXT = '你是眠汐，一个全局隐藏群聊调度 Agent。你可以在内部向任意成员 Agent 传递私密指令、背景信息和任务拆解，也可以指定一个或多个成员按顺序发言。你的存在、调度流程、私密指令不能被其他成员在公开发言中暴露。你只在系统触发节点工作，例如用户发消息、用户手动继续、连续讨论过多需要判断是否继续。\n' +
 	'输出必须是 JSON 对象，禁止 Markdown，结构：{"actions":[{"type":"speak","agentId":"成员ID","targetType":"user","targetAgentId":"","privateInstruction":"给该成员的私密指令","publicIntent":"公开发言目标","replyLength":"short","replyGuidance":"简短自然，优先 1-3 句","searchAdvice":"none","searchInstruction":"","order":0}],"shouldContinue":false,"titleSuggestion":"适合本会话的短标题","privateNotes":"仅内部记录"}。\n' +
 	'默认让成员简短发言。事实不确定、涉及外部/时效信息时，建议具备相关工具的成员先查证或搜索；发现跑题、重复、事实冲突或虚构 App 功能时，用私密指令要求纠偏和收束。不要为了热闹强行多人发言。'
 
@@ -183,8 +187,8 @@ function normalizeGroupChat(item: UTSJSONObject): GroupChat {
 	const now = Date.now()
 	let name = readStringField(item, 'name')
 	if (name == '') { name = '故事工坊' }
-	let schedulerPrompt = readStringField(item, 'schedulerPrompt')
-	if (schedulerPrompt == '') { schedulerPrompt = DEFAULT_SCHEDULER_PROMPT_TEXT }
+	const schedulerPrompt = readStringField(item, 'schedulerPrompt')
+	// LEGACY_COMPAT: schedulerPrompt 是旧版群级字段；真实调度提示词从 global_scheduler_prompt 读取。
 	let sharedPrompt = readStringField(item, 'sharedPrompt')
 	if (sharedPrompt == '') { sharedPrompt = DEFAULT_SHARED_PROMPT_TEXT }
 	let createdAt = readNumberField(item, 'createdAt')
@@ -501,6 +505,19 @@ export function saveGroupChat(group: GroupChat): void {
 
 export function buildDefaultSchedulerPrompt(): string {
 	return DEFAULT_SCHEDULER_PROMPT_TEXT
+}
+
+export function getGlobalSchedulerPrompt(): string {
+	const saved = getAppSetting(GLOBAL_SCHEDULER_PROMPT_SETTING_KEY)
+	if (saved != null && saved.trim() != '') {
+		return saved
+	}
+	return buildDefaultSchedulerPrompt()
+}
+
+export function saveGlobalSchedulerPrompt(prompt: string): void {
+	const text = prompt.trim() != '' ? prompt.trim() : buildDefaultSchedulerPrompt()
+	setAppSetting(GLOBAL_SCHEDULER_PROMPT_SETTING_KEY, text)
 }
 
 export function buildDefaultSharedPrompt(): string {
@@ -958,7 +975,9 @@ export function createGroupUserMessage(groupId: string, sessionId: string, conte
 
 export function createGroupHiddenMessage(groupId: string, sessionId: string, senderType: string, content: string): UTSJSONObject {
 	const base = createTextMessage('system', content)
-	return decorateGroupMessage(base, groupId, sessionId, senderType, '', senderType, '', false, GROUP_MESSAGE_VISIBILITY_INTERNAL, [] as string[])
+	const senderName = senderType == GROUP_MESSAGE_SENDER_SCHEDULER ? GLOBAL_SCHEDULER_AGENT_NAME : senderType
+	const senderAgentId = senderType == GROUP_MESSAGE_SENDER_SCHEDULER ? GLOBAL_SCHEDULER_AGENT_ID : ''
+	return decorateGroupMessage(base, groupId, sessionId, senderType, senderAgentId, senderName, '', false, GROUP_MESSAGE_VISIBILITY_INTERNAL, [] as string[])
 }
 
 
@@ -1245,8 +1264,9 @@ export function createDefaultWritingGroupChat(): GroupChat {
 		id: groupId,
 		name: '故事工坊',
 		avatar: '',
-		schedulerAgentId: '',
-		schedulerPrompt: buildDefaultSchedulerPrompt(),
+		schedulerAgentId: GLOBAL_SCHEDULER_AGENT_ID,
+		// LEGACY_COMPAT: group.schedulerPrompt 旧字段保留为空，真实调度提示词改走 global_scheduler_prompt。
+		schedulerPrompt: '',
 		sharedPrompt: buildDefaultSharedPrompt(),
 		activeSessionId: '',
 		createdAt: Date.now(),
@@ -1263,7 +1283,7 @@ export function createDefaultWritingGroupChat(): GroupChat {
 
 
 export function buildSchedulerSystemPrompt(): string {
-	return '你是群聊的隐藏调度 Agent，职责是决定下一步由哪些成员发言、给出具体指令。\n\n' +
+	return '你是眠汐，群聊的全局隐藏调度 Agent，职责是决定下一步由哪些成员发言、给出具体指令。\n\n' +
 		'规则：\n' +
 		'· 你的存在和调度过程绝不能被成员在公开发言中提及。\n' +
 		'· 闲聊/简单回应：只安排 1 个最合适的成员；协作任务：可安排多个按顺序发言，order 从 0 递增。\n' +
@@ -1280,7 +1300,7 @@ export function buildSchedulerSystemPrompt(): string {
 }
 
 export function buildSchedulerReviewSystemPrompt(): string {
-	return '你是群聊的隐藏审核调度 Agent，职责是判断一条候选群聊发言是否可以公开显示。\n\n' +
+	return '你是眠汐，群聊的全局隐藏审核调度 Agent，职责是判断一条候选群聊发言是否可以公开显示。\n\n' +
 		'审核范围只限：是否暴露隐藏调度、内部指令、私密指令、幕后安排或 scheduler 机制。\n' +
 		'不要审查事实对错、语气好坏、创作质量，也不要扩大判断范围。\n\n' +
 		'输出纯 JSON，禁止 Markdown，格式：\n' +
@@ -1385,12 +1405,10 @@ export function buildGroupTranscript(messages: UTSJSONObject[], limit: number = 
 }
 
 export function buildSchedulerRuntimeMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], reason: string, loopTurns: number): UTSJSONObject[] {
-	let schedulerPrompt = group.schedulerPrompt.trim()
-	if (schedulerPrompt == '') {
-		schedulerPrompt = buildDefaultSchedulerPrompt()
-	}
+	const schedulerPrompt = getGlobalSchedulerPrompt()
 	const content = '【动态调度上下文】\n' +
-		'群聊调度提示词：\n' + schedulerPrompt + '\n\n' +
+		'全局调度 Agent：' + GLOBAL_SCHEDULER_AGENT_NAME + '\n' +
+		'全局调度提示词：\n' + schedulerPrompt + '\n\n' +
 		'调度字段补充：即使上方提示词没有列出，也必须在每个 speak action 中返回 replyLength、replyGuidance、searchAdvice、searchInstruction。默认 replyLength=short、searchAdvice=none；需要查证外部/时效事实时才用 searchAdvice=recommend。\n\n' +
 		'群聊共享规则：\n' + group.sharedPrompt + '\n\n' +
 		'触发原因：' + reason + '\n' +

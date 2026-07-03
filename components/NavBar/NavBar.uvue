@@ -1,5 +1,6 @@
 <template>
 	<view class="nb-root">
+		<NyxFloatingVoice />
 		<view v-if="!noStatusBar" class="nb-status" :style="{ height: statusBarHeight + 'px' }">
 			<share-element v-if="shareKey != ''" :share-key="shareKey">
 				<view class="nb-status-fill" :style="{ height: statusBarHeight + 'px' }"></view>
@@ -83,7 +84,7 @@
 				// 有 onBack 说明父组件注册了 @back → 由页面自己处理返回
 				// 没有 onBack → NavBar 默认执行返回
 				const hasBackListener = this.$attrs != null && this.$attrs['onBack'] != null
-				if (hasBackListener) {
+				if (hasBackListener == true) {
 					this.$emit('back')
 				} else {
 					uni.navigateBack()
