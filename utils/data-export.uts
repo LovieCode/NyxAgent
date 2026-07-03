@@ -83,6 +83,12 @@ function buildKnownStorageKeys(): string[] {
 		'settings_web_search_provider_id',
 		'settings_web_search_model',
 		'settings_web_search_instance',
+		'settings_astrbot_enabled',
+		'settings_astrbot_base_url',
+		'settings_astrbot_api_key',
+		'settings_astrbot_username',
+		'settings_astrbot_session_id',
+		'settings_astrbot_config_id',
 		'settings_generation_temperature',
 		'settings_generation_max_tokens',
 		'settings_generation_max_iterations',
@@ -657,7 +663,7 @@ function sanitizeAppSettingsForExport(appSettings: UTSJSONObject[], options: Dat
 	for (let i = 0; i < appSettings.length; i++) {
 		const clean = cloneExportObject(appSettings[i])
 		const key = clean['key'] as string | null
-		if (options.includeApiKeys == false && key == 'settings_api_key') {
+		if (options.includeApiKeys == false && (key == 'settings_api_key' || key == 'settings_astrbot_api_key')) {
 			clean['value'] = ''
 		}
 		result.push(clean)
@@ -669,6 +675,7 @@ function sanitizeStorageForExport(storage: UTSJSONObject, options: DataExportOpt
 	const clean = cloneExportObject(storage)
 	if (options.includeApiKeys == false) {
 		clean['settings_api_key'] = ''
+		clean['settings_astrbot_api_key'] = ''
 		// 临时编辑缓存可能携带 API Key，安全备份里直接丢弃。
 		clean['provider_edit_data'] = ''
 	}

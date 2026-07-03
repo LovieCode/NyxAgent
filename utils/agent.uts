@@ -13,6 +13,7 @@ export const AGENT_TOOL_WORKSPACE_FILE = 'workspace_file'
 export const AGENT_TOOL_MEMORY_SEARCH = 'memory_search'
 export const AGENT_TOOL_MEMORY_BUFFER_WRITE = 'memory_buffer_write'
 export const AGENT_TOOL_WEB_SEARCH = 'web_search'
+export const AGENT_TOOL_ASTRBOT_TASK = 'astrbot_task'
 export const AGENT_TOOL_MEMORY_CORE_LIST = 'memory_core_list'
 export const AGENT_TOOL_MEMORY_CORE_SAVE = 'memory_core_save'
 export const AGENT_TOOL_MEMORY_CORE_FORGET = 'memory_core_forget'
@@ -22,6 +23,7 @@ const ALL_AGENT_TOOL_IDS: string[] = [
 	AGENT_TOOL_MEMORY_SEARCH,
 	AGENT_TOOL_MEMORY_BUFFER_WRITE,
 	AGENT_TOOL_WEB_SEARCH,
+	AGENT_TOOL_ASTRBOT_TASK,
 	AGENT_TOOL_MEMORY_CORE_LIST,
 	AGENT_TOOL_MEMORY_CORE_SAVE,
 	AGENT_TOOL_MEMORY_CORE_FORGET,
@@ -215,6 +217,9 @@ export function getDefaultAgentToolIds(allowCoreMemoryWrite: boolean = false): s
 		AGENT_TOOL_MEMORY_BUFFER_WRITE,
 		AGENT_TOOL_WEB_SEARCH,
 	]
+	if (allowCoreMemoryWrite == false) {
+		result.push(AGENT_TOOL_ASTRBOT_TASK)
+	}
 	if (allowCoreMemoryWrite == true) {
 		result.push(AGENT_TOOL_MEMORY_CORE_LIST)
 		result.push(AGENT_TOOL_MEMORY_CORE_SAVE)

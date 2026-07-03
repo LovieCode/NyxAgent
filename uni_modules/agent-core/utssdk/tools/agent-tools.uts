@@ -36,6 +36,7 @@ import {
 import { getProviderApiConfig } from '../provider'
 import { getAgentById, isAgentToolEnabled } from '@/utils/agent.uts'
 import { getAppSetting } from '@/utils/database.uts'
+import { isAstrBotEnabled, runAstrBotTask } from '@/utils/astrbot-service.uts'
 
 /** ToolResult 匹配 agent-core types */
 export type ToolResult = {
@@ -64,6 +65,10 @@ function appendToolIfEnabled(tools: AgentTool[], agent: UTSJSONObject | null, to
 	}
 }
 
+function isInternalAgentToolOwner(agentId: string): boolean {
+	return agentId == 'scheduler' || agentId.startsWith('group-scheduler-') || agentId.startsWith('group-reviewer-') || agentId == 'reviewer'
+}
+
 /**
  * 创建绑定到指定 agent 的沙箱文件工具列表
  * @param agentId 智能体 ID
@@ -71,7 +76,7 @@ function appendToolIfEnabled(tools: AgentTool[], agent: UTSJSONObject | null, to
  */
 export function createAgentTools(agentId: string, conversationId: string = '', personId: string = '', allowCoreMemoryWrite: boolean = false, workspaceRoot: string = ''): AgentTool[] {
 	const tools: AgentTool[] = []
-	if (agentId == 'scheduler') {
+	if (isInternalAgentToolOwner(agentId) == true) {
 		return tools
 	}
 	const agent = getAgentById(agentId)
@@ -79,6 +84,9 @@ export function createAgentTools(agentId: string, conversationId: string = '', p
 	appendToolIfEnabled(tools, agent, new MemorySearchTool(agentId, conversationId, personId) as AgentTool, allowCoreMemoryWrite)
 	appendToolIfEnabled(tools, agent, new MemoryBufferWriteTool(agentId, conversationId, personId) as AgentTool, allowCoreMemoryWrite)
 	appendToolIfEnabled(tools, agent, new WebSearchTool() as AgentTool, allowCoreMemoryWrite)
+	if (allowCoreMemoryWrite == false && isAstrBotEnabled() == true) {
+		appendToolIfEnabled(tools, agent, new AstrBotTaskTool() as AgentTool, allowCoreMemoryWrite)
+	}
 	// 核心记忆增删仅限记忆管理 Agent
 	if (allowCoreMemoryWrite == true) {
 		appendToolIfEnabled(tools, agent, new MemoryCoreListTool(agentId, conversationId, personId) as AgentTool, allowCoreMemoryWrite)
@@ -360,6 +368,70 @@ class WorkspaceFileTool implements AgentTool {
 				return
 			}
 			resolve({ content: '未知 action: ' + action + '，可用 list/read/write/delete/info', isError: true } as ToolResult)
+		})
+	}
+}
+
+class AstrBotTaskTool implements AgentTool {
+	name: string = 'astrbot_task'
+	description: string = '把复杂任务交给已连接的 AstrBot 重型后端执行。适合需要插件、MCP、复杂搜索、长链路自动化、跨平台机器人能力的任务。调用后你必须验收 AstrBot 的结果，修正明显问题，再用自己的口吻回复用户；不要把工具结果原样甩给用户。不要用它处理需要本 App 本地私密数据的任务，除非用户明确允许。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'task': {
+				'type': 'string',
+				'description': '交给 AstrBot 执行的明确任务。写清目标、约束、期望产物。'
+			},
+			'context': {
+				'type': 'string',
+				'description': '必要上下文。不要包含 API Key、隐私文件内容或用户未授权的敏感信息。'
+			},
+			'session_id': {
+				'type': 'string',
+				'description': '可选。指定 AstrBot WebChat session_id；留空使用设置中的默认会话。'
+			},
+			'config_id': {
+				'type': 'string',
+				'description': '可选。指定 AstrBot 配置档 config_id；留空使用设置中的默认配置。'
+			}
+		},
+		'required': ['task']
+	} as UTSJSONObject
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawTask = args['task'] as string | null
+			const rawContext = args['context'] as string | null
+			const rawSessionId = args['session_id'] as string | null
+			const rawConfigId = args['config_id'] as string | null
+			const task = rawTask != null ? rawTask.trim() : ''
+			const context = rawContext != null ? rawContext : ''
+			const sessionId = rawSessionId != null ? rawSessionId.trim() : ''
+			const configId = rawConfigId != null ? rawConfigId.trim() : ''
+			if (task == '') {
+				resolve({ content: '缺少必要参数：task', isError: true } as ToolResult)
+				return
+			}
+			runAstrBotTask(task, context, sessionId, configId).then((result) => {
+				if (result.ok == false) {
+					resolve({ content: result.error, isError: true } as ToolResult)
+					return
+				}
+				let content = 'AstrBot 执行结果（请先验收，再回复用户，不要原样照搬）：\n'
+				content += result.text
+				content += '\n\n元数据：'
+				if (result.sessionId != '') {
+					content += '\nsession_id: ' + result.sessionId
+				}
+				if (result.messageId != '') {
+					content += '\nmessage_id: ' + result.messageId
+				}
+				if (result.stats != '') {
+					content += '\nagent_stats: ' + result.stats
+				}
+				content += '\n\n验收要求：检查 AstrBot 是否真正完成任务、是否有幻觉或遗漏；如果不合格，可以再次调用 astrbot_task 补充执行，或向用户说明限制。'
+				resolve({ content: content, isError: false } as ToolResult)
+			})
 		})
 	}
 }

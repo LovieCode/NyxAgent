@@ -50,6 +50,12 @@ function buildFallbackStorageKeys(): string[] {
 		'settings_web_search_provider_id',
 		'settings_web_search_model',
 		'settings_web_search_instance',
+		'settings_astrbot_enabled',
+		'settings_astrbot_base_url',
+		'settings_astrbot_api_key',
+		'settings_astrbot_username',
+		'settings_astrbot_session_id',
+		'settings_astrbot_config_id',
 		'settings_generation_temperature',
 		'settings_generation_max_tokens',
 		'settings_generation_max_iterations',
@@ -131,7 +137,7 @@ function hasAppSettingsApiKey(appSettings: UTSJSONObject[]): boolean {
 	for (let i = 0; i < appSettings.length; i++) {
 		const key = appSettings[i]['key'] as string | null
 		const value = appSettings[i]['value'] as string | null
-		if (key == 'settings_api_key' && value != null && value != '') {
+		if ((key == 'settings_api_key' || key == 'settings_astrbot_api_key') && value != null && value != '') {
 			return true
 		}
 	}
@@ -144,6 +150,10 @@ function hasStorageApiKey(storage: UTSJSONObject | null): boolean {
 	}
 	const value = storage['settings_api_key'] as string | null
 	if (value != null && value != '') {
+		return true
+	}
+	const astrBotValue = storage['settings_astrbot_api_key'] as string | null
+	if (astrBotValue != null && astrBotValue != '') {
 		return true
 	}
 	return false
@@ -217,7 +227,7 @@ function filterEmptySensitiveStorageKeys(keys: string[], storage: UTSJSONObject)
 	const result: string[] = []
 	for (let i = 0; i < keys.length; i++) {
 		const key = keys[i]
-		if (key == 'settings_api_key') {
+		if (key == 'settings_api_key' || key == 'settings_astrbot_api_key') {
 			const value = storage[key] as string | null
 			if (value == null || value == '') {
 				continue

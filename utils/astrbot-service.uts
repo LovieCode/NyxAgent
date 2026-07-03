@@ -1,0 +1,336 @@
+/**
+ * AstrBot 远程重型工具连接器。
+ *
+ * ASTRBOT_COMPAT: 当前对接 AstrBot OpenAPI /api/v1/chat SSE。
+ * 未来清兼容或升级为平台适配器时，把 SSE 容错解析集中改这里。
+ */
+
+import { getAppSetting, setAppSetting } from '@/utils/database.uts'
+
+export const ASTRBOT_ENABLED_KEY = 'settings_astrbot_enabled'
+export const ASTRBOT_BASE_URL_KEY = 'settings_astrbot_base_url'
+export const ASTRBOT_API_KEY_KEY = 'settings_astrbot_api_key'
+export const ASTRBOT_USERNAME_KEY = 'settings_astrbot_username'
+export const ASTRBOT_SESSION_ID_KEY = 'settings_astrbot_session_id'
+export const ASTRBOT_CONFIG_ID_KEY = 'settings_astrbot_config_id'
+
+export type AstrBotConfig = {
+	enabled: boolean
+	baseUrl: string
+	apiKey: string
+	username: string
+	sessionId: string
+	configId: string
+}
+
+export type AstrBotTaskResult = {
+	ok: boolean
+	text: string
+	sessionId: string
+	messageId: string
+	stats: string
+	rawPreview: string
+	error: string
+}
+
+function trimSlash(text: string): string {
+	let value = text.trim()
+	while (value.endsWith('/')) {
+		value = value.substring(0, value.length - 1)
+	}
+	return value
+}
+
+function normalizeAstrBotBaseUrl(text: string): string {
+	let value = trimSlash(text)
+	if (value.endsWith('/api/v1')) {
+		value = value.substring(0, value.length - 7)
+	} else if (value.endsWith('/api')) {
+		value = value.substring(0, value.length - 4)
+	}
+	return trimSlash(value)
+}
+
+function buildUrl(baseUrl: string, path: string): string {
+	return normalizeAstrBotBaseUrl(baseUrl) + path
+}
+
+function readSetting(key: string): string {
+	const value = getAppSetting(key)
+	return value != null ? value : ''
+}
+
+export function getAstrBotConfig(): AstrBotConfig {
+	const enabled = readSetting(ASTRBOT_ENABLED_KEY) == 'true'
+	const username = readSetting(ASTRBOT_USERNAME_KEY)
+	return {
+		enabled: enabled,
+		baseUrl: readSetting(ASTRBOT_BASE_URL_KEY),
+		apiKey: readSetting(ASTRBOT_API_KEY_KEY),
+		username: username != '' ? username : 'nyx-agent',
+		sessionId: readSetting(ASTRBOT_SESSION_ID_KEY),
+		configId: readSetting(ASTRBOT_CONFIG_ID_KEY),
+	} as AstrBotConfig
+}
+
+export function isAstrBotEnabled(): boolean {
+	const config = getAstrBotConfig()
+	return config.enabled == true && config.baseUrl.trim() != '' && config.apiKey.trim() != ''
+}
+
+export function saveAstrBotConfig(config: AstrBotConfig): void {
+	setAppSetting(ASTRBOT_ENABLED_KEY, config.enabled == true ? 'true' : 'false')
+	setAppSetting(ASTRBOT_BASE_URL_KEY, normalizeAstrBotBaseUrl(config.baseUrl))
+	setAppSetting(ASTRBOT_API_KEY_KEY, config.apiKey.trim())
+	setAppSetting(ASTRBOT_USERNAME_KEY, config.username.trim() != '' ? config.username.trim() : 'nyx-agent')
+	setAppSetting(ASTRBOT_SESSION_ID_KEY, config.sessionId.trim())
+	setAppSetting(ASTRBOT_CONFIG_ID_KEY, config.configId.trim())
+}
+
+function failTask(error: string): AstrBotTaskResult {
+	return {
+		ok: false,
+		text: '',
+		sessionId: '',
+		messageId: '',
+		stats: '',
+		rawPreview: '',
+		error: error,
+	} as AstrBotTaskResult
+}
+
+function okTask(text: string, sessionId: string, messageId: string, stats: string, rawPreview: string): AstrBotTaskResult {
+	return {
+		ok: true,
+		text: text,
+		sessionId: sessionId,
+		messageId: messageId,
+		stats: stats,
+		rawPreview: rawPreview,
+		error: '',
+	} as AstrBotTaskResult
+}
+
+function dataToText(data: any | null): string {
+	if (data == null) { return '' }
+	if (typeof data == 'string') { return data as string }
+	try {
+		return JSON.stringify(data)
+	} catch (_e: any) {
+		return ''
+	}
+}
+
+function readJsonString(obj: UTSJSONObject, key: string): string {
+	const value = obj[key] as string | null
+	return value != null ? value : ''
+}
+
+function appendSseEvent(events: UTSJSONObject[], line: string): void {
+	const trimmed = line.trim()
+	if (trimmed.startsWith('data:') == false) { return }
+	const payload = trimmed.substring(5).trim()
+	if (payload == '' || payload == '[DONE]') { return }
+	try {
+		const item = JSON.parse(payload) as UTSJSONObject
+		events.push(item)
+	} catch (_e: any) {
+		events.push({
+			type: 'raw',
+			data: payload,
+		} as UTSJSONObject)
+	}
+}
+
+function parseSseEvents(raw: string): UTSJSONObject[] {
+	const events: UTSJSONObject[] = []
+	const lines = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+	for (let i = 0; i < lines.length; i++) {
+		appendSseEvent(events, lines[i])
+	}
+	return events
+}
+
+function truncateText(text: string, limit: number): string {
+	if (text.length <= limit) { return text }
+	return text.substring(0, limit) + '\n...[已截断]'
+}
+
+function extractStatsText(data: any | null): string {
+	if (data == null) { return '' }
+	try {
+		return truncateText(JSON.stringify(data), 1000)
+	} catch (_e: any) {
+		return ''
+	}
+}
+
+function extractAstrBotResult(raw: string): AstrBotTaskResult {
+	if (raw.trim() == '') {
+		return failTask('AstrBot 返回为空')
+	}
+	const events = parseSseEvents(raw)
+	if (events.length == 0) {
+		try {
+			const parsed = JSON.parse(raw) as UTSJSONObject
+			const status = readJsonString(parsed, 'status')
+			if (status == 'ok') {
+				return okTask(truncateText(dataToText(parsed['data']), 6000), '', '', '', truncateText(raw, 1200))
+			}
+			const msg = readJsonString(parsed, 'message')
+			return failTask(msg != '' ? msg : truncateText(raw, 1200))
+		} catch (_e: any) {
+			return okTask(truncateText(raw, 6000), '', '', '', truncateText(raw, 1200))
+		}
+	}
+	let finalText = ''
+	let sessionId = ''
+	let messageId = ''
+	let stats = ''
+	let error = ''
+	for (let i = 0; i < events.length; i++) {
+		const event = events[i]
+		const type = readJsonString(event, 'type')
+		const chainType = readJsonString(event, 'chain_type')
+		if (type == 'error') {
+			const code = readJsonString(event, 'code')
+			const text = dataToText(event['data'])
+			error = (code != '' ? code + ': ' : '') + text
+		} else if (type == 'session_id') {
+			const sid = readJsonString(event, 'session_id')
+			if (sid != '') { sessionId = sid }
+		} else if (type == 'message_saved') {
+			const data = event['data'] as UTSJSONObject | null
+			if (data != null) {
+				const id = readJsonString(data, 'id')
+				if (id != '') { messageId = id }
+			}
+		} else if (type == 'agent_stats') {
+			stats = extractStatsText(event['data'])
+		} else if (type == 'plain') {
+			if (chainType != 'tool_call' && chainType != 'tool_call_result') {
+				finalText += dataToText(event['data'])
+			}
+		} else if (type == 'complete') {
+			if (finalText == '') {
+				finalText = dataToText(event['data'])
+			}
+		} else if (type == 'raw') {
+			if (finalText == '') {
+				finalText = dataToText(event['data'])
+			}
+		}
+	}
+	if (error != '') {
+		return failTask(error)
+	}
+	if (finalText.trim() == '') {
+		finalText = truncateText(raw, 6000)
+	}
+	return okTask(truncateText(finalText.trim(), 8000), sessionId, messageId, stats, truncateText(raw, 1200))
+}
+
+function buildTaskMessage(task: string, context: string): string {
+	let content = '【NyxAgent 远程执行任务】\n'
+	content += '你是 AstrBot，被作为重型工具调用。请完成任务并给出可验收结果，不要反问除非缺少关键条件。\n\n'
+	content += '任务：\n' + task.trim() + '\n'
+	if (context.trim() != '') {
+		content += '\n上下文：\n' + context.trim() + '\n'
+	}
+	content += '\n输出要求：\n'
+	content += '1. 先给结论或产物。\n'
+	content += '2. 如果调用了插件、MCP、搜索或外部工具，说明依据和限制。\n'
+	content += '3. 如果失败，给出失败原因和下一步建议。\n'
+	return content
+}
+
+export function runAstrBotTask(task: string, context: string, sessionOverride: string, configOverride: string): Promise<AstrBotTaskResult> {
+	return new Promise<AstrBotTaskResult>((resolve) => {
+		const config = getAstrBotConfig()
+		if (config.enabled == false) {
+			resolve(failTask('AstrBot 工具未启用'))
+			return
+		}
+		if (config.baseUrl.trim() == '' || config.apiKey.trim() == '') {
+			resolve(failTask('AstrBot 地址或 API Key 未配置'))
+			return
+		}
+		const cleanTask = task.trim()
+		if (cleanTask == '') {
+			resolve(failTask('任务为空'))
+			return
+		}
+		const sessionId = sessionOverride.trim() != '' ? sessionOverride.trim() : config.sessionId.trim()
+		const configId = configOverride.trim() != '' ? configOverride.trim() : config.configId.trim()
+		const body: UTSJSONObject = {
+			username: config.username,
+			message: buildTaskMessage(cleanTask, context),
+			enable_streaming: false,
+		} as UTSJSONObject
+		if (sessionId != '') {
+			body['session_id'] = sessionId
+		}
+		if (configId != '') {
+			body['config_id'] = configId
+		}
+		uni.request({
+			url: buildUrl(config.baseUrl, '/api/v1/chat'),
+			method: 'POST',
+			timeout: 120000,
+			header: {
+				'Content-Type': 'application/json',
+				'X-API-Key': config.apiKey,
+				'Authorization': 'Bearer ' + config.apiKey,
+			} as UTSJSONObject,
+			data: body,
+			success: (res) => {
+				const statusCode = res.statusCode as number
+				const raw = dataToText(res.data)
+				if (statusCode < 200 || statusCode >= 300) {
+					resolve(failTask('AstrBot HTTP ' + statusCode + ': ' + truncateText(raw, 1200)))
+					return
+				}
+				const result = extractAstrBotResult(raw)
+				if (result.ok == true && result.sessionId != '' && config.sessionId.trim() == '') {
+					setAppSetting(ASTRBOT_SESSION_ID_KEY, result.sessionId)
+				}
+				resolve(result)
+			},
+			fail: (err: any) => {
+				resolve(failTask('AstrBot 网络请求失败：' + err))
+			},
+		})
+	})
+}
+
+export function testAstrBotConnection(): Promise<AstrBotTaskResult> {
+	return new Promise<AstrBotTaskResult>((resolve) => {
+		const config = getAstrBotConfig()
+		if (config.baseUrl.trim() == '' || config.apiKey.trim() == '') {
+			resolve(failTask('AstrBot 地址或 API Key 未配置'))
+			return
+		}
+		const url = buildUrl(config.baseUrl, '/api/v1/chat/sessions?username=' + encodeURIComponent(config.username) + '&page=1&page_size=1&platform_id=webchat')
+		uni.request({
+			url: url,
+			method: 'GET',
+			timeout: 15000,
+			header: {
+				'X-API-Key': config.apiKey,
+				'Authorization': 'Bearer ' + config.apiKey,
+			} as UTSJSONObject,
+			success: (res) => {
+				const statusCode = res.statusCode as number
+				const raw = dataToText(res.data)
+				if (statusCode < 200 || statusCode >= 300) {
+					resolve(failTask('AstrBot HTTP ' + statusCode + ': ' + truncateText(raw, 800)))
+					return
+				}
+				resolve(okTask('连接成功', config.sessionId, '', '', truncateText(raw, 800)))
+			},
+			fail: (err: any) => {
+				resolve(failTask('AstrBot 连接失败：' + err))
+			},
+		})
+	})
+}

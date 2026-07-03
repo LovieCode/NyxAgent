@@ -58,6 +58,84 @@
 					</view>
 				</view>
 			</view>
+
+			<!-- AstrBot 重型工具 -->
+			<view class="card">
+				<view class="card-header">
+					<oui-icon-unix name="robot" size="14px" color="#6B7280" style="margin-right:6px" />
+					<text class="card-title">AstrBot 重型工具</text>
+				</view>
+				<text class="plugin-desc">把 AstrBot 当成远程执行器：App 里的 Agent 可以把复杂任务交给 AstrBot，拿到结果后再验收并回复用户。</text>
+				<view class="setting-row" style="margin-top: 10px;">
+					<text class="setting-label">启用 AstrBot 工具</text>
+					<rice-switch v-model="astrBotEnabled" @change="saveSettings" />
+				</view>
+				<view v-if="astrBotEnabled">
+					<view class="input-wrap" style="margin-top: 10px;">
+						<text class="input-label">AstrBot 地址</text>
+						<input
+							class="flat-input"
+							v-model="astrBotBaseUrl"
+							placeholder="例如 http://192.168.1.8:6185"
+							placeholder-style="color: #D1D5DB; font-size: 13px;"
+							@input="saveSettings"
+							@blur="saveSettings"
+						/>
+						<text class="input-hint">填 AstrBot Dashboard/API 地址，不要带 /api/v1。</text>
+					</view>
+					<view class="input-wrap" style="margin-top: 8px;">
+						<text class="input-label">API Key</text>
+						<input
+							class="flat-input"
+							type="password"
+							v-model="astrBotApiKey"
+							placeholder="需要 chat scope"
+							placeholder-style="color: #D1D5DB; font-size: 13px;"
+							@input="saveSettings"
+							@blur="saveSettings"
+						/>
+						<text class="input-hint">建议只给 chat scope。config/plugin/mcp/provider 这类高权限以后走眠汐审核链。</text>
+					</view>
+					<view class="input-wrap" style="margin-top: 8px;">
+						<text class="input-label">用户名</text>
+						<input
+							class="flat-input"
+							v-model="astrBotUsername"
+							placeholder="nyx-agent"
+							placeholder-style="color: #D1D5DB; font-size: 13px;"
+							@input="saveSettings"
+							@blur="saveSettings"
+						/>
+						<text class="input-hint">固定身份会参与 AstrBot 命令权限判断，不会暴露给模型随便改。</text>
+					</view>
+					<view class="input-wrap" style="margin-top: 8px;">
+						<text class="input-label">默认 Session ID（选填）</text>
+						<input
+							class="flat-input"
+							v-model="astrBotSessionId"
+							placeholder="留空则首次调用自动创建并保存"
+							placeholder-style="color: #D1D5DB; font-size: 13px;"
+							@input="saveSettings"
+							@blur="saveSettings"
+						/>
+					</view>
+					<view class="input-wrap" style="margin-top: 8px;">
+						<text class="input-label">默认 Config ID（选填）</text>
+						<input
+							class="flat-input"
+							v-model="astrBotConfigId"
+							placeholder="指定 AstrBot 配置档；留空使用默认路由"
+							placeholder-style="color: #D1D5DB; font-size: 13px;"
+							@input="saveSettings"
+							@blur="saveSettings"
+						/>
+					</view>
+					<view class="test-btn" :class="astrBotTesting == true ? 'test-btn-disabled' : ''" @click="testAstrBot">
+						<text class="test-btn-text">{{astrBotTesting == true ? '测试中...' : '测试连接'}}</text>
+					</view>
+				</view>
+			</view>
+
 			<!-- GitHub 代理开关 -->
 			<view class="card">
 				<view class="card-header">
@@ -88,8 +166,9 @@
 	/**
 	 * 插件设置子页面 - GitHub 代理 / 网络搜索配置
 	 */
-	import { getAllProviders, getProviderModels, parseModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { getAllProviders, getProviderModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { getAppSetting, setAppSetting } from '@/utils/database.uts'
+	import { getAstrBotConfig, saveAstrBotConfig, testAstrBotConnection, type AstrBotConfig } from '@/utils/astrbot-service.uts'
 
 	export default {
 		data() {
@@ -101,6 +180,13 @@
 				webSearchProviderId: '' as string,
 				webSearchModel: '' as string,
 				webSearchInstance: '' as string,
+				astrBotEnabled: false as boolean,
+				astrBotBaseUrl: '' as string,
+				astrBotApiKey: '' as string,
+				astrBotUsername: 'nyx-agent' as string,
+				astrBotSessionId: '' as string,
+				astrBotConfigId: '' as string,
+				astrBotTesting: false as boolean,
 				providers: [] as UTSJSONObject[],
 				searchProviderModels: [] as UTSJSONObject[],
 			}
@@ -124,6 +210,13 @@
 				this.webSearchModel = (wsModel != null) ? wsModel : ''
 				let wsInstance = getAppSetting('settings_web_search_instance')
 				this.webSearchInstance = (wsInstance != null) ? wsInstance : ''
+				const astrBot = getAstrBotConfig()
+				this.astrBotEnabled = astrBot.enabled
+				this.astrBotBaseUrl = astrBot.baseUrl
+				this.astrBotApiKey = astrBot.apiKey
+				this.astrBotUsername = astrBot.username
+				this.astrBotSessionId = astrBot.sessionId
+				this.astrBotConfigId = astrBot.configId
 				this.providers = getAllProviders()
 				this.loadSearchProviderModels()
 			},
@@ -136,6 +229,28 @@
 				setAppSetting('settings_web_search_provider_id', this.webSearchProviderId)
 				setAppSetting('settings_web_search_model', this.webSearchModel)
 				setAppSetting('settings_web_search_instance', this.webSearchInstance)
+				saveAstrBotConfig({
+					enabled: this.astrBotEnabled,
+					baseUrl: this.astrBotBaseUrl,
+					apiKey: this.astrBotApiKey,
+					username: this.astrBotUsername,
+					sessionId: this.astrBotSessionId,
+					configId: this.astrBotConfigId,
+				} as AstrBotConfig)
+			},
+
+			testAstrBot(): void {
+				if (this.astrBotTesting == true) { return }
+				this.saveSettings()
+				this.astrBotTesting = true
+				testAstrBotConnection().then((result) => {
+					this.astrBotTesting = false
+					if (result.ok == true) {
+						uni.showToast({ position: 'bottom', title: 'AstrBot 连接成功', icon: 'success' })
+						return
+					}
+					uni.showToast({ position: 'bottom', title: result.error, icon: 'none' })
+				})
 			},
 
 			selectProvider(provider: string) {
@@ -307,6 +422,25 @@
 		padding: 12px;
 		font-size: 14px;
 		color: #111827;
+	}
+
+	.test-btn {
+		margin-top: 12px;
+		background-color: #111827;
+		border-radius: 8px;
+		padding: 12px 0;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.test-btn-disabled {
+		opacity: 0.6;
+	}
+
+	.test-btn-text {
+		font-size: 14px;
+		font-weight: bold;
+		color: #FFFFFF;
 	}
 
 	/* 保存按钮容器 */
