@@ -541,7 +541,7 @@
 				if (ext == 'txt' || ext == 'md' || ext == 'log') {
 					return 'file-text'
 				}
-				if (ext == 'json' || ext == 'xml' || ext == 'yaml' || ext == 'yml') {
+				if (ext == 'json' || ext == 'jsonl' || ext == 'xml' || ext == 'yaml' || ext == 'yml') {
 					return 'file-text'
 				}
 				if (ext == 'zip' || ext == 'rar' || ext == '7z' || ext == 'tar' || ext == 'gz') {

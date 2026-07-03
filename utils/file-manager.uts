@@ -1277,7 +1277,7 @@ function padZero(n: number): string {
  */
 export function isTextFile(fileName: string): boolean {
 	const lowerName = fileName.toLowerCase()
-	const textExtensions = ['.txt', '.md', '.json', '.log', '.csv', '.xml', '.yaml', '.yml', '.ini', '.conf', '.properties', '.html', '.css', '.js', '.ts', '.uts', '.uvue', '.vue', '.java', '.kt', '.swift', '.py', '.go', '.rs', '.c', '.cpp', '.h', '.sh']
+	const textExtensions = ['.txt', '.md', '.json', '.jsonl', '.log', '.csv', '.xml', '.yaml', '.yml', '.ini', '.conf', '.properties', '.html', '.css', '.js', '.ts', '.uts', '.uvue', '.vue', '.java', '.kt', '.swift', '.py', '.go', '.rs', '.c', '.cpp', '.h', '.sh']
 	for (let i = 0; i < textExtensions.length; i++) {
 		if (lowerName.endsWith(textExtensions[i])) {
 			return true
