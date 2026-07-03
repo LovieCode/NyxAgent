@@ -13,6 +13,7 @@ export const RUNTIME_MEMORY_AGENT_ID_KEY = 'memory_agent_id'
 export const RUNTIME_MEMORY_CONVERSATION_ID_KEY = 'memory_conversation_id'
 export const RUNTIME_NYX_FLOAT_VOICE_TEXT_KEY = 'nyx_float_voice_text'
 export const RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY = 'nyx_float_voice_context'
+export const RUNTIME_NYX_FLOAT_POSITION_KEY = 'nyx_float_position'
 
 export function setContextPreviewPayload(value: string): void {
 	setRuntimeState(RUNTIME_CONTEXT_PREVIEW_PAYLOAD_KEY, value)
@@ -49,6 +50,10 @@ export function consumeMemoryRouteConversationId(): string {
 
 export function setActiveConversationRuntimeId(value: string): void {
 	setRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY, value)
+}
+
+export function clearActiveConversationRuntimeId(): void {
+	deleteRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY)
 }
 
 export function consumeActiveConversationRuntimeId(): string {
@@ -95,4 +100,12 @@ export function clearNyxFloatVoiceContext(value: string): void {
 	if (current == value) {
 		deleteRuntimeState(RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY)
 	}
+}
+
+export function setNyxFloatPosition(value: string): void {
+	setRuntimeState(RUNTIME_NYX_FLOAT_POSITION_KEY, value)
+}
+
+export function getNyxFloatPosition(): string {
+	return getRuntimeState(RUNTIME_NYX_FLOAT_POSITION_KEY)
 }

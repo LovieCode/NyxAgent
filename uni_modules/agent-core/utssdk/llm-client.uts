@@ -2020,10 +2020,13 @@ function runAgentLoop(
 	// 缓存键：agentId:conversationId，仅当智能体启用缓存时注入请求体
 	const agentForCache = getAgentById(agentId)
 	let cacheKey = ''
-	if (enableMemoryManager == true && agentForCache != null && (agentForCache['cacheEnabled'] as boolean | null) == true) {
-		cacheKey = agentId
-		if (conversationId != '') {
-			cacheKey = cacheKey + ':' + conversationId
+	if (enableMemoryManager == true && agentForCache != null) {
+		const rawCacheEnabled = agentForCache['cacheEnabled'] as boolean | null
+		if (rawCacheEnabled != false) {
+			cacheKey = agentId
+			if (conversationId != '') {
+				cacheKey = cacheKey + ':' + conversationId
+			}
 		}
 	}
 
@@ -2364,10 +2367,13 @@ export function buildAgentContextPreview(
 	}
 	const apiMessages = buildOpenAIMessages('', prepared.workingMessages, true)
 	let cacheKey = ''
-	if (agent != null && (agent['cacheEnabled'] as boolean | null) == true) {
-		cacheKey = agentId
-		if (conversationId != '') {
-			cacheKey = cacheKey + ':' + conversationId
+	if (agent != null) {
+		const rawCacheEnabled = agent['cacheEnabled'] as boolean | null
+		if (rawCacheEnabled != false) {
+			cacheKey = agentId
+			if (conversationId != '') {
+				cacheKey = cacheKey + ':' + conversationId
+			}
 		}
 	}
 	// 读取上次调用的真实 Token 用量

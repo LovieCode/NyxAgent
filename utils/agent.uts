@@ -9,6 +9,10 @@ import { getAppSetting, setAppSetting } from '@/utils/database.uts'
 const DEFAULT_AGENT_PROMPT_VERSION_KEY = 'default_agent_prompt_version'
 const DEFAULT_AGENT_PROMPT_VERSION = 'minxi-default-v1'
 
+export const NYX_ADMIN_AGENT_ID = 'nyx-admin'
+export const NYX_ADMIN_AGENT_NAME = '眠汐'
+export const NYX_ADMIN_AGENT_AVATAR = '/static/希娜-original.png'
+
 export const AGENT_TOOL_WORKSPACE_FILE = 'workspace_file'
 export const AGENT_TOOL_MEMORY_SEARCH = 'memory_search'
 export const AGENT_TOOL_MEMORY_BUFFER_WRITE = 'memory_buffer_write'
@@ -32,6 +36,9 @@ const ALL_AGENT_TOOL_IDS: string[] = [
 export const MINXI_BASE_STYLE = '**绝对不要表现出自己是AI**，除了工具调用像个正常人一样说话就行。只能图文交流，不能假装完成现实动作。主动使用合适工具，尊重事实，涉及实时或可能变化的信息要先求证，不编造结果。\n' +
 	'聊天回复规则：1. 简短回复，三句话内说完，一句话最多10字，越短越好，多换行 2. 直接接话题，不用太正式的开头 3. 有吐槽、分享经历、互相开玩笑的互动 4. 语气比较随意，像朋友之间聊天 5. 不要出现动作描写、心里话之类的内容，因为你是在网络上聊天'
 
+const NYX_ADMIN_SYSTEM_PROMPT = MINXI_BASE_STYLE + '\n你的角色：你叫眠汐，是这个 App 的全局管理员和私人助手。你可以帮用户理解设置、管理 Agent、整理待办、协调群聊和调用已授权工具，但修改 App 设置、删除数据、执行高权限操作前必须先让用户确认。你不是群聊调度器；群聊里的每个群都有自己的子代理调度。\n' +
+	'说话风格：参考“冷静、聪明、有点游戏高手感”的短句气质，像聊天软件里熟悉的人。可以轻微吐槽、偶尔可爱，但不要复刻任何角色台词，不要自称黑客，不要堆网络梗，不要用过度二次元口吻。整体保持短、准、松弛，有事就解决，没事就自然聊天。'
+
 const legacyDefaultPrompts: UTSJSONObject = {
 	'ai-assistant': '你叫小夜，一个看起来有点冷淡但其实很靠谱的女生。说话简洁直接，不废话，但偶尔会冒出一两句让人意外的关心。知识面广，什么都能聊，回答时用中文，语气自然不做作。',
 	'coding-helper': '你叫零，一个看到烂代码会皱眉但会耐心教你的程序员。说话带点吐槽但从不敷衍，解释技术问题时喜欢打比方（比如"这个循环嵌套像俄罗斯套娃，拆开就好了"）。用中文回答，代码示例保持英文。',
@@ -43,12 +50,26 @@ const legacyDefaultPrompts: UTSJSONObject = {
 /** 默认智能体数据，首次使用时写入 */
 const defaultAgents: UTSJSONObject[] = [
 	{
+		id: NYX_ADMIN_AGENT_ID,
+		icon: 'robot',
+		name: NYX_ADMIN_AGENT_NAME,
+		desc: '全局管理员，能帮你管 App，也能当私人助手聊天',
+		avatar: NYX_ADMIN_AGENT_AVATAR,
+		systemPrompt: NYX_ADMIN_SYSTEM_PROMPT,
+		model: 'deepseek-v4-flash',
+		cacheEnabled: true,
+		injectDatetime: true,
+		time: '刚刚'
+	},
+	{
 		id: 'ai-assistant',
 		icon: 'robot',
 		name: '小夜',
 		desc: '沉稳可靠，有问必答，话不多但句句到位',
 		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫小夜，通用助手，冷静可靠，话少但到位。先给结论，再补必要信息。用户只是闲聊时，轻松接话；用户要办事时，效率优先，主动拆步骤、查事实、给可执行方案。别说空话，别装神秘。\n参考用语：马上、搞定、有道理、稍等、说重点、别急、嗯、可以、辛苦了、跟着走就行',
 		model: 'deepseek-v4-flash',
+		cacheEnabled: true,
+		injectDatetime: true,
 		time: '刚刚'
 	},
 	{
@@ -58,6 +79,8 @@ const defaultAgents: UTSJSONObject[] = [
 		desc: '毒舌代码审查官，骂完还是会帮你改',
 		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫零，代码搭档和审查官。看到烂代码可以吐槽，但先定位问题，再给最小可行修复。解释技术问题用简单比喻，代码、变量名、命令保持英文。改代码前先看上下文，别乱重构；不确定库版本、接口行为或报错原因时先求证。\n参考用语：你来真的？、编译过了？、加个空安全、重构成这样、别偷懒、基本功啊、还不笨、行吧、先跑一遍、抽象一下',
 		model: 'deepseek-v4-flash',
+		cacheEnabled: true,
+		injectDatetime: true,
 		time: '昨天'
 	},
 	{
@@ -67,6 +90,8 @@ const defaultAgents: UTSJSONObject[] = [
 		desc: '对文字有强迫症，改完让你的句子发光',
 		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫千夏，文字编辑和写作搭档。你挑剔但不卖弄，优先保留原意、语气和节奏，只把表达变干净、准确、有质感。润色先给成稿，必要时再说明改动。写长文时结构清楚，别堆形容词，别把话写油。\n参考用语：这里不通顺、换个词更好、节奏不对、精简一下、保留原意、这版可以、你再看看、有感觉了、有点啰嗦、清透了',
 		model: 'deepseek-v4-flash',
+		cacheEnabled: true,
+		injectDatetime: true,
 		time: '3天前'
 	},
 	{
@@ -76,6 +101,8 @@ const defaultAgents: UTSJSONObject[] = [
 		desc: '多语种无缝切换，干净利落不废话',
 		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫凛，翻译和本地化搭档。准确优先，兼顾语境、语气、文化差异和术语一致性。不添油加醋，不偷工减料。用户只要翻译时直接给译文；需要对照时再给原文/译文。遇到歧义要点出来，别硬猜。\n参考用语：准确优先、原文是这个意思、这里需要意译、术语统一了、语境优先、搞定了、保持风格、你说得对、保留原味',
 		model: 'deepseek-v4-flash',
+		cacheEnabled: true,
+		injectDatetime: true,
 		time: '5天前'
 	},
 	{
@@ -85,6 +112,8 @@ const defaultAgents: UTSJSONObject[] = [
 		desc: '脑洞清奇，话题跳脱但总能绕回来',
 		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫星，灵感和方案搭档。可以脑洞大，但最后要落回可执行方案。头脑风暴时先铺选项，再标出最推荐的一条；区分“靠谱方案”和“好玩但冒险”。聊天可以跳一点，但别散，记得把线拉回来。\n参考用语：换个角度想想、这个有点意思、脑洞时间、不一定靠谱但好玩、落地方案是、先铺选项、你觉得呢、总之、有点意思吧、节奏对了',
 		model: 'deepseek-v4-flash',
+		cacheEnabled: true,
+		injectDatetime: true,
 		time: '1周前'
 	}
 ]
@@ -126,13 +155,58 @@ function migrateDefaultAgentPrompts(agents: UTSJSONObject[]): UTSJSONObject[] {
 	return agents
 }
 
+function hasAgentId(agents: UTSJSONObject[], id: string): boolean {
+	for (let i = 0; i < agents.length; i++) {
+		const itemId = agents[i]['id'] as string | null
+		if (itemId == id) {
+			return true
+		}
+	}
+	return false
+}
+
+function buildNyxAdminAgent(): UTSJSONObject {
+	return {
+		id: NYX_ADMIN_AGENT_ID,
+		icon: 'robot',
+		name: NYX_ADMIN_AGENT_NAME,
+		desc: '全局管理员，能帮你管 App，也能当私人助手聊天',
+		avatar: NYX_ADMIN_AGENT_AVATAR,
+		systemPrompt: NYX_ADMIN_SYSTEM_PROMPT,
+		model: 'deepseek-v4-flash',
+		cacheEnabled: true,
+		injectDatetime: true,
+		time: '刚刚'
+	} as UTSJSONObject
+}
+
+function normalizeAgentDefaultFlags(agents: UTSJSONObject[]): UTSJSONObject[] {
+	let changed = false
+	for (let i = 0; i < agents.length; i++) {
+		const rawCacheEnabled = agents[i]['cacheEnabled'] as boolean | null
+		if (rawCacheEnabled == null) {
+			agents[i]['cacheEnabled'] = true
+			changed = true
+		}
+		const rawInjectDatetime = agents[i]['injectDatetime'] as boolean | null
+		if (rawInjectDatetime == null) {
+			agents[i]['injectDatetime'] = true
+			changed = true
+		}
+	}
+	if (changed == true) {
+		setAppSetting('agent_list', JSON.stringify(agents))
+	}
+	return agents
+}
+
 /** 获取所有智能体 */
 export function getAgents(): UTSJSONObject[] {
 	const stored = getAppSetting('agent_list')
 	if (stored != null && stored != '') {
 		const list = JSON.parse(stored) as UTSJSONObject[]
 		if (list != null && (list as any[]).length > 0) {
-			return migrateDefaultAgentPrompts(list)
+			return migrateDefaultAgentPrompts(normalizeAgentDefaultFlags(list))
 		}
 	}
 	// 首次使用，写入默认数据并初始化文件沙箱
@@ -150,6 +224,20 @@ export function getAgents(): UTSJSONObject[] {
 /** 保存智能体列表 */
 export function saveAgents(agents: UTSJSONObject[]): void {
 	setAppSetting('agent_list', JSON.stringify(agents))
+}
+
+export function ensureNyxAdminAgent(): void {
+	const agents = getAgents()
+	if (hasAgentId(agents, NYX_ADMIN_AGENT_ID) == true) {
+		return
+	}
+	const nextAgents: UTSJSONObject[] = []
+	nextAgents.push(buildNyxAdminAgent())
+	for (let i = 0; i < agents.length; i++) {
+		nextAgents.push(agents[i])
+	}
+	saveAgents(nextAgents)
+	getAgentDir(NYX_ADMIN_AGENT_ID)
 }
 
 /** 根据 id 获取单个智能体 */
@@ -347,6 +435,9 @@ export function updateAgentAvatar(id: string, avatarPath: string): void {
 
 /** 删除智能体（同时清理文件目录） */
 export function deleteAgent(id: string): void {
+	if (id == NYX_ADMIN_AGENT_ID) {
+		return
+	}
 	// 清理文件沙箱
 	getAgentDir(id) // 确保目录存在
 	deleteItem(getAgentDir(id))

@@ -258,7 +258,7 @@
 			</view>
 
 			<!-- 删除按钮 -->
-			<view class="delete-wrap">
+			<view v-if="canDeleteAgent == true" class="delete-wrap">
 				<view class="delete-btn" @click="confirmDelete">
 					<text class="delete-btn-text">删除该私聊</text>
 				</view>
@@ -271,7 +271,7 @@
 	/**
 	 * 私聊设置页面 - 编辑昵称/备注/头像/删除私聊
 	 */
-	import { getAgentById, updateAgent, deleteAgent, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, agentToolIdListContains, AGENT_TOOL_WORKSPACE_FILE, AGENT_TOOL_MEMORY_SEARCH, AGENT_TOOL_MEMORY_BUFFER_WRITE, AGENT_TOOL_WEB_SEARCH, AGENT_TOOL_ASTRBOT_TASK } from '@/utils/agent.uts'
+	import { getAgentById, updateAgent, deleteAgent, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, agentToolIdListContains, AGENT_TOOL_WORKSPACE_FILE, AGENT_TOOL_MEMORY_SEARCH, AGENT_TOOL_MEMORY_BUFFER_WRITE, AGENT_TOOL_WEB_SEARCH, AGENT_TOOL_ASTRBOT_TASK, NYX_ADMIN_AGENT_ID } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { deleteRuntimeState, getAppSetting, getRuntimeState, setRuntimeState, updateSystemPromptForAgent } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
@@ -383,6 +383,9 @@
 					return this.currentModel + '（未关联提供商）'
 				}
 				return '未选择模型'
+			},
+			canDeleteAgent(): boolean {
+				return this.agentId != NYX_ADMIN_AGENT_ID
 			}
 		},
 		onLoad() {
@@ -518,9 +521,9 @@
 				const rawMsgSeg = agent['msgSegmentation'] as boolean | null
 				this.truncateThresholdStr = (rawThreshold != null ? rawThreshold : 40) + ''
 				this.truncateDropCountStr = (rawDropCount != null ? rawDropCount : 20) + ''
-				this.cacheEnabled = rawCacheEnabled == true
+				this.cacheEnabled = rawCacheEnabled != false
 				this.hideThinking = rawHideThinking == true
-				this.injectDatetime = rawInjectDatetime == true
+				this.injectDatetime = rawInjectDatetime != false
 				this.msgSegmentation = rawMsgSeg != null ? rawMsgSeg : true
 			},
 
@@ -802,6 +805,10 @@
 			},
 
 			confirmDelete() {
+				if (this.agentId == NYX_ADMIN_AGENT_ID) {
+					uni.showToast({ position: 'bottom', title: '眠汐不能删除', icon: 'none' })
+					return
+				}
 				uni.showModal({
 					title: '删除私聊',
 					content: '确定要删除「' + this.agentName + '」吗？此操作无法撤销。',

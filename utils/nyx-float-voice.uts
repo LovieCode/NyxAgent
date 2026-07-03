@@ -1,6 +1,6 @@
 /**
- * 眠汐全局悬浮语音入口。
- * 只负责 App 内页面间投递识别结果，不使用 uni.storage。
+ * 眠汐全局悬浮入口。
+ * 语音识别结果通过 App 内事件投递，位置走 runtime_state，不使用 uni.storage。
  */
 
 import { eventBus } from '@/utils/event-bus.uts'

@@ -1,20 +1,16 @@
 <template>
 	<view>
-		<view v-if="panelOpen == true" class="nyx-panel">
-			<text class="nyx-panel-title">眠汐语音</text>
-			<text class="nyx-panel-desc">{{statusText}}</text>
-			<view
-				class="nyx-hold-btn"
-				:class="isRecording == true ? 'nyx-hold-btn-active' : ''"
-				@touchstart="startVoice"
-				@touchend="stopVoice"
-				@touchcancel="stopVoice"
-			>
-				<text class="nyx-hold-text" :class="isRecording == true ? 'nyx-hold-text-active' : ''">{{isRecording == true ? '松开发送' : '按住说话'}}</text>
-			</view>
-		</view>
-		<view class="nyx-float" :class="isRecording == true ? 'nyx-float-active' : ''" @click="togglePanel">
+		<view
+			class="nyx-float"
+			:class="isRecording == true ? 'nyx-float-active' : ''"
+			:style="floatStyle"
+			@touchstart.stop="onFloatTouchStart"
+			@touchmove.stop.prevent="onFloatTouchMove"
+			@touchend.stop="onFloatTouchEnd"
+			@touchcancel.stop="onFloatTouchEnd"
+		>
 			<text class="nyx-face">眠</text>
+			<text v-if="isRecording == true" class="nyx-dot">松开</text>
 			<text v-if="isTranscribing == true" class="nyx-dot">识别中</text>
 		</view>
 	</view>
@@ -23,24 +19,178 @@
 <script lang="uts">
 	import { getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { transcribeAudio } from '@/utils/speech-service.uts'
-	import { getActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
+	import { ensureNyxAdminAgent, NYX_ADMIN_AGENT_ID } from '@/utils/agent.uts'
+	import { clearActiveConversationRuntimeId, getActiveAgentRuntimeId, getNyxFloatPosition, setActiveAgentRuntimeId, setNyxFloatPosition } from '@/utils/runtime-state.uts'
 	import { publishNyxFloatVoiceText, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
 
 	export default {
 		name: 'NyxFloatingVoice',
 		data() {
 			return {
-				panelOpen: false as boolean,
 				isRecording: false as boolean,
 				isTranscribing: false as boolean,
 				voiceSessionId: 0 as number,
-				statusText: '眠汐快捷语音入口。按住说话，识别后发给当前聊天；不在聊天页时发给当前私聊。' as string,
+				floatX: 305 as number,
+				floatY: 440 as number,
+				floatSize: 54 as number,
+				floatGap: 16 as number,
+				floatReady: false as boolean,
+				windowWidth: 375 as number,
+				windowHeight: 667 as number,
+				dragStartX: 0 as number,
+				dragStartY: 0 as number,
+				dragBaseX: 0 as number,
+				dragBaseY: 0 as number,
+				floatTouching: false as boolean,
+				floatMoved: false as boolean,
+				floatLongPressHandled: false as boolean,
+				recordStartTimer: 0 as number,
+				recordStartDelay: 360 as number,
 			}
 		},
+		computed: {
+			floatStyle(): string {
+				const opacity = this.floatReady == true ? '1' : '0'
+				return 'left:' + this.floatX + 'px;top:' + this.floatY + 'px;opacity:' + opacity + ';'
+			},
+		},
+		mounted() {
+			this.initFloatPosition()
+		},
+		unmounted() {
+			this.clearPendingVoiceStart()
+		},
 		methods: {
-			togglePanel(): void {
+			handleFloatTap(): void {
+				if (this.isTranscribing == true) {
+					uni.showToast({ position: 'bottom', title: '正在识别，稍等', icon: 'none' })
+					return
+				}
+				ensureNyxAdminAgent()
+				setActiveAgentRuntimeId(NYX_ADMIN_AGENT_ID)
+				clearActiveConversationRuntimeId()
+				uni.navigateTo({
+					url: '/pages/chat/chat'
+				})
+			},
+
+			clearPendingVoiceStart(): void {
+				if (this.recordStartTimer <= 0) { return }
+				clearTimeout(this.recordStartTimer)
+				this.recordStartTimer = 0
+			},
+
+			scheduleVoiceStart(): void {
+				this.clearPendingVoiceStart()
 				if (this.isRecording == true || this.isTranscribing == true) { return }
-				this.panelOpen = !this.panelOpen
+				this.recordStartTimer = setTimeout(() => {
+					this.recordStartTimer = 0
+					if (this.floatTouching == true && this.floatMoved == false) {
+						if (this.hasValidDefaultTaskModel('stt') == false) {
+							this.floatLongPressHandled = true
+							uni.showToast({ position: 'bottom', title: '请先配置语音识别模型', icon: 'none' })
+							return
+						}
+						this.floatLongPressHandled = true
+						this.startVoice()
+					}
+				}, this.recordStartDelay)
+			},
+
+			clampNumber(value: number, minValue: number, maxValue: number): number {
+				let max = maxValue
+				if (max < minValue) { max = minValue }
+				if (value < minValue) { return minValue }
+				if (value > max) { return max }
+				return value
+			},
+
+			refreshWindowSize(): void {
+				const info = uni.getWindowInfo()
+				this.windowWidth = info.windowWidth
+				this.windowHeight = info.windowHeight
+			},
+
+			initFloatPosition(): void {
+				this.refreshWindowSize()
+				if (this.restoreFloatPosition() == true) {
+					this.floatReady = true
+					return
+				}
+				const defaultBottom = 168
+				const x = this.windowWidth - this.floatSize - this.floatGap
+				const y = this.windowHeight - this.floatSize - defaultBottom
+				this.floatX = this.clampNumber(x, this.floatGap, this.windowWidth - this.floatSize - this.floatGap)
+				this.floatY = this.clampNumber(y, this.floatGap, this.windowHeight - this.floatSize - this.floatGap)
+				this.floatReady = true
+			},
+
+			restoreFloatPosition(): boolean {
+				const raw = getNyxFloatPosition()
+				if (raw == '') { return false }
+				try {
+					const parsed = JSON.parse(raw) as UTSJSONObject
+					const xRaw = parsed['x'] as number | null
+					const yRaw = parsed['y'] as number | null
+					if (xRaw == null || yRaw == null) { return false }
+					this.floatX = this.clampNumber(xRaw, this.floatGap, this.windowWidth - this.floatSize - this.floatGap)
+					this.floatY = this.clampNumber(yRaw, this.floatGap, this.windowHeight - this.floatSize - this.floatGap)
+					return true
+				} catch (_e: any) {
+				}
+				return false
+			},
+
+			saveFloatPosition(): void {
+				setNyxFloatPosition('{"x":' + Math.floor(this.floatX).toString() + ',"y":' + Math.floor(this.floatY).toString() + '}')
+			},
+
+			onFloatTouchStart(e: UniTouchEvent): void {
+				this.refreshWindowSize()
+				this.floatTouching = true
+				this.floatMoved = false
+				this.floatLongPressHandled = false
+				const touch = e.touches[0]
+				this.dragStartX = touch.clientX
+				this.dragStartY = touch.clientY
+				this.dragBaseX = this.floatX
+				this.dragBaseY = this.floatY
+				this.scheduleVoiceStart()
+			},
+
+			onFloatTouchMove(e: UniTouchEvent): void {
+				if (this.floatTouching == false) { return }
+				if (this.isRecording == true) { return }
+				const touch = e.touches[0]
+				const deltaX = touch.clientX - this.dragStartX
+				const deltaY = touch.clientY - this.dragStartY
+				if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+					this.floatMoved = true
+					this.clearPendingVoiceStart()
+				}
+				const maxX = this.windowWidth - this.floatSize - this.floatGap
+				const maxY = this.windowHeight - this.floatSize - this.floatGap
+				this.floatX = this.clampNumber(this.dragBaseX + deltaX, this.floatGap, maxX)
+				this.floatY = this.clampNumber(this.dragBaseY + deltaY, this.floatGap, maxY)
+				e.preventDefault()
+			},
+
+			onFloatTouchEnd(): void {
+				if (this.floatTouching == false) { return }
+				this.floatTouching = false
+				this.clearPendingVoiceStart()
+				if (this.isRecording == true) {
+					this.stopVoice()
+					return
+				}
+				if (this.floatLongPressHandled == true) {
+					return
+				}
+				if (this.floatMoved == true) {
+					this.saveFloatPosition()
+					return
+				}
+				this.handleFloatTap()
 			},
 
 			hasValidDefaultTaskModel(type: string): boolean {
@@ -61,7 +211,6 @@
 					return
 				}
 				this.isRecording = true
-				this.statusText = '正在听，松开后识别。'
 				this.voiceSessionId++
 				const sessionId = this.voiceSessionId
 				const recorder = uni.getRecorderManager()
@@ -80,7 +229,6 @@
 				recorder.onError((err: any): void => {
 					if (sessionId != this.voiceSessionId) { return }
 					this.isRecording = false
-					this.statusText = '录音失败，再试一次。'
 					console.log('[NyxFloatVoice] 录音失败: ' + err)
 					uni.showToast({ position: 'bottom', title: '录音失败', icon: 'none' })
 				})
@@ -99,14 +247,12 @@
 			handleVoiceRecordStopped(tempPath: string): void {
 				if (tempPath == '') { return }
 				this.isTranscribing = true
-				this.statusText = '识别中，马上发送。'
 				transcribeAudio(tempPath).then((result) => {
 					this.isTranscribing = false
 					if (result.ok == true) {
 						this.dispatchRecognizedText(result.text)
 						return
 					}
-					this.statusText = '识别失败：' + result.error
 					uni.showToast({ position: 'bottom', title: result.error, icon: 'none' })
 				})
 			},
@@ -114,25 +260,22 @@
 			dispatchRecognizedText(text: string): void {
 				const content = text.trim()
 				if (content == '') {
-					this.statusText = '没听清，再来一次。'
+					uni.showToast({ position: 'bottom', title: '没听清，再来一次', icon: 'none' })
 					return
 				}
 				const context = readNyxFloatVoiceContext()
 				if (context != '') {
 					publishNyxFloatVoiceText(content)
-					this.panelOpen = false
-					this.statusText = '已发给当前聊天。'
+					uni.showToast({ position: 'bottom', title: '已发送', icon: 'success' })
 					return
 				}
 				const activeAgentId = getActiveAgentRuntimeId()
 				if (activeAgentId == '') {
-					this.statusText = '先选一个联系人，再用语音球。'
 					uni.showToast({ position: 'bottom', title: '先选择一个联系人', icon: 'none' })
 					return
 				}
 				publishNyxFloatVoiceText(content)
-				this.panelOpen = false
-				this.statusText = '已发给当前私聊。'
+				uni.showToast({ position: 'bottom', title: '已发给当前私聊', icon: 'success' })
 				uni.navigateTo({
 					url: '/pages/chat/chat'
 				})
@@ -144,15 +287,13 @@
 <style>
 	.nyx-float {
 		position: fixed;
-		right: 16px;
-		bottom: 96px;
 		width: 54px;
 		height: 54px;
 		border-radius: 27px;
 		background-color: #FB8FAB;
 		align-items: center;
 		justify-content: center;
-		z-index: 997;
+		z-index: 999;
 		border-width: 2px;
 		border-color: #FFFFFF;
 		border-style: solid;
@@ -180,54 +321,4 @@
 		font-size: 10px;
 	}
 
-	.nyx-panel {
-		position: fixed;
-		right: 16px;
-		bottom: 158px;
-		width: 220px;
-		padding: 14px;
-		border-radius: 18px;
-		background-color: #FFFFFF;
-		border-width: 1px;
-		border-color: #FCE7F3;
-		border-style: solid;
-		z-index: 997;
-		box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14);
-	}
-
-	.nyx-panel-title {
-		font-size: 15px;
-		font-weight: 800;
-		color: #111827;
-		margin-bottom: 6px;
-	}
-
-	.nyx-panel-desc {
-		font-size: 12px;
-		line-height: 18px;
-		color: #6B7280;
-		margin-bottom: 12px;
-	}
-
-	.nyx-hold-btn {
-		height: 42px;
-		border-radius: 21px;
-		background-color: #FDE8EF;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.nyx-hold-btn-active {
-		background-color: #EF4444;
-	}
-
-	.nyx-hold-text {
-		font-size: 13px;
-		font-weight: 700;
-		color: #DB2777;
-	}
-
-	.nyx-hold-text-active {
-		color: #FFFFFF;
-	}
 </style>
