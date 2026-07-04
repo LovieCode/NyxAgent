@@ -245,7 +245,6 @@
 	import {
 		AGENT_CREATE_ICONS,
 		AGENT_CREATE_TEMPLATES,
-		DEFAULT_AGENT_CREATE_ICON,
 		DEV_ONLY_FORCE_FIRST_RUN_GUIDE,
 		FIRST_RUN_GUIDE_DONE_KEY,
 		FIRST_RUN_PROVIDER_EDIT_ID_KEY,
@@ -259,11 +258,25 @@
 		readCreateTemplateIcon,
 		readCreateTemplateKey,
 		readCreateTemplateName,
-		readCreateTemplatePrompt,
 		readFirstRunProviderDesc,
 		readFirstRunProviderId,
 		readFirstRunProviderName,
 	} from '@/utils/agent-create-presets.uts'
+	import {
+		buildAgentCreateDataFromTemplate,
+		buildCreatedAgentPayload,
+		buildDefaultAgentCreateData,
+		buildFirstRunProviderCardClass,
+		hasReadyChatProviderInList,
+		parseAgentCreateImagePath,
+		providerExistsInList,
+		readAgentCreateAvatar,
+		readAgentCreateIcon,
+		readAgentCreatePreviewDesc,
+		readAgentCreatePreviewName,
+		readAgentCreateTemplateKey,
+		resolveCreatePromptByTemplate,
+	} from '@/utils/agents-page-helpers.uts'
 	import {
 		buildAgentChatList,
 		formatAgentChatTime,
@@ -287,14 +300,7 @@
 				showFirstRunGuide: false as boolean,
 				firstRunProviderIndex: 0 as number,
 				/** 创建表单数据 */
-				createData: {
-					templateKey: 'ai-assistant',
-					icon: DEFAULT_AGENT_CREATE_ICON,
-					name: '' as string,
-					desc: '' as string,
-					avatar: '' as string,
-					systemPrompt: '' as string,
-				} as UTSJSONObject,
+				createData: buildDefaultAgentCreateData(),
 			}
 		},
 		computed: {
@@ -311,15 +317,11 @@
 			},
 
 			createPreviewName(): string {
-				const raw = this.createData['name'] as string | null
-				const name = raw != null ? raw.trim() : ''
-				return name != '' ? name : '未命名联系人'
+				return readAgentCreatePreviewName(this.createData)
 			},
 
 			createPreviewDesc(): string {
-				const raw = this.createData['desc'] as string | null
-				const desc = raw != null ? raw.trim() : ''
-				return desc != '' ? desc : '选择模板后，补一句它擅长什么。'
+				return readAgentCreatePreviewDesc(this.createData)
 			}
 		},
 		onLoad() {
@@ -348,23 +350,16 @@
 				return readCreateTemplateDesc(tpl)
 			},
 
-			templatePrompt(tpl: UTSJSONObject): string {
-				return readCreateTemplatePrompt(tpl)
-			},
-
 			createTemplateKey(): string {
-				const value = this.createData['templateKey'] as string | null
-				return value != null ? value : 'ai-assistant'
+				return readAgentCreateTemplateKey(this.createData)
 			},
 
 			createIcon(): string {
-				const value = this.createData['icon'] as string | null
-				return value != null && value != '' ? value : DEFAULT_AGENT_CREATE_ICON
+				return readAgentCreateIcon(this.createData)
 			},
 
 			createAvatar(): string {
-				const value = this.createData['avatar'] as string | null
-				return value != null ? value : ''
+				return readAgentCreateAvatar(this.createData)
 			},
 
 			firstRunProviderName(item: UTSJSONObject): string {
@@ -380,7 +375,7 @@
 			},
 
 			firstRunProviderCardClass(index: number): string {
-				return this.firstRunProviderIndex == index ? 'first-run-provider first-run-provider-active' : 'first-run-provider'
+				return buildFirstRunProviderCardClass(this.firstRunProviderIndex, index)
 			},
 
 			getFirstRunProviderOption(): UTSJSONObject {
@@ -393,16 +388,7 @@
 			},
 
 			hasReadyChatProvider(): boolean {
-				const providers = getAllProviders()
-				for (let i = 0; i < providers.length; i++) {
-					const provider = providers[i]
-					const enabled = provider['enabled'] as number | null
-					const apiKey = provider['api_key'] as string | null
-					if (enabled != null && enabled == 1 && apiKey != null && apiKey.trim() != '') {
-						return true
-					}
-				}
-				return false
+				return hasReadyChatProviderInList(getAllProviders())
 			},
 
 			checkFirstRunGuide(): void {
@@ -424,13 +410,7 @@
 			},
 
 			firstRunProviderExists(providerId: string): boolean {
-				if (providerId == '') { return false }
-				const providers = getAllProviders()
-				for (let i = 0; i < providers.length; i++) {
-					const id = providers[i]['id'] as string | null
-					if (id == providerId) { return true }
-				}
-				return false
+				return providerExistsInList(getAllProviders(), providerId)
 			},
 
 			openProviderEditorFromGuide(): void {
@@ -464,41 +444,11 @@
 			},
 
 			parseChosenImagePath(res: any): string {
-				try {
-					const raw = JSON.stringify(res)
-					if (raw == null || raw == '') { return '' }
-					const parsed = JSON.parse(raw) as UTSJSONObject
-					const tempFilePaths = parsed['tempFilePaths'] as string[] | null
-					if (tempFilePaths != null && tempFilePaths.length > 0) {
-						return tempFilePaths[0]
-					}
-					const tempFiles = parsed['tempFiles'] as UTSJSONObject[] | null
-					if (tempFiles != null && tempFiles.length > 0) {
-						const first = tempFiles[0]
-						const path = first['path'] as string | null
-						if (path != null && path != '') {
-							return path
-						}
-						const tempFilePath = first['tempFilePath'] as string | null
-						if (tempFilePath != null && tempFilePath != '') {
-							return tempFilePath
-						}
-					}
-				} catch (_e: any) {
-				}
-				return ''
+				return parseAgentCreateImagePath(res)
 			},
 
 			resetCreateData(): void {
-				const tpl = AGENT_CREATE_TEMPLATES[0]
-				this.createData = {
-					templateKey: this.templateKey(tpl),
-					icon: this.templateIcon(tpl),
-					name: this.templateName(tpl),
-					desc: this.templateDesc(tpl),
-					avatar: '',
-					systemPrompt: this.templatePrompt(tpl),
-				} as UTSJSONObject
+				this.createData = buildDefaultAgentCreateData()
 			},
 
 			openCreateDialog(): void {
@@ -625,23 +575,11 @@
 			},
 
 			selectCreateTemplate(tpl: UTSJSONObject): void {
-				this.createData['templateKey'] = this.templateKey(tpl)
-				this.createData['icon'] = this.templateIcon(tpl)
-				this.createData['name'] = this.templateName(tpl)
-				this.createData['desc'] = this.templateDesc(tpl)
-				this.createData['systemPrompt'] = this.templatePrompt(tpl)
+				this.createData = buildAgentCreateDataFromTemplate(tpl, this.createAvatar())
 			},
 
 			resetPromptByTemplate(): void {
-				const key = this.createTemplateKey()
-				for (let i = 0; i < AGENT_CREATE_TEMPLATES.length; i++) {
-					const tpl = AGENT_CREATE_TEMPLATES[i]
-					if (this.templateKey(tpl) == key) {
-						this.createData['systemPrompt'] = this.templatePrompt(tpl)
-						return
-					}
-				}
-				this.createData['systemPrompt'] = this.templatePrompt(AGENT_CREATE_TEMPLATES[0])
+				this.createData['systemPrompt'] = resolveCreatePromptByTemplate(this.createTemplateKey())
 			},
 
 			clearCreateAvatar(): void {
@@ -677,11 +615,7 @@
 			/** 执行创建私聊 */
 			doCreateAgent() {
 				const rawName = this.createData['name'] as string | null
-				const rawDesc = this.createData['desc'] as string | null
-				const rawPrompt = this.createData['systemPrompt'] as string | null
 				const name = (rawName != null ? rawName : '').trim()
-				const desc = (rawDesc != null ? rawDesc : '').trim()
-				const systemPrompt = (rawPrompt != null ? rawPrompt : '').trim()
 				if (name == '') {
 					uni.showToast({ position: 'bottom',
 						title: '请输入名称',
@@ -692,30 +626,10 @@
 
 				// 生成唯一 ID
 				const id = 'custom-' + Date.now() + '-' + Math.floor(Math.random() * 1000)
-				const rawIcon = this.createData['icon'] as string | null
-				const rawAvatar = this.createData['avatar'] as string | null
-				const icon = rawIcon != null ? rawIcon : DEFAULT_AGENT_CREATE_ICON
-				const avatar = rawAvatar != null ? rawAvatar : ''
-				const finalDesc = desc != '' ? desc : '自定义联系人'
-				const finalPrompt = systemPrompt != '' ? systemPrompt : this.templatePrompt(AGENT_CREATE_TEMPLATES[0])
-
 				// 默认模型从 SQLite app_settings 读取，缺省时回退内置模型。
 				const defaultModel = getAppSetting('settings_model')
 
-				const newAgent: UTSJSONObject = {
-					id: id,
-					icon: icon,
-					name: name,
-					desc: finalDesc,
-					systemPrompt: finalPrompt,
-					model: defaultModel != null && defaultModel != '' ? defaultModel : 'deepseek-v4-flash',
-					time: '刚刚',
-				}
-
-				// 写入头像
-				if (avatar != '') {
-					newAgent['avatar'] = avatar
-				}
+				const newAgent = buildCreatedAgentPayload(id, this.createData, defaultModel)
 
 				// 初始化 agent 文件目录
 				getAgentDir(id)

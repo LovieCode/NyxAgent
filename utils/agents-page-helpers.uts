@@ -1,0 +1,144 @@
+/**
+ * 首页 Agents 页面辅助。
+ *
+ * 页面负责弹窗、导航和持久化；创建表单、首启引导判断和图片路径解析放这里。
+ */
+
+import {
+	AGENT_CREATE_TEMPLATES,
+	DEFAULT_AGENT_CREATE_ICON,
+	readCreateTemplateDesc,
+	readCreateTemplateIcon,
+	readCreateTemplateKey,
+	readCreateTemplateName,
+	readCreateTemplatePrompt,
+} from '@/utils/agent-create-presets.uts'
+
+function readCreateDataString(data: UTSJSONObject, key: string): string {
+	const raw = data[key] as string | null
+	return raw != null ? raw : ''
+}
+
+export function readAgentCreatePreviewName(data: UTSJSONObject): string {
+	const name = readCreateDataString(data, 'name').trim()
+	return name != '' ? name : '未命名联系人'
+}
+
+export function readAgentCreatePreviewDesc(data: UTSJSONObject): string {
+	const desc = readCreateDataString(data, 'desc').trim()
+	return desc != '' ? desc : '选择模板后，补一句它擅长什么。'
+}
+
+export function readAgentCreateTemplateKey(data: UTSJSONObject): string {
+	const value = readCreateDataString(data, 'templateKey')
+	return value != '' ? value : 'ai-assistant'
+}
+
+export function readAgentCreateIcon(data: UTSJSONObject): string {
+	const value = readCreateDataString(data, 'icon')
+	return value != '' ? value : DEFAULT_AGENT_CREATE_ICON
+}
+
+export function readAgentCreateAvatar(data: UTSJSONObject): string {
+	return readCreateDataString(data, 'avatar')
+}
+
+export function buildAgentCreateDataFromTemplate(tpl: UTSJSONObject, avatar: string): UTSJSONObject {
+	return {
+		templateKey: readCreateTemplateKey(tpl),
+		icon: readCreateTemplateIcon(tpl),
+		name: readCreateTemplateName(tpl),
+		desc: readCreateTemplateDesc(tpl),
+		avatar: avatar,
+		systemPrompt: readCreateTemplatePrompt(tpl),
+	} as UTSJSONObject
+}
+
+export function buildDefaultAgentCreateData(): UTSJSONObject {
+	return buildAgentCreateDataFromTemplate(AGENT_CREATE_TEMPLATES[0], '')
+}
+
+export function resolveCreatePromptByTemplate(templateKey: string): string {
+	for (let i = 0; i < AGENT_CREATE_TEMPLATES.length; i++) {
+		const tpl = AGENT_CREATE_TEMPLATES[i]
+		if (readCreateTemplateKey(tpl) == templateKey) {
+			return readCreateTemplatePrompt(tpl)
+		}
+	}
+	return readCreateTemplatePrompt(AGENT_CREATE_TEMPLATES[0])
+}
+
+export function buildFirstRunProviderCardClass(activeIndex: number, index: number): string {
+	return activeIndex == index ? 'first-run-provider first-run-provider-active' : 'first-run-provider'
+}
+
+export function hasReadyChatProviderInList(providers: UTSJSONObject[]): boolean {
+	for (let i = 0; i < providers.length; i++) {
+		const provider = providers[i]
+		const enabled = provider['enabled'] as number | null
+		const apiKey = provider['api_key'] as string | null
+		if (enabled != null && enabled == 1 && apiKey != null && apiKey.trim() != '') {
+			return true
+		}
+	}
+	return false
+}
+
+export function providerExistsInList(providers: UTSJSONObject[], providerId: string): boolean {
+	if (providerId == '') { return false }
+	for (let i = 0; i < providers.length; i++) {
+		const id = providers[i]['id'] as string | null
+		if (id == providerId) { return true }
+	}
+	return false
+}
+
+export function parseAgentCreateImagePath(res: any): string {
+	try {
+		const raw = JSON.stringify(res)
+		if (raw == null || raw == '') { return '' }
+		const parsed = JSON.parse(raw) as UTSJSONObject
+		const tempFilePaths = parsed['tempFilePaths'] as string[] | null
+		if (tempFilePaths != null && tempFilePaths.length > 0) {
+			return tempFilePaths[0]
+		}
+		const tempFiles = parsed['tempFiles'] as UTSJSONObject[] | null
+		if (tempFiles != null && tempFiles.length > 0) {
+			const first = tempFiles[0]
+			const path = first['path'] as string | null
+			if (path != null && path != '') {
+				return path
+			}
+			const tempFilePath = first['tempFilePath'] as string | null
+			if (tempFilePath != null && tempFilePath != '') {
+				return tempFilePath
+			}
+		}
+	} catch (_e: any) {
+	}
+	return ''
+}
+
+export function buildCreatedAgentPayload(id: string, data: UTSJSONObject, defaultModel: string | null): UTSJSONObject {
+	const name = readCreateDataString(data, 'name').trim()
+	const desc = readCreateDataString(data, 'desc').trim()
+	const systemPrompt = readCreateDataString(data, 'systemPrompt').trim()
+	const icon = readAgentCreateIcon(data)
+	const avatar = readAgentCreateAvatar(data)
+	const finalDesc = desc != '' ? desc : '自定义联系人'
+	const finalPrompt = systemPrompt != '' ? systemPrompt : readCreateTemplatePrompt(AGENT_CREATE_TEMPLATES[0])
+	const model = defaultModel != null && defaultModel != '' ? defaultModel : 'deepseek-v4-flash'
+	const agent: UTSJSONObject = {
+		id: id,
+		icon: icon,
+		name: name,
+		desc: finalDesc,
+		systemPrompt: finalPrompt,
+		model: model,
+		time: '刚刚',
+	} as UTSJSONObject
+	if (avatar != '') {
+		agent['avatar'] = avatar
+	}
+	return agent
+}
