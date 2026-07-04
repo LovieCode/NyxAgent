@@ -16,40 +16,44 @@ import {
 import { getAgents, saveAgents } from '@/utils/agent.uts'
 import { getAgentDir } from '@/utils/file-manager.uts'
 
-function readCreateDataString(data: UTSJSONObject, key: string): string {
-	const raw = data[key] as string | null
-	return raw != null ? raw : ''
+export type AgentCreateForm = {
+	templateKey: string
+	icon: string
+	name: string
+	desc: string
+	avatar: string
+	systemPrompt: string
 }
 
-export function readAgentCreateName(data: UTSJSONObject): string {
-	return readCreateDataString(data, 'name').trim()
+export function readAgentCreateName(data: AgentCreateForm): string {
+	return data.name.trim()
 }
 
-export function readAgentCreatePreviewName(data: UTSJSONObject): string {
+export function readAgentCreatePreviewName(data: AgentCreateForm): string {
 	const name = readAgentCreateName(data)
 	return name != '' ? name : '未命名联系人'
 }
 
-export function readAgentCreatePreviewDesc(data: UTSJSONObject): string {
-	const desc = readCreateDataString(data, 'desc').trim()
+export function readAgentCreatePreviewDesc(data: AgentCreateForm): string {
+	const desc = data.desc.trim()
 	return desc != '' ? desc : '选择模板后，补一句它擅长什么。'
 }
 
-export function readAgentCreateTemplateKey(data: UTSJSONObject): string {
-	const value = readCreateDataString(data, 'templateKey')
+export function readAgentCreateTemplateKey(data: AgentCreateForm): string {
+	const value = data.templateKey
 	return value != '' ? value : 'ai-assistant'
 }
 
-export function readAgentCreateIcon(data: UTSJSONObject): string {
-	const value = readCreateDataString(data, 'icon')
+export function readAgentCreateIcon(data: AgentCreateForm): string {
+	const value = data.icon
 	return value != '' ? value : DEFAULT_AGENT_CREATE_ICON
 }
 
-export function readAgentCreateAvatar(data: UTSJSONObject): string {
-	return readCreateDataString(data, 'avatar')
+export function readAgentCreateAvatar(data: AgentCreateForm): string {
+	return data.avatar
 }
 
-export function buildAgentCreateDataFromTemplate(tpl: UTSJSONObject, avatar: string): UTSJSONObject {
+export function buildAgentCreateDataFromTemplate(tpl: UTSJSONObject, avatar: string): AgentCreateForm {
 	return {
 		templateKey: readCreateTemplateKey(tpl),
 		icon: readCreateTemplateIcon(tpl),
@@ -57,10 +61,10 @@ export function buildAgentCreateDataFromTemplate(tpl: UTSJSONObject, avatar: str
 		desc: readCreateTemplateDesc(tpl),
 		avatar: avatar,
 		systemPrompt: readCreateTemplatePrompt(tpl),
-	} as UTSJSONObject
+	} as AgentCreateForm
 }
 
-export function buildDefaultAgentCreateData(): UTSJSONObject {
+export function buildDefaultAgentCreateData(): AgentCreateForm {
 	return buildAgentCreateDataFromTemplate(AGENT_CREATE_TEMPLATES[0], '')
 }
 
@@ -125,10 +129,10 @@ export function parseAgentCreateImagePath(res: any): string {
 	return ''
 }
 
-function buildCreatedAgentPayload(id: string, data: UTSJSONObject, defaultModel: string | null): UTSJSONObject {
+function buildCreatedAgentPayload(id: string, data: AgentCreateForm, defaultModel: string | null): UTSJSONObject {
 	const name = readAgentCreateName(data)
-	const desc = readCreateDataString(data, 'desc').trim()
-	const systemPrompt = readCreateDataString(data, 'systemPrompt').trim()
+	const desc = data.desc.trim()
+	const systemPrompt = data.systemPrompt.trim()
 	const icon = readAgentCreateIcon(data)
 	const avatar = readAgentCreateAvatar(data)
 	const finalDesc = desc != '' ? desc : '自定义联系人'
@@ -149,7 +153,7 @@ function buildCreatedAgentPayload(id: string, data: UTSJSONObject, defaultModel:
 	return agent
 }
 
-export function createAgentFromCreateData(data: UTSJSONObject, defaultModel: string | null): string {
+export function createAgentFromCreateData(data: AgentCreateForm, defaultModel: string | null): string {
 	const id = 'custom-' + Date.now() + '-' + Math.floor(Math.random() * 1000)
 	const agent = buildCreatedAgentPayload(id, data, defaultModel)
 	getAgentDir(id)

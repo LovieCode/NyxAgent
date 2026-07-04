@@ -262,6 +262,7 @@
 		readFirstRunProviderName,
 	} from '@/utils/agent-create-presets.uts'
 	import {
+		type AgentCreateForm,
 		buildAgentCreateDataFromTemplate,
 		buildDefaultAgentCreateData,
 		buildFirstRunProviderCardClass,
@@ -303,7 +304,7 @@
 				showFirstRunGuide: false as boolean,
 				firstRunProviderIndex: 0 as number,
 				/** 创建表单数据 */
-				createData: buildDefaultAgentCreateData(),
+				createData: buildDefaultAgentCreateData() as AgentCreateForm,
 			}
 		},
 		computed: {
@@ -439,7 +440,7 @@
 				}
 				const cropResult = getRuntimeState('crop_result')
 				if (cropResult != null && cropResult != '') {
-					this.createData['avatar'] = cropResult
+					this.createData.avatar = cropResult
 				}
 				deleteRuntimeState('crop_result')
 				deleteRuntimeState('crop_target')
@@ -573,11 +574,11 @@
 			},
 
 			resetPromptByTemplate(): void {
-				this.createData['systemPrompt'] = resolveCreatePromptByTemplate(this.createTemplateKey())
+				this.createData.systemPrompt = resolveCreatePromptByTemplate(this.createTemplateKey())
 			},
 
 			clearCreateAvatar(): void {
-				this.createData['avatar'] = ''
+				this.createData.avatar = ''
 			},
 
 			/** 为新建私聊选择头像 */
