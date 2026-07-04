@@ -113,6 +113,14 @@
 		saveGroupMessages,
 	} from '@/utils/group-chat-service.uts'
 	import { getActiveAgentRuntimeId, setActiveConversationRuntimeId } from '@/utils/runtime-state.uts'
+	import {
+		buildAllHistoryIds,
+		formatHistoryTime,
+		indexOfHistorySelectedId,
+		isHistorySelectedId,
+		renderHistoryMessagePartsMarkdown,
+		toggleHistorySelectedId,
+	} from '@/utils/history-page-helpers.uts'
 
 	export default {
 		data() {
@@ -148,68 +156,7 @@
 		},
 		methods: {
 			renderMessagePartsMarkdown(msg: UTSJSONObject): string {
-				const parts = msg['message'] as UTSJSONObject[] | null
-				if (parts == null || parts.length == 0) {
-					const contentRaw = msg['content'] as string | null
-					return contentRaw != null ? contentRaw : ''
-				}
-				let text = ''
-				for (let i = 0; i < parts.length; i++) {
-					const part = parts[i]
-					const typeRaw = part['type'] as string | null
-					const type = typeRaw != null ? typeRaw : ''
-					if (type == 'plain' || type == 'text') {
-						const raw = part['text'] as string | null
-						if (raw != null && raw != '') { text += raw + '\n\n' }
-					} else if (type == 'think' || type == 'thinking') {
-						let raw = part['think'] as string | null
-						if (raw == null || raw == '') { raw = part['thinking'] as string | null }
-						if (raw != null && raw != '') { text += '<details><summary>思考过程</summary>\n\n' + raw + '\n\n</details>\n\n' }
-					} else if (type == 'tool_call' || type == 'toolCall') {
-						const calls = part['tool_calls'] as UTSJSONObject[] | null
-						if (calls != null) {
-							for (let j = 0; j < calls.length; j++) {
-								text += this.renderToolCallMarkdown(calls[j])
-							}
-						} else {
-							text += this.renderToolCallMarkdown(part)
-						}
-					} else if (type == 'image') {
-						const url = this.readPartPath(part)
-						text += '![图片](' + url + ')\n\n'
-					} else if (type == 'file') {
-						const filename = part['filename'] as string | null
-						const path = this.readPartPath(part)
-						text += '[文件] ' + (filename != null && filename != '' ? filename : path) + '\n\n'
-					} else if (type == 'record' || type == 'voice' || type == 'audio') {
-						text += '[语音/音频] ' + this.readPartPath(part) + '\n\n'
-					} else if (type == 'location') {
-						const raw = part['text'] as string | null
-						text += '[位置] ' + (raw != null ? raw : '') + '\n\n'
-					}
-				}
-				return text.trim()
-			},
-
-			readPartPath(part: UTSJSONObject): string {
-				const url = part['url'] as string | null
-				if (url != null && url != '') { return url }
-				const path = part['path'] as string | null
-				return path != null ? path : ''
-			},
-
-			renderToolCallMarkdown(item: UTSJSONObject): string {
-				const nameRaw = item['name'] as string | null
-				const argsRaw = item['arguments'] as string | null
-				const resultRaw = item['result'] as string | null
-				let text = '**Tool:** ' + (nameRaw != null ? nameRaw : 'tool') + '\n\n'
-				if (argsRaw != null && argsRaw != '') {
-					text += '```json\n' + argsRaw + '\n```\n\n'
-				}
-				if (resultRaw != null && resultRaw != '') {
-					text += '```text\n' + resultRaw + '\n```\n\n'
-				}
-				return text
+				return renderHistoryMessagePartsMarkdown(msg)
 			},
 
 			loadHistory() {
@@ -567,28 +514,7 @@
 			},
 
 			formatTime(ts: any | null): string {
-				if (ts == null) {
-					return ''
-				}
-				const d = new Date(ts as number)
-				const now = new Date()
-				const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-				const msgDate = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-				const diffDays = (today.getTime() - msgDate.getTime()) / (1000 * 60 * 60 * 24)
-
-				const h = (d.getHours() as number) < 10 ? '0' + d.getHours() : '' + d.getHours()
-				const m = (d.getMinutes() as number) < 10 ? '0' + d.getMinutes() : '' + d.getMinutes()
-
-				if (diffDays < 1) {
-					return h + ':' + m
-				} else if (diffDays < 2) {
-					return '昨天 ' + h + ':' + m
-				} else if (diffDays < 7) {
-					const days = diffDays as number
-					return days.toFixed(0) + '天前'
-				} else {
-					return (d.getMonth() + 1) + '/' + d.getDate()
-				}
+				return formatHistoryTime(ts)
 			},
 
 			// ===== 编辑模式 =====
@@ -616,36 +542,15 @@
 			},
 
 			isSelected(id: string): boolean {
-				for (let i = 0; i < this.selectedIds.length; i++) {
-					if (this.selectedIds[i] == id) {
-						return true
-					}
-				}
-				return false
+				return isHistorySelectedId(this.selectedIds, id)
 			},
 
 			toggleItem(id: string) {
-				const idx = this.indexOfSelected(id)
-				if (idx >= 0) {
-					const newList: string[] = []
-					for (let i = 0; i < this.selectedIds.length; i++) {
-						if (i != idx) {
-							newList.push(this.selectedIds[i])
-						}
-					}
-					this.selectedIds = newList
-				} else {
-					this.selectedIds.push(id)
-				}
+				this.selectedIds = toggleHistorySelectedId(this.selectedIds, id)
 			},
 
 			indexOfSelected(id: string): number {
-				for (let i = 0; i < this.selectedIds.length; i++) {
-					if (this.selectedIds[i] == id) {
-						return i
-					}
-				}
-				return -1
+				return indexOfHistorySelectedId(this.selectedIds, id)
 			},
 
 			selectAll() {
@@ -654,11 +559,7 @@
 					// 已全选 → 取消全选
 					this.selectedIds = []
 				} else {
-					const all: string[] = []
-					for (let i = 0; i < list.length; i++) {
-						all.push(list[i]['id'] as string)
-					}
-					this.selectedIds = all
+					this.selectedIds = buildAllHistoryIds(list)
 				}
 			},
 

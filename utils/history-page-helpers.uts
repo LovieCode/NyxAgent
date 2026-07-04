@@ -1,0 +1,137 @@
+/**
+ * 历史页展示辅助。
+ *
+ * 页面保留数据读取和弹窗交互；Markdown 渲染、时间格式化、选择集合这些纯逻辑放这里。
+ */
+
+export function readHistoryPartPath(part: UTSJSONObject): string {
+	const url = part['url'] as string | null
+	if (url != null && url != '') { return url }
+	const path = part['path'] as string | null
+	return path != null ? path : ''
+}
+
+export function renderHistoryToolCallMarkdown(item: UTSJSONObject): string {
+	const nameRaw = item['name'] as string | null
+	const argsRaw = item['arguments'] as string | null
+	const resultRaw = item['result'] as string | null
+	let text = '**Tool:** ' + (nameRaw != null ? nameRaw : 'tool') + '\n\n'
+	if (argsRaw != null && argsRaw != '') {
+		text += '```json\n' + argsRaw + '\n```\n\n'
+	}
+	if (resultRaw != null && resultRaw != '') {
+		text += '```text\n' + resultRaw + '\n```\n\n'
+	}
+	return text
+}
+
+export function renderHistoryMessagePartsMarkdown(msg: UTSJSONObject): string {
+	const parts = msg['message'] as UTSJSONObject[] | null
+	if (parts == null || parts.length == 0) {
+		const contentRaw = msg['content'] as string | null
+		return contentRaw != null ? contentRaw : ''
+	}
+	let text = ''
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		const typeRaw = part['type'] as string | null
+		const type = typeRaw != null ? typeRaw : ''
+		if (type == 'plain' || type == 'text') {
+			const raw = part['text'] as string | null
+			if (raw != null && raw != '') { text += raw + '\n\n' }
+		} else if (type == 'think' || type == 'thinking') {
+			let raw = part['think'] as string | null
+			if (raw == null || raw == '') { raw = part['thinking'] as string | null }
+			if (raw != null && raw != '') { text += '<details><summary>思考过程</summary>\n\n' + raw + '\n\n</details>\n\n' }
+		} else if (type == 'tool_call' || type == 'toolCall') {
+			const calls = part['tool_calls'] as UTSJSONObject[] | null
+			if (calls != null) {
+				for (let j = 0; j < calls.length; j++) {
+					text += renderHistoryToolCallMarkdown(calls[j])
+				}
+			} else {
+				text += renderHistoryToolCallMarkdown(part)
+			}
+		} else if (type == 'image') {
+			const url = readHistoryPartPath(part)
+			text += '![图片](' + url + ')\n\n'
+		} else if (type == 'file') {
+			const filename = part['filename'] as string | null
+			const path = readHistoryPartPath(part)
+			text += '[文件] ' + (filename != null && filename != '' ? filename : path) + '\n\n'
+		} else if (type == 'record' || type == 'voice' || type == 'audio') {
+			text += '[语音/音频] ' + readHistoryPartPath(part) + '\n\n'
+		} else if (type == 'location') {
+			const raw = part['text'] as string | null
+			text += '[位置] ' + (raw != null ? raw : '') + '\n\n'
+		}
+	}
+	return text.trim()
+}
+
+export function formatHistoryTime(ts: any | null): string {
+	if (ts == null) {
+		return ''
+	}
+	const d = new Date(ts as number)
+	const now = new Date()
+	const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+	const msgDate = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+	const diffDays = (today.getTime() - msgDate.getTime()) / (1000 * 60 * 60 * 24)
+	const h = d.getHours() < 10 ? '0' + d.getHours() : '' + d.getHours()
+	const m = d.getMinutes() < 10 ? '0' + d.getMinutes() : '' + d.getMinutes()
+	if (diffDays < 1) {
+		return h + ':' + m
+	}
+	if (diffDays < 2) {
+		return '昨天 ' + h + ':' + m
+	}
+	if (diffDays < 7) {
+		const days = diffDays as number
+		return days.toFixed(0) + '天前'
+	}
+	return (d.getMonth() + 1) + '/' + d.getDate()
+}
+
+export function indexOfHistorySelectedId(selectedIds: string[], id: string): number {
+	for (let i = 0; i < selectedIds.length; i++) {
+		if (selectedIds[i] == id) {
+			return i
+		}
+	}
+	return -1
+}
+
+export function isHistorySelectedId(selectedIds: string[], id: string): boolean {
+	return indexOfHistorySelectedId(selectedIds, id) >= 0
+}
+
+export function toggleHistorySelectedId(selectedIds: string[], id: string): string[] {
+	const idx = indexOfHistorySelectedId(selectedIds, id)
+	if (idx < 0) {
+		const added: string[] = []
+		for (let i = 0; i < selectedIds.length; i++) {
+			added.push(selectedIds[i])
+		}
+		added.push(id)
+		return added
+	}
+	const next: string[] = []
+	for (let i = 0; i < selectedIds.length; i++) {
+		if (i != idx) {
+			next.push(selectedIds[i])
+		}
+	}
+	return next
+}
+
+export function buildAllHistoryIds(list: UTSJSONObject[]): string[] {
+	const all: string[] = []
+	for (let i = 0; i < list.length; i++) {
+		const id = list[i]['id'] as string | null
+		if (id != null && id != '') {
+			all.push(id)
+		}
+	}
+	return all
+}
