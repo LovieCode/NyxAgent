@@ -1,0 +1,291 @@
+/**
+ * LLM 记忆整理调度工具。
+ *
+ * 负责记忆候选消息筛选、截断片段复盘提示词、整理并发锁和整理任务启动。
+ */
+
+import { getMemoryEnabled } from './memory'
+import { getMessageApiText, hasAssistantToolCalls } from './llm-message-utils'
+
+export type MemoryCompactionCandidateResult = {
+	messages: UTSJSONObject[]
+	score: number
+	lastMessageKey: string
+	lastMessageTimestamp: number
+}
+
+export type MemoryManagerLoopStarter = (allMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string, conversationLatestTimestamp: number, lastMessageKey: string, lastMessageTimestamp: number, compactedCount: number) => boolean
+
+let memoryManagerLoopStarter: MemoryManagerLoopStarter | null = null
+
+export function registerMemoryManagerLoopStarter(starter: MemoryManagerLoopStarter): void {
+	memoryManagerLoopStarter = starter
+}
+
+export function startMemoryOrganization(allMessages: UTSJSONObject[], providerId: string, model: string, agentId: string, conversationId: string, conversationLatestTimestamp: number, lastMessageKey: string, lastMessageTimestamp: number, compactedCount: number): boolean {
+	const starter = memoryManagerLoopStarter
+	if (starter == null) { return false }
+	return starter.invoke(allMessages, providerId, model, agentId, conversationId, conversationLatestTimestamp, lastMessageKey, lastMessageTimestamp, compactedCount)
+}
+
+function pad2(value: number): string {
+	if (value < 10) return '0' + value.toString()
+	return value.toString()
+}
+
+function formatMemoryMessageTime(timestamp: number): string {
+	if (timestamp <= 0) return '时间未知'
+	const d = new Date(timestamp)
+	const year = d.getFullYear().toString()
+	const month = pad2(d.getMonth() + 1)
+	const day = pad2(d.getDate())
+	const hour = pad2(d.getHours())
+	const minute = pad2(d.getMinutes())
+	const second = pad2(d.getSeconds())
+	return year + '-' + month + '-' + day + ' ' + hour + ':' + minute + ':' + second
+}
+
+function sanitizeMemoryManagerContent(content: string): string {
+	let text = content.trim()
+	text = text.replace(/\r/g, '\n')
+	while (text.indexOf('\n\n\n') >= 0) {
+		text = text.replace(/\n\n\n/g, '\n\n')
+	}
+	return text
+}
+
+function buildDroppedMessagesTranscript(messages: UTSJSONObject[]): string {
+	let text = ''
+	let budget = 8000
+	for (let i = 0; i < messages.length; i++) {
+		const role = messages[i]['role'] as string | null
+		const rawContent = messages[i]['content'] as string | null
+		if (role == null || rawContent == null) continue
+		const content = sanitizeMemoryManagerContent(rawContent)
+		if (content == '') continue
+		const rawTimestamp = messages[i]['timestamp'] as number | null
+		const timestamp = rawTimestamp != null ? rawTimestamp : 0
+		let line = '[' + role + ' @ ' + formatMemoryMessageTime(timestamp) + '] ' + content
+		if (line.length > budget) {
+			line = line.substring(0, budget)
+		}
+		text = text + line + '\n\n'
+		budget = budget - line.length
+		if (budget <= 0) {
+			break
+		}
+	}
+	return text.trim()
+}
+
+export function findLatestMessageTimestamp(messages: UTSJSONObject[]): number {
+	let latest = 0
+	for (let i = 0; i < messages.length; i++) {
+		const rawTimestamp = messages[i]['timestamp'] as number | null
+		const timestamp = rawTimestamp != null ? rawTimestamp : 0
+		if (timestamp > latest) {
+			latest = timestamp
+		}
+	}
+	return latest
+}
+
+function findLatestMessageTime(messages: UTSJSONObject[]): string {
+	const latest = findLatestMessageTimestamp(messages)
+	return formatMemoryMessageTime(latest)
+}
+
+export function buildDroppedMessagesPreview(messages: UTSJSONObject[]): UTSJSONObject[] {
+	const list: UTSJSONObject[] = []
+	const limit = messages.length > 12 ? 12 : messages.length
+	for (let i = 0; i < limit; i++) {
+		const role = messages[i]['role'] as string | null
+		const rawContent = messages[i]['content'] as string | null
+		let content = rawContent != null ? rawContent : ''
+		if (content.length > 200) {
+			content = content.substring(0, 200) + '...'
+		}
+		list.push({
+			role: role != null ? role : '',
+			content: content,
+		} as UTSJSONObject)
+	}
+	if (messages.length > limit) {
+		list.push({
+			role: 'summary',
+			content: '还有 ' + (messages.length - limit) + ' 条被截断消息未展开',
+		} as UTSJSONObject)
+	}
+	return list
+}
+
+export function buildMemoryManagerSystemPrompt(agentId: string, conversationId: string, maxIterations: number): string {
+	return '你是记忆管理 Agent，不参与普通聊天，只负责在上下文截断时整理长期记忆。\n' +
+		'你拥有完整工具，可以查询历史、查看已有记忆、保存或遗忘重要记忆，也可以用 memory_buffer_write 整理 64 字以内短记忆缓存。\n' +
+		'本轮最大迭代次数为 ' + maxIterations + '。必须先核查已有记忆，避免重复写入。\n' +
+		'只保存长期有用、未来会复用的信息：用户稳定偏好、明确规则、关键事实、对某人/某 Agent 的重要印象。\n' +
+		'不要保存工具调用信息、工具结果、API 密钥、临时流水账、一次性任务细节、用户未明确表达的猜测。\n' +
+		'默认面对对象是当前用户：target_type=user，target_id 留空。对话内短期状态优先写入短记忆缓存，不要写入重要记忆。\n' +
+		'短记忆缓存维护规则：每轮整理都要判断是否需要更新 64 字短缓存。若最新片段改变了当前任务、临时约束、临时偏好、当前阶段或下一步动作，推荐调用 memory_buffer_write 覆盖为一句短状态；格式尽量是“当前任务/约束/下一步”，不要超过 64 字。若没有仍有效的短期状态，不要为了凑数写缓存。\n' +
+		'时间语义规则：每条整理输入都带消息时间戳。对话里提到的“现在/当前/凌晨两点”等必须以该条消息时间为参照，再和最新消息时间比较，不能把旧消息时间误当成当前状态。短记忆缓存不要只记录“当前时间是几点/现在是某时”，应记录任务状态或临时约束。\n' +
+		'如果需要保存长期记忆，优先使用 memory_core_save；如果发现明显重复或过期，可以谨慎使用 memory_core_forget。\n' +
+		'保存范围建议：稳定偏好用 person_only/preference；面对某人的规则用 person_only/rule；全局规则才用 rule/rule；跨对话事实用 person_only/fact；只对当前对话有用才用 conversation_only。person_only/manual_only 的数量限制按面对对象独立，不同对象不要互相挤占。\n' +
+		'当前 agentId=' + agentId + '，conversationId=' + conversationId + '。最终只回复一行整理结果。'
+}
+
+export function buildMemoryManagerMessages(allMessages: UTSJSONObject[], conversationLatestTimestamp: number): UTSJSONObject[] {
+	const transcript = buildDroppedMessagesTranscript(allMessages)
+	const fragmentLatestTimestamp = findLatestMessageTimestamp(allMessages)
+	const safeConversationLatestTimestamp = conversationLatestTimestamp > 0 ? conversationLatestTimestamp : fragmentLatestTimestamp
+	const latestTime = formatMemoryMessageTime(safeConversationLatestTimestamp)
+	const fragmentLatestTime = formatMemoryMessageTime(fragmentLatestTimestamp)
+	const runTime = formatMemoryMessageTime(Date.now())
+	const content = '以下为本轮需要整理的对话片段，请核查并整理重要信息到记忆库。\n\n' +
+		'【时间轴】当前对话最新消息时间：' + latestTime + '；本轮片段最新消息时间：' + fragmentLatestTime + '；本次整理运行时间：' + runTime + '。\n' +
+		'【时间说明】每条消息头部的 @ 时间是该消息发送时间。消息中出现的“现在/当前/凌晨两点”等相对时间，必须以该条消息时间为参照，再结合当前对话最新消息时间判断是否仍有效，不能直接写成短缓存状态。整理运行时间只用于判断新旧，不得作为记忆内容写入。\n\n' +
+		'【待整理片段】\n' + transcript
+	const messages: UTSJSONObject[] = []
+	messages.push({
+		role: 'user',
+		content: content,
+	} as UTSJSONObject)
+	return messages
+}
+
+let memoryCompactionRunningKeys: string[] = []
+
+function buildMemoryCompactionRunningKey(agentId: string, conversationId: string): string {
+	return agentId + '::' + conversationId
+}
+
+export function isMemoryCompactionRunning(agentId: string, conversationId: string): boolean {
+	const key = buildMemoryCompactionRunningKey(agentId, conversationId)
+	for (let i = 0; i < memoryCompactionRunningKeys.length; i++) {
+		if (memoryCompactionRunningKeys[i] == key) return true
+	}
+	return false
+}
+
+export function markMemoryCompactionRunning(agentId: string, conversationId: string): void {
+	if (isMemoryCompactionRunning(agentId, conversationId) == true) return
+	memoryCompactionRunningKeys.push(buildMemoryCompactionRunningKey(agentId, conversationId))
+}
+
+export function clearMemoryCompactionRunning(agentId: string, conversationId: string): void {
+	const key = buildMemoryCompactionRunningKey(agentId, conversationId)
+	for (let i = memoryCompactionRunningKeys.length - 1; i >= 0; i--) {
+		if (memoryCompactionRunningKeys[i] == key) {
+			memoryCompactionRunningKeys.splice(i, 1)
+		}
+	}
+}
+
+export function isMemoryTextCandidate(msg: UTSJSONObject): boolean {
+	const role = msg['role'] as string | null
+	if (role != 'user' && role != 'assistant') return false
+	if (role == 'assistant' && hasAssistantToolCalls(msg) == true) return false
+	if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true) return false
+	const rawContent = getMessageApiText(msg)
+	if (rawContent.trim() == '') return false
+	return true
+}
+
+export function buildMemoryCandidateMessage(msg: UTSJSONObject): UTSJSONObject {
+	const role = msg['role'] as string | null
+	const rawTimestamp = msg['timestamp'] as number | null
+	return {
+		role: role != null ? role : '',
+		content: getMessageApiText(msg),
+		timestamp: rawTimestamp != null ? rawTimestamp : 0,
+	} as UTSJSONObject
+}
+
+export function buildMemoryMessageKey(msg: UTSJSONObject): string {
+	const role = msg['role'] as string | null
+	const rawTimestamp = msg['timestamp'] as number | null
+	const content = getMessageApiText(msg)
+	const timestamp = rawTimestamp != null ? rawTimestamp : 0
+	let sample = content
+	if (sample.length > 160) {
+		sample = content.substring(0, 100) + '…' + content.substring(content.length - 60)
+	}
+	sample = sample.replace(/\r/g, '\n')
+	sample = sample.replace(/\n/g, '\\n')
+	return (role != null ? role : '') + '@' + timestamp + '#' + content.length + '#' + sample
+}
+
+export function collectMemoryCandidateMessages(messages: UTSJSONObject[]): UTSJSONObject[] {
+	const list: UTSJSONObject[] = []
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		if (isMemoryTextCandidate(msg) == false) continue
+		list.push(buildMemoryCandidateMessage(msg))
+	}
+	return list
+}
+
+export function organizeAgentMemory(
+	messages: UTSJSONObject[],
+	providerId: string,
+	model: string,
+	agentId: string,
+	conversationId: string
+): boolean {
+	if (getMemoryEnabled() == false) return false
+	const candidates = collectMemoryCandidateMessages(messages)
+	if (candidates.length == 0) return false
+	return startMemoryOrganization(candidates, providerId, model, agentId, conversationId, findLatestMessageTimestamp(messages), '', 0, 0)
+}
+
+export function getContextMessageScore(msg: UTSJSONObject): number {
+	const role = msg['role'] as string | null
+	if (role == 'user') return 1
+	if (role == 'assistant') {
+		if (hasAssistantToolCalls(msg) == false) return 0.3
+		return 0.1
+	}
+	if (role == 'tool' || role == 'toolResult') return 0.1
+	return 0
+}
+
+export function collectUncompactedMemoryCandidates(
+	messages: UTSJSONObject[],
+	cursorKey: string,
+	cursorTimestamp: number
+): MemoryCompactionCandidateResult {
+	const list: UTSJSONObject[] = []
+	let selectedScore = 0
+	let lastKey = ''
+	let lastTimestamp = 0
+	let seenCursor = cursorKey == ''
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		if (isMemoryTextCandidate(msg) == false) continue
+		const msgScore = getContextMessageScore(msg)
+		if (msgScore <= 0) continue
+		const key = buildMemoryMessageKey(msg)
+		const rawTimestamp = msg['timestamp'] as number | null
+		const timestamp = rawTimestamp != null ? rawTimestamp : 0
+		if (seenCursor == false) {
+			if (key == cursorKey) {
+				seenCursor = true
+				continue
+			}
+			if (cursorTimestamp > 0 && timestamp > cursorTimestamp) {
+				seenCursor = true
+			} else {
+				continue
+			}
+		}
+		list.push(buildMemoryCandidateMessage(msg))
+		selectedScore = selectedScore + msgScore
+		lastKey = key
+		lastTimestamp = timestamp
+	}
+	return {
+		messages: list,
+		score: selectedScore,
+		lastMessageKey: lastKey,
+		lastMessageTimestamp: lastTimestamp,
+	} as MemoryCompactionCandidateResult
+}
