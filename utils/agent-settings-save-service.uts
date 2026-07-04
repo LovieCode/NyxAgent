@@ -1,0 +1,101 @@
+/**
+ * 联系人设置保存事务。
+ *
+ * 页面只负责表单交互；这里集中处理 Agent 基础资料、模型、TTS、生成参数和工具开关的持久化。
+ */
+
+import {
+	updateAgent,
+	updateAgentModel,
+	updateAgentGenerationSettings,
+	updateAgentTruncation,
+	updateAgentCache,
+	updateAgentHideThinking,
+	updateAgentInjectDatetime,
+	updateAgentMsgSegmentation,
+	updateAgentTTSSettings,
+	updateAgentSkills,
+	updateAgentTools,
+} from '@/utils/agent.uts'
+import { updateSystemPromptForAgent } from '@/utils/database.uts'
+import { type GenerationSettings } from '@/utils/generation-settings.uts'
+import { filterExistingSkillIds } from '@/utils/skills.uts'
+import { buildAgentGenerationSaveState, type AgentSettingsGenerationSaveState } from '@/utils/agent-settings-models.uts'
+
+export type AgentSettingsSaveInput = {
+	agentId: string
+	name: string
+	desc: string
+	avatar: string
+	systemPrompt: string
+	model: string
+	ttsVoice: string
+	ttsVolume: string
+	ttsPitch: string
+	useGlobalGeneration: boolean
+	temperatureStr: string
+	maxTokensStr: string
+	maxIterationsStr: string
+	streamEnabled: boolean
+	truncateThresholdStr: string
+	truncateDropCountStr: string
+	cacheEnabled: boolean
+	hideThinking: boolean
+	injectDatetime: boolean
+	msgSegmentation: boolean
+	selectedSkillIds: string[]
+	selectedToolIds: string[]
+}
+
+export type AgentSettingsSaveResult = {
+	ok: boolean
+	error: string
+	generation: AgentSettingsGenerationSaveState | null
+}
+
+function failSave(error: string): AgentSettingsSaveResult {
+	return {
+		ok: false,
+		error: error,
+		generation: null,
+	} as AgentSettingsSaveResult
+}
+
+function okSave(generation: AgentSettingsGenerationSaveState): AgentSettingsSaveResult {
+	return {
+		ok: true,
+		error: '',
+		generation: generation,
+	} as AgentSettingsSaveResult
+}
+
+export function saveAgentSettings(input: AgentSettingsSaveInput, global: GenerationSettings): AgentSettingsSaveResult {
+	const agentId = input.agentId.trim()
+	if (agentId == '') { return failSave('未选择联系人') }
+	const name = input.name.trim()
+	if (name == '') { return failSave('昵称不能为空') }
+	const desc = input.desc.trim()
+	updateAgent(agentId, name, desc, input.avatar, input.systemPrompt)
+	updateAgentModel(agentId, input.model)
+	updateAgentTTSSettings(agentId, input.ttsVoice, input.ttsVolume, input.ttsPitch)
+	const generation = buildAgentGenerationSaveState(
+		input.useGlobalGeneration,
+		input.temperatureStr,
+		input.maxTokensStr,
+		input.maxIterationsStr,
+		input.streamEnabled,
+		input.truncateThresholdStr,
+		input.truncateDropCountStr,
+		global
+	)
+	updateAgentGenerationSettings(agentId, generation.temperature, generation.maxTokens, generation.maxIterations, generation.streamEnabled)
+	updateAgentTruncation(agentId, generation.truncateThreshold, generation.truncateDropCount)
+	updateAgentCache(agentId, input.cacheEnabled)
+	updateAgentHideThinking(agentId, input.hideThinking)
+	updateAgentInjectDatetime(agentId, input.injectDatetime)
+	updateAgentMsgSegmentation(agentId, input.msgSegmentation)
+	updateAgentSkills(agentId, filterExistingSkillIds(input.selectedSkillIds))
+	updateAgentTools(agentId, input.selectedToolIds)
+	updateSystemPromptForAgent(agentId, input.systemPrompt)
+	return okSave(generation)
+}

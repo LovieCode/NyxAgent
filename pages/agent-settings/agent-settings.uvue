@@ -294,21 +294,21 @@
 	/**
 	 * 私聊设置页面 - 编辑昵称/备注/头像/删除私聊
 	 */
-	import { getAgentById, updateAgent, deleteAgent, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentTTSSettings, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, NYX_ADMIN_AGENT_ID } from '@/utils/agent.uts'
+	import { getAgentById, deleteAgent, getAgentEnabledToolIds, NYX_ADMIN_AGENT_ID } from '@/utils/agent.uts'
 	import { getAllProviders, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
-	import { deleteRuntimeState, getAppSetting, getRuntimeState, setRuntimeState, updateSystemPromptForAgent } from '@/utils/database.uts'
+	import { deleteRuntimeState, getAppSetting, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings } from '@/utils/generation-settings.uts'
 	import { clearActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
 	import { getSkills, getAgentSkillIds, filterExistingSkillIds } from '@/utils/skills.uts'
 	import {
 		buildAgentCurrentModelLabel,
 		buildAgentSettingsToolRows,
-		buildAgentGenerationSaveState,
 		buildEnabledAgentProviders,
 		readAgentGenerationForm,
 		readAgentProviderModels,
 		resolveAgentModelSelection,
 	} from '@/utils/agent-settings-models.uts'
+	import { saveAgentSettings, type AgentSettingsSaveInput } from '@/utils/agent-settings-save-service.uts'
 	import {
 		buildAgentSettingsToolOptions,
 		getAgentSettingsToolCardClass,
@@ -636,35 +636,48 @@
 			},
 
 			saveSettingsOnly(): boolean {
-				const name = this.agentName.trim()
-				const desc = this.agentDesc.trim()
-				if (name == '') {
+				const input: AgentSettingsSaveInput = {
+					agentId: this.agentId,
+					name: this.agentName,
+					desc: this.agentDesc,
+					avatar: this.agentAvatar,
+					systemPrompt: this.agentSystemPrompt,
+					model: this.currentModel,
+					ttsVoice: this.ttsVoice,
+					ttsVolume: this.ttsVolume,
+					ttsPitch: this.ttsPitch,
+					useGlobalGeneration: this.useGlobalGeneration,
+					temperatureStr: this.temperatureStr,
+					maxTokensStr: this.maxTokensStr,
+					maxIterationsStr: this.maxIterationsStr,
+					streamEnabled: this.streamEnabled,
+					truncateThresholdStr: this.truncateThresholdStr,
+					truncateDropCountStr: this.truncateDropCountStr,
+					cacheEnabled: this.cacheEnabled,
+					hideThinking: this.hideThinking,
+					injectDatetime: this.injectDatetime,
+					msgSegmentation: this.msgSegmentation,
+					selectedSkillIds: this.selectedSkillIds,
+					selectedToolIds: this.selectedToolIds,
+				} as AgentSettingsSaveInput
+				const result = saveAgentSettings(input, getGlobalGenerationSettings())
+				if (result.ok == false) {
 					uni.showToast({ position: 'bottom',
-						title: '昵称不能为空',
+						title: result.error,
 						icon: 'none'
 					})
 					return false
 				}
-				updateAgent(this.agentId, name, desc, this.agentAvatar, this.agentSystemPrompt)
-				updateAgentModel(this.agentId, this.currentModel)
-				updateAgentTTSSettings(this.agentId, this.ttsVoice, this.ttsVolume, this.ttsPitch)
-				const generation = buildAgentGenerationSaveState(this.useGlobalGeneration, this.temperatureStr, this.maxTokensStr, this.maxIterationsStr, this.streamEnabled, this.truncateThresholdStr, this.truncateDropCountStr, getGlobalGenerationSettings())
+				const generation = result.generation
+				if (generation == null) {
+					uni.showToast({ position: 'bottom', title: '保存失败', icon: 'none' })
+					return false
+				}
 				if (this.useGlobalGeneration == false) {
 					this.temperatureStr = generation.temperatureStr
 					this.maxTokensStr = generation.maxTokensStr
 					this.maxIterationsStr = generation.maxIterationsStr
 				}
-				updateAgentGenerationSettings(this.agentId, generation.temperature, generation.maxTokens, generation.maxIterations, generation.streamEnabled)
-				// 保存截断/缓存 ID/隐藏思考
-				updateAgentTruncation(this.agentId, generation.truncateThreshold, generation.truncateDropCount)
-				updateAgentCache(this.agentId, this.cacheEnabled)
-				updateAgentHideThinking(this.agentId, this.hideThinking)
-				updateAgentInjectDatetime(this.agentId, this.injectDatetime)
-				updateAgentMsgSegmentation(this.agentId, this.msgSegmentation)
-				updateAgentSkills(this.agentId, filterExistingSkillIds(this.selectedSkillIds))
-				updateAgentTools(this.agentId, this.selectedToolIds)
-				// 同步更新所有历史对话的 system_prompt
-				updateSystemPromptForAgent(this.agentId, this.agentSystemPrompt)
 				this.hasUnsaved = false
 				uni.showToast({ position: 'bottom',
 					title: '已保存',
