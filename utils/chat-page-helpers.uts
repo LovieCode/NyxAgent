@@ -7,6 +7,7 @@
 import {
 	CHAT_ROLE_ASSISTANT,
 	CHAT_ROLE_USER,
+	getMessageContent,
 	createFileMessage,
 	createImageMessage,
 	createLocationMessage,
@@ -15,6 +16,23 @@ import {
 	getMessageParts,
 	setImageMessageCaption,
 } from '@/utils/chat-models.uts'
+
+export const CHAT_MESSAGE_ACTION_DELETE = '删除'
+export const CHAT_MESSAGE_ACTION_EDIT = '编辑'
+export const CHAT_MESSAGE_ACTION_PLAY_SPEECH = '播放语音'
+export const CHAT_MESSAGE_ACTION_REGENERATE = '重新回答'
+
+export type ChatMessageActionContext = {
+	ok: boolean
+	actions: string[]
+}
+
+function emptyChatMessageActionContext(): ChatMessageActionContext {
+	return {
+		ok: false,
+		actions: [] as string[],
+	} as ChatMessageActionContext
+}
 
 export function getChatMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] {
 	return getMessageParts(msg)
@@ -47,21 +65,37 @@ export function hasChatMessageRef(messages: UTSJSONObject[], target: UTSJSONObje
 	return false
 }
 
-export function buildChatMessageActionItems(role: string, assistantContent: string, ttsEnabled: boolean): string[] {
+function buildChatMessageActionItems(role: string, assistantContent: string, ttsEnabled: boolean): string[] {
 	const actions: string[] = []
 	if (role == CHAT_ROLE_USER || role == CHAT_ROLE_ASSISTANT) {
-		actions.push('删除')
-		actions.push('编辑')
+		actions.push(CHAT_MESSAGE_ACTION_DELETE)
+		actions.push(CHAT_MESSAGE_ACTION_EDIT)
 		if (role == CHAT_ROLE_ASSISTANT) {
 			if (ttsEnabled == true && assistantContent != '') {
-				actions.push('播放语音')
+				actions.push(CHAT_MESSAGE_ACTION_PLAY_SPEECH)
 			}
-			actions.push('重新回答')
+			actions.push(CHAT_MESSAGE_ACTION_REGENERATE)
 		}
 		return actions
 	}
-	actions.push('删除')
+	actions.push(CHAT_MESSAGE_ACTION_DELETE)
 	return actions
+}
+
+export function buildChatMessageActionContext(msg: UTSJSONObject | null, ttsEnabled: boolean): ChatMessageActionContext {
+	if (msg == null) { return emptyChatMessageActionContext() }
+	const role = readChatMessageRole(msg)
+	if (role == '') { return emptyChatMessageActionContext() }
+	const assistantContent = isChatAssistantRole(role) == true ? getMessageContent(msg).trim() : ''
+	return {
+		ok: true,
+		actions: buildChatMessageActionItems(role, assistantContent, ttsEnabled),
+	} as ChatMessageActionContext
+}
+
+export function readChatMessageActionAt(actions: string[], tapIndex: number): string {
+	if (tapIndex < 0 || tapIndex >= actions.length) { return '' }
+	return actions[tapIndex]
 }
 
 export function buildChatLocationContent(location: UTSJSONObject): string {

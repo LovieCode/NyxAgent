@@ -159,25 +159,28 @@
 		appendChatTextMessage,
 		appendChatVoiceMessage,
 		applyChatImageCaption,
+		buildChatMessageActionContext,
 		buildChatLocationContent,
-		buildChatMessageActionItems,
 		calcChatInputHeight,
+		CHAT_MESSAGE_ACTION_DELETE,
+		CHAT_MESSAGE_ACTION_EDIT,
+		CHAT_MESSAGE_ACTION_PLAY_SPEECH,
+		CHAT_MESSAGE_ACTION_REGENERATE,
 		findLastChatAssistantMessage,
 		getChatMessagePartsForView,
 		hasChatMessageRef,
 		hasConfiguredChatDefaultTaskModel,
 		isChatAssistantMessage,
-		isChatAssistantRole,
+		readChatMessageActionAt,
 		readChatMessageContentForEdit,
-		readChatMessageRole,
 		stringifyChatContextPreview,
 	} from '@/utils/chat-page-helpers.uts'
-		import {
-			appendBufferedChatAgentEvent,
-			appendLatestChatResponseSnapshot,
-			isBufferedChatAgentEvent,
-			reduceBufferedChatAgentEvents,
-		} from '@/utils/chat-stream-events.uts'
+	import {
+		appendBufferedChatAgentEvent,
+		appendLatestChatResponseSnapshot,
+		isBufferedChatAgentEvent,
+		reduceBufferedChatAgentEvents,
+	} from '@/utils/chat-stream-events.uts'
 	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, type PickedLocalFile } from '@/utils/attachment-reader.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { NYX_FLOAT_CONTEXT_CHAT, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
@@ -438,28 +441,22 @@
 				if (this.isGenerating == true) { return }
 				if (this.messageActionSheetOpen == true) { return }
 				const msg = this.messages[index]
-				if (msg == null) { return }
-				const role = readChatMessageRole(msg)
-				if (role == '') { return }
-				const isAssistant = isChatAssistantRole(role)
-				const assistantContent = isAssistant == true ? getMessageContent(msg).trim() : ''
-				const ttsEnabled = isAssistant == true ? this.hasValidDefaultTaskModel('tts') : false
-				const actions = buildChatMessageActionItems(role, assistantContent, ttsEnabled)
+				const actionContext = buildChatMessageActionContext(msg, this.hasValidDefaultTaskModel('tts'))
+				if (actionContext.ok == false) { return }
+				const actions = actionContext.actions
 				const msgIndex = index
 				this.messageActionSheetOpen = true
 				uni.showActionSheet({
 					itemList: actions,
 					success: (res) => {
-						const tapIdx = res.tapIndex
-						if (tapIdx < 0 || tapIdx >= actions.length) { return }
-						const action = actions[tapIdx]
-						if (action == '删除') {
+						const action = readChatMessageActionAt(actions, res.tapIndex)
+						if (action == CHAT_MESSAGE_ACTION_DELETE) {
 							this.deleteMessage(msgIndex)
-						} else if (action == '编辑') {
+						} else if (action == CHAT_MESSAGE_ACTION_EDIT) {
 							this.editMessage(msgIndex)
-						} else if (action == '播放语音') {
+						} else if (action == CHAT_MESSAGE_ACTION_PLAY_SPEECH) {
 							this.playAssistantSpeech(msgIndex)
-						} else if (action == '重新回答') {
+						} else if (action == CHAT_MESSAGE_ACTION_REGENERATE) {
 							this.regenerateResponse(msgIndex)
 						}
 					},
