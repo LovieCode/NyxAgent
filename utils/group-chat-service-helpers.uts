@@ -1,0 +1,109 @@
+import { createPlainPart } from '@/utils/chat-models.uts'
+import {
+	GROUP_MESSAGE_SENDER_REVIEWER,
+	GROUP_MESSAGE_SENDER_SCHEDULER,
+	GROUP_MESSAGE_VISIBILITY_PUBLIC,
+	createId,
+	resolveGroupReviewerAgentId,
+	resolveGroupReviewerDisplayName,
+	resolveGroupSchedulerAgentId,
+	resolveGroupSchedulerDisplayName,
+	type GroupChat,
+	type GroupChatSession,
+} from '@/utils/group-chat-models.uts'
+import { displaySessionTitle, readActionText } from '@/utils/group-chat-runtime.uts'
+
+export function createGroupAgentContextRecordPayload(group: GroupChat, session: GroupChatSession, agentId: string, agentName: string, action: UTSJSONObject, runtimeMessages: UTSJSONObject[], systemPrompt: string): UTSJSONObject {
+	const privateInstruction = readActionText(action, 'privateInstruction')
+	const publicIntent = readActionText(action, 'publicIntent')
+	const targetType = readActionText(action, 'targetType')
+	const targetAgentId = readActionText(action, 'targetAgentId')
+	const replyLength = readActionText(action, 'replyLength')
+	const replyGuidance = readActionText(action, 'replyGuidance')
+	const searchAdvice = readActionText(action, 'searchAdvice')
+	const searchInstruction = readActionText(action, 'searchInstruction')
+	const now = Date.now()
+	return {
+		id: createId('gctx'),
+		agentId: agentId,
+		agentName: agentName,
+		groupId: group.id,
+		groupName: group.name,
+		sessionId: session.id,
+		sessionTitle: displaySessionTitle(session),
+		privateInstruction: privateInstruction,
+		publicIntent: publicIntent,
+		targetType: targetType,
+		targetAgentId: targetAgentId,
+		replyLength: replyLength,
+		replyGuidance: replyGuidance,
+		searchAdvice: searchAdvice,
+		searchInstruction: searchInstruction,
+		systemPrompt: systemPrompt,
+		runtimeMessages: JSON.parse(JSON.stringify(runtimeMessages)) as UTSJSONObject[],
+		createdAt: now,
+	} as UTSJSONObject
+}
+
+export function decorateGroupMessage(base: UTSJSONObject, groupId: string, sessionId: string, senderType: string, agentId: string, agentName: string, agentAvatar: string, visible: boolean, visibility: string = GROUP_MESSAGE_VISIBILITY_PUBLIC, visibleAgentIds: string[] | null = null): UTSJSONObject {
+	base['id'] = createId('gmsg')
+	base['groupId'] = groupId
+	base['sessionId'] = sessionId
+	base['senderType'] = senderType
+	base['senderAgentId'] = agentId
+	base['senderName'] = agentName
+	base['senderAvatar'] = agentAvatar
+	base['visibility'] = visibility
+	base['visibleAgentIds'] = visibleAgentIds != null ? visibleAgentIds : ([] as string[])
+	base['visible'] = visible
+	base['revoked'] = false
+	base['timestamp'] = Date.now()
+	return base
+}
+
+export function normalizeGroupUserDisplayName(userName: string): string {
+	const name = userName.trim()
+	return name != '' ? name : '用户'
+}
+
+export function resolveGroupHiddenSenderName(group: GroupChat | null, senderType: string): string {
+	if (senderType == GROUP_MESSAGE_SENDER_SCHEDULER) {
+		return resolveGroupSchedulerDisplayName(group)
+	}
+	if (senderType == GROUP_MESSAGE_SENDER_REVIEWER) {
+		return resolveGroupReviewerDisplayName(group)
+	}
+	return senderType
+}
+
+export function resolveGroupHiddenSenderAgentId(group: GroupChat | null, senderType: string): string {
+	if (senderType == GROUP_MESSAGE_SENDER_SCHEDULER) {
+		return resolveGroupSchedulerAgentId(group)
+	}
+	if (senderType == GROUP_MESSAGE_SENDER_REVIEWER) {
+		return resolveGroupReviewerAgentId(group)
+	}
+	return ''
+}
+
+export function markGroupMessageRevokedFields(message: UTSJSONObject): void {
+	const senderName = message['senderName'] as string | null
+	const name = senderName != null && senderName.trim() != '' ? senderName.trim() : '成员'
+	const text = name + '撤回了一条消息'
+	message['revoked'] = true
+	message['content'] = text
+	message['message'] = [createPlainPart(text)]
+	message['isStreaming'] = false
+}
+
+export function cloneGroupMessagesForFork(oldMessages: UTSJSONObject[], forkId: string): UTSJSONObject[] {
+	const copiedMessages: UTSJSONObject[] = []
+	for (let i = 0; i < oldMessages.length; i++) {
+		const copied = JSON.parse(JSON.stringify(oldMessages[i])) as UTSJSONObject
+		copied['id'] = createId('gmsg')
+		copied['sessionId'] = forkId
+		copied['isStreaming'] = false
+		copiedMessages.push(copied)
+	}
+	return copiedMessages
+}

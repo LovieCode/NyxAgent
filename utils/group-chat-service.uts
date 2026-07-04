@@ -22,7 +22,6 @@ import {
 	createAssistantStreamingMessage,
 	createFileMessage,
 	createImageMessage,
-	createPlainPart,
 	createTextMessage,
 	extractPlainText,
 } from '@/utils/chat-models.uts'
@@ -70,10 +69,6 @@ import {
 	parseGroupMessages,
 	parseGroupSessions,
 	readStringField,
-	resolveGroupReviewerAgentId,
-	resolveGroupReviewerDisplayName,
-	resolveGroupSchedulerAgentId,
-	resolveGroupSchedulerDisplayName,
 	safeJsonText,
 	sessionToDbRow,
 	storageMembersKey,
@@ -87,7 +82,6 @@ import {
 	buildDefaultSchedulerPrompt,
 	buildDefaultSharedPrompt,
 	displaySessionTitle,
-	readActionText,
 	readAgentAvatar,
 	readAgentHideThinking,
 	readAgentMsgSegmentation,
@@ -95,6 +89,15 @@ import {
 	stripGroupAgentSpeakerPrefix,
 	stripGroupAgentSpeakerPrefixFromParts,
 } from '@/utils/group-chat-runtime.uts'
+import {
+	cloneGroupMessagesForFork,
+	createGroupAgentContextRecordPayload,
+	decorateGroupMessage,
+	markGroupMessageRevokedFields,
+	normalizeGroupUserDisplayName,
+	resolveGroupHiddenSenderAgentId,
+	resolveGroupHiddenSenderName,
+} from '@/utils/group-chat-service-helpers.uts'
 export * from '@/utils/group-chat-models.uts'
 export * from '@/utils/group-chat-runtime.uts'
 export * from '@/utils/group-chat-scheduler.uts'
@@ -551,35 +554,7 @@ export function migrateLegacyGroupChatStorage(storageKeys: string[]): number {
 }
 
 export function createGroupAgentContextRecord(group: GroupChat, session: GroupChatSession, agentId: string, agentName: string, action: UTSJSONObject, runtimeMessages: UTSJSONObject[], systemPrompt: string): UTSJSONObject {
-	const privateInstruction = readActionText(action, 'privateInstruction')
-	const publicIntent = readActionText(action, 'publicIntent')
-	const targetType = readActionText(action, 'targetType')
-	const targetAgentId = readActionText(action, 'targetAgentId')
-	const replyLength = readActionText(action, 'replyLength')
-	const replyGuidance = readActionText(action, 'replyGuidance')
-	const searchAdvice = readActionText(action, 'searchAdvice')
-	const searchInstruction = readActionText(action, 'searchInstruction')
-	const now = Date.now()
-	return {
-		id: createId('gctx'),
-		agentId: agentId,
-		agentName: agentName,
-		groupId: group.id,
-		groupName: group.name,
-		sessionId: session.id,
-		sessionTitle: displaySessionTitle(session),
-		privateInstruction: privateInstruction,
-		publicIntent: publicIntent,
-		targetType: targetType,
-		targetAgentId: targetAgentId,
-		replyLength: replyLength,
-		replyGuidance: replyGuidance,
-		searchAdvice: searchAdvice,
-		searchInstruction: searchInstruction,
-		systemPrompt: systemPrompt,
-		runtimeMessages: JSON.parse(JSON.stringify(runtimeMessages)) as UTSJSONObject[],
-		createdAt: now,
-	} as UTSJSONObject
+	return createGroupAgentContextRecordPayload(group, session, agentId, agentName, action, runtimeMessages, systemPrompt)
 }
 
 export function appendGroupMessage(groupId: string, sessionId: string, message: UTSJSONObject): void {
@@ -588,44 +563,17 @@ export function appendGroupMessage(groupId: string, sessionId: string, message: 
 	saveGroupMessages(groupId, sessionId, messages)
 }
 
-function decorateGroupMessage(base: UTSJSONObject, groupId: string, sessionId: string, senderType: string, agentId: string, agentName: string, agentAvatar: string, visible: boolean, visibility: string = GROUP_MESSAGE_VISIBILITY_PUBLIC, visibleAgentIds: string[] | null = null): UTSJSONObject {
-	base['id'] = createId('gmsg')
-	base['groupId'] = groupId
-	base['sessionId'] = sessionId
-	base['senderType'] = senderType
-	base['senderAgentId'] = agentId
-	base['senderName'] = agentName
-	base['senderAvatar'] = agentAvatar
-	base['visibility'] = visibility
-	base['visibleAgentIds'] = visibleAgentIds != null ? visibleAgentIds : ([] as string[])
-	base['visible'] = visible
-	base['revoked'] = false
-	base['timestamp'] = Date.now()
-	return base
-}
-
-function normalizeUserDisplayName(userName: string): string {
-	const name = userName.trim()
-	return name != '' ? name : '用户'
-}
 
 export function createGroupUserMessage(groupId: string, sessionId: string, content: string, userName: string = ''): UTSJSONObject {
 	const base = createTextMessage(CHAT_ROLE_USER, content)
-	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeUserDisplayName(userName), '', true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeGroupUserDisplayName(userName), '', true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
 }
 
 export function createGroupHiddenMessage(groupId: string, sessionId: string, senderType: string, content: string): UTSJSONObject {
 	const base = createTextMessage('system', content)
 	const group = senderType == GROUP_MESSAGE_SENDER_SCHEDULER || senderType == GROUP_MESSAGE_SENDER_REVIEWER ? getGroupChatById(groupId) : null
-	let senderName = senderType
-	let senderAgentId = ''
-	if (senderType == GROUP_MESSAGE_SENDER_SCHEDULER) {
-		senderName = resolveGroupSchedulerDisplayName(group)
-		senderAgentId = resolveGroupSchedulerAgentId(group)
-	} else if (senderType == GROUP_MESSAGE_SENDER_REVIEWER) {
-		senderName = resolveGroupReviewerDisplayName(group)
-		senderAgentId = resolveGroupReviewerAgentId(group)
-	}
+	const senderName = resolveGroupHiddenSenderName(group, senderType)
+	const senderAgentId = resolveGroupHiddenSenderAgentId(group, senderType)
 	return decorateGroupMessage(base, groupId, sessionId, senderType, senderAgentId, senderName, '', false, GROUP_MESSAGE_VISIBILITY_INTERNAL, [] as string[])
 }
 
@@ -656,12 +604,12 @@ export function createGroupAgentFinalMessage(groupId: string, sessionId: string,
 
 export function createGroupUserImageMessage(groupId: string, sessionId: string, imagePath: string, userName: string = ''): UTSJSONObject {
 	const base = createImageMessage(imagePath)
-	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeUserDisplayName(userName), '', true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeGroupUserDisplayName(userName), '', true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
 }
 
 export function createGroupUserFileMessage(groupId: string, sessionId: string, fileName: string, filePath: string, userName: string = '', fileText: string = ''): UTSJSONObject {
 	const base = createFileMessage(fileName, filePath, fileText)
-	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeUserDisplayName(userName), '', true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeGroupUserDisplayName(userName), '', true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
 }
 
 export function revokeGroupAgentMessage(groupId: string, sessionId: string, messageId: string): void {
@@ -670,13 +618,7 @@ export function revokeGroupAgentMessage(groupId: string, sessionId: string, mess
 		const id = messages[i]['id'] as string | null
 		const senderType = messages[i]['senderType'] as string | null
 		if (id == messageId && senderType == GROUP_MESSAGE_SENDER_AGENT) {
-			const senderName = messages[i]['senderName'] as string | null
-			const name = senderName != null && senderName.trim() != '' ? senderName.trim() : '成员'
-			const text = name + '撤回了一条消息'
-			messages[i]['revoked'] = true
-			messages[i]['content'] = text
-			messages[i]['message'] = [createPlainPart(text)]
-			messages[i]['isStreaming'] = false
+			markGroupMessageRevokedFields(messages[i])
 			break
 		}
 	}
@@ -684,13 +626,7 @@ export function revokeGroupAgentMessage(groupId: string, sessionId: string, mess
 }
 
 export function markGroupAgentMessageRevoked(message: UTSJSONObject): void {
-	const senderName = message['senderName'] as string | null
-	const name = senderName != null && senderName.trim() != '' ? senderName.trim() : '成员'
-	const text = name + '撤回了一条消息'
-	message['revoked'] = true
-	message['content'] = text
-	message['message'] = [createPlainPart(text)]
-	message['isStreaming'] = false
+	markGroupMessageRevokedFields(message)
 }
 
 export function deleteGroupSession(groupId: string, sessionId: string, clearFiles: boolean): void {
@@ -749,14 +685,7 @@ export function forkGroupSession(groupId: string, sessionId: string): GroupChatS
 	sessions.push(forked)
 	saveGroupSessions(groupId, sessions)
 	const oldMessages = getGroupMessages(groupId, sessionId)
-	const copiedMessages: UTSJSONObject[] = []
-	for (let i = 0; i < oldMessages.length; i++) {
-		const copied = JSON.parse(JSON.stringify(oldMessages[i])) as UTSJSONObject
-		copied['id'] = createId('gmsg')
-		copied['sessionId'] = forkId
-		copied['isStreaming'] = false
-		copiedMessages.push(copied)
-	}
+	const copiedMessages = cloneGroupMessagesForFork(oldMessages, forkId)
 	saveGroupMessages(groupId, forkId, copiedMessages)
 	return forked
 }
