@@ -13,14 +13,20 @@ import {
 	readCreateTemplateName,
 	readCreateTemplatePrompt,
 } from '@/utils/agent-create-presets.uts'
+import { getAgents, saveAgents } from '@/utils/agent.uts'
+import { getAgentDir } from '@/utils/file-manager.uts'
 
 function readCreateDataString(data: UTSJSONObject, key: string): string {
 	const raw = data[key] as string | null
 	return raw != null ? raw : ''
 }
 
+export function readAgentCreateName(data: UTSJSONObject): string {
+	return readCreateDataString(data, 'name').trim()
+}
+
 export function readAgentCreatePreviewName(data: UTSJSONObject): string {
-	const name = readCreateDataString(data, 'name').trim()
+	const name = readAgentCreateName(data)
 	return name != '' ? name : '未命名联系人'
 }
 
@@ -119,8 +125,8 @@ export function parseAgentCreateImagePath(res: any): string {
 	return ''
 }
 
-export function buildCreatedAgentPayload(id: string, data: UTSJSONObject, defaultModel: string | null): UTSJSONObject {
-	const name = readCreateDataString(data, 'name').trim()
+function buildCreatedAgentPayload(id: string, data: UTSJSONObject, defaultModel: string | null): UTSJSONObject {
+	const name = readAgentCreateName(data)
 	const desc = readCreateDataString(data, 'desc').trim()
 	const systemPrompt = readCreateDataString(data, 'systemPrompt').trim()
 	const icon = readAgentCreateIcon(data)
@@ -141,4 +147,14 @@ export function buildCreatedAgentPayload(id: string, data: UTSJSONObject, defaul
 		agent['avatar'] = avatar
 	}
 	return agent
+}
+
+export function createAgentFromCreateData(data: UTSJSONObject, defaultModel: string | null): string {
+	const id = 'custom-' + Date.now() + '-' + Math.floor(Math.random() * 1000)
+	const agent = buildCreatedAgentPayload(id, data, defaultModel)
+	getAgentDir(id)
+	const agents = getAgents()
+	agents.push(agent)
+	saveAgents(agents)
+	return id
 }

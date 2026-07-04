@@ -230,8 +230,7 @@
 	 * 聊天会话列表页
 	 * 扁平化粉白主题
 	 */
-	import { getAgents, saveAgents } from '@/utils/agent.uts'
-	import { getAgentDir } from '@/utils/file-manager.uts'
+	import { getAgents } from '@/utils/agent.uts'
 	import { deleteRuntimeState, getAppSetting, getRuntimeState, setAppSetting, setRuntimeState } from '@/utils/database.uts'
 	import { getAllProviders } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import {
@@ -264,12 +263,13 @@
 	} from '@/utils/agent-create-presets.uts'
 	import {
 		buildAgentCreateDataFromTemplate,
-		buildCreatedAgentPayload,
 		buildDefaultAgentCreateData,
 		buildFirstRunProviderCardClass,
+		createAgentFromCreateData,
 		hasReadyChatProviderInList,
 		parseAgentCreateImagePath,
 		providerExistsInList,
+		readAgentCreateName,
 		readAgentCreateAvatar,
 		readAgentCreateIcon,
 		readAgentCreatePreviewDesc,
@@ -279,11 +279,14 @@
 	} from '@/utils/agents-page-helpers.uts'
 	import {
 		buildAgentChatList,
+		findAgentSourceByChatId,
+		findGroupSourceByChatId,
 		formatAgentChatTime,
 		isAgentGroupChatItem,
 		readAgentChatAvatar,
 		readAgentChatDesc,
 		readAgentChatIcon,
+		readAgentChatId,
 		readAgentChatKey,
 		readAgentChatName,
 	} from '@/utils/agent-chat-list.uts'
@@ -518,28 +521,19 @@
 
 			openChatItem(item: UTSJSONObject): void {
 				this.closeCreateMenu()
-				const type = item['type'] as string | null
-				if (type == 'group') {
-					const groupId = item['id'] as string | null
-					if (groupId == null || groupId == '') { return }
-					for (let i = 0; i < this.groupList.length; i++) {
-						if (this.groupList[i].id == groupId) {
-							this.openGroup(this.groupList[i])
-							return
-						}
-					}
+				const chatId = readAgentChatId(item)
+				if (chatId == '') { return }
+				if (isAgentGroupChatItem(item) == true) {
+					const group = findGroupSourceByChatId(this.groupList, chatId)
+					if (group != null) { this.openGroup(group) }
 					return
 				}
-				const agentId = item['id'] as string | null
-				if (agentId == null || agentId == '') { return }
-				for (let i = 0; i < this.agentList.length; i++) {
-					const id = this.agentList[i]['id'] as string | null
-					if (id == agentId) {
-						this.openAgent(this.agentList[i])
-						return
-					}
+				const agent = findAgentSourceByChatId(this.agentList, chatId)
+				if (agent != null) {
+					this.openAgent(agent)
+					return
 				}
-				setActiveAgentRuntimeId(agentId)
+				setActiveAgentRuntimeId(chatId)
 				uni.navigateTo({ url: '/pages/chat/chat' })
 			},
 
@@ -614,8 +608,7 @@
 
 			/** 执行创建私聊 */
 			doCreateAgent() {
-				const rawName = this.createData['name'] as string | null
-				const name = (rawName != null ? rawName : '').trim()
+				const name = readAgentCreateName(this.createData)
 				if (name == '') {
 					uni.showToast({ position: 'bottom',
 						title: '请输入名称',
@@ -624,20 +617,9 @@
 					return
 				}
 
-				// 生成唯一 ID
-				const id = 'custom-' + Date.now() + '-' + Math.floor(Math.random() * 1000)
 				// 默认模型从 SQLite app_settings 读取，缺省时回退内置模型。
 				const defaultModel = getAppSetting('settings_model')
-
-				const newAgent = buildCreatedAgentPayload(id, this.createData, defaultModel)
-
-				// 初始化 agent 文件目录
-				getAgentDir(id)
-
-				// 添加到列表并保存
-				const agents = getAgents()
-				agents.push(newAgent)
-				saveAgents(agents)
+				const id = createAgentFromCreateData(this.createData, defaultModel)
 
 				this.showCreateDialog = false
 				// 重置表单

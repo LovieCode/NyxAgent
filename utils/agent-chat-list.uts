@@ -118,8 +118,32 @@ export function readAgentChatKey(item: UTSJSONObject): string {
 	return (type != '' ? type : 'chat') + '-' + id
 }
 
+export function readAgentChatId(item: UTSJSONObject): string {
+	return readStringField(item, 'id')
+}
+
 export function isAgentGroupChatItem(item: UTSJSONObject): boolean {
 	return readStringField(item, 'type') == 'group'
+}
+
+export function findAgentSourceByChatId(agents: UTSJSONObject[], agentId: string): UTSJSONObject | null {
+	if (agentId == '') { return null }
+	for (let i = 0; i < agents.length; i++) {
+		if (readStringField(agents[i], 'id') == agentId) {
+			return agents[i]
+		}
+	}
+	return null
+}
+
+export function findGroupSourceByChatId(groups: GroupChat[], groupId: string): GroupChat | null {
+	if (groupId == '') { return null }
+	for (let i = 0; i < groups.length; i++) {
+		if (groups[i].id == groupId) {
+			return groups[i]
+		}
+	}
+	return null
 }
 
 export function readAgentChatName(item: UTSJSONObject): string {
