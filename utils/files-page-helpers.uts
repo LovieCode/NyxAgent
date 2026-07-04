@@ -1,0 +1,77 @@
+import { getExtension, getInternalFilesDir, isImageFile, joinPath, type FileItem } from '@/utils/file-manager.uts'
+
+export function getManagedFileIconName(item: FileItem): string {
+	if (item.isDirectory == true) {
+		return 'folder'
+	}
+	const ext = getExtension(item.name)
+	if (isImageFile(item.name)) {
+		return 'image'
+	}
+	if (ext == 'txt' || ext == 'md' || ext == 'log') {
+		return 'file-text'
+	}
+	if (ext == 'json' || ext == 'jsonl' || ext == 'xml' || ext == 'yaml' || ext == 'yml') {
+		return 'file-text'
+	}
+	return 'file'
+}
+
+export function getManagedFileIconColor(item: FileItem): string {
+	if (item.isDirectory == true) {
+		return '#FB8FAB'
+	}
+	if (isImageFile(item.name)) {
+		return '#10B981'
+	}
+	const ext = getExtension(item.name)
+	if (ext == 'txt' || ext == 'md' || ext == 'log') {
+		return '#6B7280'
+	}
+	return '#9CA3AF'
+}
+
+export function getManagedFileItemGroup(item: FileItem): string {
+	if (item.name.startsWith('[User]')) {
+		return 'user'
+	}
+	if (item.name.startsWith('[Group]')) {
+		return 'group'
+	}
+	if (item.name.startsWith('[Agent]')) {
+		return 'agent'
+	}
+	return 'file'
+}
+
+export function getManagedFileSectionLabel(item: FileItem): string {
+	if (item.name.startsWith('[User]')) {
+		return '用户目录'
+	}
+	if (item.name.startsWith('[Group]')) {
+		return '群聊目录'
+	}
+	if (item.name.startsWith('[Agent]')) {
+		return 'Agent 目录'
+	}
+	return '其他目录'
+}
+
+export function stripManagedFileDisplayPrefix(name: string): string {
+	if (name.startsWith('[User] ')) {
+		return name.substring(7)
+	}
+	if (name.startsWith('[Agent] ')) {
+		return name.substring(8)
+	}
+	if (name.startsWith('[Group] ')) {
+		return name.substring(8)
+	}
+	return name
+}
+
+export function buildGroupWorkspacesRootPath(): string {
+	const filesDir = getInternalFilesDir()
+	if (filesDir == '') { return '' }
+	return joinPath(filesDir, 'group-workspaces')
+}

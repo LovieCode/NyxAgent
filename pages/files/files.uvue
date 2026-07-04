@@ -99,11 +99,19 @@
 </template>
 
 <script lang="uts">
-	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, parentPath, basename, joinPath, normalizePath, getUserDir, getInternalFilesDir, getExternalFilesDir, getAgentsRoot, formatFileSize, formatTime, isTextFile, isImageFile, getExtension, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
+	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, parentPath, basename, joinPath, normalizePath, getUserDir, getInternalFilesDir, getExternalFilesDir, getAgentsRoot, formatFileSize, formatTime, isTextFile, isImageFile, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
 	import { deleteRuntimeState, getConversationsByAgent, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 	import { displaySessionTitle, getGroupChats, getGroupSessions } from '@/utils/group-chat-service.uts'
 	import { consumeFilesInitialPath } from '@/utils/runtime-state.uts'
 	import { getAgents } from '@/utils/agent.uts'
+	import {
+		buildGroupWorkspacesRootPath,
+		getManagedFileIconColor,
+		getManagedFileIconName,
+		getManagedFileItemGroup,
+		getManagedFileSectionLabel,
+		stripManagedFileDisplayPrefix,
+	} from '@/utils/files-page-helpers.uts'
 
 	/** 虚拟根路径标记（合并视图用） */
 	const VIRTUAL_ROOT = '__FILE_ROOT__'
@@ -531,52 +539,17 @@
 
 			/** 获取文件图标名称 */
 			getFileIconName(item : FileItem) : string {
-				if (item.isDirectory == true) {
-					return 'folder'
-				}
-				const ext = getExtension(item.name)
-				if (isImageFile(item.name)) {
-					return 'image'
-				}
-				if (ext == 'txt' || ext == 'md' || ext == 'log') {
-					return 'file-text'
-				}
-				if (ext == 'json' || ext == 'jsonl' || ext == 'xml' || ext == 'yaml' || ext == 'yml') {
-					return 'file-text'
-				}
-				if (ext == 'zip' || ext == 'rar' || ext == '7z' || ext == 'tar' || ext == 'gz') {
-					return 'file'
-				}
-				return 'file'
+				return getManagedFileIconName(item)
 			},
 
 			/** 获取文件图标颜色 */
 			getFileIconColor(item : FileItem) : string {
-				if (item.isDirectory == true) {
-					return '#FB8FAB'
-				}
-				if (isImageFile(item.name)) {
-					return '#10B981'
-				}
-				const ext = getExtension(item.name)
-				if (ext == 'txt' || ext == 'md' || ext == 'log') {
-					return '#6B7280'
-				}
-				return '#9CA3AF'
+				return getManagedFileIconColor(item)
 			},
 
 			/** 获取根视图分组类型 */
 			getItemGroup(item : FileItem) : string {
-				if (item.name.startsWith('[User]')) {
-					return 'user'
-				}
-				if (item.name.startsWith('[Group]')) {
-					return 'group'
-				}
-				if (item.name.startsWith('[Agent]')) {
-					return 'agent'
-				}
-				return 'file'
+				return getManagedFileItemGroup(item)
 			},
 
 			/** 检测是否分组起始 */
@@ -593,33 +566,17 @@
 
 			/** 获取分组标签 */
 			getSectionLabel(item : FileItem) : string {
-				if (item.name.startsWith('[User]')) {
-					return '用户目录'
-				}
-				if (item.name.startsWith('[Group]')) {
-					return '群聊目录'
-				}
-				if (item.name.startsWith('[Agent]')) {
-					return 'Agent 目录'
-				}
-				return '其他目录'
+				return getManagedFileSectionLabel(item)
 			},
 
 			getGroupWorkspacesRootPath(): string {
-				const filesDir = getInternalFilesDir()
-				if (filesDir == '') { return '' }
-				return joinPath(filesDir, 'group-workspaces')
+				return buildGroupWorkspacesRootPath()
 			},
 
 			getDisplayItemName(item : FileItem) : string {
-				if (item.name.startsWith('[User] ')) {
-					return item.name.substring(7)
-				}
-				if (item.name.startsWith('[Agent] ')) {
-					return item.name.substring(8)
-				}
-				if (item.name.startsWith('[Group] ')) {
-					return item.name.substring(8)
+				const prefixedName = stripManagedFileDisplayPrefix(item.name)
+				if (prefixedName != item.name) {
+					return prefixedName
 				}
 				if (item.isDirectory == true) {
 					const parent = parentPath(item.path)
