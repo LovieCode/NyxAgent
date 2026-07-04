@@ -170,6 +170,15 @@
 
 <script lang="uts">
 	import { consumeContextPreviewPayload } from '@/utils/runtime-state.uts'
+	import {
+		buildContextScrollbarThumbStyle,
+		buildContextSnapshotDisplayText,
+		buildLastCallBadgeClass,
+		decodeContextDisplayEscapes,
+		estimateContextSize,
+		formatContextNumberValue,
+		readContextNumberField,
+	} from '@/utils/context-preview-helpers.uts'
 
 	export default {
 		data() {
@@ -223,26 +232,11 @@
 		},
 		computed: {
 			scrollbarThumbStyle(): string {
-				if (this.scrollContentHeight <= 0 || this.scrollViewHeight <= 0) {
-					return 'top:0;height:0;'
-				}
-				const trackH = this.scrollViewHeight - 4
-				const ratio = this.scrollViewHeight / this.scrollContentHeight
-				const thumbH = Math.max(trackH * ratio, 36)
-				const maxTop = trackH - thumbH
-				const maxScroll = this.scrollContentHeight - this.scrollViewHeight
-				const currentOffset = this.scrollOffset
-				const rawTop = maxScroll > 0 ? (currentOffset / maxScroll) * maxTop : 0
-				let top = rawTop
-				if (top < 0) top = 0
-				if (top > maxTop) top = maxTop
-				return 'top:' + top + 'px;height:' + thumbH + 'px;'
+				return buildContextScrollbarThumbStyle(this.scrollContentHeight, this.scrollViewHeight, this.scrollOffset)
 			},
 
 			lastCallBadgeClass(): string {
-				if (this.lastCallStatus == '成功' || this.lastCallStatus == '已捕获') return 'last-call-badge-ok'
-				if (this.lastCallStatus == '失败') return 'last-call-badge-error'
-				return 'last-call-badge-unknown'
+				return buildLastCallBadgeClass(this.lastCallStatus)
 			},
 		},
 		onLoad() {
@@ -253,7 +247,7 @@
 				return
 			}
 			this.previewText = raw
-			this.previewDisplayText = this.decodeDisplayEscapes(raw)
+			this.previewDisplayText = decodeContextDisplayEscapes(raw)
 			this.fullJsonText = this.previewDisplayText
 			const trimmed = raw.trim()
 			if (trimmed.startsWith('{') == false) {
@@ -295,10 +289,10 @@
 					this.applyContextSize(bodyText)
 					const responseText = parsed['responseText'] as string | null
 					const thinkingText = parsed['thinkingText'] as string | null
-					this.responsePreviewText = responseText != null ? this.decodeDisplayEscapes(responseText) : ''
-					this.thinkingPreviewText = thinkingText != null ? this.decodeDisplayEscapes(thinkingText) : ''
-					const combined = this.buildSnapshotDisplayText(bodyText, responseText, thinkingText)
-					this.fullJsonText = this.decodeDisplayEscapes(combined)
+					this.responsePreviewText = responseText != null ? decodeContextDisplayEscapes(responseText) : ''
+					this.thinkingPreviewText = thinkingText != null ? decodeContextDisplayEscapes(thinkingText) : ''
+					const combined = buildContextSnapshotDisplayText(bodyText, responseText, thinkingText)
+					this.fullJsonText = decodeContextDisplayEscapes(combined)
 					this.previewText = combined
 					const bodyMessages = requestBody['messages'] as UTSJSONObject[] | null
 					if (bodyMessages != null) {
@@ -328,46 +322,36 @@
 			setTimeout(() => { this.measureScrollSize() }, 800)
 		},
 		methods: {
-			readNumberField(obj: UTSJSONObject | null, key: string): number | null {
-				if (obj == null) { return null }
-				return obj[key] as number | null
-			},
-
-			formatNumberValue(value: number | null): string {
-				if (value == null) { return '—' }
-				return '' + value
-			},
-
 			applyContextSize(bodyText: string): void {
-				const charCount = bodyText.length
-				this.contextCharCount = '' + charCount
+				const size = estimateContextSize(bodyText)
+				this.contextCharCount = size.charCount
 				// TOKEN_ESTIMATE: 未引入 tokenizer，原始上下文页只给粗估值；实际 billing 仍以 provider usage 为准。
-				this.contextEstimatedTokens = '' + Math.ceil(charCount / 3)
+				this.contextEstimatedTokens = size.estimatedTokens
 			},
 
 			applyTokenUsage(usage: UTSJSONObject | null): void {
 				if (usage == null) { return }
-				const promptTokens = this.readNumberField(usage, 'prompt_tokens')
-				const completionTokens = this.readNumberField(usage, 'completion_tokens')
-				let totalTokens = this.readNumberField(usage, 'total_tokens')
-				const cacheHitTokens = this.readNumberField(usage, 'prompt_cache_hit_tokens')
+				const promptTokens = readContextNumberField(usage, 'prompt_tokens')
+				const completionTokens = readContextNumberField(usage, 'completion_tokens')
+				let totalTokens = readContextNumberField(usage, 'total_tokens')
+				const cacheHitTokens = readContextNumberField(usage, 'prompt_cache_hit_tokens')
 				if (totalTokens == null && promptTokens != null && completionTokens != null) {
 					totalTokens = promptTokens + completionTokens
 				}
-				this.usagePromptTokens = this.formatNumberValue(promptTokens)
-				this.usageCompletionTokens = this.formatNumberValue(completionTokens)
-				this.usageTotalTokens = this.formatNumberValue(totalTokens)
-				this.usageCacheHitTokens = this.formatNumberValue(cacheHitTokens)
+				this.usagePromptTokens = formatContextNumberValue(promptTokens)
+				this.usageCompletionTokens = formatContextNumberValue(completionTokens)
+				this.usageTotalTokens = formatContextNumberValue(totalTokens)
+				this.usageCacheHitTokens = formatContextNumberValue(cacheHitTokens)
 			},
 
 			applyConversationUsageStats(stats: UTSJSONObject | null): void {
 				if (stats == null) { return }
-				const promptTokens = this.readNumberField(stats, 'prompt_tokens')
-				const cacheHitTokens = this.readNumberField(stats, 'prompt_cache_hit_tokens')
-				const callCount = this.readNumberField(stats, 'call_count')
-				this.usageAccumPromptTokens = this.formatNumberValue(promptTokens)
-				this.usageAccumCacheHitTokens = this.formatNumberValue(cacheHitTokens)
-				this.usageCallCount = this.formatNumberValue(callCount)
+				const promptTokens = readContextNumberField(stats, 'prompt_tokens')
+				const cacheHitTokens = readContextNumberField(stats, 'prompt_cache_hit_tokens')
+				const callCount = readContextNumberField(stats, 'call_count')
+				this.usageAccumPromptTokens = formatContextNumberValue(promptTokens)
+				this.usageAccumCacheHitTokens = formatContextNumberValue(cacheHitTokens)
+				this.usageCallCount = formatContextNumberValue(callCount)
 				if (promptTokens != null && cacheHitTokens != null && promptTokens > 0) {
 					const ratio = Math.round((cacheHitTokens / promptTokens) * 1000) / 10
 					this.usageCacheHitRatio = ratio + '%'
@@ -515,62 +499,6 @@
 				})
 			},
 
-			decodeDisplayEscapes(text: string): string {
-				let result = ''
-				let i = 0
-				while (i < text.length) {
-					if (text.charAt(i) != '\\') {
-						result += text.charAt(i)
-						i++
-						continue
-					}
-					let slashCount = 0
-					while (i + slashCount < text.length && text.charAt(i + slashCount) == '\\') {
-						slashCount++
-					}
-					const nextIndex = i + slashCount
-					if (nextIndex >= text.length) {
-						result += text.substring(i, nextIndex)
-						i = nextIndex
-						continue
-					}
-					const nextChar = text.charAt(nextIndex)
-					const activeEscape = slashCount % 2 == 1
-					if (activeEscape == true && nextChar == 'n') {
-						result += text.substring(i, i + slashCount - 1)
-						result += '\n'
-						i = nextIndex + 1
-						continue
-					}
-					if (activeEscape == true && nextChar == 'r') {
-						result += text.substring(i, i + slashCount - 1)
-						result += '\n'
-						const afterR = nextIndex + 1
-						if (afterR + 1 < text.length && text.charAt(afterR) == '\\' && text.charAt(afterR + 1) == 'n') {
-							i = afterR + 2
-						} else {
-							i = nextIndex + 1
-						}
-						continue
-					}
-					if (activeEscape == true && nextChar == 't') {
-						result += text.substring(i, i + slashCount - 1)
-						result += '  '
-						i = nextIndex + 1
-						continue
-					}
-					result += text.substring(i, nextIndex)
-					i = nextIndex
-				}
-				return result
-			},
-
-			buildPreviewBlock(text: string, limit: number): string {
-				if (text.length <= limit) {
-					return text
-				}
-				return text.substring(0, limit) + '\n\n…… 已截断显示，复制可查看完整内容 ……'
-			},
 
 			commitScrollTop(targetTop: number): void {
 				let safeTop = targetTop
@@ -644,45 +572,10 @@
 				})
 			},
 
-			formatJsonObjectSegment(value: UTSJSONObject, fallback: string): string {
-				try {
-					return JSON.stringify(value, null, 2)
-				} catch (_e: any) {
-					try {
-						return JSON.stringify(value)
-					} catch (_e2: any) {
-						return fallback
-					}
-				}
-			},
-
-			formatJsonArraySegment(value: UTSJSONObject[], fallback: string): string {
-				try {
-					return JSON.stringify(value, null, 2)
-				} catch (_e: any) {
-					try {
-						return JSON.stringify(value)
-					} catch (_e2: any) {
-						return fallback
-					}
-				}
-			},
-
-			buildSnapshotDisplayText(bodyText: string, responseText: string | null, thinkingText: string | null): string {
-				let result = ''
-				if (responseText != null && responseText != '') {
-					result += '=== 响应 ===\n' + responseText + '\n\n'
-				}
-				if (thinkingText != null && thinkingText != '') {
-					result += '=== 思考过程 ===\n' + thinkingText + '\n\n'
-				}
-				result += '=== 请求体 ===\n' + bodyText
-				return result
-			},
 
 			copyAll() {
 				if (this.previewText == '') {
-					uni.showToast({ position: 'bottom', 
+					uni.showToast({ position: 'bottom',
 						title: '没有可复制内容',
 						icon: 'none'
 					})
@@ -691,7 +584,7 @@
 				uni.setClipboardData({
 					data: this.previewText,
 					success: () => {
-						uni.showToast({ position: 'bottom', 
+						uni.showToast({ position: 'bottom',
 							title: '已复制',
 							icon: 'none'
 						})

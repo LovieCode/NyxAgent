@@ -1,0 +1,106 @@
+export type ContextSizeEstimate = {
+	charCount: string
+	estimatedTokens: string
+}
+
+export function buildContextScrollbarThumbStyle(scrollContentHeight: number, scrollViewHeight: number, scrollOffset: number): string {
+	if (scrollContentHeight <= 0 || scrollViewHeight <= 0) {
+		return 'top:0;height:0;'
+	}
+	const trackH = scrollViewHeight - 4
+	const ratio = scrollViewHeight / scrollContentHeight
+	const thumbH = Math.max(trackH * ratio, 36)
+	const maxTop = trackH - thumbH
+	const maxScroll = scrollContentHeight - scrollViewHeight
+	const rawTop = maxScroll > 0 ? (scrollOffset / maxScroll) * maxTop : 0
+	let top = rawTop
+	if (top < 0) { top = 0 }
+	if (top > maxTop) { top = maxTop }
+	return 'top:' + top + 'px;height:' + thumbH + 'px;'
+}
+
+export function buildLastCallBadgeClass(status: string): string {
+	if (status == '成功' || status == '已捕获') { return 'last-call-badge-ok' }
+	if (status == '失败') { return 'last-call-badge-error' }
+	return 'last-call-badge-unknown'
+}
+
+export function readContextNumberField(obj: UTSJSONObject | null, key: string): number | null {
+	if (obj == null) { return null }
+	return obj[key] as number | null
+}
+
+export function formatContextNumberValue(value: number | null): string {
+	if (value == null) { return '—' }
+	return '' + value
+}
+
+export function estimateContextSize(bodyText: string): ContextSizeEstimate {
+	const charCount = bodyText.length
+	return {
+		charCount: '' + charCount,
+		estimatedTokens: '' + Math.ceil(charCount / 3),
+	} as ContextSizeEstimate
+}
+
+export function decodeContextDisplayEscapes(text: string): string {
+	let result = ''
+	let i = 0
+	while (i < text.length) {
+		if (text.charAt(i) != '\\') {
+			result += text.charAt(i)
+			i++
+			continue
+		}
+		let slashCount = 0
+		while (i + slashCount < text.length && text.charAt(i + slashCount) == '\\') {
+			slashCount++
+		}
+		const nextIndex = i + slashCount
+		if (nextIndex >= text.length) {
+			result += text.substring(i, nextIndex)
+			i = nextIndex
+			continue
+		}
+		const nextChar = text.charAt(nextIndex)
+		const activeEscape = slashCount % 2 == 1
+		if (activeEscape == true && nextChar == 'n') {
+			result += text.substring(i, i + slashCount - 1)
+			result += '\n'
+			i = nextIndex + 1
+			continue
+		}
+		if (activeEscape == true && nextChar == 'r') {
+			result += text.substring(i, i + slashCount - 1)
+			result += '\n'
+			const afterR = nextIndex + 1
+			if (afterR + 1 < text.length && text.charAt(afterR) == '\\' && text.charAt(afterR + 1) == 'n') {
+				i = afterR + 2
+			} else {
+				i = nextIndex + 1
+			}
+			continue
+		}
+		if (activeEscape == true && nextChar == 't') {
+			result += text.substring(i, i + slashCount - 1)
+			result += '  '
+			i = nextIndex + 1
+			continue
+		}
+		result += text.substring(i, nextIndex)
+		i = nextIndex
+	}
+	return result
+}
+
+export function buildContextSnapshotDisplayText(bodyText: string, responseText: string | null, thinkingText: string | null): string {
+	let result = ''
+	if (responseText != null && responseText != '') {
+		result += '=== 响应 ===\n' + responseText + '\n\n'
+	}
+	if (thinkingText != null && thinkingText != '') {
+		result += '=== 思考过程 ===\n' + thinkingText + '\n\n'
+	}
+	result += '=== 请求体 ===\n' + bodyText
+	return result
+}
