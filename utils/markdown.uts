@@ -48,6 +48,12 @@ function readBoolField(obj: UTSJSONObject, key: string, fallback: boolean): bool
 	return raw != null ? raw : fallback
 }
 
+function stripHtmlComment(line: string): string {
+	const start = line.indexOf('<!--')
+	if (start < 0) return line
+	return line.substring(0, start).trim()
+}
+
 // ---------- 渲染 ----------
 
 /** 渲染 Markdown 为渲染块（供 UI 使用） */
@@ -126,12 +132,6 @@ export function buildNoteMarkdown(title: string, content: string, id: string = '
 }
 
 // ---------- 解析 ----------
-
-function stripHtmlComment(line: string): string {
-	const start = line.indexOf('<!--')
-	if (start < 0) return line
-	return line.substring(0, start).trim()
-}
 
 function readCommentField(line: string, field: string): string {
 	const marker = field + ':'
