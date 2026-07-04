@@ -10,7 +10,7 @@ import { getSkills } from '@/utils/skills.uts'
 import { getAgentDir, getAgentsRoot, getInternalFilesDir, getUserDir, listDir, joinPath, exists, readContent, formatFileSize, formatTime } from '@/utils/file-manager.uts'
 import { buildTodoMarkdown, buildNoteMarkdown } from '@/utils/markdown.uts'
 import { writeExportZipFile, shareExportFile, getLastShareExportError } from '@/utssdk/app-data-export/index.uts'
-import { appendDirectorySpec, appendFileSpec, appendTextSpec, cloneExportObject, inferExtension, sanitizeFilePart, sanitizeRelativeZipPath, sanitizeZipSegment, stripFileSpecContent } from '@/utils/data-export-helpers.uts'
+import { appendDirectorySpec, appendFileSpec, appendTextSpec, cloneExportObject, inferExtension, isLocalExportPath, sanitizeFilePart, sanitizeRelativeZipPath, sanitizeZipSegment, stripFileSpecContent } from '@/utils/data-export-helpers.uts'
 
 const EXPORT_SCHEMA_VERSION = 1
 const MAX_EXPORT_FILE_BYTES: number = 50 * 1024 * 1024
