@@ -5,11 +5,13 @@
 
 import { getAgentDir, deleteItem } from '@/utils/file-manager.uts'
 import { getAppSetting, setAppSetting } from '@/utils/database.uts'
+import { isAstrBotEnabled } from '@/utils/astrbot-service.uts'
 
 export const NYX_ADMIN_AGENT_ID = 'nyx-admin'
 export const NYX_ADMIN_AGENT_NAME = '眠汐'
 export const NYX_ADMIN_AGENT_AVATAR = '/static/希娜-original.png'
 
+export const AGENT_TOOL_APP_GUIDE = 'app_guide'
 export const AGENT_TOOL_WORKSPACE_FILE = 'workspace_file'
 export const AGENT_TOOL_MEMORY_SEARCH = 'memory_search'
 export const AGENT_TOOL_MEMORY_BUFFER_WRITE = 'memory_buffer_write'
@@ -20,6 +22,7 @@ export const AGENT_TOOL_MEMORY_CORE_SAVE = 'memory_core_save'
 export const AGENT_TOOL_MEMORY_CORE_FORGET = 'memory_core_forget'
 
 const ALL_AGENT_TOOL_IDS: string[] = [
+	AGENT_TOOL_APP_GUIDE,
 	AGENT_TOOL_WORKSPACE_FILE,
 	AGENT_TOOL_MEMORY_SEARCH,
 	AGENT_TOOL_MEMORY_BUFFER_WRITE,
@@ -56,6 +59,14 @@ const defaultAgents: UTSJSONObject[] = [
 		model: 'deepseek-v4-flash',
 		cacheEnabled: true,
 		injectDatetime: true,
+		enabledToolIds: [
+			AGENT_TOOL_APP_GUIDE,
+			AGENT_TOOL_WORKSPACE_FILE,
+			AGENT_TOOL_MEMORY_SEARCH,
+			AGENT_TOOL_MEMORY_BUFFER_WRITE,
+			AGENT_TOOL_WEB_SEARCH,
+			AGENT_TOOL_ASTRBOT_TASK,
+		],
 		time: '刚刚'
 	},
 	{
@@ -164,6 +175,14 @@ function buildNyxAdminAgent(): UTSJSONObject {
 		model: 'deepseek-v4-flash',
 		cacheEnabled: true,
 		injectDatetime: true,
+		enabledToolIds: [
+			AGENT_TOOL_APP_GUIDE,
+			AGENT_TOOL_WORKSPACE_FILE,
+			AGENT_TOOL_MEMORY_SEARCH,
+			AGENT_TOOL_MEMORY_BUFFER_WRITE,
+			AGENT_TOOL_WEB_SEARCH,
+			AGENT_TOOL_ASTRBOT_TASK,
+		],
 		time: '刚刚'
 	} as UTSJSONObject
 }
@@ -259,6 +278,20 @@ function appendUniqueAgentToolId(list: string[], toolId: string): void {
 	list.push(toolId)
 }
 
+function isAgentToolRuntimeAvailable(toolId: string): boolean {
+	if (toolId == AGENT_TOOL_ASTRBOT_TASK) {
+		return isAstrBotEnabled()
+	}
+	return true
+}
+
+function appendAvailableAgentToolId(list: string[], toolId: string): void {
+	if (isAgentToolRuntimeAvailable(toolId) == false) {
+		return
+	}
+	appendUniqueAgentToolId(list, toolId)
+}
+
 function readAgentToolIdArray(value: any | null): string[] {
 	const result: string[] = []
 	if (value == null) {
@@ -287,13 +320,24 @@ export function getDefaultAgentToolIds(allowCoreMemoryWrite: boolean = false): s
 		AGENT_TOOL_MEMORY_BUFFER_WRITE,
 		AGENT_TOOL_WEB_SEARCH,
 	]
-	if (allowCoreMemoryWrite == false) {
+	if (allowCoreMemoryWrite == false && isAstrBotEnabled() == true) {
 		result.push(AGENT_TOOL_ASTRBOT_TASK)
 	}
 	if (allowCoreMemoryWrite == true) {
 		result.push(AGENT_TOOL_MEMORY_CORE_LIST)
 		result.push(AGENT_TOOL_MEMORY_CORE_SAVE)
 		result.push(AGENT_TOOL_MEMORY_CORE_FORGET)
+	}
+	return result
+}
+
+function getDefaultAgentToolIdsForAgent(agent: UTSJSONObject | null, allowCoreMemoryWrite: boolean): string[] {
+	const result = getDefaultAgentToolIds(allowCoreMemoryWrite)
+	if (agent != null) {
+		const agentId = agent['id'] as string | null
+		if (agentId == NYX_ADMIN_AGENT_ID && allowCoreMemoryWrite == false) {
+			appendAvailableAgentToolId(result, AGENT_TOOL_APP_GUIDE)
+		}
 	}
 	return result
 }
@@ -306,12 +350,12 @@ export function filterKnownAgentToolIds(ids: string[]): string[] {
 	return result
 }
 
-function filterAllowedAgentToolIds(ids: string[], allowCoreMemoryWrite: boolean): string[] {
-	const allowed = getDefaultAgentToolIds(allowCoreMemoryWrite)
+function filterAllowedAgentToolIdsForAgent(ids: string[], agent: UTSJSONObject | null, allowCoreMemoryWrite: boolean): string[] {
+	const allowed = getDefaultAgentToolIdsForAgent(agent, allowCoreMemoryWrite)
 	const result: string[] = []
 	for (let i = 0; i < ids.length; i++) {
 		const id = ids[i]
-		if (agentToolIdListContains(allowed, id) == true) {
+		if (agentToolIdListContains(allowed, id) == true && isAgentToolRuntimeAvailable(id) == true) {
 			appendUniqueAgentToolId(result, id)
 		}
 	}
@@ -322,11 +366,15 @@ export function getAgentEnabledToolIds(agent: UTSJSONObject | null, allowCoreMem
 	if (agent == null) {
 		return getDefaultAgentToolIds(allowCoreMemoryWrite)
 	}
+	const agentId = agent['id'] as string | null
 	const rawValue = agent['enabledToolIds']
 	if (rawValue == null) {
-		return getDefaultAgentToolIds(allowCoreMemoryWrite)
+		return getDefaultAgentToolIdsForAgent(agent, allowCoreMemoryWrite)
 	}
-	const result = filterAllowedAgentToolIds(readAgentToolIdArray(rawValue), allowCoreMemoryWrite)
+	const result = filterAllowedAgentToolIdsForAgent(readAgentToolIdArray(rawValue), agent, allowCoreMemoryWrite)
+	if (agentId == NYX_ADMIN_AGENT_ID && allowCoreMemoryWrite == false) {
+		appendAvailableAgentToolId(result, AGENT_TOOL_APP_GUIDE)
+	}
 	if (allowCoreMemoryWrite == true) {
 		appendUniqueAgentToolId(result, AGENT_TOOL_MEMORY_CORE_LIST)
 		appendUniqueAgentToolId(result, AGENT_TOOL_MEMORY_CORE_SAVE)
@@ -511,7 +559,7 @@ export function updateAgentTools(id: string, toolIds: string[]): void {
 	const agents = getAgents()
 	for (let i = 0; i < agents.length; i++) {
 		if ((agents[i]['id'] as string) == id) {
-			agents[i]['enabledToolIds'] = filterKnownAgentToolIds(toolIds)
+			agents[i]['enabledToolIds'] = filterAllowedAgentToolIdsForAgent(toolIds, agents[i], false)
 			break
 		}
 	}

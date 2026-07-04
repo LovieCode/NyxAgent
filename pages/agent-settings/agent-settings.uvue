@@ -271,12 +271,13 @@
 	/**
 	 * 私聊设置页面 - 编辑昵称/备注/头像/删除私聊
 	 */
-	import { getAgentById, updateAgent, deleteAgent, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, agentToolIdListContains, AGENT_TOOL_WORKSPACE_FILE, AGENT_TOOL_MEMORY_SEARCH, AGENT_TOOL_MEMORY_BUFFER_WRITE, AGENT_TOOL_WEB_SEARCH, AGENT_TOOL_ASTRBOT_TASK, NYX_ADMIN_AGENT_ID } from '@/utils/agent.uts'
+	import { getAgentById, updateAgent, deleteAgent, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, agentToolIdListContains, AGENT_TOOL_APP_GUIDE, AGENT_TOOL_WORKSPACE_FILE, AGENT_TOOL_MEMORY_SEARCH, AGENT_TOOL_MEMORY_BUFFER_WRITE, AGENT_TOOL_WEB_SEARCH, AGENT_TOOL_ASTRBOT_TASK, NYX_ADMIN_AGENT_ID } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { deleteRuntimeState, getAppSetting, getRuntimeState, setRuntimeState, updateSystemPromptForAgent } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
 	import { clearActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
 	import { getSkills, getAgentSkillIds, filterExistingSkillIds, skillIdListContains, readSkillId, readSkillName, readSkillDescription, readSkillEnabled, getSkillDocumentCount } from '@/utils/skills.uts'
+	import { isAstrBotEnabled } from '@/utils/astrbot-service.uts'
 
 	export default {
 		data() {
@@ -612,11 +613,16 @@
 
 			buildToolOptions(): UTSJSONObject[] {
 				const list: UTSJSONObject[] = []
+				if (this.agentId == NYX_ADMIN_AGENT_ID) {
+					list.push(this.buildToolOption(AGENT_TOOL_APP_GUIDE, 'App 教学', '眠汐专属：查询功能地图、设置路径、能力边界和插件状态'))
+				}
 				list.push(this.buildToolOption(AGENT_TOOL_WORKSPACE_FILE, '工作区文件', '读写当前私聊或群聊会话工作区文件'))
 				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_SEARCH, '记忆搜索', '查询当前联系人可见记忆和历史记录'))
 				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_BUFFER_WRITE, '短记忆缓存', '记录当前任务/临时要求/下一步，方便下轮接上'))
 				list.push(this.buildToolOption(AGENT_TOOL_WEB_SEARCH, '网络搜索', '联网搜索实时事实、资料和网页信息'))
-				list.push(this.buildToolOption(AGENT_TOOL_ASTRBOT_TASK, '调 AstrBot', '把复杂任务交给 AstrBot 后端执行，回来后由当前联系人验收再回复'))
+				if (isAstrBotEnabled() == true) {
+					list.push(this.buildToolOption(AGENT_TOOL_ASTRBOT_TASK, '调 AstrBot', '把复杂任务交给 AstrBot 后端执行，回来后由当前联系人验收再回复'))
+				}
 				return list
 			},
 
@@ -655,6 +661,10 @@
 			toggleAgentTool(tool: UTSJSONObject) {
 				const toolId = this.getToolId(tool)
 				if (toolId == '') {
+					return
+				}
+				if (this.agentId == NYX_ADMIN_AGENT_ID && toolId == AGENT_TOOL_APP_GUIDE) {
+					uni.showToast({ position: 'bottom', title: '眠汐内置教学不能关闭', icon: 'none' })
 					return
 				}
 				const next: string[] = []
