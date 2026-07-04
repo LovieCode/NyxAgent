@@ -1,0 +1,174 @@
+import { ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
+import { getModelCapabilities } from '@/uni_modules/agent-core/utssdk/llm-metadata.uts'
+
+export type ProviderEditPreset = {
+	valid: boolean
+	id: string
+	name: string
+	apiBase: string
+	model: string
+}
+
+export function createProviderEditModelInfo(modelId: string, expanded: boolean): ModelInfo {
+	if (modelId == '') {
+		return {
+			id: '',
+			ctxStr: '',
+			maxTokensStr: '',
+			expanded: expanded,
+			supportsVision: false,
+			supportsToolCall: false,
+			supportsReasoning: false,
+		} as ModelInfo
+	}
+	const caps = getModelCapabilities(modelId)
+	return {
+		id: modelId,
+		ctxStr: '',
+		maxTokensStr: '',
+		expanded: expanded,
+		supportsVision: caps.supportsVision,
+		supportsToolCall: caps.supportsToolCall,
+		supportsReasoning: caps.supportsReasoning,
+	} as ModelInfo
+}
+
+export function hasProviderEditModel(models: ModelInfo[], modelId: string): boolean {
+	if (modelId == '') { return true }
+	for (let i = 0; i < models.length; i++) {
+		if (models[i].id == modelId) { return true }
+	}
+	return false
+}
+
+export function removeProviderEditModelAt(models: ModelInfo[], index: number): ModelInfo[] {
+	const newList: ModelInfo[] = []
+	for (let i = 0; i < models.length; i++) {
+		if (i != index) {
+			newList.push(models[i])
+		}
+	}
+	return newList
+}
+
+export function buildProviderModelSummary(m: ModelInfo): string {
+	const parts: string[] = []
+	if (m.name != null && m.name != '') {
+		parts.push(m.name)
+	}
+	if (m.context != null && m.context > 0) {
+		parts.push(m.context + 'k ctx')
+	}
+	return parts.join(' · ')
+}
+
+export function countSelectedProviderModels(selectedModelIndexes: boolean[]): number {
+	let count = 0
+	for (let i = 0; i < selectedModelIndexes.length; i++) {
+		if (selectedModelIndexes[i] == true) {
+			count++
+		}
+	}
+	return count
+}
+
+export function areAllProviderModelsSelected(fetchedModelIds: string[], selectedModelIndexes: boolean[]): boolean {
+	if (fetchedModelIds.length == 0) { return false }
+	return countSelectedProviderModels(selectedModelIndexes) >= fetchedModelIds.length
+}
+
+export function providerModelMatchesSearch(modelId: string, searchText: string): boolean {
+	if (searchText == '') { return true }
+	return modelId.toLowerCase().indexOf(searchText.toLowerCase()) >= 0
+}
+
+export function countFilteredProviderModels(fetchedModelIds: string[], searchText: string): number {
+	if (searchText == '') { return fetchedModelIds.length }
+	let count = 0
+	for (let i = 0; i < fetchedModelIds.length; i++) {
+		if (providerModelMatchesSearch(fetchedModelIds[i], searchText) == true) {
+			count++
+		}
+	}
+	return count
+}
+
+export function filterNewProviderModelIds(ids: string[], editModels: ModelInfo[]): string[] {
+	const newIds: string[] = []
+	for (let i = 0; i < ids.length; i++) {
+		if (hasProviderEditModel(editModels, ids[i]) == false) {
+			newIds.push(ids[i])
+		}
+	}
+	return newIds
+}
+
+export function buildProviderModelSelectionFlags(count: number, selected: boolean): boolean[] {
+	const flags: boolean[] = []
+	for (let i = 0; i < count; i++) {
+		flags.push(selected)
+	}
+	return flags
+}
+
+export function appendSelectedProviderModels(editModels: ModelInfo[], fetchedModelIds: string[], selectedModelIndexes: boolean[]): number {
+	let addedCount = 0
+	for (let i = 0; i < fetchedModelIds.length; i++) {
+		if (selectedModelIndexes[i] == true) {
+			editModels.push(createProviderEditModelInfo(fetchedModelIds[i], false))
+			addedCount++
+		}
+	}
+	return addedCount
+}
+
+export function parseProviderEditPreset(presetJson: string): ProviderEditPreset {
+	try {
+		const preset = JSON.parse(presetJson) as UTSJSONObject
+		const rawId = preset['id'] as string | null
+		const rawName = preset['name'] as string | null
+		const rawApiBase = preset['apiBase'] as string | null
+		const rawModel = preset['model'] as string | null
+		return {
+			valid: true,
+			id: rawId != null ? rawId : '',
+			name: rawName != null ? rawName : '',
+			apiBase: rawApiBase != null ? rawApiBase : '',
+			model: rawModel != null ? rawModel : '',
+		} as ProviderEditPreset
+	} catch (_e: any) {
+		return {
+			valid: false,
+			id: '',
+			name: '',
+			apiBase: '',
+			model: '',
+		} as ProviderEditPreset
+	}
+}
+
+export function normalizeProviderModelsForSave(editModels: ModelInfo[]): ModelInfo[] {
+	const validModels: ModelInfo[] = []
+	for (let i = 0; i < editModels.length; i++) {
+		const m = editModels[i]
+		if (m.id == '') {
+			continue
+		}
+		const ctxVal = m.ctxStr
+		if (ctxVal != null && ctxVal != '') {
+			const parsed = Number.parseInt(ctxVal)
+			if (!isNaN(parsed) && parsed > 0) {
+				m.context = parsed
+			}
+		}
+		const mtVal = m.maxTokensStr
+		if (mtVal != null && mtVal != '') {
+			const parsed = Number.parseInt(mtVal)
+			if (!isNaN(parsed) && parsed > 0) {
+				m.maxTokens = parsed
+			}
+		}
+		validModels.push(m)
+	}
+	return validModels
+}

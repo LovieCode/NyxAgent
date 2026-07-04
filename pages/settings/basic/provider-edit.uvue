@@ -177,8 +177,23 @@
 
 <script lang="uts">
 	import { saveProvider, fetchProviderModels, parseModels, ModelInfo, getDefaultTaskModel, getProviderById, getDefaultProviderApiBase, setActiveProvider, setDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
-	import { getModelCapabilities, refreshMetadataCache, isMetadataCacheStale, ensureMetadataCache } from '@/uni_modules/agent-core/utssdk/llm-metadata.uts'
+	import { refreshMetadataCache, isMetadataCacheStale, ensureMetadataCache } from '@/uni_modules/agent-core/utssdk/llm-metadata.uts'
 	import { consumeRuntimeState, setAppSetting } from '@/utils/database.uts'
+	import {
+		appendSelectedProviderModels,
+		areAllProviderModelsSelected,
+		buildProviderModelSelectionFlags,
+		buildProviderModelSummary,
+		countFilteredProviderModels,
+		countSelectedProviderModels,
+		createProviderEditModelInfo,
+		filterNewProviderModelIds,
+		hasProviderEditModel,
+		normalizeProviderModelsForSave,
+		parseProviderEditPreset,
+		providerModelMatchesSearch,
+		removeProviderEditModelAt,
+	} from '@/utils/provider-edit-page-helpers.uts'
 
 	const PROVIDER_EDIT_RUNTIME_ID_KEY = 'provider_edit_id'
 	const PROVIDER_EDIT_SOURCE_KEY = 'provider_edit_source'
@@ -187,7 +202,7 @@
 	const FIRST_RUN_GUIDE_DONE_KEY = 'first_run_model_guide_done'
 
 	export default {
-			data() {
+		data() {
 			return {
 				isNew: true as boolean,
 				editId: '' as string,
@@ -204,7 +219,7 @@
 			}
 		},
 		onLoad() {
-			// 预加载元数据缓存到内存，保证后续 getModelCapabilities 直接命中
+			// 预加载模型能力元数据缓存，保证后续模型构造直接命中
 			ensureMetadataCache()
 			const source = consumeRuntimeState(PROVIDER_EDIT_SOURCE_KEY)
 			this.fromFirstRunGuide = source == PROVIDER_EDIT_SOURCE_FIRST_RUN
@@ -229,28 +244,13 @@
 				return this.fromFirstRunGuide == true ? '保存并开始聊天' : '保存创建'
 			},
 			selectedModelCount(): number {
-				let count = 0
-				for (let i = 0; i < this.selectedModelIndexes.length; i++) {
-					if (this.selectedModelIndexes[i] == true) {
-						count++
-					}
-				}
-				return count
+				return countSelectedProviderModels(this.selectedModelIndexes)
 			},
 			allModelsSelected(): boolean {
-				if (this.fetchedModelIds.length == 0) return false
-				return this.selectedModelCount >= this.fetchedModelIds.length
+				return areAllProviderModelsSelected(this.fetchedModelIds, this.selectedModelIndexes)
 			},
 			filteredModelCount(): number {
-				if (this.pickerSearchText == '') return this.fetchedModelIds.length
-				const needle = this.pickerSearchText.toLowerCase()
-				let count = 0
-				for (let i = 0; i < this.fetchedModelIds.length; i++) {
-					if (this.fetchedModelIds[i].toLowerCase().indexOf(needle) >= 0) {
-						count++
-					}
-				}
-				return count
+				return countFilteredProviderModels(this.fetchedModelIds, this.pickerSearchText)
 			},
 		},
 		methods: {
@@ -259,46 +259,24 @@
 			},
 
 			appendModelIfMissing(modelId: string): void {
-				if (modelId == '') { return }
-				for (let i = 0; i < this.editModels.length; i++) {
-					if (this.editModels[i].id == modelId) { return }
-				}
-				const caps = getModelCapabilities(modelId)
-				this.editModels.push({
-					id: modelId,
-					ctxStr: '',
-					maxTokensStr: '',
-					expanded: false,
-					supportsVision: caps.supportsVision,
-					supportsToolCall: caps.supportsToolCall,
-					supportsReasoning: caps.supportsReasoning,
-				} as ModelInfo)
+				if (hasProviderEditModel(this.editModels, modelId) == true) { return }
+				this.editModels.push(createProviderEditModelInfo(modelId, false))
 			},
 
 			applyProviderPreset(presetJson: string, overrideIdentity: boolean): void {
-				try {
-					const preset = JSON.parse(presetJson) as UTSJSONObject
-					const rawId = preset['id'] as string | null
-					const rawName = preset['name'] as string | null
-					const rawApiBase = preset['apiBase'] as string | null
-					const rawModel = preset['model'] as string | null
-					const id = rawId != null ? rawId : ''
-					const name = rawName != null ? rawName : ''
-					const apiBase = rawApiBase != null ? rawApiBase : ''
-					const model = rawModel != null ? rawModel : ''
-					if (overrideIdentity == true) {
-						this.isNew = true
-						this.editId = id
-						this.editName = name
-					} else if (this.editName == '' && name != '') {
-						this.editName = name
-					}
-					if (this.editApiBase == '' && apiBase != '') {
-						this.editApiBase = apiBase
-					}
-					this.appendModelIfMissing(model)
-				} catch (_e: any) {
+				const preset = parseProviderEditPreset(presetJson)
+				if (preset.valid == false) { return }
+				if (overrideIdentity == true) {
+					this.isNew = true
+					this.editId = preset.id
+					this.editName = preset.name
+				} else if (this.editName == '' && preset.name != '') {
+					this.editName = preset.name
 				}
+				if (this.editApiBase == '' && preset.apiBase != '') {
+					this.editApiBase = preset.apiBase
+				}
+				this.appendModelIfMissing(preset.model)
 			},
 
 			loadProviderForEdit(id: string) {
@@ -325,14 +303,7 @@
 			},
 
 			getModelSummary(m: ModelInfo): string {
-				const parts: string[] = []
-				if (m.name != null && m.name != '') {
-					parts.push(m.name)
-				}
-				if (m.context != null && m.context > 0) {
-					parts.push(m.context + 'k ctx')
-				}
-				return parts.join(' · ')
+				return buildProviderModelSummary(m)
 			},
 
 			toggleExpand(index: number) {
@@ -343,19 +314,12 @@
 			},
 
 			addModel() {
-				const m: ModelInfo = { id: '', ctxStr: '', maxTokensStr: '', expanded: true, supportsVision: false, supportsToolCall: false, supportsReasoning: false } as ModelInfo
-				this.editModels.push(m)
+				this.editModels.push(createProviderEditModelInfo('', true))
 				this.autoSaveProvider()
 			},
 
 			removeModel(index: number) {
-				const newList: ModelInfo[] = []
-				for (let i = 0; i < this.editModels.length; i++) {
-					if (i != index) {
-						newList.push(this.editModels[i])
-					}
-				}
-				this.editModels = newList
+				this.editModels = removeProviderEditModelAt(this.editModels, index)
 				this.autoSaveProvider()
 			},
 
@@ -383,36 +347,19 @@
 					return
 				}
 				// 过滤已有模型，只展示新增的
-				const existingMap: UTSJSONObject = {} as UTSJSONObject
-				for (let i = 0; i < this.editModels.length; i++) {
-					const mid = this.editModels[i].id
-					if (mid != '') {
-						existingMap[mid] = true
-					}
-				}
-				const newIds: string[] = []
-				for (let i = 0; i < ids.length; i++) {
-					if (existingMap[ids[i]] == null) {
-						newIds.push(ids[i])
-					}
-				}
+				const newIds = filterNewProviderModelIds(ids, this.editModels)
 				if (newIds.length == 0) {
 					uni.showToast({ position: 'bottom',  title: '所有模型已存在', icon: 'none' })
 					return
 				}
 				this.fetchedModelIds = newIds
-				this.selectedModelIndexes = []
-				for (let i = 0; i < newIds.length; i++) {
-					this.selectedModelIndexes.push(false)
-				}
+				this.selectedModelIndexes = buildProviderModelSelectionFlags(newIds.length, false)
 				this.showModelPicker = true
 			},
 
 			toggleSelectAllModels() {
 				const select = this.allModelsSelected ? false : true
-				for (let i = 0; i < this.selectedModelIndexes.length; i++) {
-					this.selectedModelIndexes[i] = select
-				}
+				this.selectedModelIndexes = buildProviderModelSelectionFlags(this.selectedModelIndexes.length, select)
 			},
 
 			toggleModelSelection(index: number) {
@@ -422,8 +369,7 @@
 			},
 
 			modelMatchesSearch(id: string): boolean {
-				if (this.pickerSearchText == '') return true
-				return id.toLowerCase().indexOf(this.pickerSearchText.toLowerCase()) >= 0
+				return providerModelMatchesSearch(id, this.pickerSearchText)
 			},
 
 			cancelModelPicker() {
@@ -434,21 +380,7 @@
 			},
 
 			confirmAddModels() {
-				let addedCount = 0
-				for (let i = 0; i < this.fetchedModelIds.length; i++) {
-					if (this.selectedModelIndexes[i] == true) {
-						const modelId = this.fetchedModelIds[i]
-						const caps = getModelCapabilities(modelId)
-						this.editModels.push({
-							id: modelId,
-							ctxStr: '',
-							supportsVision: caps.supportsVision,
-							supportsToolCall: caps.supportsToolCall,
-							supportsReasoning: caps.supportsReasoning,
-						} as ModelInfo)
-						addedCount++
-					}
-				}
+				const addedCount = appendSelectedProviderModels(this.editModels, this.fetchedModelIds, this.selectedModelIndexes)
 				this.showModelPicker = false
 				this.fetchedModelIds = []
 				this.selectedModelIndexes = []
@@ -490,30 +422,7 @@
 					}
 				}
 				// 同步字符串 → 数字，清理空模型
-				const validModels: ModelInfo[] = []
-				for (let i = 0; i < this.editModels.length; i++) {
-					const m = this.editModels[i]
-					if (m.id == '') {
-						continue
-					}
-					// ctxStr → context
-					const ctxVal = m.ctxStr
-					if (ctxVal != null && ctxVal != '') {
-						const parsed = Number.parseInt(ctxVal)
-						if (!isNaN(parsed) && parsed > 0) {
-							m.context = parsed
-						}
-					}
-					// maxTokensStr → maxTokens
-					const mtVal = m.maxTokensStr
-					if (mtVal != null && mtVal != '') {
-						const parsed = Number.parseInt(mtVal)
-						if (!isNaN(parsed) && parsed > 0) {
-							m.maxTokens = parsed
-						}
-					}
-					validModels.push(m)
-				}
+				const validModels = normalizeProviderModelsForSave(this.editModels)
 				if (this.fromFirstRunGuide == true && navigateAfterSave == true && validModels.length == 0) {
 					uni.showToast({ position: 'bottom',  title: '先添加或获取一个模型', icon: 'none' })
 					return
