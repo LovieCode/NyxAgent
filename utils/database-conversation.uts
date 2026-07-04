@@ -1,0 +1,281 @@
+/**
+ * 私聊对话 / 消息 DAO。
+ *
+ * database.uts 保留初始化、导入导出、provider/settings 总入口；这里专管 conversations、messages 和对话 token 统计。
+ */
+
+import {
+	ensureConversationTokenUsageStatsTable,
+	ensureMemoryCompactionStateTable,
+	getDb,
+	rowsToObjects,
+} from '@/utils/database-core.uts'
+
+export function addConversationTokenUsage(conversationId: string, promptTokens: number, promptCacheHitTokens: number): void {
+	const cid = conversationId.trim()
+	if (cid == '') {
+		return
+	}
+	if (promptTokens <= 0 && promptCacheHitTokens <= 0) {
+		return
+	}
+	const db = getDb()
+	ensureConversationTokenUsageStatsTable(db)
+	const result = db.query(
+		'SELECT prompt_tokens, prompt_cache_hit_tokens, call_count FROM conversation_token_usage_stats WHERE conversation_id = ? AND ? = ? LIMIT 1',
+		[cid, 1, 1]
+	)
+	const rows = rowsToObjects(result)
+	let oldPrompt = 0
+	let oldCacheHit = 0
+	let oldCallCount = 0
+	if (rows.length > 0) {
+		const row = rows[0]
+		const rawPrompt = row['prompt_tokens'] as number | null
+		const rawCacheHit = row['prompt_cache_hit_tokens'] as number | null
+		const rawCallCount = row['call_count'] as number | null
+		oldPrompt = rawPrompt != null ? rawPrompt : 0
+		oldCacheHit = rawCacheHit != null ? rawCacheHit : 0
+		oldCallCount = rawCallCount != null ? rawCallCount : 0
+	}
+	db.run(
+		'INSERT OR REPLACE INTO conversation_token_usage_stats (conversation_id, prompt_tokens, prompt_cache_hit_tokens, call_count, updated_at) VALUES (?, ?, ?, ?, ?)',
+		[cid, oldPrompt + promptTokens, oldCacheHit + promptCacheHitTokens, oldCallCount + 1, Date.now()]
+	)
+	db.close()
+}
+
+export function getConversationTokenUsageStats(conversationId: string): UTSJSONObject {
+	const cid = conversationId.trim()
+	if (cid == '') {
+		return {
+			conversation_id: '',
+			prompt_tokens: 0,
+			prompt_cache_hit_tokens: 0,
+			call_count: 0,
+			updated_at: 0,
+		} as UTSJSONObject
+	}
+	const db = getDb()
+	ensureConversationTokenUsageStatsTable(db)
+	const result = db.query(
+		'SELECT conversation_id, prompt_tokens, prompt_cache_hit_tokens, call_count, updated_at FROM conversation_token_usage_stats WHERE conversation_id = ? AND ? = ? LIMIT 1',
+		[cid, 1, 1]
+	)
+	db.close()
+	const rows = rowsToObjects(result)
+	if (rows.length > 0) {
+		return rows[0]
+	}
+	return {
+		conversation_id: cid,
+		prompt_tokens: 0,
+		prompt_cache_hit_tokens: 0,
+		call_count: 0,
+		updated_at: 0,
+	} as UTSJSONObject
+}
+
+/**
+ * 保存整条对话（含消息）
+ * 先删旧数据，再写新数据，实现覆盖更新
+ */
+export function saveConversation(
+	id: string,
+	title: string,
+	model: string,
+	agentId: string,
+	systemPrompt: string,
+	messages: UTSJSONObject[]
+): void {
+	const db = getDb()
+
+	// 取最后一条消息的内容作为预览
+	let preview = ''
+	if (messages.length > 0) {
+		const last = messages[messages.length - 1]
+		const c = last['content'] as string | null
+		if (c != null) {
+			preview = c.length > 50 ? c.substring(0, 50) + '...' : c
+		}
+	}
+
+	// UPSERT 对话
+	const now = Date.now()
+	db.run(
+		'INSERT OR REPLACE INTO conversations (id, title, model, agent_id, system_prompt, created_at, updated_at, message_count, preview) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+		[id, title, model, agentId, systemPrompt, now, now, messages.length, preview]
+	)
+
+	// 先删该对话的旧消息
+	db.run('DELETE FROM messages WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
+
+	// 逐条插入消息
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const rawRole = msg['role'] as string | null
+		const rawContent = msg['content'] as string | null
+		const rawTimestamp = msg['timestamp'] as number | null
+		const role = rawRole != null ? rawRole : ''
+		const content = rawContent != null ? rawContent : ''
+		const timestamp = rawTimestamp != null ? rawTimestamp : now
+
+		// parts 是消息唯一内容真相；extra 只保存运行状态和 message parts。
+		const extra: UTSJSONObject = {}
+		const messageParts = msg['message']
+		if (messageParts != null) {
+			extra['message'] = messageParts
+		}
+		const isStreaming = msg['isStreaming']
+		if (isStreaming != null) {
+			extra['isStreaming'] = isStreaming
+		}
+		const isError = msg['isError']
+		if (isError != null) {
+			extra['isError'] = isError
+		}
+		const toolCallId = msg['tool_call_id']
+		if (toolCallId != null) {
+			extra['tool_call_id'] = toolCallId
+		}
+		const camelToolCallId = msg['toolCallId']
+		if (camelToolCallId != null) {
+			extra['toolCallId'] = camelToolCallId
+		}
+		const toolName = msg['toolName']
+		if (toolName != null) {
+			extra['toolName'] = toolName
+		}
+		const ttsAudioPath = msg['ttsAudioPath']
+		if (ttsAudioPath != null) {
+			extra['ttsAudioPath'] = ttsAudioPath
+		}
+		const extraStr = JSON.stringify(extra)
+
+		db.run(
+			'INSERT INTO messages (conversation_id, role, content, timestamp, extra) VALUES (?, ?, ?, ?, ?)',
+			[id, role, content, timestamp, extraStr]
+		)
+	}
+
+	db.close()
+}
+
+/**
+ * 获取所有对话列表（按创建时间倒序）
+ * 返回 UTSJSONObject[]
+ */
+export function getConversations(): UTSJSONObject[] {
+	const db = getDb()
+	const result = db.query(
+		'SELECT id, title, model, agent_id, created_at, updated_at, message_count, preview FROM conversations ORDER BY updated_at DESC'
+	)
+	db.close()
+	return rowsToObjects(result)
+}
+
+/**
+ * 导出所有对话原始字段。
+ */
+export function getAllConversationsForExport(): UTSJSONObject[] {
+	const db = getDb()
+	const result = db.query('SELECT * FROM conversations ORDER BY updated_at DESC')
+	db.close()
+	return rowsToObjects(result)
+}
+
+/**
+ * 获取某个智能体的对话列表（按创建时间倒序）
+ */
+export function getConversationsByAgent(agentId: string): UTSJSONObject[] {
+	const db = getDb()
+	const result = db.query(
+		'SELECT id, title, model, agent_id, created_at, updated_at, message_count, preview FROM conversations WHERE agent_id = ? AND ? = ? ORDER BY updated_at DESC',
+		[agentId, 1, 1]
+	)
+	db.close()
+	return rowsToObjects(result)
+}
+
+/**
+ * 获取某条对话的所有消息（按时间升序）
+ */
+export function getMessages(conversationId: string): UTSJSONObject[] {
+	const db = getDb()
+	const result = db.query(
+		'SELECT id, conversation_id, role, content, timestamp, extra FROM messages WHERE conversation_id = ? AND ? = ? ORDER BY timestamp ASC',
+		[conversationId, 1, 1]
+	)
+	db.close()
+
+	const rows = rowsToObjects(result)
+
+	// 将 extra JSON 字段合并到返回对象中
+	for (let i = 0; i < rows.length; i++) {
+		const row = rows[i]
+		const extraStr = row['extra'] as string | null
+		if (extraStr != null && extraStr != '' && extraStr != '{}') {
+			try {
+				const extra = JSON.parse(extraStr) as UTSJSONObject
+				// 手动合并已知 extra 字段；message parts 是主存储。
+				if (extra['message'] != null) {
+					row['message'] = extra['message']
+				}
+				if (extra['isStreaming'] != null) {
+					row['isStreaming'] = extra['isStreaming']
+				}
+				if (extra['isError'] != null) {
+					row['isError'] = extra['isError']
+				}
+				if (extra['tool_call_id'] != null) {
+					row['tool_call_id'] = extra['tool_call_id']
+				}
+				if (extra['toolCallId'] != null) {
+					row['toolCallId'] = extra['toolCallId']
+				}
+				if (extra['toolName'] != null) {
+					row['toolName'] = extra['toolName']
+				}
+				if (extra['ttsAudioPath'] != null) {
+					row['ttsAudioPath'] = extra['ttsAudioPath']
+				}
+			} catch (_e: any) {
+				// ignore parse error
+			}
+		}
+	}
+	return rows
+}
+
+/**
+ * 导出所有消息原始字段，包含 extra JSON 字段。
+ */
+export function getAllMessagesForExport(): UTSJSONObject[] {
+	const db = getDb()
+	const result = db.query('SELECT * FROM messages ORDER BY conversation_id ASC, timestamp ASC, id ASC')
+	db.close()
+	return rowsToObjects(result)
+}
+
+export function deleteConversation(id: string): void {
+	const db = getDb()
+	ensureConversationTokenUsageStatsTable(db)
+	ensureMemoryCompactionStateTable(db)
+	db.run('DELETE FROM messages WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
+	db.run('DELETE FROM conversations WHERE id = ? AND ? = ?', [id, 1, 1])
+	db.run('DELETE FROM memory_buffer WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
+	db.run('DELETE FROM conversation_token_usage_stats WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
+	db.run('DELETE FROM agent_memory_compaction_state WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
+	db.run('UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE conversation_id = ?', [Date.now(), id])
+	db.close()
+}
+
+/**
+ * 更新某个智能体所有历史对话的 system_prompt
+ * 当用户在智能体设置中修改了系统提示词后调用
+ */
+export function updateSystemPromptForAgent(agentId: string, systemPrompt: string): void {
+	const db = getDb()
+	db.run('UPDATE conversations SET system_prompt = ? WHERE agent_id = ?', [systemPrompt, agentId])
+	db.close()
+}
