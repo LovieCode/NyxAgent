@@ -11,7 +11,7 @@
  * - 其他平台：uni.env.USER_DATA_PATH
  */
 
-import { getAppSetting, getGroupChatRows } from '@/utils/database.uts'
+import { getAppSetting, getGroupChatRows, setAppSetting } from '@/utils/database.uts'
 
 // #ifdef APP-ANDROID
 import File from 'java.io.File'
@@ -58,6 +58,7 @@ export type RootDirOption = {
 
 /** 路径分隔符（跨平台统一用 /） */
 const SEP = '/'
+const LEGACY_USER_DIR_MIGRATED_KEY = 'legacy_user_dir_migrated'
 
 /** 构造成功结果 */
 function okResult(): FileOpResult {
@@ -1213,15 +1214,32 @@ function mergeMissingItems(srcDir: string, destDir: string, depth: number): void
  * 已存在的同名文件不会覆盖，避免误伤用户手动整理过的数据。
  */
 export function migrateLegacyUserDir(): void {
+	const migrated = getAppSetting(LEGACY_USER_DIR_MIGRATED_KEY)
+	if (migrated == '1') {
+		return
+	}
 	const legacyDir = getLegacyUserAgentDir()
-	const userDir = getUserDir()
-	if (legacyDir == '' || userDir == '' || legacyDir == userDir) {
+	const filesDir = getInternalFilesDir()
+	if (legacyDir == '' || filesDir == '') {
+		return
+	}
+	const userDir = filesDir + '/user'
+	if (userDir == '' || legacyDir == userDir) {
+		setAppSetting(LEGACY_USER_DIR_MIGRATED_KEY, '1')
 		return
 	}
 	if (!exists(legacyDir)) {
+		setAppSetting(LEGACY_USER_DIR_MIGRATED_KEY, '1')
 		return
 	}
+	// LEGACY_COMPAT: 只在新 user 目录还没出现时做一次旧目录迁移，避免已删除文件反复复活。
+	if (exists(userDir) == true) {
+		setAppSetting(LEGACY_USER_DIR_MIGRATED_KEY, '1')
+		return
+	}
+	createDir(userDir, true)
 	mergeMissingItems(legacyDir, userDir, 0)
+	setAppSetting(LEGACY_USER_DIR_MIGRATED_KEY, '1')
 }
 
 /**

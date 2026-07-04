@@ -887,54 +887,62 @@ export function saveGroupAgentContextRecord(record: UTSJSONObject): void {
 
 export function migrateLegacyGroupChatStorage(storageKeys: string[]): number {
 	let migrated = 0
-	const groups = legacyGetGroupChats()
-	if (groups.length > 0) {
-		saveGroupChats(groups)
-		migrated += groups.length
-	}
+	const canMigrateGroups = getGroupChatRows().length == 0
+	const groups: GroupChat[] = canMigrateGroups == true ? legacyGetGroupChats() : []
+	if (canMigrateGroups == true) {
+		if (groups.length > 0) {
+			saveGroupChats(groups)
+			migrated += groups.length
+		}
 
-	for (let i = 0; i < groups.length; i++) {
-		const groupId = groups[i].id
-		const members = legacyGetGroupMembers(groupId)
-		if (members.length > 0) {
-			saveGroupMembers(groupId, members)
-			migrated += members.length
-		}
-		const sessions = legacyGetGroupSessions(groupId)
-		if (sessions.length > 0) {
-			saveGroupSessions(groupId, sessions)
-			migrated += sessions.length
-		}
-		for (let j = 0; j < sessions.length; j++) {
-			const messages = legacyGetGroupMessages(groupId, sessions[j].id)
-			if (messages.length > 0) {
-				saveGroupMessages(groupId, sessions[j].id, messages)
-				migrated += messages.length
+		for (let i = 0; i < groups.length; i++) {
+			const groupId = groups[i].id
+			const members = legacyGetGroupMembers(groupId)
+			if (members.length > 0) {
+				saveGroupMembers(groupId, members)
+				migrated += members.length
+			}
+			const sessions = legacyGetGroupSessions(groupId)
+			if (sessions.length > 0) {
+				saveGroupSessions(groupId, sessions)
+				migrated += sessions.length
+			}
+			for (let j = 0; j < sessions.length; j++) {
+				const messages = legacyGetGroupMessages(groupId, sessions[j].id)
+				if (messages.length > 0) {
+					saveGroupMessages(groupId, sessions[j].id, messages)
+					migrated += messages.length
+				}
 			}
 		}
 	}
 
-	try {
-		const activeGroupId = uni.getStorageSync(ACTIVE_GROUP_CHAT_ID_KEY) as string | null
-		if (activeGroupId != null && activeGroupId != '') {
-			setGroupChatState(ACTIVE_GROUP_CHAT_ID_KEY, activeGroupId)
-			migrated++
+	if (canMigrateGroups == true) {
+		try {
+			const activeGroupId = uni.getStorageSync(ACTIVE_GROUP_CHAT_ID_KEY) as string | null
+			if (activeGroupId != null && activeGroupId != '' && getGroupChatState(ACTIVE_GROUP_CHAT_ID_KEY) == '') {
+				setGroupChatState(ACTIVE_GROUP_CHAT_ID_KEY, activeGroupId)
+				migrated++
+			}
+		} catch (_e: any) {
 		}
-	} catch (_e: any) {
-	}
-	try {
-		const activeSessionId = uni.getStorageSync(ACTIVE_GROUP_SESSION_ID_KEY) as string | null
-		if (activeSessionId != null && activeSessionId != '') {
-			setGroupChatState(ACTIVE_GROUP_SESSION_ID_KEY, activeSessionId)
-			migrated++
+		try {
+			const activeSessionId = uni.getStorageSync(ACTIVE_GROUP_SESSION_ID_KEY) as string | null
+			if (activeSessionId != null && activeSessionId != '' && getGroupChatState(ACTIVE_GROUP_SESSION_ID_KEY) == '') {
+				setGroupChatState(ACTIVE_GROUP_SESSION_ID_KEY, activeSessionId)
+				migrated++
+			}
+		} catch (_e2: any) {
 		}
-	} catch (_e2: any) {
 	}
 
 	const agentContextPrefix = 'group_agent_context_records_'
 	for (let k = 0; k < storageKeys.length; k++) {
 		const key = storageKeys[k]
 		if (key.startsWith(agentContextPrefix) == false) { continue }
+		const agentId = key.substring(agentContextPrefix.length)
+		if (agentId == '') { continue }
+		if (getGroupAgentContextRows(agentId).length > 0) { continue }
 		const raw = uni.getStorageSync(key) as string | null
 		const records = parseAgentContextRecords(safeJsonText(raw))
 		for (let r = 0; r < records.length; r++) {

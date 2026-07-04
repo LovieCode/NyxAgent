@@ -6,9 +6,6 @@
 import { getAgentDir, deleteItem } from '@/utils/file-manager.uts'
 import { getAppSetting, setAppSetting } from '@/utils/database.uts'
 
-const DEFAULT_AGENT_PROMPT_VERSION_KEY = 'default_agent_prompt_version'
-const DEFAULT_AGENT_PROMPT_VERSION = 'minxi-default-v1'
-
 export const NYX_ADMIN_AGENT_ID = 'nyx-admin'
 export const NYX_ADMIN_AGENT_NAME = '眠汐'
 export const NYX_ADMIN_AGENT_AVATAR = '/static/希娜-original.png'
@@ -128,12 +125,8 @@ function findDefaultAgent(id: string): UTSJSONObject | null {
 	return null
 }
 
-function migrateDefaultAgentPrompts(agents: UTSJSONObject[]): UTSJSONObject[] {
-	const version = getAppSetting(DEFAULT_AGENT_PROMPT_VERSION_KEY)
-	if (version == DEFAULT_AGENT_PROMPT_VERSION) {
-		return agents
-	}
-	let changed = false
+function applyDefaultAgentPromptFallbackInMemory(agents: UTSJSONObject[]): UTSJSONObject[] {
+	// LEGACY_COMPAT: 只做内存兜底，不写回，避免读取时复活已删除/已清理数据。
 	for (let i = 0; i < agents.length; i++) {
 		const agent = agents[i]
 		const id = agent['id'] as string | null
@@ -145,13 +138,8 @@ function migrateDefaultAgentPrompts(agents: UTSJSONObject[]): UTSJSONObject[] {
 		if (oldPrompt != null && currentPrompt == oldPrompt) {
 			agent['systemPrompt'] = nextAgent['systemPrompt']
 			agent['desc'] = nextAgent['desc']
-			changed = true
 		}
 	}
-	if (changed == true) {
-		saveAgents(agents)
-	}
-	setAppSetting(DEFAULT_AGENT_PROMPT_VERSION_KEY, DEFAULT_AGENT_PROMPT_VERSION)
 	return agents
 }
 
@@ -180,22 +168,17 @@ function buildNyxAdminAgent(): UTSJSONObject {
 	} as UTSJSONObject
 }
 
-function normalizeAgentDefaultFlags(agents: UTSJSONObject[]): UTSJSONObject[] {
-	let changed = false
+function applyAgentDefaultFlagsInMemory(agents: UTSJSONObject[]): UTSJSONObject[] {
+	// LEGACY_COMPAT: 旧 agent 缺字段时默认开启，但不写回 agent_list。
 	for (let i = 0; i < agents.length; i++) {
 		const rawCacheEnabled = agents[i]['cacheEnabled'] as boolean | null
 		if (rawCacheEnabled == null) {
 			agents[i]['cacheEnabled'] = true
-			changed = true
 		}
 		const rawInjectDatetime = agents[i]['injectDatetime'] as boolean | null
 		if (rawInjectDatetime == null) {
 			agents[i]['injectDatetime'] = true
-			changed = true
 		}
-	}
-	if (changed == true) {
-		setAppSetting('agent_list', JSON.stringify(agents))
 	}
 	return agents
 }
@@ -205,13 +188,12 @@ export function getAgents(): UTSJSONObject[] {
 	const stored = getAppSetting('agent_list')
 	if (stored != null && stored != '') {
 		const list = JSON.parse(stored) as UTSJSONObject[]
-		if (list != null && (list as any[]).length > 0) {
-			return migrateDefaultAgentPrompts(normalizeAgentDefaultFlags(list))
+		if (list != null) {
+			return applyDefaultAgentPromptFallbackInMemory(applyAgentDefaultFlagsInMemory(list))
 		}
 	}
 	// 首次使用，写入默认数据并初始化文件沙箱
 	saveAgents(defaultAgents)
-	setAppSetting(DEFAULT_AGENT_PROMPT_VERSION_KEY, DEFAULT_AGENT_PROMPT_VERSION)
 	for (let i = 0; i < defaultAgents.length; i++) {
 		const id = defaultAgents[i]['id'] as string
 		if (id != null && id != '') {

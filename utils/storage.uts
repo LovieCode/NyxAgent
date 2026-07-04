@@ -1,4 +1,4 @@
-import { getAppSetting, removeAppSetting, setAppSetting, setRuntimeState } from '@/utils/database.uts'
+import { getAppSetting, getRuntimeState, removeAppSetting, setAppSetting, setRuntimeState } from '@/utils/database.uts'
 import { migrateLegacyGroupChatStorage } from '@/utils/group-chat-service.uts'
 
 /**
@@ -12,6 +12,7 @@ export type LegacyStorageMigrationResult = {
 	appSettings: number
 	runtimeStates: number
 	groupItems: number
+	skipped: number
 	removed: number
 	failed: number
 	complete: boolean
@@ -97,8 +98,26 @@ function buildKnownLegacyStorageKeys(): string[] {
 	]
 }
 
+function readLegacyStorageText(key: string): string | null {
+	if (key == '') { return null }
+	try {
+		const value = uni.getStorageSync(key)
+		if (value == null) { return null }
+		if (typeof value == 'string') {
+			const text = value as string
+			if (text == '') { return null }
+			return text
+		}
+		const json = JSON.stringify(value)
+		if (json == '') { return null }
+		return json
+	} catch (_e: any) {
+		return null
+	}
+}
+
 function collectLegacyStorageKeys(): LegacyStorageKeyScan {
-	const keys = buildKnownLegacyStorageKeys()
+	const keys: string[] = []
 	let complete = false
 	try {
 		const infoText = JSON.stringify(uni.getStorageInfoSync())
@@ -112,24 +131,18 @@ function collectLegacyStorageKeys(): LegacyStorageKeyScan {
 		}
 	} catch (_e: any) {
 	}
+	if (complete == false) {
+		const knownKeys = buildKnownLegacyStorageKeys()
+		for (let i = 0; i < knownKeys.length; i++) {
+			if (readLegacyStorageText(knownKeys[i]) != null) {
+				appendUniqueKey(keys, knownKeys[i])
+			}
+		}
+	}
 	return {
 		keys: keys,
 		complete: complete,
 	} as LegacyStorageKeyScan
-}
-
-function readLegacyStorageText(key: string): string | null {
-	if (key == '') { return null }
-	try {
-		const value = uni.getStorageSync(key)
-		if (value == null) { return null }
-		if (typeof value == 'string') {
-			return value as string
-		}
-		return JSON.stringify(value)
-	} catch (_e: any) {
-		return null
-	}
 }
 
 function isRuntimeStorageKey(key: string): boolean {
@@ -160,13 +173,17 @@ function migrateLegacyStorageKey(key: string): string {
 	const text = readLegacyStorageText(key)
 	if (text == null) { return '' }
 	if (key.startsWith('app_setting_')) {
-		setAppSetting(key.substring(12), text)
+		const settingKey = key.substring(12)
+		if (getAppSetting(settingKey) != null) { return 'skip' }
+		setAppSetting(settingKey, text)
 		return 'app'
 	}
 	if (isRuntimeStorageKey(key) == true) {
+		if (getRuntimeState(key) != '') { return 'skip' }
 		setRuntimeState(key, text)
 		return 'runtime'
 	}
+	if (getAppSetting(key) != null) { return 'skip' }
 	setAppSetting(key, text)
 	return 'app'
 }
@@ -175,8 +192,7 @@ function removeLegacyStorageKeys(keys: string[], canClearAll: boolean): number {
 	let removed = 0
 	for (let i = 0; i < keys.length; i++) {
 		try {
-			const value = uni.getStorageSync(keys[i])
-			if (value != null) {
+			if (readLegacyStorageText(keys[i]) != null) {
 				uni.removeStorageSync(keys[i])
 				removed++
 			}
@@ -195,6 +211,9 @@ function removeLegacyStorageKeys(keys: string[], canClearAll: boolean): number {
 function buildMigrationMessage(result: LegacyStorageMigrationResult): string {
 	let message = '已迁移旧 Storage：' + result.migrated + ' 项'
 	message += '\n设置：' + result.appSettings + '，运行态：' + result.runtimeStates + '，群聊记录：' + result.groupItems
+	if (result.skipped > 0) {
+		message += '\n已跳过新位置已有数据：' + result.skipped + ' 项'
+	}
 	message += '\n已清理旧 Storage key：' + result.removed
 	if (result.complete == false) {
 		message += '\n注意：Storage key 枚举失败，只处理了已知旧 key。'
@@ -217,6 +236,7 @@ export function migrateAllLegacyStorageToNewLocation(): LegacyStorageMigrationRe
 		appSettings: 0,
 		runtimeStates: 0,
 		groupItems: 0,
+		skipped: 0,
 		removed: 0,
 		failed: 0,
 		complete: scan.complete,
@@ -240,6 +260,8 @@ export function migrateAllLegacyStorageToNewLocation(): LegacyStorageMigrationRe
 			} else if (kind == 'runtime') {
 				result.runtimeStates++
 				result.migrated++
+			} else if (kind == 'skip') {
+				result.skipped++
 			}
 		} catch (_e2: any) {
 			result.failed++
