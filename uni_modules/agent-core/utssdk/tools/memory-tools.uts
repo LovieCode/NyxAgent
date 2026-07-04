@@ -1,0 +1,433 @@
+import {
+	searchCoreMemoryAdvanced,
+	searchConversationHistoryAdvanced,
+	updateMemoryBuffer,
+	saveCoreMemory,
+	listCoreMemory,
+	archiveCoreMemory,
+	formatCoreMemoryList,
+	buildMemoryTargetPersonId,
+	MemoryCoreInput,
+	MemorySearchFilter,
+} from '../memory'
+import { AgentTool, ToolResult } from './agent-tool-types'
+
+/**
+ * 查询记忆与历史工具
+ */
+export class MemorySearchTool implements AgentTool {
+	name: string = 'memory_search'
+	description: string = '查询 Agent 可见的记忆和历史对话。只返回 user/assistant 普通文本，不包含工具调用参数、工具结果或系统隐私信息。适合在不确定用户背景、偏好、历史要求时使用。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'query': {
+				'type': 'string',
+				'description': '要查询的关键词或问题，支持 SQL LIKE 通配符 %（任意字符）和 _（单个字符），留空则返回最近记忆'
+			},
+			'limit': {
+				'type': 'number',
+				'description': '最多返回条数，1-10，默认 8'
+			},
+			'target_type': {
+				'type': 'string',
+				'description': '查询面对对象类型：user/agent/custom。默认 user'
+			},
+			'target_id': {
+				'type': 'string',
+				'description': '查询面对对象 ID 或名称。user 可留空表示当前用户；agent 填 Agent ID；custom 填对象名称'
+			},
+			'search_mode': {
+				'type': 'string',
+				'description': '搜索模式：fuzzy（模糊匹配，默认）、exact（精确匹配）、prefix（前缀匹配）、regex（正则表达式）'
+			},
+			'scope': {
+				'type': 'string',
+				'description': '按使用范围筛选：always/person_only/conversation_only/manual_only/rule。留空不过滤'
+			},
+			'category': {
+				'type': 'string',
+				'description': '按分类筛选：impression/important/rule/preference/fact。留空不过滤'
+			},
+			'priority_min': {
+				'type': 'number',
+				'description': '最小优先级 1-5。默认 0 表示不过滤'
+			},
+			'priority_max': {
+				'type': 'number',
+				'description': '最大优先级 1-5。默认 0 表示不过滤'
+			},
+			'start_date': {
+				'type': 'string',
+				'description': '开始日期，ISO 格式如 2025-06-01。只返回此日期之后创建的记忆和消息'
+			},
+			'end_date': {
+				'type': 'string',
+				'description': '结束日期，ISO 格式如 2025-06-20。只返回此日期之前创建的记忆和消息'
+			}
+		},
+		'required': ['query']
+	} as UTSJSONObject
+
+	private agentId: string
+	private conversationId: string
+	private personId: string
+
+	constructor(agentId: string, conversationId: string, personId: string) {
+		this.agentId = agentId
+		this.conversationId = conversationId
+		this.personId = personId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawQuery = args['query'] as string | null
+			const rawLimit = args['limit'] as number | null
+			const rawTargetType = args['target_type'] as string | null
+			const rawTargetId = args['target_id'] as string | null
+			const rawSearchMode = args['search_mode'] as string | null
+			const rawScope = args['scope'] as string | null
+			const rawCategory = args['category'] as string | null
+			const rawPriorityMin = args['priority_min'] as number | null
+			const rawPriorityMax = args['priority_max'] as number | null
+			const rawStartDate = args['start_date'] as string | null
+			const rawEndDate = args['end_date'] as string | null
+
+			const query = rawQuery != null ? rawQuery : ''
+			const limit = rawLimit != null ? rawLimit : 8
+			const targetPersonId = buildMemoryTargetPersonId(rawTargetType != null ? rawTargetType : 'user', rawTargetId != null ? rawTargetId : this.personId)
+
+			const searchMode = rawSearchMode != null ? rawSearchMode : 'fuzzy'
+			const startTime = this.parseDateToTimestamp(rawStartDate)
+			const endTime = this.parseEndDateToTimestamp(rawEndDate)
+
+			const filter: MemorySearchFilter = {
+				query: query,
+				searchMode: searchMode,
+				scope: rawScope != null ? rawScope : '',
+				category: rawCategory != null ? rawCategory : '',
+				priorityMin: rawPriorityMin != null ? rawPriorityMin : 0,
+				priorityMax: rawPriorityMax != null ? rawPriorityMax : 0,
+				startTime: startTime,
+				endTime: endTime,
+				limit: limit,
+			} as MemorySearchFilter
+
+			const coreRows = searchCoreMemoryAdvanced(this.agentId, targetPersonId, this.conversationId, filter)
+			const historyRows = searchConversationHistoryAdvanced(this.agentId, filter)
+			const coreText = this.formatAdvancedCoreResult(coreRows)
+			const historyText = this.formatAdvancedHistoryResult(historyRows)
+			resolve({ content: coreText + '\n\n' + historyText, isError: false } as ToolResult)
+		})
+	}
+
+	/** 将日期字符串解析为毫秒时间戳（当天 00:00:00） */
+	private parseDateToTimestamp(dateStr: string | null): number {
+		if (dateStr == null || dateStr == '') return 0
+		// 尝试解析 YYYY-MM-DD 格式
+		const parts = dateStr.split('-')
+		if (parts.length >= 3) {
+			const year = parseInt(parts[0])
+			const month = parseInt(parts[1]) - 1
+			const day = parseInt(parts[2])
+			if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+				const d = new Date(year, month, day, 0, 0, 0, 0)
+				return d.getTime()
+			}
+		}
+		// fallback: 直接用 Date 解析
+		const d = new Date(dateStr)
+		const ts = d.getTime()
+		return isNaN(ts) ? 0 : ts
+	}
+
+	/** 将结束日期解析为毫秒时间戳（当天 23:59:59.999） */
+	private parseEndDateToTimestamp(dateStr: string | null): number {
+		if (dateStr == null || dateStr == '') return 0
+		const parts = dateStr.split('-')
+		if (parts.length >= 3) {
+			const year = parseInt(parts[0])
+			const month = parseInt(parts[1]) - 1
+			const day = parseInt(parts[2])
+			if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+				const d = new Date(year, month, day, 23, 59, 59, 999)
+				return d.getTime()
+			}
+		}
+		const d = new Date(dateStr)
+		const ts = d.getTime()
+		return isNaN(ts) ? 0 : ts
+	}
+
+	/** 将高级搜索结果格式化为 LLM 可读文本 */
+	private formatAdvancedCoreResult(rows: UTSJSONObject[]): string {
+		if (rows.length == 0) {
+			return '重要信息库：无匹配。'
+		}
+		const lines: string[] = ['重要信息库：']
+		for (let i = 0; i < rows.length; i++) {
+			const id = this.readStr(rows[i], 'id')
+			const scope = this.readStr(rows[i], 'scope')
+			const category = this.readStr(rows[i], 'category')
+			const content = this.readStr(rows[i], 'content')
+			const priority = this.readNum(rows[i], 'priority')
+			const createdAt = this.readNum(rows[i], 'created_at')
+			let line = (i + 1) + '. id=' + id + ' [' + scope + '/' + category + '] P' + priority + ' ' + content
+			if (createdAt > 0) {
+				const d = new Date(createdAt)
+				line = line + ' (' + this.formatDateShort(d) + ')'
+			}
+			lines.push(line)
+		}
+		return lines.join('\n')
+	}
+
+	/** 将高级历史搜索结果格式化为 LLM 可读文本 */
+	private formatAdvancedHistoryResult(rows: UTSJSONObject[]): string {
+		if (rows.length == 0) {
+			return '历史记录：无匹配。'
+		}
+		const lines: string[] = ['历史记录（已过滤工具调用信息）：']
+		let budget = 3000
+		for (let i = 0; i < rows.length; i++) {
+			let content = this.readStr(rows[i], 'content')
+			if (content.length > 180) {
+				content = content.substring(0, 180) + '...'
+			}
+			const role = this.readStr(rows[i], 'role')
+			const timestamp = this.readNum(rows[i], 'timestamp')
+			let line = (i + 1) + '. [' + role + '] '
+			if (timestamp > 0) {
+				const d = new Date(timestamp)
+				line = line + '(' + this.formatDateShort(d) + ') '
+			}
+			line = line + content
+			if (budget - line.length <= 0) {
+				break
+			}
+			lines.push(line)
+			budget = budget - line.length
+		}
+		return lines.join('\n')
+	}
+
+	private readStr(obj: UTSJSONObject, key: string): string {
+		const val = obj[key] as string | null
+		return val != null ? val : ''
+	}
+
+	private readNum(obj: UTSJSONObject, key: string): number {
+		const val = obj[key] as number | null
+		return val != null ? val : 0
+	}
+
+	private formatDateShort(d: Date): string {
+		const m = (d.getMonth() + 1).toString()
+		const day = d.getDate().toString()
+		return m + '/' + day
+	}
+}
+
+/**
+ * 写入 64 字短记忆缓存工具
+ */
+export class MemoryBufferWriteTool implements AgentTool {
+	name: string = 'memory_buffer_write'
+	description: string = '维护“下一轮立刻有用”的 64 字短记忆缓存。适合在用户刚提出/改变当前任务、临时要求、输出偏好、对话阶段或下一步动作时主动调用，用一句话覆盖旧状态，帮助后续回复不丢上下文。典型触发：用户说“接下来都简短点”、任务从 A 改成 B、刚确认了临时约束、需要记住当前正在做什么、下一步要继续哪个分支。无短期状态变化就不要调用。它不是 todo/计划/长期记忆工具；不要写任务清单、长期偏好、完整日志、工具调用信息、密钥、孤立当前时间。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'content': {
+				'type': 'string',
+				'description': '最多 64 字，一句话短状态。推荐格式：当前任务/临时要求/下一步，例如“当前任务：修群聊工具栏滑动误触”“临时要求：回复保持简短”“下一步：继续检查编译报错”。不要写 todo 清单、长期计划、工具结果、密钥或完整日志。'
+			}
+		},
+		'required': ['content']
+	} as UTSJSONObject
+
+	private agentId: string
+	private conversationId: string
+	private personId: string
+
+	constructor(agentId: string, conversationId: string, personId: string) {
+		this.agentId = agentId
+		this.conversationId = conversationId
+		this.personId = personId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawContent = args['content'] as string | null
+			if (rawContent == null || rawContent == '') {
+				resolve({ content: '缺少必要参数: content', isError: true } as ToolResult)
+				return
+			}
+			const finalContent = updateMemoryBuffer(this.agentId, this.personId, this.conversationId, rawContent)
+			resolve({ content: '短记忆缓存已更新（' + finalContent.length + '/64）：' + finalContent, isError: false } as ToolResult)
+		})
+	}
+}
+
+/**
+ * 保存重要信息工具
+ */
+export class MemoryCoreSaveTool implements AgentTool {
+	name: string = 'memory_core_save'
+	description: string = '保存 Agent 重要信息。scope 只能是 always、person_only、conversation_only、manual_only、rule；category 只能是 impression、important、rule、preference、fact。数量限制按范围桶裁剪：person_only/manual_only 按面对对象独立，conversation_only 按会话独立，always/rule 为 Agent 全局共享。面对某人的规则请用 scope=person_only + category=rule；只有全局规则才用 scope=rule。不要保存工具调用信息、密钥或流水账。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'content': {
+				'type': 'string',
+				'description': '记忆内容，建议一句话，最多约 240 字'
+			},
+			'scope': {
+				'type': 'string',
+				'description': '使用范围：always/person_only/conversation_only/manual_only/rule。person_only/manual_only 按对象独立限额；conversation_only 按会话独立限额；always/rule 为 Agent 全局共享限额'
+			},
+			'category': {
+				'type': 'string',
+				'description': '分类：impression/important/rule/preference/fact'
+			},
+			'priority': {
+				'type': 'number',
+				'description': '优先级 1-5，越高越重要，默认 3'
+			},
+			'pinned': {
+				'type': 'boolean',
+				'description': '是否置顶，默认 false'
+			},
+			'target_type': {
+				'type': 'string',
+				'description': 'person_only 面对对象类型：user/agent/custom。默认 user'
+			},
+			'target_id': {
+				'type': 'string',
+				'description': 'person_only 面对对象 ID 或名称。user 可留空表示当前用户；agent 填 Agent ID；custom 填对象名称'
+			}
+		},
+		'required': ['content', 'scope', 'category']
+	} as UTSJSONObject
+
+	private agentId: string
+	private conversationId: string
+	private personId: string
+
+	constructor(agentId: string, conversationId: string, personId: string) {
+		this.agentId = agentId
+		this.conversationId = conversationId
+		this.personId = personId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawContent = args['content'] as string | null
+			if (rawContent == null || rawContent == '') {
+				resolve({ content: '缺少必要参数: content', isError: true } as ToolResult)
+				return
+			}
+			const rawScope = args['scope'] as string | null
+			const rawCategory = args['category'] as string | null
+			const rawPriority = args['priority'] as number | null
+			const rawPinned = args['pinned'] as boolean | null
+			const rawTargetType = args['target_type'] as string | null
+			const rawTargetId = args['target_id'] as string | null
+			const scope = rawScope != null ? rawScope : 'manual_only'
+			let targetPersonId = this.personId
+			if (scope == 'person_only' || scope == 'manual_only') {
+				targetPersonId = buildMemoryTargetPersonId(rawTargetType != null ? rawTargetType : 'user', rawTargetId != null ? rawTargetId : this.personId)
+			}
+			const input: MemoryCoreInput = {
+				scope: scope,
+				category: rawCategory != null ? rawCategory : 'important',
+				content: rawContent,
+				priority: rawPriority != null ? rawPriority : 3,
+				pinned: rawPinned == true,
+			} as MemoryCoreInput
+			const id = saveCoreMemory(this.agentId, targetPersonId, this.conversationId, input)
+			if (id == '') {
+				resolve({ content: '记忆为空，未保存。', isError: true } as ToolResult)
+				return
+			}
+			resolve({ content: '重要记忆已保存：' + id, isError: false } as ToolResult)
+		})
+	}
+}
+
+/**
+ * 列出重要信息工具
+ */
+export class MemoryCoreListTool implements AgentTool {
+	name: string = 'memory_core_list'
+	description: string = '列出当前 Agent 可见的重要信息库条目，供确认和整理使用。长期写入或遗忘只由记忆管理 Agent 执行。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'include_manual': {
+				'type': 'boolean',
+				'description': '是否包含 manual_only，默认 true'
+			},
+			'target_type': {
+				'type': 'string',
+				'description': '面对对象类型：user/agent/custom。默认 user'
+			},
+			'target_id': {
+				'type': 'string',
+				'description': '面对对象 ID 或名称。user 可留空表示当前用户；agent 填 Agent ID；custom 填对象名称'
+			}
+		},
+		'required': [] as string[]
+	} as UTSJSONObject
+
+	private agentId: string
+	private conversationId: string
+	private personId: string
+
+	constructor(agentId: string, conversationId: string, personId: string) {
+		this.agentId = agentId
+		this.conversationId = conversationId
+		this.personId = personId
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawInclude = args['include_manual'] as boolean | null
+			const rawTargetType = args['target_type'] as string | null
+			const rawTargetId = args['target_id'] as string | null
+			const includeManual = rawInclude != null ? rawInclude : true
+			const targetPersonId = buildMemoryTargetPersonId(rawTargetType != null ? rawTargetType : 'user', rawTargetId != null ? rawTargetId : this.personId)
+			const rows = listCoreMemory(this.agentId, targetPersonId, this.conversationId, includeManual)
+			resolve({ content: formatCoreMemoryList(rows), isError: false } as ToolResult)
+		})
+	}
+}
+
+/**
+ * 遗忘重要信息工具
+ */
+export class MemoryCoreForgetTool implements AgentTool {
+	name: string = 'memory_core_forget'
+	description: string = '按 id 归档/遗忘一条重要记忆。只能遗忘 memory_core_list 或 memory_search 返回的记忆 id。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'id': {
+				'type': 'string',
+				'description': '要遗忘的记忆 id'
+			}
+		},
+		'required': ['id']
+	} as UTSJSONObject
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const id = args['id'] as string | null
+			if (id == null || id == '') {
+				resolve({ content: '缺少必要参数: id', isError: true } as ToolResult)
+				return
+			}
+			const ok = archiveCoreMemory(id)
+			resolve({ content: ok ? '已遗忘记忆：' + id : '遗忘失败：' + id, isError: !ok } as ToolResult)
+		})
+	}
+}

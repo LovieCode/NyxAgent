@@ -1,0 +1,322 @@
+import { getProviderApiConfig } from '../provider'
+import { getAppSetting } from '@/utils/database.uts'
+import { AgentTool, ToolResult } from './agent-tool-types'
+
+// ========== 网络搜索工具 ==========
+
+export class WebSearchTool implements AgentTool {
+	name: string = 'web_search'
+	description: string = '联网搜索最新信息。适合查询实时数据、新闻、未知知识。优先使用记忆搜索查已有信息，只在需要最新/外部知识时使用。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'query': {
+				'type': 'string',
+				'description': '搜索关键词，用中文或英文'
+			},
+			'limit': {
+				'type': 'number',
+				'description': '返回结果数量，1-10，默认 5'
+			}
+		},
+		'required': ['query']
+	} as UTSJSONObject
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawQuery = args['query'] as string | null
+			const rawLimit = args['limit'] as number | null
+			const query = rawQuery != null ? rawQuery : ''
+			if (query == '') {
+				resolve({ content: '请提供搜索关键词', isError: true } as ToolResult)
+				return
+			}
+			// 检查是否启用
+			const wsEnabledRaw = getAppSetting('settings_web_search_enabled')
+			const wsEnabled = wsEnabledRaw != null ? wsEnabledRaw : ''
+			if (wsEnabled != 'true') {
+				resolve({ content: '网络搜索未启用，请在插件设置中开启。', isError: false } as ToolResult)
+				return
+			}
+			const limit = rawLimit != null ? rawLimit : 5
+			const providerRaw = getAppSetting('settings_web_search_provider')
+			const provider = providerRaw != null ? providerRaw : ''
+			if (provider == 'grok') {
+				this.doAISearch(query, resolve)
+				return
+			}
+			// 默认 SearXNG
+			// 优先使用自定义实例，否则用公共实例
+			const customInstanceRaw = getAppSetting('settings_web_search_instance')
+			const customInstance = customInstanceRaw != null ? customInstanceRaw : ''
+			let instances: string[]
+			if (customInstance != '') {
+				instances = [customInstance]
+			} else {
+				instances = [
+					'https://searx.be',
+					'https://search.sapti.me',
+					'https://searx.tiekoetter.com',
+					'https://searx.ninja',
+					'https://searx.work',
+					'https://search.ononoki.org',
+				]
+			}
+			this.doSearchInstances(instances, 0, query, limit, false, resolve)
+		})
+	}
+
+	/** AI 搜索——从提供商列表读取配置，自动适配 Grok/豆包 API */
+	private doAISearch(query: string, resolve: (value: ToolResult) => void): void {
+		console.log('[WebSearch] AI 搜索开始: ' + query.substring(0, query.length < 60 ? query.length : 60))
+		const providerIdRaw = getAppSetting('settings_web_search_provider_id')
+		const providerId = providerIdRaw != null ? providerIdRaw : ''
+		if (providerId == '') {
+			console.log('[WebSearch] ← 未选择提供商')
+			resolve({ content: '未选择搜索提供商，请在插件设置中选择。', isError: true } as ToolResult)
+			return
+		}
+		const config = getProviderApiConfig(providerId)
+		if (config == null) {
+			console.log('[WebSearch] ← 提供商不存在: ' + providerId)
+			resolve({ content: '提供商 ' + providerId + ' 不存在，请检查设置。', isError: true } as ToolResult)
+			return
+		}
+		const apiKey = config['api_key'] as string | null
+		const apiBase = config['api_base'] as string | null
+		if (apiKey == null || apiKey == '') {
+			console.log('[WebSearch] ← 未配置 API Key: ' + providerId)
+			resolve({ content: '提供商 ' + providerId + ' 未配置 API Key。', isError: true } as ToolResult)
+			return
+		}
+		let baseUrl = (apiBase != null && apiBase != '') ? apiBase : 'https://api.x.ai'
+		if (baseUrl.endsWith('/')) {
+			baseUrl = baseUrl.substring(0, baseUrl.length - 1)
+		}
+		// 检测豆包 / 火山引擎 → 走 Responses API
+		const isDoubao = baseUrl.indexOf('volces.com') >= 0 || baseUrl.indexOf('volcengine.com') >= 0
+		const modelRaw = getAppSetting('settings_web_search_model')
+		let model = modelRaw != null ? modelRaw : ''
+		if (model == '') {
+			model = isDoubao ? 'doubao-seed-1-6-250615' : 'grok-2'
+		}
+		if (isDoubao) {
+			this.doDoubaoSearch(baseUrl, apiKey, model, query, providerId, resolve)
+		} else {
+			this.doChatCompletionsSearch(baseUrl, apiKey, model, query, providerId, resolve)
+		}
+	}
+
+	/** 豆包搜索——火山引擎 Responses API，注册 web_search 工具 */
+	private doDoubaoSearch(
+		baseUrl: string, apiKey: string, model: string,
+		query: string, providerId: string, resolve: (value: ToolResult) => void
+	): void {
+		const url = baseUrl + '/responses'
+		const body: UTSJSONObject = {
+			model: model,
+			input: [
+				{ role: 'user', content: query } as UTSJSONObject,
+			],
+			tools: [
+				{ type: 'web_search' } as UTSJSONObject,
+			],
+		} as UTSJSONObject
+		console.log('[WebSearch] 豆包 → ' + model + ' | ' + url)
+		uni.request({
+			url: url, method: 'POST',
+			header: {
+				'Content-Type': 'application/json',
+				'Authorization': 'Bearer ' + apiKey,
+			} as UTSJSONObject,
+			data: body, timeout: 30000, sslVerify: false,
+			success: (res) => {
+				const statusCode = res.statusCode as number
+				console.log('[WebSearch] 豆包 ← ' + statusCode)
+				if (statusCode != 200) {
+					let errBody = ''
+					try {
+						const ed = res.data as UTSJSONObject | null
+						if (ed != null) { errBody = JSON.stringify(ed) }
+					} catch (_e: any) {}
+					console.log('[WebSearch] 豆包 ← error: ' + errBody.substring(0, errBody.length < 200 ? errBody.length : 200))
+					resolve({ content: '豆包返回错误 (状态码: ' + statusCode + ')。', isError: true } as ToolResult)
+					return
+				}
+				try {
+					const data = res.data as UTSJSONObject | null
+					if (data == null) {
+						resolve({ content: '豆包返回为空。', isError: false } as ToolResult)
+						return
+					}
+					// Responses API 返回 output 数组
+					const output = data['output'] as UTSJSONObject[] | null
+					if (output == null || output.length == 0) {
+						const text = data['content'] as string | null
+						if (text != null && text != '') {
+							console.log('[WebSearch] 豆包 ← 成功 | ' + text.length + ' 字符')
+							resolve({ content: text, isError: false } as ToolResult)
+						} else {
+							resolve({ content: '豆包未返回搜索内容。', isError: false } as ToolResult)
+						}
+						return
+					}
+					// 提取 output 中的文本
+					const lines: string[] = []
+					for (let i = 0; i < output.length; i++) {
+						const item = output[i]
+						const itemContent = item['content'] as UTSJSONObject[] | null
+						if (itemContent != null) {
+							for (let j = 0; j < itemContent.length; j++) {
+								const textVal = itemContent[j]['text'] as string | null
+								if (textVal != null && textVal != '') {
+									lines.push(textVal)
+								}
+							}
+						}
+					}
+					const result = lines.join('\n')
+					console.log('[WebSearch] 豆包 ← 成功 | ' + result.length + ' 字符')
+					resolve({ content: result != '' ? result : '豆包未返回搜索结果。', isError: false } as ToolResult)
+				} catch (_e: any) {
+					console.log('[WebSearch] 豆包 ← 解析异常: ' + _e)
+					resolve({ content: '豆包响应解析失败。', isError: true } as ToolResult)
+				}
+			},
+			fail: (_err: any) => {
+				console.log('[WebSearch] 豆包 ← 网络失败 | ' + url)
+				resolve({ content: 'API 请求失败，请检查网络或提供商 ' + providerId + ' 配置。', isError: true } as ToolResult)
+			}
+		})
+	}
+
+	/** 通用 Chat Completions 搜索（Grok / OpenAI 兼容） */
+	private doChatCompletionsSearch(
+		baseUrl: string, apiKey: string, model: string,
+		query: string, providerId: string, resolve: (value: ToolResult) => void
+	): void {
+		const hasApiVersion = baseUrl.indexOf('/v1') >= 0 || baseUrl.indexOf('/api/v') >= 0
+		const url = hasApiVersion ? baseUrl + '/chat/completions' : baseUrl + '/v1/chat/completions'
+		const systemPrompt = '你是网络搜索工具。收到搜索请求后，请搜索网页并返回结果。\n\n' +
+			'要求：\n' +
+			'1. 对搜索结果进行总结，提取有价值的信息，控制在 500 字以内\n' +
+			'2. 用简洁、有条理的方式返回总结内容，不要返回原文\n' +
+			'3. 如果搜索结果较少，直接返回总结；如果较多，优先返回最重要的信息\n' +
+			'4. 每条信息后面标注来源，格式如"来源：xxx"\n' +
+			'5. 标注信息发布时间，如"2025年1月30日"等\n' +
+			'6. 如果是时效性问题，忽略可能过时信息，只返回最新的\n' +
+			'7. 声明：以下内容来自互联网，随时间推移可能过时，仅供参考'
+		console.log('[WebSearch] ChatCompletions → ' + model + ' | ' + url)
+		const body: UTSJSONObject = {
+			model: model,
+			messages: [
+				{ role: 'system', content: systemPrompt } as UTSJSONObject,
+				{ role: 'user', content: '搜索：' + query } as UTSJSONObject,
+			],
+			stream: false,
+			temperature: 0.3,
+		} as UTSJSONObject
+		uni.request({
+			url: url, method: 'POST',
+			header: {
+				'Content-Type': 'application/json',
+				'Authorization': 'Bearer ' + apiKey,
+			} as UTSJSONObject,
+			data: body, timeout: 30000, sslVerify: false,
+			success: (res) => {
+				const statusCode = res.statusCode as number
+				console.log('[WebSearch] ChatCompletions ← ' + statusCode)
+				if (statusCode != 200) {
+					let errBody = ''
+					try {
+						const ed = res.data as UTSJSONObject | null
+						if (ed != null) { errBody = JSON.stringify(ed) }
+					} catch (_e: any) {}
+					console.log('[WebSearch] ChatCompletions ← error: ' + errBody.substring(0, errBody.length < 200 ? errBody.length : 200))
+					resolve({ content: 'API 返回错误 (状态码: ' + statusCode + ')。', isError: true } as ToolResult)
+					return
+				}
+				try {
+					const data = res.data as UTSJSONObject | null
+					if (data == null) { resolve({ content: 'API 返回为空。', isError: false } as ToolResult); return }
+					const choices = data['choices'] as UTSJSONObject[] | null
+					if (choices == null || choices.length == 0) { resolve({ content: 'API 未返回结果。', isError: false } as ToolResult); return }
+					const message = choices[0]['message'] as UTSJSONObject | null
+					if (message == null) { resolve({ content: '响应格式异常。', isError: false } as ToolResult); return }
+					const content = message['content'] as string | null
+					if (content == null || content == '') { resolve({ content: '未返回搜索内容。', isError: false } as ToolResult); return }
+					console.log('[WebSearch] ChatCompletions ← 成功 | ' + content.length + ' 字符')
+					resolve({ content: content, isError: false } as ToolResult)
+				} catch (_e: any) {
+					console.log('[WebSearch] ChatCompletions ← 解析异常: ' + _e)
+					resolve({ content: '响应解析失败，请检查提供商 ' + providerId + ' 是否兼容。', isError: true } as ToolResult)
+				}
+			},
+			fail: (_err: any) => {
+				console.log('[WebSearch] ChatCompletions ← 网络失败 | ' + url)
+				resolve({ content: 'API 请求失败，请检查网络或提供商 ' + providerId + ' 配置。', isError: true } as ToolResult)
+			}
+		})
+	}
+
+	/** 逐个尝试 SearXNG 实例，成功则 resolve，全失败则返回空 */
+	private doSearchInstances(
+		instances: string[],
+		index: number,
+		query: string,
+		limit: number,
+		hasResolved: boolean,
+		resolve: (value: ToolResult) => void
+	): void {
+		if (index >= instances.length) {
+			if (hasResolved == false) {
+				resolve({ content: '未找到相关结果，请尝试更换关键词。', isError: false } as ToolResult)
+			}
+			return
+		}
+		const baseUrl = instances[index]
+		const url = baseUrl + '/search?q=' + query + '&format=json&categories=general,news'
+		let resolvedHere = false
+		uni.request({
+			url: url,
+			method: 'GET',
+			timeout: 8000,
+			success: (res) => {
+				const data = res.data as UTSJSONObject | null
+				if (data == null) {
+					this.doSearchInstances(instances, index + 1, query, limit, hasResolved, resolve)
+					return
+				}
+				const rawResults = data['results'] as UTSJSONObject[] | null
+				if (rawResults == null || rawResults.length == 0) {
+					this.doSearchInstances(instances, index + 1, query, limit, hasResolved, resolve)
+					return
+				}
+				const count = rawResults.length < limit ? rawResults.length : limit
+				const lines: string[] = []
+				for (let i = 0; i < count; i++) {
+					const r = rawResults[i]
+					const t = r['title'] as string | null
+					const u = r['url'] as string | null
+					const c = r['content'] as string | null
+					if (t == null || u == null) continue
+					lines.push((i + 1) + '. ' + t)
+					lines.push('   ' + u)
+					if (c != null && c != '') {
+						lines.push('   ' + c)
+					}
+				}
+				if (lines.length == 0) {
+					this.doSearchInstances(instances, index + 1, query, limit, true, resolve)
+				} else {
+					resolve({ content: lines.join('\n'), isError: false } as ToolResult)
+				}
+			},
+			fail: () => {
+				if (resolvedHere == false) {
+					this.doSearchInstances(instances, index + 1, query, limit, hasResolved, resolve)
+				}
+			}
+		})
+	}
+}
