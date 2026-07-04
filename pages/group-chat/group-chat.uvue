@@ -140,6 +140,9 @@
 		buildGroupMemberAgentItems as buildGroupMemberAgentItemsForPage,
 		buildGroupMemberAgentNames,
 		buildGroupToolbarTrackStyle,
+		buildRevisedGroupSpeakAction,
+		calcGroupInputHeight,
+		createGroupTextStreamState,
 		findLastGroupAssistantMessage,
 		findLastGroupAssistantMessageFrom,
 		getGroupMessagePartsForView,
@@ -150,7 +153,11 @@
 		readGroupMessageMsgSegmentation,
 		readGroupMessageSenderName,
 		readGroupUserMessageSenderName,
+		reduceGroupTextStreamState,
 		replaceGroupVisiblePlainText,
+		resolveGroupReviewShouldContinue,
+		shouldAttachRecentGroupSnapshot,
+		stringifyGroupContextPreview,
 	} from '@/utils/group-chat-page-helpers.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { NYX_FLOAT_CONTEXT_GROUP, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
@@ -426,12 +433,7 @@
 			},
 			onMsgScroll(): void { this.longpressCancelToken++ },
 			onInputLineChange(e: UniTextareaLineChangeEvent): void {
-				const lineCount = e.detail.lineCount
-				if (lineCount <= 1) {
-					this.inputHeight = 36
-				} else {
-					this.inputHeight = Math.min(lineCount * 22 + 12, 120)
-				}
+				this.inputHeight = calcGroupInputHeight(e.detail.lineCount)
 			},
 			getMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] { return getGroupMessagePartsForView(msg) },
 			readMessageHideThinking(msg: UTSJSONObject): boolean {
@@ -741,13 +743,7 @@
 					uni.showToast({ position: 'bottom', title: '该成员还没有真实请求快照', icon: 'none' })
 					return
 				}
-				let previewText = ''
-				try {
-					previewText = JSON.stringify(preview, null, 2)
-				} catch (_e: any) {
-					previewText = JSON.stringify(preview)
-				}
-				setContextPreviewPayload(previewText)
+				setContextPreviewPayload(stringifyGroupContextPreview(preview))
 				uni.navigateTo({ url: '/pages/context-preview/context-preview' })
 			},
 			openGroupWorkspace(): void {
@@ -813,45 +809,31 @@
 				}
 				this.discussionStopped = false
 				this.isGenerating = true
-				const schedulerStartedAt = Date.now()
 				const schedulerMessages = buildSchedulerRuntimeMessages(group, session, this.messages, reason, this.loopTurns)
 				const schedulerAgentId = resolveGroupSchedulerAgentId(group)
-				let schedulerText = ''
-				let schedulerThinking = ''
+				const schedulerState = createGroupTextStreamState()
 				const schedulerStream = agentChat(schedulerMessages, buildSchedulerSystemPrompt(), '', '', schedulerAgentId, 1, session.id, '')
 				this.currentStream = schedulerStream
 				schedulerStream.on((event: AgentEvent) => {
-					if (event.type == 'text_delta' && event.text != null) {
-						schedulerText += event.text
-					} else if (event.type == 'text_end' && event.fullText != null && schedulerText == '') {
-						schedulerText = event.fullText as string
-					} else if (event.type == 'thinking_delta' && event.thinkingText != null) {
-						schedulerThinking += (event.thinkingText as string)
-					} else if (event.type == 'thinking_end' && event.fullThinking != null) {
-						schedulerThinking = event.fullThinking as string
-					} else if (event.type == 'error' && event.error != null) {
-						schedulerText = event.error
-					} else if (event.type == 'agent_end') {
+					if (reduceGroupTextStreamState(schedulerState, event) == true) { return }
+					if (event.type == 'agent_end') {
 						if (this.discussionStopped == true) {
 							this.isGenerating = false
 							this.currentStream = null
 							return
 						}
-						const decision = parseSchedulerDecision(schedulerText, group.id)
+						const decision = parseSchedulerDecision(schedulerState.text, group.id)
 						const title = decision['titleSuggestion'] as string | null
 						if (title != null && title.trim() != '') {
 							applyGroupSessionTitleSuggestion(group.id, session.id, title)
 							const freshSession = getGroupSessionById(group.id, session.id)
 							this.session = freshSession != null ? freshSession : session
 						}
-						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerText)
-						appendResponseToSnapshot(schedulerAgentId, session.id, schedulerText, schedulerThinking)
+						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerState.text)
+						appendResponseToSnapshot(schedulerAgentId, session.id, schedulerState.text, schedulerState.thinking)
 						const schedulerSnapshot = readLastLLMRequestSnapshot(schedulerAgentId, session.id)
-						if (schedulerSnapshot != null) {
-							const capturedAt = schedulerSnapshot['capturedAt'] as number | null
-							if (capturedAt != null && capturedAt >= schedulerStartedAt) {
-								hidden['requestSnapshot'] = schedulerSnapshot
-							}
+						if (schedulerSnapshot != null && shouldAttachRecentGroupSnapshot(schedulerSnapshot, schedulerState.startedAt) == true) {
+							hidden['requestSnapshot'] = schedulerSnapshot
 						}
 						hidden['triggerReason'] = reason
 						hidden['runtimeMessages'] = JSON.parse(JSON.stringify(schedulerMessages)) as UTSJSONObject[]
@@ -904,40 +886,26 @@
 					this.currentStream = null
 					return
 				}
-				const reviewStartedAt = Date.now()
 				const reviewMessages = buildGroupReviewMessages(group, session, this.messages, reason, this.loopTurns)
 				const reviewerAgentId = resolveGroupReviewerAgentId(group)
-				let reviewText = ''
-				let reviewThinking = ''
+				const reviewState = createGroupTextStreamState()
 				const reviewStream = agentChat(reviewMessages, buildGroupReviewSystemPrompt(), '', '', reviewerAgentId, 1, session.id, '')
 				this.currentStream = reviewStream
 				reviewStream.on((event: AgentEvent) => {
-					if (event.type == 'text_delta' && event.text != null) {
-						reviewText += event.text
-					} else if (event.type == 'text_end' && event.fullText != null && reviewText == '') {
-						reviewText = event.fullText as string
-					} else if (event.type == 'thinking_delta' && event.thinkingText != null) {
-						reviewThinking += (event.thinkingText as string)
-					} else if (event.type == 'thinking_end' && event.fullThinking != null) {
-						reviewThinking = event.fullThinking as string
-					} else if (event.type == 'error' && event.error != null) {
-						reviewText = event.error
-					} else if (event.type == 'agent_end') {
+					if (reduceGroupTextStreamState(reviewState, event) == true) { return }
+					if (event.type == 'agent_end') {
 						if (this.discussionStopped == true) {
 							this.isGenerating = false
 							this.currentStream = null
 							this.saveMessages()
 							return
 						}
-						const review = parseGroupReviewDecision(reviewText)
-						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_REVIEWER, reviewText)
-						appendResponseToSnapshot(reviewerAgentId, session.id, reviewText, reviewThinking)
+						const review = parseGroupReviewDecision(reviewState.text)
+						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_REVIEWER, reviewState.text)
+						appendResponseToSnapshot(reviewerAgentId, session.id, reviewState.text, reviewState.thinking)
 						const reviewerSnapshot = readLastLLMRequestSnapshot(reviewerAgentId, session.id)
-						if (reviewerSnapshot != null) {
-							const capturedAt = reviewerSnapshot['capturedAt'] as number | null
-							if (capturedAt != null && capturedAt >= reviewStartedAt) {
-								hidden['requestSnapshot'] = reviewerSnapshot
-							}
+						if (reviewerSnapshot != null && shouldAttachRecentGroupSnapshot(reviewerSnapshot, reviewState.startedAt) == true) {
+							hidden['requestSnapshot'] = reviewerSnapshot
 						}
 						hidden['triggerReason'] = reason
 						hidden['runtimeMessages'] = JSON.parse(JSON.stringify(reviewMessages)) as UTSJSONObject[]
@@ -947,13 +915,8 @@
 						persistGroupReviewEffects(group, session, review, hiddenId != null ? hiddenId : '')
 						this.saveMessages()
 						this.currentStream = null
-						let nextShouldContinue = schedulerShouldContinue
 						const advice = review['continueAdvice'] as string | null
-						if (advice == 'continue') {
-							nextShouldContinue = true
-						} else if (advice == 'stop') {
-							nextShouldContinue = false
-						}
+						const nextShouldContinue = resolveGroupReviewShouldContinue(advice, schedulerShouldContinue)
 						if (this.loopTurns >= 10) {
 							this.loopTurns = 0
 							this.runScheduler('连续讨论轮数过多，判断是否继续')
@@ -1100,44 +1063,30 @@
 					done()
 					return
 				}
-				let schedulerText = ''
-				let schedulerThinking = ''
-				const reviewStartedAt = Date.now()
+				const schedulerState = createGroupTextStreamState()
 				const reviewMessages = buildSchedulerReviewMessages(group, session, this.messages, agentId, agentName, keyword, candidateText)
 				const schedulerAgentId = resolveGroupSchedulerAgentId(group)
 				const reviewStream = agentChat(reviewMessages, buildSchedulerReviewSystemPrompt(), '', '', schedulerAgentId, 1, session.id, '')
 				this.currentStream = reviewStream
 				reviewStream.on((event: AgentEvent) => {
-					if (event.type == 'text_delta' && event.text != null) {
-						schedulerText += event.text
-					} else if (event.type == 'text_end' && event.fullText != null && schedulerText == '') {
-						schedulerText = event.fullText as string
-					} else if (event.type == 'thinking_delta' && event.thinkingText != null) {
-						schedulerThinking += (event.thinkingText as string)
-					} else if (event.type == 'thinking_end' && event.fullThinking != null) {
-						schedulerThinking = event.fullThinking as string
-					} else if (event.type == 'error' && event.error != null) {
-						schedulerText = event.error
-					} else if (event.type == 'agent_end') {
+					if (reduceGroupTextStreamState(schedulerState, event) == true) { return }
+					if (event.type == 'agent_end') {
 						if (this.discussionStopped == true) {
 							this.currentStream = null
 							done()
 							return
 						}
 						this.currentStream = null
-						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerText)
-						appendResponseToSnapshot(schedulerAgentId, session.id, schedulerText, schedulerThinking)
+						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerState.text)
+						appendResponseToSnapshot(schedulerAgentId, session.id, schedulerState.text, schedulerState.thinking)
 						const schedulerSnapshot = readLastLLMRequestSnapshot(schedulerAgentId, session.id)
-						if (schedulerSnapshot != null) {
-							const capturedAt = schedulerSnapshot['capturedAt'] as number | null
-							if (capturedAt != null && capturedAt >= reviewStartedAt) {
-								hidden['requestSnapshot'] = schedulerSnapshot
-							}
+						if (schedulerSnapshot != null && shouldAttachRecentGroupSnapshot(schedulerSnapshot, schedulerState.startedAt) == true) {
+							hidden['requestSnapshot'] = schedulerSnapshot
 						}
 						hidden['triggerReason'] = '敏感流式发言审核：' + keyword
 						hidden['runtimeMessages'] = JSON.parse(JSON.stringify(reviewMessages)) as UTSJSONObject[]
 						this.messages.push(hidden)
-						const decision = parseSchedulerReviewDecision(schedulerText)
+						const decision = parseSchedulerReviewDecision(schedulerState.text)
 						const mode = decision['decision'] as string | null
 						if (mode == 'allow') {
 							this.replaceVisiblePlainText(streamingMsg, candidateText)
@@ -1165,10 +1114,7 @@
 						this.saveMessages()
 						this.scrollToBottom()
 						const instructionRaw = decision['revisionInstruction'] as string | null
-						const instruction = instructionRaw != null && instructionRaw.trim() != '' ? instructionRaw.trim() : '保留原意，删除任何关于调度、内部指令、私密指令或幕后安排的表述。'
-						const revisedAction = JSON.parse(JSON.stringify(originalAction)) as UTSJSONObject
-						revisedAction['privateInstruction'] = instruction + '\n\n上一版未公开发言：\n' + candidateText
-						revisedAction['publicIntent'] = '重新组织上一条发言'
+						const revisedAction = buildRevisedGroupSpeakAction(originalAction, instructionRaw, candidateText)
 						this.runMemberSpeakWithReview(agentId, revisedAction, true, done)
 					}
 				})

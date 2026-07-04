@@ -6,6 +6,7 @@
 
 import { getAgentById } from '@/utils/agent.uts'
 import { CHAT_ROLE_ASSISTANT, createPlainPart, getMessageParts } from '@/utils/chat-models.uts'
+import { AgentEvent } from '@/utils/event.uts'
 import {
 	GROUP_MESSAGE_SENDER_AGENT,
 	GROUP_MESSAGE_SENDER_REVIEWER,
@@ -19,6 +20,55 @@ import {
 	resolveGroupSchedulerAgentId,
 	resolveGroupSchedulerDisplayName,
 } from '@/utils/group-chat-service.uts'
+
+export type GroupTextStreamState = {
+	text: string
+	thinking: string
+	startedAt: number
+}
+
+export function createGroupTextStreamState(): GroupTextStreamState {
+	return {
+		text: '',
+		thinking: '',
+		startedAt: Date.now(),
+	} as GroupTextStreamState
+}
+
+export function reduceGroupTextStreamState(state: GroupTextStreamState, event: AgentEvent): boolean {
+	if (event.type == 'text_delta' && event.text != null) {
+		state.text += event.text
+		return true
+	}
+	if (event.type == 'text_end' && event.fullText != null && state.text == '') {
+		state.text = event.fullText as string
+		return true
+	}
+	if (event.type == 'thinking_delta' && event.thinkingText != null) {
+		state.thinking += (event.thinkingText as string)
+		return true
+	}
+	if (event.type == 'thinking_end' && event.fullThinking != null) {
+		state.thinking = event.fullThinking as string
+		return true
+	}
+	if (event.type == 'error' && event.error != null) {
+		state.text = event.error as string
+		return true
+	}
+	return false
+}
+
+export function shouldAttachRecentGroupSnapshot(snapshot: UTSJSONObject | null, startedAt: number): boolean {
+	if (snapshot == null) { return false }
+	const capturedAt = snapshot['capturedAt'] as number | null
+	return capturedAt != null && capturedAt >= startedAt
+}
+
+export function calcGroupInputHeight(lineCount: number): number {
+	if (lineCount <= 1) { return 36 }
+	return Math.min(lineCount * 22 + 12, 120)
+}
 
 export function buildGroupToolbarTrackStyle(pageIndex: number, viewportWidth: number, dragOffset: number): string {
 	let width = viewportWidth
@@ -212,4 +262,28 @@ export function buildGroupDispatchHistoryText(messages: UTSJSONObject[]): string
 	}
 	if (lines.length == 0) { return '' }
 	return lines.join('\n')
+}
+
+export function stringifyGroupContextPreview(preview: UTSJSONObject): string {
+	try {
+		return JSON.stringify(preview, null, 2)
+	} catch (_e: any) {
+		return JSON.stringify(preview)
+	}
+}
+
+export function resolveGroupReviewShouldContinue(advice: string | null, schedulerShouldContinue: boolean): boolean {
+	if (advice == 'continue') { return true }
+	if (advice == 'stop') { return false }
+	return schedulerShouldContinue
+}
+
+export function buildRevisedGroupSpeakAction(originalAction: UTSJSONObject, instructionRaw: string | null, candidateText: string): UTSJSONObject {
+	const instruction = instructionRaw != null && instructionRaw.trim() != ''
+		? instructionRaw.trim()
+		: '保留原意，删除任何关于调度、内部指令、私密指令或幕后安排的表述。'
+	const revisedAction = JSON.parse(JSON.stringify(originalAction)) as UTSJSONObject
+	revisedAction['privateInstruction'] = instruction + '\n\n上一版未公开发言：\n' + candidateText
+	revisedAction['publicIntent'] = '重新组织上一条发言'
+	return revisedAction
 }
