@@ -198,6 +198,20 @@ export function ensureGroupChatTables(db: xSqlite): void {
 	)
 }
 
+export function ensureProvidersTable(db: xSqlite): void {
+	db.run(
+		'CREATE TABLE IF NOT EXISTS providers (' +
+		'id TEXT PRIMARY KEY,' +
+		'name TEXT NOT NULL DEFAULT \'\',' +
+		'api_base TEXT NOT NULL DEFAULT \'\',' +
+		'api_key TEXT NOT NULL DEFAULT \'\',' +
+		'models TEXT NOT NULL DEFAULT \'[]\',' +
+		'enabled INTEGER NOT NULL DEFAULT 1,' +
+		'created_at INTEGER NOT NULL DEFAULT 0,' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+}
+
 export function readStringField(obj: UTSJSONObject, key: string): string {
 	const value = obj[key] as string | null
 	if (value == null) {

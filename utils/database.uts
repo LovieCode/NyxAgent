@@ -5,10 +5,10 @@
  */
 import {
 	ensureAppRuntimeStateTable,
-	ensureAppSettingsTable,
 	ensureConversationTokenUsageStatsTable,
 	ensureGroupChatTables,
 	ensureMemoryCompactionStateTable,
+	ensureProvidersTable,
 	getDb,
 	readNumberField,
 	readObjectArrayField,
@@ -17,6 +17,7 @@ import {
 } from '@/utils/database-core.uts'
 export * from '@/utils/database-group-chat.uts'
 export * from '@/utils/database-conversation.uts'
+export * from '@/utils/database-settings.uts'
 
 /** 获取当前 SQLite 数据库文件路径，用于 Android 全量 ZIP 备份。 */
 export function getDatabaseFilePathForExport(): string {
@@ -72,17 +73,7 @@ export function initDatabase(): void {
 		// 列已存在，忽略
 	}
 
-	db.run(
-		'CREATE TABLE IF NOT EXISTS providers (' +
-		'id TEXT PRIMARY KEY,' +
-		'name TEXT NOT NULL DEFAULT \'\',' +
-		'api_base TEXT NOT NULL DEFAULT \'\',' +
-		'api_key TEXT NOT NULL DEFAULT \'\',' +
-		'models TEXT NOT NULL DEFAULT \'[]\',' +
-		'enabled INTEGER NOT NULL DEFAULT 1,' +
-		'created_at INTEGER NOT NULL DEFAULT 0,' +
-		'updated_at INTEGER NOT NULL DEFAULT 0)'
-	)
+	ensureProvidersTable(db)
 
 	db.run(
 		'CREATE TABLE IF NOT EXISTS app_settings (' +
@@ -471,89 +462,6 @@ export function importDatabaseTables(
 	db.close()
 }
 
-function findProviderApiKeyInRows(rows: UTSJSONObject[], id: string): string {
-	if (id == '') {
-		return ''
-	}
-	for (let i = 0; i < rows.length; i++) {
-		const rowId = rows[i]['id'] as string | null
-		if (rowId == id) {
-			const apiKey = rows[i]['api_key'] as string | null
-			if (apiKey != null) {
-				return apiKey
-			}
-		}
-	}
-	return ''
-}
-
-function findSettingValueInRows(rows: UTSJSONObject[], key: string): string {
-	if (key == '') {
-		return ''
-	}
-	for (let i = 0; i < rows.length; i++) {
-		const rowKey = rows[i]['key'] as string | null
-		if (rowKey == key) {
-			const value = rows[i]['value'] as string | null
-			if (value != null) {
-				return value
-			}
-		}
-	}
-	return ''
-}
-
-/** 仅覆盖导入配置类表，不触碰对话、消息、记忆和群聊数据。 */
-export function importSettingsTables(providers: UTSJSONObject[], appSettings: UTSJSONObject[], preserveEmptyApiKeys: boolean): void {
-	initDatabase()
-	const db = getDb()
-	let oldProviderKeys: UTSJSONObject[] = []
-	let oldApiSettings: UTSJSONObject[] = []
-	if (preserveEmptyApiKeys == true) {
-		oldProviderKeys = rowsToObjects(db.query('SELECT id, api_key FROM providers'))
-		oldApiSettings = rowsToObjects(db.query('SELECT key, value FROM app_settings WHERE key = ?', ['settings_api_key']))
-	}
-	db.run('DELETE FROM providers')
-	db.run('DELETE FROM app_settings')
-
-	for (let i = 0; i < providers.length; i++) {
-		const item = providers[i]
-		const providerId = readStringField(item, 'id')
-		let apiKey = readStringField(item, 'api_key')
-		if (preserveEmptyApiKeys == true && apiKey == '') {
-			apiKey = findProviderApiKeyInRows(oldProviderKeys, providerId)
-		}
-		db.run(
-			'INSERT OR REPLACE INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-			[
-				providerId,
-				readStringField(item, 'name'),
-				readStringField(item, 'api_base'),
-				apiKey,
-				readStringField(item, 'models'),
-				readNumberField(item, 'enabled'),
-				readNumberField(item, 'created_at'),
-				readNumberField(item, 'updated_at'),
-			]
-		)
-	}
-
-	for (let i = 0; i < appSettings.length; i++) {
-		const item = appSettings[i]
-		const key = readStringField(item, 'key')
-		let value = readStringField(item, 'value')
-		if (preserveEmptyApiKeys == true && key == 'settings_api_key' && value == '') {
-			value = findSettingValueInRows(oldApiSettings, key)
-		}
-		db.run(
-			'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
-			[key, value]
-		)
-	}
-
-	db.close()
-}
-
 /** 导出短记忆缓存。 */
 export function getAllMemoryBuffersForExport(): UTSJSONObject[] {
 	const db = getDb()
@@ -631,175 +539,4 @@ export function clearAll(): void {
 	db.run('DELETE FROM conversation_token_usage_stats')
 	db.run('DELETE FROM agent_memory_compaction_state')
 	db.close()
-}
-
-/**
- * 获取所有提供商
- */
-export function getAllProviders(): UTSJSONObject[] {
-	const db = getDb()
-	const result = db.query('SELECT * FROM providers ORDER BY enabled DESC, created_at ASC, id ASC')
-	db.close()
-	return rowsToObjects(result)
-}
-
-/**
- * 根据 id 获取单个提供商
- * 用 getAllProviders 替代直接 SQL 查询，避免 Android SingletonList 问题
- */
-export function getProviderById(id: string): UTSJSONObject | null {
-	const all = getAllProviders()
-	for (let i = 0; i < all.length; i++) {
-		if ((all[i]['id'] as string) == id) {
-			return all[i]
-		}
-	}
-	return null
-}
-
-/**
- * 初始化默认提供商（首次使用时填充）
- */
-export function initDefaultProviders(): void {
-	// 用 getAllProviders 检查，避免 SingletonList 问题
-	const existing = getAllProviders()
-	if (existing.length > 0) {
-		return
-	}
-
-	const defaults: UTSJSONObject[] = [
-		{ id: 'deepseek', name: 'DeepSeek', api_base: 'https://api.deepseek.com', api_key: '', models: '["deepseek-v4-flash","deepseek-v4-pro"]', enabled: 1 },
-		{ id: 'openai', name: 'OpenAI', api_base: 'https://api.openai.com', api_key: '', models: '["gpt-4o","gpt-4o-mini","gpt-4.1","gpt-4.1-mini","gpt-4.1-nano"]', enabled: 0 },
-		{ id: 'anthropic', name: 'Anthropic', api_base: 'https://api.anthropic.com', api_key: '', models: '["claude-sonnet-4-20250514","claude-3-5-sonnet-20241022","claude-3-5-haiku-20241022"]', enabled: 0 },
-		{ id: 'volcengine', name: '豆包(火山引擎)', api_base: 'https://ark.cn-beijing.volces.com/api/v3', api_key: '', models: '["doubao-seed-1-6-250615","doubao-seed-1-6-flash-250615","doubao-seed-1-6-thinking-250615"]', enabled: 0 },
-		{ id: 'xai', name: 'xAI(Grok)', api_base: 'https://api.x.ai', api_key: '', models: '["grok-2","grok-3","grok-3-api"]', enabled: 0 },
-		{ id: 'zai', name: '零一万物', api_base: 'https://api.z.ai/api/coding/paas/v4', api_key: '', models: '["glm-5.2","glm-5.1","glm-5-turbo","glm-4.7","glm-4.5-air"]', enabled: 0 },
-		{ id: 'kimi-coding', name: 'Kimi', api_base: 'https://api.kimi.com/coding', api_key: '', models: '["k2p7","kimi-for-coding","kimi-k2-thinking"]', enabled: 0 },
-		{ id: 'minimax-cn', name: 'MiniMax', api_base: 'https://api.minimaxi.com/anthropic', api_key: '', models: '["MiniMax-M3","MiniMax-M2.7","MiniMax-M2.7-highspeed"]', enabled: 0 },
-		{ id: 'xiaomi', name: '小米', api_base: 'https://api.xiaomimimo.com/v1', api_key: '', models: '["mimo-v2.5-pro-ultraspeed","mimo-v2.5-pro","mimo-v2-pro","mimo-v2-omni","mimo-v2-flash"]', enabled: 0 },
-		{ id: 'ant-ling', name: '通义千问', api_base: 'https://api.ant-ling.com/v1', api_key: '', models: '["Ring-2.6-1T","Ling-2.6-1T","Ling-2.6-flash"]', enabled: 0 },
-		{ id: 'siliconflow', name: '硅基流动', api_base: 'https://api.siliconflow.cn/v1', api_key: '', models: '[]', enabled: 0 },
-	]
-
-	const db = getDb()
-	const now = Date.now()
-	for (let i = 0; i < defaults.length; i++) {
-		const p = defaults[i]
-		const id: string = p['id'] as string
-		const name: string = p['name'] as string
-		const apiBase: string = p['api_base'] as string
-		const apiKey: string = p['api_key'] as string
-		const models: string = p['models'] as string
-		const enabled: number = p['enabled'] as number
-		db.run(
-			'INSERT INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-			[id, name, apiBase, apiKey, models, enabled, now, now]
-		)
-	}
-	db.close()
-}
-
-/**
- * 保存提供商（插入或替换）
- */
-export function saveProvider(
-	id: string,
-	name: string,
-	apiBase: string,
-	apiKey: string,
-	models: string,
-	enabled: boolean
-): void {
-	const db = getDb()
-	const now = Date.now()
-	// 用 tableExists 替代 SELECT 查询，避免 Android 单行结果问题
-	const tableExists = db.tableExists('providers')
-	if (!tableExists) {
-		// 表不存在时直接 INSERT
-		db.run(
-			'INSERT INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-			[id, name, apiBase, apiKey, models, enabled ? 1 : 0, now, now]
-		)
-	} else {
-		// 直接用 INSERT OR REPLACE 简化逻辑
-		db.run(
-			'INSERT OR REPLACE INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-			[id, name, apiBase, apiKey, models, enabled ? 1 : 0, now, now]
-		)
-	}
-	db.close()
-}
-
-/**
- * 删除提供商
- */
-export function deleteProvider(id: string): void {
-	const db = getDb()
-	db.run('DELETE FROM providers WHERE id = ? AND ? = ?', [id, 1, 1])
-	db.close()
-}
-
-/**
- * 切换提供商启用状态
- */
-export function toggleProvider(id: string, enabled: boolean): void {
-	const db = getDb()
-	db.run('UPDATE providers SET enabled=?, updated_at=? WHERE id=?', [enabled ? 1 : 0, Date.now(), id])
-	db.close()
-}
-
-// ==================== 应用设置（SQLite app_settings） ====================
-
-/**
- * 获取应用设置值
- */
-export function getAppSetting(key: string): string | null {
-	if (key == '') { return null }
-	const db = getDb()
-	ensureAppSettingsTable(db)
-	const result = db.query('SELECT value FROM app_settings WHERE key = ? AND ? = ? LIMIT 1', [key, 1, 1])
-	db.close()
-	const rows = rowsToObjects(result)
-	if (rows.length > 0) {
-		const value = rows[0]['value'] as string | null
-		if (value != null && value != '') {
-			return value
-		}
-		return null
-	}
-	return null
-}
-
-/**
- * 保存应用设置
- */
-export function setAppSetting(key: string, value: string): void {
-	if (key == '') { return }
-	const db = getDb()
-	ensureAppSettingsTable(db)
-	if (value == '') {
-		db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [key, ''])
-	} else {
-		db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [key, value])
-	}
-	db.close()
-}
-
-export function removeAppSetting(key: string): void {
-	if (key == '') { return }
-	const db = getDb()
-	ensureAppSettingsTable(db)
-	db.run('DELETE FROM app_settings WHERE key = ?', [key])
-	db.close()
-}
-
-/**
- * 导出 SQLite app_settings 表中的原始设置。
- */
-export function getAllAppSettings(): UTSJSONObject[] {
-	const db = getDb()
-	ensureAppSettingsTable(db)
-	const result = db.query('SELECT key, value FROM app_settings ORDER BY key ASC')
-	db.close()
-	return rowsToObjects(result)
 }
