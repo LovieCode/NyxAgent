@@ -1,0 +1,247 @@
+/**
+ * 数据库核心工具与建表逻辑。
+ *
+ * 只放 SQLite 连接、结果转换、字段读取和 schema ensure，业务 DAO 分散到独立模块。
+ */
+import { xSqlite, SQLiteResult } from '@/uni_modules/laoqianjunzi-sqlite'
+
+/** 数据库文件名 */
+const DB_NAME = 'agent_chat.db'
+
+/**
+ * 获取数据库实例（自动打开/创建）
+ */
+export function getDb(): xSqlite {
+	const db = new xSqlite()
+	db.createDb(DB_NAME)
+	return db
+}
+
+/**
+ * 将 SQLite 查询结果的 columns+rows 转换为 UTSJSONObject[]
+ * 仅用于多行结果查询（getAllProviders、getConversations、getMessages），
+ * 单行结果分别用其他方式处理。
+ */
+export function rowsToObjects(result: SQLiteResult): UTSJSONObject[] {
+	const rows = result.rows
+	const columns = result.columns
+	if (rows == null || columns == null || rows.length == 0) {
+		return []
+	}
+	const list: UTSJSONObject[] = []
+	for (let r = 0; r < rows.length; r++) {
+		const row = rows[r]
+		const obj: UTSJSONObject = {}
+		for (let c = 0; c < columns.length; c++) {
+			const colName = columns[c]
+			const value = row[c]
+			if (value != null) {
+				obj[colName] = value
+			}
+		}
+		list.push(obj)
+	}
+	return list
+}
+
+export function ensureConversationTokenUsageStatsTable(db: xSqlite): void {
+	db.run(
+		'CREATE TABLE IF NOT EXISTS conversation_token_usage_stats (' +
+		'conversation_id TEXT PRIMARY KEY,' +
+		'prompt_tokens INTEGER NOT NULL DEFAULT 0,' +
+		'prompt_cache_hit_tokens INTEGER NOT NULL DEFAULT 0,' +
+		'call_count INTEGER NOT NULL DEFAULT 0,' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+}
+
+export function ensureMemoryCompactionStateTable(db: xSqlite): void {
+	db.run(
+		'CREATE TABLE IF NOT EXISTS agent_memory_compaction_state (' +
+		'id TEXT PRIMARY KEY,' +
+		'agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'conversation_id TEXT NOT NULL DEFAULT \'\',' +
+		'last_message_key TEXT NOT NULL DEFAULT \'\',' +
+		'last_message_timestamp INTEGER NOT NULL DEFAULT 0,' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+}
+
+export function ensureAppRuntimeStateTable(db: xSqlite): void {
+	db.run(
+		'CREATE TABLE IF NOT EXISTS app_runtime_state (' +
+		'key TEXT PRIMARY KEY,' +
+		'value TEXT NOT NULL DEFAULT \'\',' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+}
+
+export function ensureGroupChatTables(db: xSqlite): void {
+	db.run(
+		'CREATE TABLE IF NOT EXISTS group_chats (' +
+		'id TEXT PRIMARY KEY,' +
+		'name TEXT NOT NULL DEFAULT \'\',' +
+		'avatar TEXT NOT NULL DEFAULT \'\',' +
+		'scheduler_agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'scheduler_prompt TEXT NOT NULL DEFAULT \'\',' +
+		'shared_prompt TEXT NOT NULL DEFAULT \'\',' +
+		'active_session_id TEXT NOT NULL DEFAULT \'\',' +
+		'created_at INTEGER NOT NULL DEFAULT 0,' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+	db.run(
+		'CREATE TABLE IF NOT EXISTS group_chat_members (' +
+		'id TEXT PRIMARY KEY,' +
+		'group_id TEXT NOT NULL DEFAULT \'\',' +
+		'agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'active INTEGER NOT NULL DEFAULT 1,' +
+		'joined_at INTEGER NOT NULL DEFAULT 0,' +
+		'left_at INTEGER NOT NULL DEFAULT 0,' +
+		'order_index INTEGER NOT NULL DEFAULT 0)'
+	)
+	db.run(
+		'CREATE TABLE IF NOT EXISTS group_chat_sessions (' +
+		'id TEXT PRIMARY KEY,' +
+		'group_id TEXT NOT NULL DEFAULT \'\',' +
+		'title TEXT NOT NULL DEFAULT \'\',' +
+		'workspace_path TEXT NOT NULL DEFAULT \'\',' +
+		'forked_from_session_id TEXT NOT NULL DEFAULT \'\',' +
+		'title_locked INTEGER NOT NULL DEFAULT 0,' +
+		'created_at INTEGER NOT NULL DEFAULT 0,' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+	db.run(
+		'CREATE TABLE IF NOT EXISTS group_chat_messages (' +
+		'id TEXT PRIMARY KEY,' +
+		'group_id TEXT NOT NULL DEFAULT \'\',' +
+		'session_id TEXT NOT NULL DEFAULT \'\',' +
+		'role TEXT NOT NULL DEFAULT \'\',' +
+		'sender_type TEXT NOT NULL DEFAULT \'\',' +
+		'sender_agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'visibility TEXT NOT NULL DEFAULT \'public\',' +
+		'visible_agent_ids_json TEXT NOT NULL DEFAULT \'[]\',' +
+		'visible INTEGER NOT NULL DEFAULT 1,' +
+		'timestamp INTEGER NOT NULL DEFAULT 0,' +
+		'payload_json TEXT NOT NULL DEFAULT \'{}\',' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+	try {
+		db.run('ALTER TABLE group_chat_messages ADD COLUMN visible_agent_ids_json TEXT NOT NULL DEFAULT \'[]\'')
+	} catch (_e: any) {
+		// 列已存在，忽略
+	}
+	db.run(
+		'CREATE TABLE IF NOT EXISTS group_agent_context_records (' +
+		'id TEXT PRIMARY KEY,' +
+		'agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'group_id TEXT NOT NULL DEFAULT \'\',' +
+		'session_id TEXT NOT NULL DEFAULT \'\',' +
+		'created_at INTEGER NOT NULL DEFAULT 0,' +
+		'payload_json TEXT NOT NULL DEFAULT \'{}\')'
+	)
+	db.run(
+		'CREATE TABLE IF NOT EXISTS group_chat_reviews (' +
+		'id TEXT PRIMARY KEY,' +
+		'group_id TEXT NOT NULL DEFAULT \'\',' +
+		'session_id TEXT NOT NULL DEFAULT \'\',' +
+		'message_id TEXT NOT NULL DEFAULT \'\',' +
+		'summary TEXT NOT NULL DEFAULT \'\',' +
+		'continue_advice TEXT NOT NULL DEFAULT \'neutral\',' +
+		'payload_json TEXT NOT NULL DEFAULT \'{}\',' +
+		'created_at INTEGER NOT NULL DEFAULT 0)'
+	)
+	db.run(
+		'CREATE TABLE IF NOT EXISTS group_chat_tasks (' +
+		'id TEXT PRIMARY KEY,' +
+		'group_id TEXT NOT NULL DEFAULT \'\',' +
+		'session_id TEXT NOT NULL DEFAULT \'\',' +
+		'title TEXT NOT NULL DEFAULT \'\',' +
+		'owner_agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'participants_json TEXT NOT NULL DEFAULT \'[]\',' +
+		'status TEXT NOT NULL DEFAULT \'open\',' +
+		'source_review_id TEXT NOT NULL DEFAULT \'\',' +
+		'payload_json TEXT NOT NULL DEFAULT \'{}\',' +
+		'created_at INTEGER NOT NULL DEFAULT 0,' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+	db.run(
+		'CREATE TABLE IF NOT EXISTS group_agent_memories (' +
+		'id TEXT PRIMARY KEY,' +
+		'group_id TEXT NOT NULL DEFAULT \'\',' +
+		'session_id TEXT NOT NULL DEFAULT \'\',' +
+		'agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'category TEXT NOT NULL DEFAULT \'group_review\',' +
+		'visibility TEXT NOT NULL DEFAULT \'private\',' +
+		'content TEXT NOT NULL DEFAULT \'\',' +
+		'source_review_id TEXT NOT NULL DEFAULT \'\',' +
+		'payload_json TEXT NOT NULL DEFAULT \'{}\',' +
+		'created_at INTEGER NOT NULL DEFAULT 0,' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+	db.run(
+		'CREATE TABLE IF NOT EXISTS group_agent_metrics (' +
+		'id TEXT PRIMARY KEY,' +
+		'group_id TEXT NOT NULL DEFAULT \'\',' +
+		'session_id TEXT NOT NULL DEFAULT \'\',' +
+		'agent_id TEXT NOT NULL DEFAULT \'\',' +
+		'speak_count INTEGER NOT NULL DEFAULT 0,' +
+		'useful_count INTEGER NOT NULL DEFAULT 0,' +
+		'issue_count INTEGER NOT NULL DEFAULT 0,' +
+		'memory_count INTEGER NOT NULL DEFAULT 0,' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+	db.run(
+		'CREATE TABLE IF NOT EXISTS group_chat_state (' +
+		'key TEXT PRIMARY KEY,' +
+		'value TEXT NOT NULL DEFAULT \'\',' +
+		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+}
+
+export function readStringField(obj: UTSJSONObject, key: string): string {
+	const value = obj[key] as string | null
+	if (value == null) {
+		return ''
+	}
+	return value
+}
+
+export function readNumberField(obj: UTSJSONObject, key: string): number {
+	const value = obj[key] as number | null
+	if (value == null) {
+		return 0
+	}
+	return value
+}
+
+export function readObjectArrayField(obj: UTSJSONObject, key: string): UTSJSONObject[] {
+	const value = obj[key] as UTSJSONObject[] | null
+	if (value == null) {
+		return [] as UTSJSONObject[]
+	}
+	return value
+}
+
+export function ensureAppSettingsTable(db: xSqlite): void {
+	db.run(
+		'CREATE TABLE IF NOT EXISTS app_settings (' +
+		'key TEXT PRIMARY KEY,' +
+		'value TEXT NOT NULL DEFAULT \'\')'
+	)
+}
+
+export function safeJsonForDb(value: UTSJSONObject): string {
+	try {
+		return JSON.stringify(value)
+	} catch (_e: any) {
+	}
+	return '{}'
+}
+
+export function safeJsonArrayForDb(value: string[]): string {
+	try {
+		return JSON.stringify(value)
+	} catch (_e: any) {
+	}
+	return '[]'
+}

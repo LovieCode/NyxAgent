@@ -1,0 +1,388 @@
+/**
+ * 群聊与运行态数据库访问。
+ *
+ * 从 database.uts 拆出，避免主数据库入口继续膨胀成万物 DAO。
+ */
+
+import {
+	ensureAppRuntimeStateTable,
+	ensureGroupChatTables,
+	getDb,
+	readNumberField,
+	readStringField,
+	rowsToObjects,
+	safeJsonArrayForDb,
+	safeJsonForDb,
+} from '@/utils/database-core.uts'
+
+export function setRuntimeState(key: string, value: string): void {
+	if (key == '') { return }
+	const db = getDb()
+	ensureAppRuntimeStateTable(db)
+	db.run('INSERT OR REPLACE INTO app_runtime_state (key, value, updated_at) VALUES (?, ?, ?)', [key, value, Date.now()])
+	db.close()
+}
+
+export function getRuntimeState(key: string): string {
+	if (key == '') { return '' }
+	const db = getDb()
+	ensureAppRuntimeStateTable(db)
+	const result = db.query('SELECT value FROM app_runtime_state WHERE key = ? AND ? = ? LIMIT 1', [key, 1, 1])
+	db.close()
+	const rows = rowsToObjects(result)
+	if (rows.length > 0) {
+		return readStringField(rows[0], 'value')
+	}
+	return ''
+}
+
+export function consumeRuntimeState(key: string): string {
+	if (key == '') { return '' }
+	const db = getDb()
+	ensureAppRuntimeStateTable(db)
+	const result = db.query('SELECT value FROM app_runtime_state WHERE key = ? AND ? = ? LIMIT 1', [key, 1, 1])
+	db.run('DELETE FROM app_runtime_state WHERE key = ?', [key])
+	db.close()
+	const rows = rowsToObjects(result)
+	if (rows.length > 0) {
+		return readStringField(rows[0], 'value')
+	}
+	return ''
+}
+
+export function deleteRuntimeState(key: string): void {
+	if (key == '') { return }
+	const db = getDb()
+	ensureAppRuntimeStateTable(db)
+	db.run('DELETE FROM app_runtime_state WHERE key = ?', [key])
+	db.close()
+}
+
+export function getGroupChatRows(): UTSJSONObject[] {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query('SELECT * FROM group_chats ORDER BY updated_at DESC')
+	db.close()
+	return rowsToObjects(result)
+}
+
+export function getGroupChatRowById(groupId: string): UTSJSONObject | null {
+	if (groupId == '') { return null }
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query('SELECT * FROM group_chats WHERE id = ? AND ? = ? LIMIT 1', [groupId, 1, 1])
+	db.close()
+	const rows = rowsToObjects(result)
+	if (rows.length > 0) { return rows[0] }
+	return null
+}
+
+export function saveGroupChatRow(row: UTSJSONObject): void {
+	const now = Date.now()
+	let createdAt = readNumberField(row, 'created_at')
+	if (createdAt <= 0) { createdAt = readNumberField(row, 'createdAt') }
+	if (createdAt <= 0) { createdAt = now }
+	let updatedAt = readNumberField(row, 'updated_at')
+	if (updatedAt <= 0) { updatedAt = readNumberField(row, 'updatedAt') }
+	if (updatedAt <= 0) { updatedAt = now }
+	const db = getDb()
+	ensureGroupChatTables(db)
+	db.run(
+		'INSERT OR REPLACE INTO group_chats (id, name, avatar, scheduler_agent_id, scheduler_prompt, shared_prompt, active_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+		[
+			readStringField(row, 'id'),
+			readStringField(row, 'name'),
+			readStringField(row, 'avatar'),
+			readStringField(row, 'scheduler_agent_id') != '' ? readStringField(row, 'scheduler_agent_id') : readStringField(row, 'schedulerAgentId'),
+			readStringField(row, 'scheduler_prompt') != '' ? readStringField(row, 'scheduler_prompt') : readStringField(row, 'schedulerPrompt'),
+			readStringField(row, 'shared_prompt') != '' ? readStringField(row, 'shared_prompt') : readStringField(row, 'sharedPrompt'),
+			readStringField(row, 'active_session_id') != '' ? readStringField(row, 'active_session_id') : readStringField(row, 'activeSessionId'),
+			createdAt,
+			updatedAt,
+		]
+	)
+	db.close()
+}
+
+export function getGroupMemberRows(groupId: string): UTSJSONObject[] {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query('SELECT * FROM group_chat_members WHERE group_id = ? AND ? = ? ORDER BY order_index ASC, joined_at ASC', [groupId, 1, 1])
+	db.close()
+	return rowsToObjects(result)
+}
+
+export function saveGroupMemberRows(groupId: string, rows: UTSJSONObject[]): void {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	db.run('DELETE FROM group_chat_members WHERE group_id = ? AND ? = ?', [groupId, 1, 1])
+	for (let i = 0; i < rows.length; i++) {
+		const row = rows[i]
+		db.run(
+			'INSERT OR REPLACE INTO group_chat_members (id, group_id, agent_id, active, joined_at, left_at, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)',
+			[
+				readStringField(row, 'id'),
+				groupId,
+				readStringField(row, 'agent_id') != '' ? readStringField(row, 'agent_id') : readStringField(row, 'agentId'),
+				readNumberField(row, 'active'),
+				readNumberField(row, 'joined_at') > 0 ? readNumberField(row, 'joined_at') : readNumberField(row, 'joinedAt'),
+				readNumberField(row, 'left_at') > 0 ? readNumberField(row, 'left_at') : readNumberField(row, 'leftAt'),
+				readNumberField(row, 'order_index') > 0 ? readNumberField(row, 'order_index') : readNumberField(row, 'order'),
+			]
+		)
+	}
+	db.close()
+}
+
+export function getGroupSessionRows(groupId: string): UTSJSONObject[] {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query('SELECT * FROM group_chat_sessions WHERE group_id = ? AND ? = ? ORDER BY updated_at DESC, created_at DESC', [groupId, 1, 1])
+	db.close()
+	return rowsToObjects(result)
+}
+
+export function saveGroupSessionRows(groupId: string, rows: UTSJSONObject[]): void {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	db.run('DELETE FROM group_chat_sessions WHERE group_id = ? AND ? = ?', [groupId, 1, 1])
+	for (let i = 0; i < rows.length; i++) {
+		const row = rows[i]
+		db.run(
+			'INSERT OR REPLACE INTO group_chat_sessions (id, group_id, title, workspace_path, forked_from_session_id, title_locked, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+			[
+				readStringField(row, 'id'),
+				groupId,
+				readStringField(row, 'title'),
+				readStringField(row, 'workspace_path') != '' ? readStringField(row, 'workspace_path') : readStringField(row, 'workspacePath'),
+				readStringField(row, 'forked_from_session_id') != '' ? readStringField(row, 'forked_from_session_id') : readStringField(row, 'forkedFromSessionId'),
+				readNumberField(row, 'title_locked') > 0 ? readNumberField(row, 'title_locked') : readNumberField(row, 'titleLocked'),
+				readNumberField(row, 'created_at') > 0 ? readNumberField(row, 'created_at') : readNumberField(row, 'createdAt'),
+				readNumberField(row, 'updated_at') > 0 ? readNumberField(row, 'updated_at') : readNumberField(row, 'updatedAt'),
+			]
+		)
+	}
+	db.close()
+}
+
+export function getGroupMessageRows(groupId: string, sessionId: string): UTSJSONObject[] {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query('SELECT * FROM group_chat_messages WHERE group_id = ? AND session_id = ? ORDER BY timestamp ASC, updated_at ASC', [groupId, sessionId])
+	db.close()
+	return rowsToObjects(result)
+}
+
+export function saveGroupMessageRows(groupId: string, sessionId: string, messages: UTSJSONObject[]): void {
+	const now = Date.now()
+	const db = getDb()
+	ensureGroupChatTables(db)
+	db.run('DELETE FROM group_chat_messages WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const visibleRaw = msg['visible'] as boolean | null
+		const visible = visibleRaw == false ? 0 : 1
+		const visibilityRaw = msg['visibility'] as string | null
+		const visibility = visibilityRaw != null && visibilityRaw != '' ? visibilityRaw : (visible == 1 ? 'public' : 'internal')
+		const timestampRaw = msg['timestamp'] as number | null
+		const timestamp = timestampRaw != null && timestampRaw > 0 ? timestampRaw : now
+		const visibleAgentIdsRaw = msg['visibleAgentIds'] as string[] | null
+		const visibleAgentIds = visibleAgentIdsRaw != null ? visibleAgentIdsRaw : ([] as string[])
+		db.run(
+			'INSERT OR REPLACE INTO group_chat_messages (id, group_id, session_id, role, sender_type, sender_agent_id, visibility, visible_agent_ids_json, visible, timestamp, payload_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+			[
+				readStringField(msg, 'id'),
+				groupId,
+				sessionId,
+				readStringField(msg, 'role'),
+				readStringField(msg, 'senderType'),
+				readStringField(msg, 'senderAgentId'),
+				visibility,
+				safeJsonArrayForDb(visibleAgentIds),
+				visible,
+				timestamp,
+				safeJsonForDb(msg),
+				now,
+			]
+		)
+	}
+	db.close()
+}
+
+export function deleteGroupMessageRows(groupId: string, sessionId: string): void {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	db.run('DELETE FROM group_chat_messages WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+	db.close()
+}
+
+export function getGroupAgentContextRows(agentId: string): UTSJSONObject[] {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query('SELECT * FROM group_agent_context_records WHERE agent_id = ? AND ? = ? ORDER BY created_at DESC', [agentId, 1, 1])
+	db.close()
+	return rowsToObjects(result)
+}
+
+export function saveGroupAgentContextRow(record: UTSJSONObject): void {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	db.run(
+		'INSERT OR REPLACE INTO group_agent_context_records (id, agent_id, group_id, session_id, created_at, payload_json) VALUES (?, ?, ?, ?, ?, ?)',
+		[
+			readStringField(record, 'id'),
+			readStringField(record, 'agentId') != '' ? readStringField(record, 'agentId') : readStringField(record, 'agent_id'),
+			readStringField(record, 'groupId') != '' ? readStringField(record, 'groupId') : readStringField(record, 'group_id'),
+			readStringField(record, 'sessionId') != '' ? readStringField(record, 'sessionId') : readStringField(record, 'session_id'),
+			readNumberField(record, 'createdAt') > 0 ? readNumberField(record, 'createdAt') : readNumberField(record, 'created_at'),
+			safeJsonForDb(record),
+		]
+	)
+	db.close()
+}
+
+export function deleteGroupAgentContextRow(agentId: string, recordId: string): void {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	db.run('DELETE FROM group_agent_context_records WHERE agent_id = ? AND id = ?', [agentId, recordId])
+	db.close()
+}
+
+export function saveGroupReviewRow(record: UTSJSONObject): void {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	db.run(
+		'INSERT OR REPLACE INTO group_chat_reviews (id, group_id, session_id, message_id, summary, continue_advice, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+		[
+			readStringField(record, 'id'),
+			readStringField(record, 'groupId'),
+			readStringField(record, 'sessionId'),
+			readStringField(record, 'messageId'),
+			readStringField(record, 'summary'),
+			readStringField(record, 'continueAdvice') != '' ? readStringField(record, 'continueAdvice') : 'neutral',
+			safeJsonForDb(record),
+			readNumberField(record, 'createdAt') > 0 ? readNumberField(record, 'createdAt') : Date.now(),
+		]
+	)
+	db.close()
+}
+
+export function saveGroupTaskRow(record: UTSJSONObject): void {
+	const now = Date.now()
+	const participants = record['participants'] as string[] | null
+	const db = getDb()
+	ensureGroupChatTables(db)
+	db.run(
+		'INSERT OR REPLACE INTO group_chat_tasks (id, group_id, session_id, title, owner_agent_id, participants_json, status, source_review_id, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+		[
+			readStringField(record, 'id'),
+			readStringField(record, 'groupId'),
+			readStringField(record, 'sessionId'),
+			readStringField(record, 'title'),
+			readStringField(record, 'ownerAgentId'),
+			participants != null ? safeJsonArrayForDb(participants) : '[]',
+			readStringField(record, 'status') != '' ? readStringField(record, 'status') : 'open',
+			readStringField(record, 'sourceReviewId'),
+			safeJsonForDb(record),
+			readNumberField(record, 'createdAt') > 0 ? readNumberField(record, 'createdAt') : now,
+			now,
+		]
+	)
+	db.close()
+}
+
+export function saveGroupMemoryRow(record: UTSJSONObject): void {
+	const now = Date.now()
+	const db = getDb()
+	ensureGroupChatTables(db)
+	db.run(
+		'INSERT OR REPLACE INTO group_agent_memories (id, group_id, session_id, agent_id, category, visibility, content, source_review_id, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+		[
+			readStringField(record, 'id'),
+			readStringField(record, 'groupId'),
+			readStringField(record, 'sessionId'),
+			readStringField(record, 'agentId'),
+			readStringField(record, 'category') != '' ? readStringField(record, 'category') : 'group_review',
+			readStringField(record, 'visibility') != '' ? readStringField(record, 'visibility') : 'private',
+			readStringField(record, 'content'),
+			readStringField(record, 'sourceReviewId'),
+			safeJsonForDb(record),
+			readNumberField(record, 'createdAt') > 0 ? readNumberField(record, 'createdAt') : now,
+			now,
+		]
+	)
+	db.close()
+}
+
+export function incrementGroupAgentMetric(groupId: string, sessionId: string, agentId: string, speakDelta: number, usefulDelta: number, issueDelta: number, memoryDelta: number): void {
+	if (groupId == '' || sessionId == '' || agentId == '') { return }
+	const id = groupId + '::' + sessionId + '::' + agentId
+	const now = Date.now()
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query('SELECT speak_count, useful_count, issue_count, memory_count FROM group_agent_metrics WHERE id = ? AND ? = ? LIMIT 1', [id, 1, 1])
+	const rows = rowsToObjects(result)
+	let speak = 0
+	let useful = 0
+	let issue = 0
+	let memory = 0
+	if (rows.length > 0) {
+		const row = rows[0]
+		speak = readNumberField(row, 'speak_count')
+		useful = readNumberField(row, 'useful_count')
+		issue = readNumberField(row, 'issue_count')
+		memory = readNumberField(row, 'memory_count')
+	}
+	db.run(
+		'INSERT OR REPLACE INTO group_agent_metrics (id, group_id, session_id, agent_id, speak_count, useful_count, issue_count, memory_count, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+		[id, groupId, sessionId, agentId, speak + speakDelta, useful + usefulDelta, issue + issueDelta, memory + memoryDelta, now]
+	)
+	db.close()
+}
+
+export function getGroupAgentMetricRows(groupId: string, sessionId: string): UTSJSONObject[] {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query('SELECT * FROM group_agent_metrics WHERE group_id = ? AND session_id = ? ORDER BY useful_count DESC, speak_count DESC', [groupId, sessionId])
+	db.close()
+	return rowsToObjects(result)
+}
+
+export function getGroupTaskRows(groupId: string, sessionId: string): UTSJSONObject[] {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query('SELECT * FROM group_chat_tasks WHERE group_id = ? AND session_id = ? ORDER BY updated_at DESC', [groupId, sessionId])
+	db.close()
+	return rowsToObjects(result)
+}
+
+export function setGroupChatState(key: string, value: string): void {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	db.run('INSERT OR REPLACE INTO group_chat_state (key, value, updated_at) VALUES (?, ?, ?)', [key, value, Date.now()])
+	db.close()
+}
+
+export function getGroupChatState(key: string): string {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query('SELECT value FROM group_chat_state WHERE key = ? AND ? = ? LIMIT 1', [key, 1, 1])
+	db.close()
+	const rows = rowsToObjects(result)
+	if (rows.length > 0) {
+		return readStringField(rows[0], 'value')
+	}
+	return ''
+}
+
+export function deleteGroupSessionDbRows(groupId: string, sessionId: string): void {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	db.run('DELETE FROM group_chat_messages WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+	db.run('DELETE FROM group_agent_context_records WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+	db.run('DELETE FROM group_chat_reviews WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+	db.run('DELETE FROM group_chat_tasks WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+	db.run('DELETE FROM group_agent_memories WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+	db.run('DELETE FROM group_agent_metrics WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+	db.close()
+}
