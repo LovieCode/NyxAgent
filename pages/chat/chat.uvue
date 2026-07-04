@@ -189,7 +189,7 @@
 		isBufferedChatAgentEvent,
 		nextChatStreamScrollTick,
 	} from '@/utils/chat-stream-events.uts'
-	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, type PickedLocalFile } from '@/utils/attachment-reader.uts'
+	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, readPickedImageSelection } from '@/utils/attachment-reader.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { NYX_FLOAT_CONTEXT_CHAT, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
 
@@ -698,16 +698,12 @@
 					count: 1,
 					sourceType: ['album'],
 					success: (res: any) => {
-						const file: PickedLocalFile = parsePickedFileInfo(res)
-						if (file.path == '') {
-							uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
+						const picked = readPickedImageSelection(res)
+						if (picked.ok == false) {
+							uni.showToast({ position: 'bottom', title: picked.error, icon: 'none' })
 							return
 						}
-						if (isPickedImageFile(file) == false) {
-							uni.showToast({ position: 'bottom', title: '请选择图片文件', icon: 'none' })
-							return
-						}
-						this.handlePickedImagePath(file.path, fallbackPrompt)
+						this.handlePickedImagePath(picked.path, fallbackPrompt)
 					},
 					fail: (err: any) => {
 						if (isChooseCancelError(err) == true) { return }
@@ -722,16 +718,12 @@
 				uni.chooseFile({
 					count: 1,
 					success: (res: any) => {
-						const file: PickedLocalFile = parsePickedFileInfo(res)
-						if (file.path == '') {
-							uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
+						const picked = readPickedImageSelection(res)
+						if (picked.ok == false) {
+							uni.showToast({ position: 'bottom', title: picked.error, icon: 'none' })
 							return
 						}
-						if (isPickedImageFile(file) == false) {
-							uni.showToast({ position: 'bottom', title: '请选择图片文件', icon: 'none' })
-							return
-						}
-						this.handlePickedImagePath(file.path, fallbackPrompt)
+						this.handlePickedImagePath(picked.path, fallbackPrompt)
 					},
 					fail: (err: any) => {
 						if (isChooseCancelError(err) == true) { return }

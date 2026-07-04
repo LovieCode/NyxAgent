@@ -9,6 +9,12 @@ export type PickedLocalFile = {
 	fileType: string
 }
 
+export type PickedImageSelection = {
+	ok: boolean
+	path: string
+	error: string
+}
+
 function emptyPickedFile(): PickedLocalFile {
 	return {
 		name: '文件',
@@ -16,6 +22,22 @@ function emptyPickedFile(): PickedLocalFile {
 		size: 0,
 		fileType: '',
 	} as PickedLocalFile
+}
+
+function okPickedImage(path: string): PickedImageSelection {
+	return {
+		ok: true,
+		path: path,
+		error: '',
+	} as PickedImageSelection
+}
+
+function failPickedImage(error: string): PickedImageSelection {
+	return {
+		ok: false,
+		path: '',
+		error: error,
+	} as PickedImageSelection
 }
 
 function readStringField(obj: UTSJSONObject, key: string): string {
@@ -107,6 +129,17 @@ export function isPickedImageFile(file: PickedLocalFile): boolean {
 	if (isImageMime(file.fileType) == true) { return true }
 	if (isImageFile(file.name) == true) { return true }
 	return isImageFile(file.path)
+}
+
+export function readPickedImageSelection(res: any): PickedImageSelection {
+	const file = parsePickedFileInfo(res)
+	if (file.path == '') {
+		return failPickedImage('未选择图片')
+	}
+	if (isPickedImageFile(file) == false) {
+		return failPickedImage('请选择图片文件')
+	}
+	return okPickedImage(file.path)
 }
 
 export function isPickedTextFile(file: PickedLocalFile): boolean {
