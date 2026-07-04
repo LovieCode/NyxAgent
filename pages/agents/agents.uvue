@@ -321,10 +321,6 @@
 				return AGENT_CREATE_TEMPLATES
 			},
 
-			firstRunProviderOptions(): UTSJSONObject[] {
-				return FIRST_RUN_PROVIDER_OPTIONS
-			},
-
 			createPreviewName(): string {
 				return readAgentCreatePreviewName(this.currentCreateData())
 			},
@@ -484,10 +480,6 @@
 				deleteRuntimeState('crop_image_path')
 			},
 
-			parseChosenImagePath(res: any): string {
-				return parseAgentCreateImagePath(res)
-			},
-
 			resetCreateData(): void {
 				this.applyCreateData(buildDefaultAgentCreateData())
 			},
@@ -595,12 +587,6 @@
 				this.openGroup(group)
 			},
 
-			goSettings() {
-				uni.redirectTo({
-					url: '/pages/settings/settings'
-				})
-			},
-
 			/** 关闭创建弹窗 */
 			closeCreateDialog() {
 				this.showCreateDialog = false
@@ -625,7 +611,7 @@
 					sourceType: ['album', 'camera'],
 					sizeType: ['compressed'],
 					success: (res: any) => {
-						const path = this.parseChosenImagePath(res)
+						const path = parseAgentCreateImagePath(res)
 						if (path == '') {
 							uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
 							return
