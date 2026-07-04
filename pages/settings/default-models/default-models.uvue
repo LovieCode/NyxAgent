@@ -158,8 +158,28 @@
 </template>
 
 <script lang="uts">
-	import { getAllProviders, setDefaultTaskModel, getAllDefaultTaskModels, getProviderModels, parseModels, getImageCaptionPrompt, setImageCaptionPrompt, getDefaultTTSSettings, setDefaultTTSSettings, TTS_ADAPTER_OPENAI_COMPAT } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { getAllProviders, setDefaultTaskModel, getAllDefaultTaskModels, getImageCaptionPrompt, setImageCaptionPrompt, getDefaultTTSSettings, setDefaultTTSSettings, TTS_ADAPTER_OPENAI_COMPAT } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { getSpeechTempDir, clearSpeechTempFiles } from '@/utils/speech-service.uts'
+	import {
+		defaultSpeechDisabledHint,
+		defaultSpeechTaskDesc,
+		defaultTaskIcon,
+		filterEnabledDefaultModelProviders,
+		getDefaultTaskModelIds,
+		getFirstDefaultProviderModelId,
+		isDefaultFollowChatModel,
+		isDefaultMemoryTask,
+		isDefaultSpeechDisabled,
+		isDefaultSpeechTask,
+		isDefaultTtsTask,
+		isDefaultVisionDisabled,
+		isDefaultVisionTask,
+		readDefaultModelsTtsForm,
+		readDefaultTaskModel,
+		readDefaultTaskProviderId,
+		readDefaultTaskType,
+		validateTtsExtraParamsText,
+	} from '@/utils/default-models-page-helpers.uts'
 
 	export default {
 		data() {
@@ -193,15 +213,7 @@
 		computed: {
 			/** 只展示已启用提供商，避免默认任务指向未启用的 Provider。 */
 			enabledProviders(): UTSJSONObject[] {
-				const list: UTSJSONObject[] = []
-				for (let i = 0; i < this.allProviders.length; i++) {
-					const p = this.allProviders[i]
-					const enabled = p['enabled'] as number | null
-					if (enabled == 1) {
-						list.push(p)
-					}
-				}
-				return list
+				return filterEnabledDefaultModelProviders(this.allProviders)
 			}
 		},
 		methods: {
@@ -216,121 +228,59 @@
 
 			loadTtsSettings() {
 				this.ttsTempDir = getSpeechTempDir()
-				const settings = getDefaultTTSSettings()
-				const adapter = settings['adapter'] as string | null
-				const voice = settings['voice'] as string | null
-				const responseFormat = settings['responseFormat'] as string | null
-				const speed = settings['speed'] as string | null
-				const volume = settings['volume'] as string | null
-				const pitch = settings['pitch'] as string | null
-				const extraParams = settings['extraParams'] as string | null
-				this.ttsAdapter = adapter != null && adapter != '' ? adapter : TTS_ADAPTER_OPENAI_COMPAT
-				this.ttsVoice = voice != null ? voice : ''
-				this.ttsResponseFormat = responseFormat != null ? responseFormat : ''
-				this.ttsSpeed = speed != null ? speed : ''
-				this.ttsVolume = volume != null ? volume : ''
-				this.ttsPitch = pitch != null ? pitch : ''
-				this.ttsExtraParams = extraParams != null ? extraParams : ''
+				const form = readDefaultModelsTtsForm(getDefaultTTSSettings())
+				this.ttsAdapter = form.adapter
+				this.ttsVoice = form.voice
+				this.ttsResponseFormat = form.responseFormat
+				this.ttsSpeed = form.speed
+				this.ttsVolume = form.volume
+				this.ttsPitch = form.pitch
+				this.ttsExtraParams = form.extraParams
 			},
 
 			taskIcon(type: string): string {
-				if (type == 'chat') return 'Chat'
-				if (type == 'memory_organize') return 'Memory'
-				if (type == 'vision') return 'Vision'
-				if (type == 'stt') return 'STT'
-				if (type == 'tts') return 'TTS'
-				return ''
+				return defaultTaskIcon(type)
 			},
 
 			isMemoryTask(task: UTSJSONObject): boolean {
-				const type = task['type'] as string | null
-				return type == 'memory_organize'
+				return isDefaultMemoryTask(task)
 			},
 
 			isFollowChatModel(task: UTSJSONObject): boolean {
-				const providerId = task['providerId'] as string | null
-				const model = task['model'] as string | null
-				return this.isMemoryTask(task) && (providerId == null || providerId == '') && (model == null || model == '')
+				return isDefaultFollowChatModel(task)
 			},
 
 			isVisionTask(task: UTSJSONObject): boolean {
-				const type = task['type'] as string | null
-				return type == 'vision'
+				return isDefaultVisionTask(task)
 			},
 
 			isVisionDisabled(task: UTSJSONObject): boolean {
-				const providerId = task['providerId'] as string | null
-				const model = task['model'] as string | null
-				return this.isVisionTask(task) && (providerId == null || providerId == '') && (model == null || model == '')
+				return isDefaultVisionDisabled(task)
 			},
 
 			isSpeechTask(task: UTSJSONObject): boolean {
-				const type = task['type'] as string | null
-				return type == 'stt' || type == 'tts'
+				return isDefaultSpeechTask(task)
 			},
 
 			isTtsTask(task: UTSJSONObject): boolean {
-				const type = task['type'] as string | null
-				return type == 'tts'
+				return isDefaultTtsTask(task)
 			},
 
 			isSpeechDisabled(task: UTSJSONObject): boolean {
-				const providerId = task['providerId'] as string | null
-				const model = task['model'] as string | null
-				return this.isSpeechTask(task) && (providerId == null || providerId == '') && (model == null || model == '')
+				return isDefaultSpeechDisabled(task)
 			},
 
 			speechTaskDesc(task: UTSJSONObject): string {
-				const type = task['type'] as string | null
-				if (type == 'stt') {
-					return '语音输入会先用该模型转成文字，再发送到聊天。'
-				}
-				if (type == 'tts') {
-					return '助手回复会用该模型合成语音；下方可配置接口类型、音色、格式、语速、音量和音高。'
-				}
-				return ''
+				return defaultSpeechTaskDesc(task)
 			},
 
 			speechDisabledHint(task: UTSJSONObject): string {
-				const type = task['type'] as string | null
-				if (type == 'stt') {
-					return '当前不启用语音识别'
-				}
-				if (type == 'tts') {
-					return '当前不启用语音合成'
-				}
-				return ''
+				return defaultSpeechDisabledHint(task)
 			},
 
 			/** 获取某个任务当前选择的提供商下可用的模型 ID 列表 */
 			getTaskModels(task: UTSJSONObject): string[] {
-				const providerIdRaw = task['providerId'] as string | null
-				const providerId = providerIdRaw != null ? providerIdRaw : ''
-				if (providerId == '') return []
-				// 从内存中的提供商列表获取
-				for (let i = 0; i < this.allProviders.length; i++) {
-					const p = this.allProviders[i]
-					const pid = p['id'] as string | null
-					if (pid == providerId) {
-						const modelsRaw = p['models'] as string | null
-						const modelsStr = modelsRaw != null ? modelsRaw : ''
-						if (modelsStr != null && modelsStr != '') {
-							const parsed = parseModels(modelsStr)
-							const ids: string[] = []
-							for (let mi = 0; mi < parsed.length; mi++) {
-								ids.push(parsed[mi].id)
-							}
-							return ids
-						}
-						return []
-					}
-				}
-				const models = getProviderModels(providerId)
-				const ids: string[] = []
-				for (let mi = 0; mi < models.length; mi++) {
-					ids.push(models[mi].id)
-				}
-				return ids
+				return getDefaultTaskModelIds(task, this.allProviders)
 			},
 
 			/** 选择提供商后自动选第一个模型 */
@@ -338,9 +288,9 @@
 				const task = this.taskList[taskIndex]
 				if (task == null) return
 				task['providerId'] = providerId
-				const models = getProviderModels(providerId)
-				if (models.length > 0) {
-					task['model'] = models[0].id
+				const firstModel = getFirstDefaultProviderModelId(providerId)
+				if (firstModel != '') {
+					task['model'] = firstModel
 					this.saveTaskModel(taskIndex)
 					return
 				}
@@ -385,19 +335,12 @@
 			},
 
 			validateTtsExtraParams(): boolean {
-				const text = this.ttsExtraParams.trim()
-				if (text == '') { return true }
-				try {
-					const parsed = JSON.parse(text)
-					if (parsed == null || typeof parsed != 'object') {
-						uni.showToast({ title: '高级参数必须是 JSON 对象', icon: 'none' })
-						return false
-					}
-					return true
-				} catch (_e: any) {
-					uni.showToast({ title: '高级参数不是合法 JSON', icon: 'none' })
+				const error = validateTtsExtraParamsText(this.ttsExtraParams)
+				if (error != '') {
+					uni.showToast({ title: error, icon: 'none' })
 					return false
 				}
+				return true
 			},
 
 			saveTtsSettingsQuiet(): boolean {
@@ -424,11 +367,9 @@
 			saveTaskModel(taskIndex: number) {
 				const task = this.taskList[taskIndex]
 				if (task == null) return
-				const type = task['type'] as string
-				const rawPid = task['providerId']
-				const rawModel = task['model']
-				const providerId = rawPid != null ? (rawPid as string) : ''
-				const model = rawModel != null ? (rawModel as string) : ''
+				const type = readDefaultTaskType(task)
+				const providerId = readDefaultTaskProviderId(task)
+				const model = readDefaultTaskModel(task)
 				if (type == 'chat' && (providerId == '' || model == '')) {
 					uni.showToast({ title: '对话模型不能为空', icon: 'none' })
 					return

@@ -1,0 +1,167 @@
+import { getProviderModels, parseModels, TTS_ADAPTER_OPENAI_COMPAT } from '@/uni_modules/agent-core/utssdk/provider.uts'
+
+export type DefaultModelsTtsForm = {
+	adapter: string
+	voice: string
+	responseFormat: string
+	speed: string
+	volume: string
+	pitch: string
+	extraParams: string
+}
+
+export function filterEnabledDefaultModelProviders(allProviders: UTSJSONObject[]): UTSJSONObject[] {
+	const list: UTSJSONObject[] = []
+	for (let i = 0; i < allProviders.length; i++) {
+		const p = allProviders[i]
+		const enabled = p['enabled'] as number | null
+		if (enabled == 1) {
+			list.push(p)
+		}
+	}
+	return list
+}
+
+export function readDefaultModelsTtsForm(settings: UTSJSONObject): DefaultModelsTtsForm {
+	const adapter = settings['adapter'] as string | null
+	const voice = settings['voice'] as string | null
+	const responseFormat = settings['responseFormat'] as string | null
+	const speed = settings['speed'] as string | null
+	const volume = settings['volume'] as string | null
+	const pitch = settings['pitch'] as string | null
+	const extraParams = settings['extraParams'] as string | null
+	return {
+		adapter: adapter != null && adapter != '' ? adapter : TTS_ADAPTER_OPENAI_COMPAT,
+		voice: voice != null ? voice : '',
+		responseFormat: responseFormat != null ? responseFormat : '',
+		speed: speed != null ? speed : '',
+		volume: volume != null ? volume : '',
+		pitch: pitch != null ? pitch : '',
+		extraParams: extraParams != null ? extraParams : '',
+	} as DefaultModelsTtsForm
+}
+
+export function defaultTaskIcon(type: string): string {
+	if (type == 'chat') { return 'Chat' }
+	if (type == 'memory_organize') { return 'Memory' }
+	if (type == 'vision') { return 'Vision' }
+	if (type == 'stt') { return 'STT' }
+	if (type == 'tts') { return 'TTS' }
+	return ''
+}
+
+export function readDefaultTaskType(task: UTSJSONObject): string {
+	const type = task['type'] as string | null
+	return type != null ? type : ''
+}
+
+export function readDefaultTaskProviderId(task: UTSJSONObject): string {
+	const providerId = task['providerId'] as string | null
+	return providerId != null ? providerId : ''
+}
+
+export function readDefaultTaskModel(task: UTSJSONObject): string {
+	const model = task['model'] as string | null
+	return model != null ? model : ''
+}
+
+export function isDefaultMemoryTask(task: UTSJSONObject): boolean {
+	return readDefaultTaskType(task) == 'memory_organize'
+}
+
+export function isDefaultFollowChatModel(task: UTSJSONObject): boolean {
+	return isDefaultMemoryTask(task) && readDefaultTaskProviderId(task) == '' && readDefaultTaskModel(task) == ''
+}
+
+export function isDefaultVisionTask(task: UTSJSONObject): boolean {
+	return readDefaultTaskType(task) == 'vision'
+}
+
+export function isDefaultVisionDisabled(task: UTSJSONObject): boolean {
+	return isDefaultVisionTask(task) && readDefaultTaskProviderId(task) == '' && readDefaultTaskModel(task) == ''
+}
+
+export function isDefaultSpeechTask(task: UTSJSONObject): boolean {
+	const type = readDefaultTaskType(task)
+	return type == 'stt' || type == 'tts'
+}
+
+export function isDefaultTtsTask(task: UTSJSONObject): boolean {
+	return readDefaultTaskType(task) == 'tts'
+}
+
+export function isDefaultSpeechDisabled(task: UTSJSONObject): boolean {
+	return isDefaultSpeechTask(task) && readDefaultTaskProviderId(task) == '' && readDefaultTaskModel(task) == ''
+}
+
+export function defaultSpeechTaskDesc(task: UTSJSONObject): string {
+	const type = readDefaultTaskType(task)
+	if (type == 'stt') {
+		return '语音输入会先用该模型转成文字，再发送到聊天。'
+	}
+	if (type == 'tts') {
+		return '助手回复会用该模型合成语音；下方可配置接口类型、音色、格式、语速、音量和音高。'
+	}
+	return ''
+}
+
+export function defaultSpeechDisabledHint(task: UTSJSONObject): string {
+	const type = readDefaultTaskType(task)
+	if (type == 'stt') {
+		return '当前不启用语音识别'
+	}
+	if (type == 'tts') {
+		return '当前不启用语音合成'
+	}
+	return ''
+}
+
+export function getDefaultTaskModelIds(task: UTSJSONObject, allProviders: UTSJSONObject[]): string[] {
+	const providerId = readDefaultTaskProviderId(task)
+	if (providerId == '') { return [] }
+	for (let i = 0; i < allProviders.length; i++) {
+		const p = allProviders[i]
+		const pid = p['id'] as string | null
+		if (pid == providerId) {
+			const modelsRaw = p['models'] as string | null
+			const modelsStr = modelsRaw != null ? modelsRaw : ''
+			if (modelsStr != '') {
+				const parsed = parseModels(modelsStr)
+				const ids: string[] = []
+				for (let mi = 0; mi < parsed.length; mi++) {
+					ids.push(parsed[mi].id)
+				}
+				return ids
+			}
+			return []
+		}
+	}
+	const models = getProviderModels(providerId)
+	const ids: string[] = []
+	for (let mi = 0; mi < models.length; mi++) {
+		ids.push(models[mi].id)
+	}
+	return ids
+}
+
+export function getFirstDefaultProviderModelId(providerId: string): string {
+	const models = getProviderModels(providerId)
+	if (models.length > 0) {
+		return models[0].id
+	}
+	return ''
+}
+
+export function validateTtsExtraParamsText(text: string): string {
+	const trimmed = text.trim()
+	if (trimmed == '') { return '' }
+	try {
+		const parsed = JSON.parse(trimmed)
+		if (parsed == null || typeof parsed != 'object') {
+			return '高级参数必须是 JSON 对象'
+		}
+		return ''
+	} catch (_e: any) {
+		return '高级参数不是合法 JSON'
+	}
+}
