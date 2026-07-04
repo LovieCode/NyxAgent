@@ -188,21 +188,6 @@ function buildSpeechCacheDir(): string {
 function writeArrayBufferToFile(path: string, data: ArrayBuffer): boolean {
 	if (path == '') { return false }
 	clearSpeechWriteError()
-	// #ifdef APP-ANDROID
-	try {
-		const file = new File(path)
-		const parent = file.parentFile
-		if (parent != null && parent.exists() == false) {
-			parent.mkdirs()
-		}
-		file.writeBytes(new Uint8Array(data))
-		return true
-	} catch (e: any) {
-		setSpeechWriteError('Android 写入音频失败', e)
-		return false
-	}
-	// #endif
-	// #ifndef APP-ANDROID
 	try {
 		const fm = uni.getFileSystemManager()
 		// ArrayBuffer 直接写入；encoding 只给 string 用，传 binary 会触发文件系统类型错误。
@@ -212,7 +197,6 @@ function writeArrayBufferToFile(path: string, data: ArrayBuffer): boolean {
 		setSpeechWriteError('写入音频失败', e)
 		return false
 	}
-	// #endif
 }
 
 function normalizeBase64Audio(data: string): string {
