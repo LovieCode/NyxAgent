@@ -1,0 +1,296 @@
+import {
+	readContent,
+	writeContent,
+	deleteItem,
+	listDir,
+	createDir,
+	statItem,
+	exists,
+	joinPath,
+	getAgentDir,
+	basename,
+	formatFileSize,
+	formatTime,
+} from '@/utils/file-manager.uts'
+import {
+	renderKnowledgeMarkdown,
+	parseTodoMarkdown,
+	parseNoteMarkdown,
+	buildTodoMarkdown,
+	buildNoteMarkdown,
+} from '@/utils/markdown.uts'
+import { AgentTool, ToolResult } from './agent-tool-types'
+
+/** 拼接 agent 沙箱绝对路径，自动裁剪 LLM 可能带的 agents/<id>/ 前缀 */
+function resolveAgentPath(agentId: string, relPath: string, workspaceRoot: string = ''): string {
+	const dir = workspaceRoot != '' ? workspaceRoot : getAgentDir(agentId)
+	if (dir == '') return ''
+	if (relPath == '') return dir
+	// 裁剪 agents/<agentId>/ 前缀（LLM 可能沿用旧习惯传完整路径）
+	const prefix = 'agents/' + agentId + '/'
+	if (relPath.startsWith(prefix)) {
+		relPath = relPath.substring(prefix.length)
+	} else if (relPath == 'agents/' + agentId) {
+		return dir
+	}
+	if (workspaceRoot != '') {
+		const conversationId = basename(workspaceRoot)
+		if (conversationId != '' && relPath.startsWith(conversationId + '/')) {
+			relPath = relPath.substring(conversationId.length + 1)
+		} else if (conversationId != '' && relPath == conversationId) {
+			return dir
+		}
+	}
+	if (relPath == '') return dir
+	return joinPath(dir, relPath)
+}
+
+function normalizeWorkspacePath(agentId: string, rawPath: string, workspaceRoot: string = ''): string {
+	let path = rawPath.trim().replace(/\\/g, '/')
+	const prefix = 'agents/' + agentId + '/'
+	if (path.startsWith(prefix)) {
+		path = path.substring(prefix.length)
+	} else if (path == 'agents/' + agentId) {
+		path = ''
+	}
+	while (path.startsWith('/')) {
+		path = path.substring(1)
+	}
+	while (path.endsWith('/') && path.length > 1) {
+		path = path.substring(0, path.length - 1)
+	}
+	if (workspaceRoot != '') {
+		const conversationId = basename(workspaceRoot)
+		if (conversationId != '' && path.startsWith(conversationId + '/')) {
+			path = path.substring(conversationId.length + 1)
+		} else if (conversationId != '' && path == conversationId) {
+			path = ''
+		}
+	}
+	return path
+}
+
+function isUnsafeWorkspacePath(path: string): boolean {
+	if (path.startsWith('/') || path.startsWith('file://') || path.startsWith('unifile://')) return true
+	if (path.indexOf(':') >= 0) return true
+	if (path == '..' || path.indexOf('../') >= 0 || path.indexOf('/..') >= 0) return true
+	if (path.indexOf('..\\') >= 0 || path.indexOf('\\..') >= 0) return true
+	return false
+}
+
+function isTodoPath(path: string): boolean {
+	return path == 'todo.md'
+}
+
+function isNotePath(path: string): boolean {
+	return path.startsWith('notes/') && path.endsWith('.md')
+}
+
+function renderKnowledgeContent(content: string): string {
+	const rendered = renderKnowledgeMarkdown(content)
+	let finalContent = ''
+	for (let i = 0; i < rendered.length; i++) {
+		const block = rendered[i]
+		if (block.type == 'heading') {
+			const prefix = block.level == 1 ? '# ' : block.level == 2 ? '## ' : '### '
+			finalContent = finalContent + prefix + block.text + '\n'
+		} else if (block.type == 'todo') {
+			const box = block.checked ? '- [x]' : '- [ ]'
+			finalContent = finalContent + box + ' ' + block.text + '\n'
+		} else if (block.type == 'bullet') {
+			finalContent = finalContent + '- ' + block.text + '\n'
+		} else {
+			finalContent = finalContent + block.text + '\n'
+		}
+	}
+	return finalContent
+}
+
+function formatWorkspaceInfo(path: string, absPath: string): string {
+	const info = statItem(absPath)
+	const typeStr = info.isDirectory ? '目录' : '文件'
+	return '路径: ' + path + '\n名称: ' + info.name + '\n类型: ' + typeStr + '\n大小: ' + formatFileSize(info.size) + '\n修改时间: ' + formatTime(info.lastModified)
+}
+
+function formatWorkspaceList(path: string, absPath: string, detail: boolean): string {
+	const files = listDir(absPath)
+	const lines: string[] = []
+	if (path == '' || path == 'notes') {
+		lines.push('路径规则：todo.md 是待办；notes/<名称>.md 是笔记；其他路径是普通文件。')
+		lines.push('')
+	}
+	if (files.length == 0) {
+		lines.push('(目录为空)')
+		return lines.join('\n')
+	}
+	for (let i = 0; i < files.length; i++) {
+		const info = files[i]
+		const prefix = info.isDirectory ? '[DIR]  ' : '[FILE] '
+		if (detail == true) {
+			const typeStr = info.isDirectory ? '目录' : '文件'
+			lines.push(prefix + info.name + ' | 类型: ' + typeStr + ' | 大小: ' + formatFileSize(info.size) + ' | 修改时间: ' + formatTime(info.lastModified))
+		} else {
+			if (info.isDirectory == true) {
+				lines.push(prefix + info.name)
+			} else {
+				lines.push(prefix + info.name + ' (' + formatFileSize(info.size) + ')')
+			}
+		}
+	}
+	return lines.join('\n')
+}
+
+export class WorkspaceFileTool implements AgentTool {
+	name: string = 'workspace_file'
+	description: string = '统一操作当前工作区文件。私聊时是当前 Agent 会话工作区，群聊时是群会话共享工作区。所有 path 都相对于当前工作区，禁止绝对路径和 ".."。action=list/read/write/delete/info。路径语义：todo.md 是待办文件，write 时会规范为 - [ ] / - [x]；notes/<名称>.md 是笔记，write 时会规范为带标题/元信息的 Markdown；其他路径是普通文件，按原文读写。write + is_directory=true 创建目录。read 时 render=true 会把 todo/notes Markdown 转为可读文本；普通文件 render 无效果。list 空路径列根目录，path=notes 列笔记目录。delete 可删除文件或目录，谨慎使用。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'action': {
+				'type': 'string',
+				'description': '操作类型：list/read/write/delete/info'
+			},
+			'path': {
+				'type': 'string',
+				'description': '相对路径。todo.md=待办；notes/<名称>.md=笔记；其他路径=普通文件；空路径仅用于 list 根目录。不要传绝对路径或包含 ..'
+			},
+			'content': {
+				'type': 'string',
+				'description': 'write 时要写入的内容。todo.md 使用 - [ ] / - [x]；notes/*.md 可用标准 Markdown；普通文件原样写入'
+			},
+			'detail': {
+				'type': 'boolean',
+				'description': 'list 时是否显示类型、大小、修改时间，默认 false'
+			},
+			'is_directory': {
+				'type': 'boolean',
+				'description': 'write 时为 true 表示创建目录；默认 false 表示写入文件'
+			},
+			'render': {
+				'type': 'boolean',
+				'description': 'read todo.md 或 notes/*.md 时是否返回渲染后的可读文本，默认 true；false 返回原始 Markdown'
+			}
+		},
+		'required': ['action']
+	} as UTSJSONObject
+
+	private agentId: string
+	private workspaceRoot: string
+
+	constructor(agentId: string, workspaceRoot: string = '') {
+		this.agentId = agentId
+		this.workspaceRoot = workspaceRoot
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawAction = args['action'] as string | null
+			const rawPath = args['path'] as string | null
+			const rawContent = args['content'] as string | null
+			const rawDetail = args['detail'] as boolean | null
+			const rawIsDirectory = args['is_directory'] as boolean | null
+			const rawRender = args['render'] as boolean | null
+			const action = rawAction != null ? rawAction.trim().toLowerCase() : ''
+			const rawPathText = rawPath != null ? rawPath : ''
+			if (isUnsafeWorkspacePath(rawPathText.trim().replace(/\\/g, '/')) == true) {
+				resolve({ content: '非法路径：只能使用当前 Agent 工作区内的相对路径，不能使用绝对路径或 ".."', isError: true } as ToolResult)
+				return
+			}
+			const path = normalizeWorkspacePath(this.agentId, rawPathText, this.workspaceRoot)
+			if (action == '') {
+				resolve({ content: '缺少必要参数: action，可用 list/read/write/delete/info', isError: true } as ToolResult)
+				return
+			}
+			if (isUnsafeWorkspacePath(path) == true) {
+				resolve({ content: '非法路径：只能使用当前 Agent 工作区内的相对路径，不能使用绝对路径或 ".."', isError: true } as ToolResult)
+				return
+			}
+			const absPath = resolveAgentPath(this.agentId, path, this.workspaceRoot)
+			if (action == 'list') {
+				const listPath = path == '' ? '' : path
+				const finalAbsPath = resolveAgentPath(this.agentId, listPath, this.workspaceRoot)
+				if (listPath != '' && !exists(finalAbsPath)) {
+					resolve({ content: '路径不存在: ' + listPath, isError: true } as ToolResult)
+					return
+				}
+				if (listPath != '') {
+					const info = statItem(finalAbsPath)
+					if (info.isDirectory == false) {
+						resolve({ content: formatWorkspaceInfo(listPath, finalAbsPath), isError: false } as ToolResult)
+						return
+					}
+				}
+				resolve({ content: formatWorkspaceList(listPath, finalAbsPath, rawDetail == true), isError: false } as ToolResult)
+				return
+			}
+			if (path == '') {
+				resolve({ content: '缺少必要参数: path', isError: true } as ToolResult)
+				return
+			}
+			if (action == 'info') {
+				if (!exists(absPath)) {
+					resolve({ content: '路径不存在: ' + path, isError: true } as ToolResult)
+					return
+				}
+				resolve({ content: formatWorkspaceInfo(path, absPath), isError: false } as ToolResult)
+				return
+			}
+			if (action == 'read') {
+				if (!exists(absPath)) {
+					resolve({ content: '文件不存在或无权限访问: ' + path, isError: true } as ToolResult)
+					return
+				}
+				const content = readContent(absPath)
+				if (content == null) {
+					resolve({ content: '文件读取失败: ' + path, isError: true } as ToolResult)
+					return
+				}
+				const shouldRender = rawRender != false
+				if (shouldRender == true && (isTodoPath(path) == true || isNotePath(path) == true)) {
+					resolve({ content: renderKnowledgeContent(content), isError: false } as ToolResult)
+					return
+				}
+				resolve({ content: content, isError: false } as ToolResult)
+				return
+			}
+			if (action == 'write') {
+				if (rawIsDirectory == true) {
+					const result = createDir(absPath)
+					resolve({
+						content: result.ok ? '目录创建成功: ' + path : '目录创建失败: ' + path,
+						isError: !result.ok
+					} as ToolResult)
+					return
+				}
+				if (rawContent == null) {
+					resolve({ content: '缺少必要参数: content', isError: true } as ToolResult)
+					return
+				}
+				let finalContent = rawContent != null ? rawContent : ''
+				if (isTodoPath(path) == true) {
+					finalContent = buildTodoMarkdown(parseTodoMarkdown(finalContent))
+				} else if (isNotePath(path) == true) {
+					const parsed = parseNoteMarkdown(finalContent)
+					const noteTitle = parsed['title'] as string
+					const noteContent = parsed['content'] as string
+					finalContent = buildNoteMarkdown(noteTitle, noteContent)
+				}
+				const result = writeContent(absPath, finalContent)
+				resolve({
+					content: result.ok ? '写入成功: ' + path : '写入失败: ' + path,
+					isError: !result.ok
+				} as ToolResult)
+				return
+			}
+			if (action == 'delete') {
+				const result = deleteItem(absPath)
+				resolve({
+					content: result.ok ? '删除成功: ' + path : '删除失败: ' + path,
+					isError: !result.ok
+				} as ToolResult)
+				return
+			}
+			resolve({ content: '未知 action: ' + action + '，可用 list/read/write/delete/info', isError: true } as ToolResult)
+		})
+	}
+}

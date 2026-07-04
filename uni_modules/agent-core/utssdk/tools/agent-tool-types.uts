@@ -1,0 +1,20 @@
+/** ToolResult 匹配 agent-core types */
+export type ToolResult = {
+	content: string
+	isError: boolean
+}
+
+/** 给 LLM 的工具定义描述 */
+export type ToolDefinition = {
+	name: string
+	description: string
+	parameters: UTSJSONObject
+}
+
+/** AgentTool 接口（匹配 agent-core types） */
+export interface AgentTool {
+	name: string
+	description: string
+	parameters: UTSJSONObject
+	execute(args: UTSJSONObject): Promise<ToolResult>
+}

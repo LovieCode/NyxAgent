@@ -1,0 +1,83 @@
+import { AGENT_TOOL_APP_GUIDE } from '@/utils/agent.uts'
+import { isAstrBotEnabled } from '@/utils/astrbot-service.uts'
+import { AgentTool, ToolResult } from './agent-tool-types'
+
+function buildAppGuideOverview(): string {
+	let text = 'NyxAgent 功能地图：\n'
+	text += '- 首页：联系人式入口，重点是私聊、群聊、待办、文件、设置。\n'
+	text += '- 私聊：每个 Agent 是一个联系人，可配置人设、模型、生成参数、Skills、工具、缓存 ID、日期注入、消息分段。\n'
+	text += '- 群聊：模拟聊天软件群聊，每个群有独立调度、成员、会话、共享工作区、上下文记录和用量统计。\n'
+	text += '- 眠汐：全局管理员和私人助手，能讲功能、指路设置、整理任务、协调群聊；高风险动作必须先让用户确认。\n'
+	text += '- 设置：基础设置/提供商、默认模型、生成参数、插件、个人资料、Skills、数据管理。\n'
+	text += '- 文件：用户目录、Agent 目录、群聊目录分区；todo.md 是待办，notes/*.md 是笔记。\n'
+	text += '- 语音：STT 负责语音输入，TTS 负责播放文字；都在默认模型页配置。\n'
+	text += '- 数据：安全备份会去掉已知 API Key；完整迁移备份适合换机；导入覆盖前要提醒风险。\n'
+	return text
+}
+
+function buildAppGuideTools(): string {
+	let text = '眠汐可用工具策略：\n'
+	text += '- app_guide：查功能地图、设置路径、能力边界、插件状态。\n'
+	text += '- workspace_file：读写当前会话工作区、todo.md、notes/*.md；删除前必须二次确认。\n'
+	text += '- memory_search：先查历史和重要记忆，再决定是否继续问用户。\n'
+	text += '- memory_buffer_write：记录 64 字以内短状态，例如当前任务/约束/下一步。\n'
+	text += '- web_search：查实时或外部资料；App 内部用法优先用 app_guide。\n'
+	if (isAstrBotEnabled() == true) {
+		text += '- astrbot_task：当前已配置，可把重型任务交给 AstrBot；返回后必须验收再回复。\n'
+	} else {
+		text += '- AstrBot：当前未配置或未启用，相关重型后端入口隐藏。\n'
+	}
+	return text
+}
+
+function buildAppGuideHowTo(topic: string): string {
+	const t = topic.trim().toLowerCase()
+	if (t.indexOf('model') >= 0 || t.indexOf('模型') >= 0 || t.indexOf('stt') >= 0 || t.indexOf('tts') >= 0 || t.indexOf('识别') >= 0 || t.indexOf('语音') >= 0) {
+		return '模型/语音配置：\n1. 打开 设置 → 默认模型。\n2. 分别配置聊天、识图、STT、TTS、记忆整理任务模型。\n3. 如果语音输入提示未配置，优先检查 STT；如果播放文字失败，检查 TTS。'
+	}
+	if (t.indexOf('provider') >= 0 || t.indexOf('提供商') >= 0 || t.indexOf('api') >= 0 || t.indexOf('deepseek') >= 0 || t.indexOf('豆包') >= 0) {
+		return '提供商配置：\n1. 打开 设置 → 基础设置。\n2. 选择或新建提供商，填写 API Key、Base URL、模型列表。\n3. 保存后去 默认模型 或 Agent 设置里选择对应模型。'
+	}
+	if (t.indexOf('astr') >= 0 || t.indexOf('插件') >= 0 || t.indexOf('plugin') >= 0) {
+		const status = isAstrBotEnabled() == true ? '当前 AstrBot 已启用且地址/API Key 完整。' : '当前 AstrBot 未启用或缺少地址/API Key，所以不会提供 AstrBot 工具。'
+		return '插件配置：\n1. 打开 设置 → 插件设置。\n2. 网络搜索可选择 SearXNG 或 AI 模型搜索。\n3. AstrBot 需要启用、填写地址和 API Key 后才会显示工具。\n' + status
+	}
+	if (t.indexOf('group') >= 0 || t.indexOf('群') >= 0) {
+		return '群聊用法：\n1. 首页进入群聊。\n2. 每个群有自己的成员、会话和调度，不共用全局调度。\n3. 群聊文件放群共享工作区，原始上下文可用于排查调度和用量。'
+	}
+	if (t.indexOf('backup') >= 0 || t.indexOf('导入') >= 0 || t.indexOf('导出') >= 0 || t.indexOf('数据') >= 0) {
+		return '数据管理：\n1. 打开 设置 → 数据管理。\n2. 安全备份适合分享或日常存档，会移除已知 API Key。\n3. 完整迁移备份适合换机，不要随便分享。\n4. 导入/旧数据迁移前先备份，覆盖类动作必须确认。'
+	}
+	if (t.indexOf('skill') >= 0 || t.indexOf('技能') >= 0) {
+		return 'Skills 用法：\n1. 打开 设置 → Skills 创建纯文本技能包。\n2. 到某个 Agent 设置里选择启用哪些 Skills。\n3. 眠汐自带 App 管理与教学 Skill，不需要手动创建。'
+	}
+	if (t.indexOf('file') >= 0 || t.indexOf('文件') >= 0 || t.indexOf('待办') >= 0 || t.indexOf('笔记') >= 0) {
+		return '文件/待办/笔记：\n1. 文件页按 用户目录、Agent 目录、群聊目录、其他目录 排序。\n2. todo.md 是待办，notes/*.md 是笔记。\n3. 让眠汐整理待办或笔记时，可以用 workspace_file 写入当前工作区。'
+	}
+	return buildAppGuideOverview()
+}
+
+export class AppGuideTool implements AgentTool {
+	name: string = AGENT_TOOL_APP_GUIDE
+	description: string = '眠汐专属 App 管理和教学工具。查询 NyxAgent 功能地图、设置路径、能力边界、插件/AstrBot 状态和工具使用建议。只负责说明和规划；真正修改设置前必须让用户确认。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'topic': {
+				'type': 'string',
+				'description': '想查询的主题，例如 overview/model/provider/astrbot/group/data/skills/files/voice'
+			}
+		},
+		'required': [] as string[]
+	} as UTSJSONObject
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			const rawTopic = args['topic'] as string | null
+			const topic = rawTopic != null ? rawTopic : ''
+			let content = buildAppGuideHowTo(topic)
+			content += '\n\n' + buildAppGuideTools()
+			resolve({ content: content, isError: false } as ToolResult)
+		})
+	}
+}
