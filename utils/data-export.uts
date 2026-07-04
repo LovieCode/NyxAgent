@@ -10,6 +10,7 @@ import { getSkills } from '@/utils/skills.uts'
 import { getAgentDir, getAgentsRoot, getInternalFilesDir, getUserDir, listDir, joinPath, exists, readContent, formatFileSize, formatTime } from '@/utils/file-manager.uts'
 import { buildTodoMarkdown, buildNoteMarkdown } from '@/utils/markdown.uts'
 import { writeExportZipFile, shareExportFile, getLastShareExportError } from '@/utssdk/app-data-export/index.uts'
+import { appendDirectorySpec, appendFileSpec, appendTextSpec, cloneExportObject, inferExtension, sanitizeFilePart, sanitizeRelativeZipPath, sanitizeZipSegment, stripFileSpecContent } from '@/utils/data-export-helpers.uts'
 
 const EXPORT_SCHEMA_VERSION = 1
 const MAX_EXPORT_FILE_BYTES: number = 50 * 1024 * 1024
@@ -22,16 +23,6 @@ export function buildDataExportOptions(includeApiKeys: boolean): DataExportOptio
 	return {
 		includeApiKeys: includeApiKeys,
 	} as DataExportOptions
-}
-
-function sanitizeFilePart(text: string): string {
-	let result = text
-	result = result.replace(/:/g, '-')
-	result = result.replace(/\./g, '-')
-	result = result.replace(/\//g, '-')
-	result = result.replace(/\\/g, '-')
-	result = result.replace(/ /g, '_')
-	return result
 }
 
 function findAppSettingValue(appSettings: UTSJSONObject[], key: string): string | null {
@@ -157,109 +148,6 @@ function parseStorageArray(storage: UTSJSONObject, key: string): UTSJSONObject[]
 	} catch (_e: any) {
 		return []
 	}
-}
-
-function isLocalExportPath(path: string): boolean {
-	if (path == '') return false
-	if (path.startsWith('http://')) return false
-	if (path.startsWith('https://')) return false
-	if (path.startsWith('data:')) return false
-	return true
-}
-
-function sanitizeZipSegment(text: string): string {
-	let result = text
-	result = result.replace(/\\/g, '-')
-	result = result.replace(/\//g, '-')
-	result = result.replace(/:/g, '-')
-	result = result.replace(/\?/g, '-')
-	result = result.replace(/\*/g, '-')
-	result = result.replace(/"/g, '-')
-	result = result.replace(/</g, '-')
-	result = result.replace(/>/g, '-')
-	result = result.replace(/\|/g, '-')
-	if (result == '' || result == '..') {
-		return 'file'
-	}
-	return result
-}
-
-function sanitizeRelativeZipPath(path: string): string {
-	const parts = path.split('/')
-	const safeParts: string[] = []
-	for (let i = 0; i < parts.length; i++) {
-		const part = parts[i]
-		if (part != '' && part != '.') {
-			safeParts.push(sanitizeZipSegment(part))
-		}
-	}
-	return safeParts.join('/')
-}
-
-function inferExtension(path: string, fallback: string): string {
-	let clean = path
-	const queryIndex = clean.indexOf('?')
-	if (queryIndex >= 0) {
-		clean = clean.substring(0, queryIndex)
-	}
-	const slashIndex = clean.lastIndexOf('/')
-	const dotIndex = clean.lastIndexOf('.')
-	if (dotIndex > slashIndex && dotIndex >= 0 && dotIndex < clean.length - 1) {
-		const ext = clean.substring(dotIndex + 1)
-		if (ext.length > 0 && ext.length <= 8) {
-			return ext
-		}
-	}
-	return fallback
-}
-
-function appendZipSpec(specs: UTSJSONObject[], sourcePath: string, zipPath: string, kind: string): void {
-	if (zipPath == '') {
-		return
-	}
-	if (kind == 'file' && !isLocalExportPath(sourcePath)) {
-		return
-	}
-	for (let i = 0; i < specs.length; i++) {
-		const oldSource = specs[i]['sourcePath'] as string | null
-		const oldZipPath = specs[i]['zipPath'] as string | null
-		const oldKind = specs[i]['kind'] as string | null
-		if (oldSource == sourcePath && oldZipPath == zipPath && oldKind == kind) {
-			return
-		}
-	}
-	specs.push({
-		kind: kind,
-		sourcePath: sourcePath,
-		zipPath: zipPath,
-	} as UTSJSONObject)
-}
-
-function appendFileSpec(specs: UTSJSONObject[], sourcePath: string, zipPath: string): void {
-	appendZipSpec(specs, sourcePath, zipPath, 'file')
-}
-
-function appendDirectorySpec(specs: UTSJSONObject[], zipPath: string): void {
-	appendZipSpec(specs, '', zipPath, 'directory')
-}
-
-function appendTextSpec(specs: UTSJSONObject[], zipPath: string, content: string): void {
-	if (zipPath == '') {
-		return
-	}
-	for (let i = 0; i < specs.length; i++) {
-		const oldZipPath = specs[i]['zipPath'] as string | null
-		const oldKind = specs[i]['kind'] as string | null
-		if (oldZipPath == zipPath && oldKind == 'text') {
-			return
-		}
-	}
-	specs.push({
-		kind: 'text',
-		sourcePath: '',
-		zipPath: zipPath,
-		content: content,
-	} as UTSJSONObject)
 }
 
 function appendAsset(assets: UTSJSONObject[], specs: UTSJSONObject[], kind: string, sourcePath: string, zipPath: string, ref: string): void {
@@ -615,34 +503,6 @@ function appendKnowledgeWorkspaceFiles(agents: UTSJSONObject[], specs: UTSJSONOb
 		if (rawId != null && rawId != '') {
 			appendKnowledgeOwnerFiles(specs, 'agent', rawId, 'knowledge-workspace/agents/' + sanitizeZipSegment(rawId))
 		}
-	}
-}
-
-function stripFileSpecContent(specs: UTSJSONObject[]): UTSJSONObject[] {
-	const result: UTSJSONObject[] = []
-	for (let i = 0; i < specs.length; i++) {
-		const item = specs[i]
-		const kind = item['kind'] as string | null
-		const sourcePath = item['sourcePath'] as string | null
-		const zipPath = item['zipPath'] as string | null
-		const clean: UTSJSONObject = {
-			kind: kind != null ? kind : 'file',
-			sourcePath: sourcePath != null ? sourcePath : '',
-			zipPath: zipPath != null ? zipPath : '',
-		} as UTSJSONObject
-		if (kind == 'text') {
-			clean['generated'] = true
-		}
-		result.push(clean)
-	}
-	return result
-}
-
-function cloneExportObject(item: UTSJSONObject): UTSJSONObject {
-	try {
-		return JSON.parse(JSON.stringify(item)) as UTSJSONObject
-	} catch (_e: any) {
-		return {} as UTSJSONObject
 	}
 }
 

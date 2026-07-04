@@ -1,0 +1,145 @@
+/**
+ * data-export 的路径、ZIP 清单和克隆工具。
+ * 主导出文件只保留业务编排，低层清单细节集中在这里。
+ */
+
+export function sanitizeFilePart(text: string): string {
+	let result = text
+	result = result.replace(/:/g, '-')
+	result = result.replace(/\./g, '-')
+	result = result.replace(/\//g, '-')
+	result = result.replace(/\\/g, '-')
+	result = result.replace(/ /g, '_')
+	return result
+}
+
+export function isLocalExportPath(path: string): boolean {
+	if (path == '') return false
+	if (path.startsWith('http://')) return false
+	if (path.startsWith('https://')) return false
+	if (path.startsWith('data:')) return false
+	return true
+}
+
+export function sanitizeZipSegment(text: string): string {
+	let result = text
+	result = result.replace(/\\/g, '-')
+	result = result.replace(/\//g, '-')
+	result = result.replace(/:/g, '-')
+	result = result.replace(/\?/g, '-')
+	result = result.replace(/\*/g, '-')
+	result = result.replace(/"/g, '-')
+	result = result.replace(/</g, '-')
+	result = result.replace(/>/g, '-')
+	result = result.replace(/\|/g, '-')
+	if (result == '' || result == '..') {
+		return 'file'
+	}
+	return result
+}
+
+export function sanitizeRelativeZipPath(path: string): string {
+	const parts = path.split('/')
+	const safeParts: string[] = []
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		if (part != '' && part != '.') {
+			safeParts.push(sanitizeZipSegment(part))
+		}
+	}
+	return safeParts.join('/')
+}
+
+export function inferExtension(path: string, fallback: string): string {
+	let clean = path
+	const queryIndex = clean.indexOf('?')
+	if (queryIndex >= 0) {
+		clean = clean.substring(0, queryIndex)
+	}
+	const slashIndex = clean.lastIndexOf('/')
+	const dotIndex = clean.lastIndexOf('.')
+	if (dotIndex > slashIndex && dotIndex >= 0 && dotIndex < clean.length - 1) {
+		const ext = clean.substring(dotIndex + 1)
+		if (ext.length > 0 && ext.length <= 8) {
+			return ext
+		}
+	}
+	return fallback
+}
+
+export function appendZipSpec(specs: UTSJSONObject[], sourcePath: string, zipPath: string, kind: string): void {
+	if (zipPath == '') {
+		return
+	}
+	if (kind == 'file' && !isLocalExportPath(sourcePath)) {
+		return
+	}
+	for (let i = 0; i < specs.length; i++) {
+		const oldSource = specs[i]['sourcePath'] as string | null
+		const oldZipPath = specs[i]['zipPath'] as string | null
+		const oldKind = specs[i]['kind'] as string | null
+		if (oldSource == sourcePath && oldZipPath == zipPath && oldKind == kind) {
+			return
+		}
+	}
+	specs.push({
+		kind: kind,
+		sourcePath: sourcePath,
+		zipPath: zipPath,
+	} as UTSJSONObject)
+}
+
+export function appendFileSpec(specs: UTSJSONObject[], sourcePath: string, zipPath: string): void {
+	appendZipSpec(specs, sourcePath, zipPath, 'file')
+}
+
+export function appendDirectorySpec(specs: UTSJSONObject[], zipPath: string): void {
+	appendZipSpec(specs, '', zipPath, 'directory')
+}
+
+export function appendTextSpec(specs: UTSJSONObject[], zipPath: string, content: string): void {
+	if (zipPath == '') {
+		return
+	}
+	for (let i = 0; i < specs.length; i++) {
+		const oldZipPath = specs[i]['zipPath'] as string | null
+		const oldKind = specs[i]['kind'] as string | null
+		if (oldZipPath == zipPath && oldKind == 'text') {
+			return
+		}
+	}
+	specs.push({
+		kind: 'text',
+		sourcePath: '',
+		zipPath: zipPath,
+		content: content,
+	} as UTSJSONObject)
+}
+
+export function stripFileSpecContent(specs: UTSJSONObject[]): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < specs.length; i++) {
+		const item = specs[i]
+		const kind = item['kind'] as string | null
+		const sourcePath = item['sourcePath'] as string | null
+		const zipPath = item['zipPath'] as string | null
+		const clean: UTSJSONObject = {
+			kind: kind != null ? kind : 'file',
+			sourcePath: sourcePath != null ? sourcePath : '',
+			zipPath: zipPath != null ? zipPath : '',
+		} as UTSJSONObject
+		if (kind == 'text') {
+			clean['generated'] = true
+		}
+		result.push(clean)
+	}
+	return result
+}
+
+export function cloneExportObject(item: UTSJSONObject): UTSJSONObject {
+	try {
+		return JSON.parse(JSON.stringify(item)) as UTSJSONObject
+	} catch (_e: any) {
+		return {} as UTSJSONObject
+	}
+}
