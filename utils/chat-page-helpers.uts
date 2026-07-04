@@ -137,15 +137,6 @@ export function isChatAssistantMessage(msg: UTSJSONObject): boolean {
 	return readChatMessageRole(msg) == CHAT_ROLE_ASSISTANT
 }
 
-export function readChatSpeechAudioPath(msg: UTSJSONObject): string {
-	const existing = msg['ttsAudioPath'] as string | null
-	return existing != null ? existing : ''
-}
-
-export function clearChatSpeechAudioPath(msg: UTSJSONObject): void {
-	msg['ttsAudioPath'] = ''
-}
-
 export function stringifyChatContextPreview(preview: UTSJSONObject): string {
 	try {
 		return JSON.stringify(preview, null, 2)

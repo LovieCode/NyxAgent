@@ -6,6 +6,12 @@
 
 import { exists } from '@/utils/file-manager.uts'
 
+export type ChatSpeechCacheState = {
+	path: string
+	playable: boolean
+	stale: boolean
+}
+
 export function parseRecorderTempPath(res: any): string {
 	try {
 		const raw = JSON.stringify(res)
@@ -40,6 +46,13 @@ export function isPlayableSpeechCachePath(path: string): boolean {
 	return true
 }
 
+export function createSpeechPlayer(path: string): InnerAudioContext | null {
+	if (path == '') { return null }
+	const audio = uni.createInnerAudioContext()
+	audio.src = buildPlayableSpeechPath(path)
+	return audio
+}
+
 export function destroySpeechPlayer(player: InnerAudioContext | null): void {
 	if (player == null) { return }
 	try {
@@ -50,4 +63,19 @@ export function destroySpeechPlayer(player: InnerAudioContext | null): void {
 		player.destroy()
 	} catch (_e2: any) {
 	}
+}
+
+export function readChatSpeechCacheState(msg: UTSJSONObject): ChatSpeechCacheState {
+	const rawPath = msg['ttsAudioPath'] as string | null
+	const path = rawPath != null ? rawPath : ''
+	const playable = isPlayableSpeechCachePath(path)
+	return {
+		path: path,
+		playable: playable,
+		stale: path != '' && playable == false,
+	} as ChatSpeechCacheState
+}
+
+export function clearChatSpeechCachePath(msg: UTSJSONObject): void {
+	msg['ttsAudioPath'] = ''
 }

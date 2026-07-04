@@ -147,10 +147,11 @@
 	import { setContextPreviewPayload, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import { transcribeAudio, synthesizeSpeech } from '@/utils/speech-service.uts'
 	import {
-		buildPlayableSpeechPath as buildPlayableSpeechAudioPath,
+		clearChatSpeechCachePath,
+		createSpeechPlayer,
 		destroySpeechPlayer,
-		isPlayableSpeechCachePath,
 		parseRecorderTempPath,
+		readChatSpeechCacheState,
 	} from '@/utils/chat-speech-runtime.uts'
 	import {
 		appendChatFileMessage,
@@ -162,7 +163,6 @@
 		buildChatLocationContent,
 		buildChatMessageActionItems,
 		calcChatInputHeight,
-		clearChatSpeechAudioPath,
 		findLastChatAssistantMessage,
 		getChatMessagePartsForView,
 		hasChatMessageRef,
@@ -171,7 +171,6 @@
 		isChatAssistantRole,
 		readChatMessageContentForEdit,
 		readChatMessageRole,
-		readChatSpeechAudioPath,
 		stringifyChatContextPreview,
 	} from '@/utils/chat-page-helpers.uts'
 	import {
@@ -883,14 +882,6 @@
 				this.playingSpeechPath = ''
 			},
 
-			buildPlayableSpeechPath(path: string): string {
-				return buildPlayableSpeechAudioPath(path)
-			},
-
-			isPlayableSpeechCache(path: string): boolean {
-				return isPlayableSpeechCachePath(path)
-			},
-
 			playSpeechPath(path: string): void {
 				if (path == '') {
 					uni.showToast({ position: 'bottom',  title: '语音路径为空', icon: 'none' })
@@ -903,11 +894,13 @@
 				this.stopSpeechPlayback()
 				// PROVIDER_AUDIO_API: TTS 当前落本地临时音频文件，播放时绝对路径要转 file://。
 				this.isStoppingSpeechPlayback = false
-				const audio = uni.createInnerAudioContext()
+				const audio = createSpeechPlayer(path)
+				if (audio == null) {
+					uni.showToast({ position: 'bottom',  title: '语音路径为空', icon: 'none' })
+					return
+				}
 				this.speechPlayer = audio
-				const playablePath = this.buildPlayableSpeechPath(path)
 				this.playingSpeechPath = path
-				audio.src = playablePath
 				audio.onEnded(() => {
 					this.stopSpeechPlayback()
 				})
@@ -920,6 +913,21 @@
 					uni.showToast({ position: 'bottom',  title: '语音播放失败', icon: 'none' })
 				})
 				audio.play()
+			},
+
+			playCachedAssistantSpeech(msg: UTSJSONObject): boolean {
+				const cache = readChatSpeechCacheState(msg)
+				if (cache.path == '') { return false }
+				if (cache.playable == true) {
+					this.playSpeechPath(cache.path)
+					return true
+				}
+				if (cache.stale == true) {
+					clearChatSpeechCachePath(msg)
+					this.savedFlag = false
+					this.saveCurrentConversation()
+				}
+				return false
 			},
 
 			synthesizeAssistantSpeech(msg: UTSJSONObject, autoPlay: boolean): void {
@@ -957,16 +965,7 @@
 				const msg = this.messages[index]
 				if (msg == null) { return }
 				if (isChatAssistantMessage(msg) == false) { return }
-				const existing = readChatSpeechAudioPath(msg)
-				if (existing != '') {
-					if (this.isPlayableSpeechCache(existing) == true) {
-						this.playSpeechPath(existing)
-						return
-					}
-					clearChatSpeechAudioPath(msg)
-					this.savedFlag = false
-					this.saveCurrentConversation()
-				}
+				if (this.playCachedAssistantSpeech(msg) == true) { return }
 				uni.showToast({ position: 'bottom',  title: '语音生成中', icon: 'none' })
 				this.synthesizeAssistantSpeech(msg, true)
 			},
@@ -975,16 +974,7 @@
 				if (this.hasValidDefaultTaskModel('tts') == false) { return }
 				const msg = this.findLastAssistantMessage()
 				if (msg == null) { return }
-				const existing = readChatSpeechAudioPath(msg)
-				if (existing != '') {
-					if (this.isPlayableSpeechCache(existing) == true) {
-						this.playSpeechPath(existing)
-						return
-					}
-					clearChatSpeechAudioPath(msg)
-					this.savedFlag = false
-					this.saveCurrentConversation()
-				}
+				if (this.playCachedAssistantSpeech(msg) == true) { return }
 				this.synthesizeAssistantSpeech(msg, true)
 			},
 
