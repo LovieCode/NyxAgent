@@ -1,0 +1,91 @@
+/**
+ * LLM 视觉输入工具。
+ *
+ * 负责模型 vision/reasoning 能力读取、图片 base64 读取和 OpenAI-compatible 图片消息构造。
+ */
+
+import { getAllProviders, getProviderModels } from './provider'
+
+type ImageBase64Result = {
+	data: string
+	mimeType: string
+}
+
+function readImageAsBase64(imagePath: string): ImageBase64Result | null {
+	try {
+		const fm = uni.getFileSystemManager()
+		const base64 = fm.readFileSync(imagePath, 'base64')
+		if (base64 == null) {
+			console.log('[LLM] 读取图片失败: readFileSync 返回 null | path=' + imagePath)
+			return null
+		}
+		let raw = base64 as string
+		// 移除可能有的换行符（某些平台的 base64 输出会插入 \n）
+		raw = raw.split('\n').join('').split('\r').join('')
+		let mimeType = 'image/jpeg'
+		const lower = imagePath.toLowerCase()
+		if (lower.endsWith('.png')) mimeType = 'image/png'
+		else if (lower.endsWith('.gif')) mimeType = 'image/gif'
+		else if (lower.endsWith('.webp')) mimeType = 'image/webp'
+		else if (lower.endsWith('.bmp')) mimeType = 'image/bmp'
+		console.log('[LLM] 读取图片成功: type=' + mimeType + ' size=' + raw.length + ' path=' + imagePath)
+		return { data: raw, mimeType: mimeType }
+	} catch (_e: any) {
+		console.log('[LLM] 读取图片异常: ' + _e + ' | path=' + imagePath)
+		return null
+	}
+}
+
+/**
+ * 根据模型 ID 查找其 vision 能力标记
+ * 遍历所有启用的提供商，匹配模型 ID 返回 supportsVision
+ */
+export function getModelVisionSupport(modelId: string): boolean {
+	const allProviders = getAllProviders()
+	for (let i = 0; i < allProviders.length; i++) {
+		const p = allProviders[i]
+		if (p['enabled'] != 1) continue
+		const models = getProviderModels(p['id'] as string)
+		for (let j = 0; j < models.length; j++) {
+			if (models[j].id == modelId) {
+				return models[j].supportsVision == true
+			}
+		}
+	}
+	return false
+}
+
+/**
+ * 根据模型 ID 查找其 reasoning 开关
+ * 遍历所有启用的提供商，匹配模型 ID 返回 supportsReasoning
+ */
+export function getModelReasoningEnabled(modelId: string): boolean {
+	const allProviders = getAllProviders()
+	for (let i = 0; i < allProviders.length; i++) {
+		const p = allProviders[i]
+		if (p['enabled'] != 1) continue
+		const models = getProviderModels(p['id'] as string)
+		for (let j = 0; j < models.length; j++) {
+			if (models[j].id == modelId) {
+				return models[j].supportsReasoning == true
+			}
+		}
+	}
+	return false
+}
+
+export function buildImageUserMessageContent(prompt: string, imagePath: string): UTSJSONObject[] | null {
+	const imageResult = readImageAsBase64(imagePath)
+	if (imageResult == null) {
+		return null
+	}
+	const dataUrl = 'data:' + imageResult.mimeType + ';base64,' + imageResult.data
+	const safeText = prompt != '' ? prompt : '[图片]'
+	const contentJsonStr = '[{"type":"text","text":' + JSON.stringify(safeText) + '},{"type":"image_url","image_url":{"url":' + JSON.stringify(dataUrl) + ',"detail":"auto"}}]'
+	try {
+		return JSON.parse(contentJsonStr) as UTSJSONObject[]
+	} catch (_e: any) {
+		console.log('[LLM] 图片 content JSON 构造失败: ' + _e)
+		return null
+	}
+}

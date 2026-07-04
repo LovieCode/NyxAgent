@@ -37,14 +37,7 @@ export type PreparedAgentContext = {
 	droppedMessages: UTSJSONObject[]
 }
 
-
-
-type ImageBase64Result = {
-	data: string
-	mimeType: string
-}
-
-import { resolveLLMConfig, normalizeBaseUrl, getMemoryOrganizeTaskModel, getVisionTaskModel, getImageCaptionPrompt, stripThinkTags, getAllProviders, getProviderModels } from './provider'
+import { resolveLLMConfig, normalizeBaseUrl, getMemoryOrganizeTaskModel, getVisionTaskModel, getImageCaptionPrompt, stripThinkTags, getAllProviders } from './provider'
 import { getAgentById, isAgentToolEnabled, AGENT_TOOL_MEMORY_BUFFER_WRITE } from '@/utils/agent.uts'
 import { getGlobalGenerationSettings, getEffectiveGenerationSettings, getMemoryOrganizerGenerationSettings, GenerationSettings } from '@/utils/generation-settings.uts'
 import { createAgentTools, AgentTool, ToolResult } from './tools/agent-tools'
@@ -55,6 +48,7 @@ import { wrapUserContentForAgent, makeAgentContextBlock, type AgentContextBlock 
 import { appendResponseToSnapshot as appendResponseToSnapshotDiagnostic, clearLastTokenUsage, formatBodyForLog, isLLMDebugLogEnabled, logLLMDebug, readLastLLMPreviewState, readLastLLMRequestSnapshot as readLastLLMRequestSnapshotDiagnostic, readLastTokenUsageForCall, saveLastLLMCall, saveLastLLMRequestSnapshot, saveLastTokenUsage } from './llm-diagnostics'
 import { collectApiToolCalls, findEmbeddedToolResult, getFirstImagePathFromParts, getMessageApiText, getMessageReasoningText, hasAssistantToolCalls, normalizeToolCallId } from './llm-message-utils'
 import { buildDroppedMessagesPreview, buildMemoryManagerMessages, buildMemoryManagerSystemPrompt, clearMemoryCompactionRunning, collectUncompactedMemoryCandidates, findLatestMessageTimestamp, getContextMessageScore, isMemoryCompactionRunning, markMemoryCompactionRunning, registerMemoryManagerLoopStarter, startMemoryOrganization } from './llm-memory-organizer'
+import { buildImageUserMessageContent, getModelReasoningEnabled, getModelVisionSupport } from './llm-vision-utils'
 export * from './llm-memory-organizer'
 
 export function readLastLLMRequestSnapshot(agentId: string = '', conversationId: string = ''): UTSJSONObject | null {
@@ -77,105 +71,6 @@ function buildOpenAIToolDefs(tools: AgentTool[]): UTSJSONObject[] {
 		} as UTSJSONObject)
 	}
 	return toolDefs
-}
-
-function readImageAsBase64(imagePath: string): ImageBase64Result | null {
-	try {
-		const fm = uni.getFileSystemManager()
-		const base64 = fm.readFileSync(imagePath, 'base64')
-		if (base64 == null) {
-			console.log('[LLM] 读取图片失败: readFileSync 返回 null | path=' + imagePath)
-			return null
-		}
-		let raw = base64 as string
-		// 移除可能有的换行符（某些平台的 base64 输出会插入 \n）
-		raw = raw.split('\n').join('').split('\r').join('')
-		let mimeType = 'image/jpeg'
-		const lower = imagePath.toLowerCase()
-		if (lower.endsWith('.png')) mimeType = 'image/png'
-		else if (lower.endsWith('.gif')) mimeType = 'image/gif'
-		else if (lower.endsWith('.webp')) mimeType = 'image/webp'
-		else if (lower.endsWith('.bmp')) mimeType = 'image/bmp'
-		console.log('[LLM] 读取图片成功: type=' + mimeType + ' size=' + raw.length + ' path=' + imagePath)
-		return { data: raw, mimeType: mimeType }
-	} catch (_e: any) {
-		console.log('[LLM] 读取图片异常: ' + _e + ' | path=' + imagePath)
-		return null
-	}
-}
-
-/**
- * 判断模型是否支持多模态（vision/image 输入）
- * 基于模型名关键词匹配，覆盖主流多模态模型
- */
-function isVisionModel(model: string): boolean {
-	const m = model.toLowerCase()
-	if (m.indexOf('vision') >= 0) return true   // gpt-4-vision, qwen-vl, etc.
-	if (m.indexOf('vl') >= 0) return true        // Qwen-VL, InternVL
-	if (m.indexOf('gpt-4o') >= 0) return true    // GPT-4o / GPT-4o-mini (native vision)
-	if (m.indexOf('gpt-4-turbo') >= 0) return true
-	if (m.indexOf('gemini-2') >= 0) return true  // Gemini 2.0+
-	if (m.indexOf('gemini-1.5') >= 0) return true // Gemini 1.5
-	if (m.indexOf('claude-3') >= 0) return true   // Claude 3+
-	if (m.indexOf('claude-3.5') >= 0) return true
-	if (m.indexOf('qvq') >= 0) return true        // Qwen QVQ
-	if (m.indexOf('qwq') >= 0) return true
-	return false
-}
-
-/**
- * 根据模型 ID 查找其 vision 能力标记
- * 遍历所有启用的提供商，匹配模型 ID 返回 supportsVision
- */
-function getModelVisionSupport(modelId: string): boolean {
-	const allProviders = getAllProviders()
-	for (let i = 0; i < allProviders.length; i++) {
-		const p = allProviders[i]
-		if (p['enabled'] != 1) continue
-		const models = getProviderModels(p['id'] as string)
-		for (let j = 0; j < models.length; j++) {
-			if (models[j].id == modelId) {
-				return models[j].supportsVision == true
-			}
-		}
-	}
-	return false
-}
-
-/**
- * 根据模型 ID 查找其 reasoning 开关
- * 遍历所有启用的提供商，匹配模型 ID 返回 supportsReasoning
- */
-function getModelReasoningEnabled(modelId: string): boolean {
-	const allProviders = getAllProviders()
-	for (let i = 0; i < allProviders.length; i++) {
-		const p = allProviders[i]
-		if (p['enabled'] != 1) continue
-		const models = getProviderModels(p['id'] as string)
-		for (let j = 0; j < models.length; j++) {
-			if (models[j].id == modelId) {
-				return models[j].supportsReasoning == true
-			}
-		}
-	}
-	return false
-}
-
-
-function buildImageUserMessageContent(prompt: string, imagePath: string): UTSJSONObject[] | null {
-	const imageResult = readImageAsBase64(imagePath)
-	if (imageResult == null) {
-		return null
-	}
-	const dataUrl = 'data:' + imageResult.mimeType + ';base64,' + imageResult.data
-	const safeText = prompt != '' ? prompt : '[图片]'
-	const contentJsonStr = '[{"type":"text","text":' + JSON.stringify(safeText) + '},{"type":"image_url","image_url":{"url":' + JSON.stringify(dataUrl) + ',"detail":"auto"}}]'
-	try {
-		return JSON.parse(contentJsonStr) as UTSJSONObject[]
-	} catch (_e: any) {
-		console.log('[LLM] 图片 content JSON 构造失败: ' + _e)
-		return null
-	}
 }
 
 function readMessageToolCallId(msg: UTSJSONObject): string {
