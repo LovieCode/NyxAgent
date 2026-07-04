@@ -223,15 +223,31 @@ export function clearSpeechTempFiles(): boolean {
 export function writeArrayBufferToFile(path: string, data: ArrayBuffer): boolean {
 	if (path == '') { return false }
 	clearSpeechWriteError()
+	// #ifdef APP-ANDROID
+	try {
+		const file = new File(path)
+		const parent = file.parentFile
+		if (parent != null && parent.exists() == false) {
+			parent.mkdirs()
+		}
+		file.writeBytes(data.toByteBuffer().array())
+		return true
+	} catch (e: any) {
+		setSpeechWriteError('Android 写入二进制音频失败', e)
+		return false
+	}
+	// #endif
+	// #ifndef APP-ANDROID
 	try {
 		const fm = uni.getFileSystemManager()
-		// UTS 签名要求 encoding 必填；ArrayBuffer 会按二进制写入，不能传非法 binary。
+		// 非 Android 继续走 FileSystemManager；encoding 参数是 UTS 签名必填项。
 		fm.writeFileSync(path, data, 'utf-8')
 		return true
 	} catch (e: any) {
 		setSpeechWriteError('写入音频失败', e)
 		return false
 	}
+	// #endif
 }
 
 function normalizeBase64Audio(data: string): string {
