@@ -233,6 +233,49 @@ function readChatCompletionText(responseData: UTSJSONObject): string | null {
 	return stripThinkTags(rawText)
 }
 
+function buildOpenAITools(tools: UTSJSONObject[]): UTSJSONObject[] {
+	const openaiTools: UTSJSONObject[] = []
+	for (let i = 0; i < tools.length; i++) {
+		const t = tools[i]
+		openaiTools.push({
+			type: 'function',
+			function: {
+				name: t['name'] as string,
+				description: t['description'] as string,
+				parameters: t['parameters'],
+			},
+		} as UTSJSONObject)
+	}
+	return openaiTools
+}
+
+function applyReasoningOptions(body: UTSJSONObject, baseUrl: string, model: string, reasoningEnabled: boolean): void {
+	if (reasoningEnabled == false) { return }
+	if (baseUrl.indexOf('deepseek') >= 0 || model.indexOf('deepseek') >= 0) {
+		body['thinking'] = { type: 'enabled' } as UTSJSONObject
+	} else {
+		body['reasoning_effort'] = 'medium'
+	}
+}
+
+function buildOpenAIChatBody(model: string, apiMessages: UTSJSONObject[], tools: UTSJSONObject[], settings: GenerationSettings, reasoningEnabled: boolean, baseUrl: string, stream: boolean, cacheKey: string): UTSJSONObject {
+	const body: UTSJSONObject = {
+		model: model,
+		messages: apiMessages,
+		max_tokens: settings.maxTokens,
+		temperature: settings.temperature,
+		stream: stream,
+	} as UTSJSONObject
+	if (tools.length > 0) {
+		body['tools'] = buildOpenAITools(tools)
+	}
+	if (cacheKey != '') {
+		body['cache_key'] = cacheKey
+	}
+	applyReasoningOptions(body, baseUrl, model, reasoningEnabled)
+	return body
+}
+
 export function callImageCaptionAPI(
 	baseUrl: string,
 	apiKey: string,
@@ -351,39 +394,8 @@ export function callChatAPI(
 	const headers: UTSJSONObject = {
 		'Content-Type': 'application/json',
 		'Authorization': 'Bearer ' + apiKey,
-	}
-	const body: UTSJSONObject = {
-		model: model,
-		messages: apiMessages,
-		max_tokens: settings.maxTokens,
-		temperature: settings.temperature,
-		stream: false,
-	}
-	if (tools.length > 0) {
-		// 转换为 OpenAI tools 格式
-		const openaiTools: UTSJSONObject[] = []
-		for (let i = 0; i < tools.length; i++) {
-			const t = tools[i]
-			openaiTools.push({
-				type: 'function',
-				function: {
-					name: t['name'] as string,
-					description: t['description'] as string,
-					parameters: t['parameters'],
-				},
-			} as UTSJSONObject)
-		}
-		body['tools'] = openaiTools
-	}
-
-	// 思考开关：启用时根据 provider 类型映射 API 参数
-	if (reasoningEnabled) {
-		if (baseUrl.indexOf('deepseek') >= 0 || model.indexOf('deepseek') >= 0) {
-			body['thinking'] = { type: 'enabled' } as UTSJSONObject
-		} else {
-			body['reasoning_effort'] = 'medium'
-		}
-	}
+	} as UTSJSONObject
+	const body: UTSJSONObject = buildOpenAIChatBody(model, apiMessages, tools, settings, reasoningEnabled, baseUrl, false, '')
 	saveLastLLMRequestSnapshot(baseUrl, url, model, body, apiMessages.length, tools.length, false, '', agentId, conversationId, workspaceRoot)
 
 	if (isLLMDebugLogEnabled() == true) {
@@ -416,7 +428,7 @@ export function callChatAPI(
 							errDetail = ': ' + (errMessage != null ? errMessage : '')
 						}
 					}
-				} catch (_) {}
+				} catch (_e1: any) {}
 				console.log('[LLM] API 请求失败 Status: ' + statusCode + errDetail)
 				if (isLLMDebugLogEnabled() == true) {
 					console.log('[LLM] Request body: ' + formatBodyForLog(body))
@@ -453,8 +465,8 @@ export function callChatAPI(
 					return
 				}
 
-			const rawText = message['content'] as string | null
-			const text = rawText != null ? stripThinkTags(rawText) : ''
+				const rawText = message['content'] as string | null
+				const text = rawText != null ? stripThinkTags(rawText) : ''
 				const rawToolCalls = message['tool_calls'] as UTSJSONObject[] | null
 				let tcNames = ''
 				if (rawToolCalls != null) {
@@ -535,44 +547,44 @@ function processSSELine(
 ): void {
 	const trimmed = line.trim()
 	if (trimmed == '' || trimmed.startsWith(':')) return
-	if (!trimmed.startsWith('data: ')) return
+	if (trimmed.startsWith('data: ') == false) return
 	const data = trimmed.substring(6)
 	if (data == '[DONE]') return
-		try {
-			const json = JSON.parse(data) as UTSJSONObject
-			// 提取 usage（OpenAI 流式最后一个 chunk 中 usage 和 choices 同时存在）
-			const usage = json['usage'] as UTSJSONObject | null
-			if (usage != null) {
-				if (isLLMDebugLogEnabled() == true) {
-					console.log('[LLM] 流式 usage: ' + JSON.stringify(usage))
-				}
-				saveLastTokenUsage(usage)
+	try {
+		const json = JSON.parse(data) as UTSJSONObject
+		// 提取 usage（OpenAI 流式最后一个 chunk 中 usage 和 choices 同时存在）
+		const usage = json['usage'] as UTSJSONObject | null
+		if (usage != null) {
+			if (isLLMDebugLogEnabled() == true) {
+				console.log('[LLM] 流式 usage: ' + JSON.stringify(usage))
 			}
-			const choices = json['choices'] as UTSJSONObject[]
-			if (choices == null || choices.length == 0) {
-				return
-			}
+			saveLastTokenUsage(usage)
+		}
+		const choices = json['choices'] as UTSJSONObject[] | null
+		if (choices == null || choices.length == 0) {
+			return
+		}
 		const choice = choices[0]
-		const delta = choice['delta'] as UTSJSONObject
+		const delta = choice['delta'] as UTSJSONObject | null
 		if (delta == null) return
 
 		// 思考内容（DeepSeek/Grok 等模型的 reasoning_content）
 		const reasoning = delta['reasoning_content'] as string | null
 		if (reasoning != null && reasoning != '' && fullThinkingRef != null) {
 			fullThinkingRef[0] += reasoning
-			if (onThinking != null) onThinking(reasoning)
+			if (onThinking != null) { onThinking(reasoning) }
 		}
 
 		// 文本内容（剥离 deep thinking 标签）
-			const content = delta['content'] as string | null
-			if (content != null && content != '') {
-				const cleaned = stripThinkTags(content)
-				fullTextRef[0] += cleaned
-				if (onChunk != null) onChunk(cleaned)
-			}
+		const content = delta['content'] as string | null
+		if (content != null && content != '') {
+			const cleaned = stripThinkTags(content)
+			fullTextRef[0] += cleaned
+			if (onChunk != null) { onChunk(cleaned) }
+		}
 
 		// 工具调用
-		const rawToolCalls = delta['tool_calls'] as UTSJSONObject[]
+		const rawToolCalls = delta['tool_calls'] as UTSJSONObject[] | null
 		if (rawToolCalls != null && rawToolCalls.length > 0) {
 			hasToolCallsRef[0] = true
 			for (let j = 0; j < rawToolCalls.length; j++) {
@@ -585,7 +597,7 @@ function processSSELine(
 				const existing = toolCallList[idx]
 				const id = tc['id'] as string | null
 				if (id != null && id != '') existing['id'] = id
-				const funcObj = tc['function'] as UTSJSONObject
+				const funcObj = tc['function'] as UTSJSONObject | null
 				if (funcObj != null) {
 					const name = funcObj['name'] as string | null
 					if (name != null && name != '') existing['name'] = name
@@ -597,7 +609,7 @@ function processSSELine(
 				}
 				// Emit incremental tool call delta for real-time UI
 				if (onToolCallDelta != null) {
-					const funcObjNew = tc['function'] as UTSJSONObject
+					const funcObjNew = tc['function'] as UTSJSONObject | null
 					const deltaName = funcObjNew != null ? (funcObjNew['name'] as string | null) : null
 					const deltaArgs = funcObjNew != null ? (funcObjNew['arguments'] as string | null) : null
 					if (deltaName != null || deltaArgs != null) {
@@ -606,7 +618,7 @@ function processSSELine(
 				}
 			}
 		}
-	} catch (_) {}
+	} catch (_e: any) {}
 }
 
 /**
@@ -676,42 +688,8 @@ export function callChatAPIStream(
 	const headers: UTSJSONObject = {
 		'Content-Type': 'application/json',
 		'Authorization': 'Bearer ' + apiKey,
-	}
-	const body: UTSJSONObject = {
-		model: model,
-		messages: apiMessages,
-		max_tokens: settings.maxTokens,
-		temperature: settings.temperature,
-		stream: true,
-	}
-	if (tools.length > 0) {
-		const openaiTools: UTSJSONObject[] = []
-		for (let i = 0; i < tools.length; i++) {
-			const t = tools[i]
-			openaiTools.push({
-				type: 'function',
-				function: {
-					name: t['name'] as string,
-					description: t['description'] as string,
-					parameters: t['parameters'],
-				},
-			} as UTSJSONObject)
-		}
-		body['tools'] = openaiTools
-	}
-
-	if (cacheKey != '') {
-		body['cache_key'] = cacheKey
-	}
-
-	// 思考开关：启用时根据 provider 类型映射 API 参数
-	if (reasoningEnabled) {
-		if (baseUrl.indexOf('deepseek') >= 0 || model.indexOf('deepseek') >= 0) {
-			body['thinking'] = { type: 'enabled' } as UTSJSONObject
-		} else {
-			body['reasoning_effort'] = 'medium'
-		}
-	}
+	} as UTSJSONObject
+	const body: UTSJSONObject = buildOpenAIChatBody(model, apiMessages, tools, settings, reasoningEnabled, baseUrl, true, cacheKey)
 	saveLastLLMRequestSnapshot(baseUrl, url, model, body, apiMessages.length, tools.length, true, cacheKey, agentId, conversationId, workspaceRoot)
 
 	if (isLLMDebugLogEnabled() == true) {
@@ -743,7 +721,7 @@ export function callChatAPIStream(
 		success: (res) => {
 			streamEnded = true
 			const statusCode = res.statusCode as number
-		if (statusCode != 200) {
+			if (statusCode != 200) {
 				let errDetail = ''
 				try {
 					// 优先从 chunked 响应体中提取错误
@@ -760,9 +738,9 @@ export function callChatAPIStream(
 						try {
 							const resDataStr = JSON.stringify(res.data)
 							errDetail = ': ' + (resDataStr.length > 300 ? resDataStr.substring(0, 300) : resDataStr)
-						} catch (_d) {}
+						} catch (_e1: any) {}
 					}
-				} catch (_) {}
+				} catch (_e2: any) {}
 				console.log('[LLM] STREAM 请求失败 Status: ' + statusCode + errDetail)
 				if (isLLMDebugLogEnabled() == true) {
 					console.log('[LLM] Request body: ' + formatBodyForLog(body))
@@ -818,7 +796,7 @@ export function callChatAPIStream(
 				done(fullTextRef[0], null, fullThinkingRef[0])
 			}
 		},
-	fail: (_err: any) => {
+		fail: (_err: any) => {
 			// 检测是否不支持 function calling，自动降级重试
 			const errMsg = JSON.stringify(_err)
 			if (tools.length > 0 && (
