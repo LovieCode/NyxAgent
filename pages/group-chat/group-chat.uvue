@@ -124,7 +124,7 @@
 </template>
 
 <script lang="uts">
-	import { agentChat, readLastLLMRequestSnapshot, captionImage, appendResponseToSnapshot } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+	import { agentChat, readLastLLMRequestSnapshot, captionImage } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
 	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
 	import { getAgentById } from '@/utils/agent.uts'
 	import { loadChatUserProfile } from '@/utils/chat-conversation-service.uts'
@@ -156,9 +156,9 @@
 		reduceGroupTextStreamState,
 		replaceGroupVisiblePlainText,
 		resolveGroupReviewShouldContinue,
-		shouldAttachRecentGroupSnapshot,
 		stringifyGroupContextPreview,
 	} from '@/utils/group-chat-page-helpers.uts'
+	import { createGroupHiddenStreamMessage, saveGroupAgentResponseSnapshot } from '@/utils/group-chat-stream-helpers.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { NYX_FLOAT_CONTEXT_GROUP, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
 	import {
@@ -829,14 +829,7 @@
 							const freshSession = getGroupSessionById(group.id, session.id)
 							this.session = freshSession != null ? freshSession : session
 						}
-						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerState.text)
-						appendResponseToSnapshot(schedulerAgentId, session.id, schedulerState.text, schedulerState.thinking)
-						const schedulerSnapshot = readLastLLMRequestSnapshot(schedulerAgentId, session.id)
-						if (schedulerSnapshot != null && shouldAttachRecentGroupSnapshot(schedulerSnapshot, schedulerState.startedAt) == true) {
-							hidden['requestSnapshot'] = schedulerSnapshot
-						}
-						hidden['triggerReason'] = reason
-						hidden['runtimeMessages'] = JSON.parse(JSON.stringify(schedulerMessages)) as UTSJSONObject[]
+						const hidden = createGroupHiddenStreamMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerAgentId, schedulerState.text, schedulerState.thinking, schedulerState.startedAt, schedulerMessages, reason)
 						this.messages.push(hidden)
 						this.saveMessages()
 						this.currentStream = null
@@ -901,14 +894,7 @@
 							return
 						}
 						const review = parseGroupReviewDecision(reviewState.text)
-						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_REVIEWER, reviewState.text)
-						appendResponseToSnapshot(reviewerAgentId, session.id, reviewState.text, reviewState.thinking)
-						const reviewerSnapshot = readLastLLMRequestSnapshot(reviewerAgentId, session.id)
-						if (reviewerSnapshot != null && shouldAttachRecentGroupSnapshot(reviewerSnapshot, reviewState.startedAt) == true) {
-							hidden['requestSnapshot'] = reviewerSnapshot
-						}
-						hidden['triggerReason'] = reason
-						hidden['runtimeMessages'] = JSON.parse(JSON.stringify(reviewMessages)) as UTSJSONObject[]
+						const hidden = createGroupHiddenStreamMessage(group.id, session.id, GROUP_MESSAGE_SENDER_REVIEWER, reviewerAgentId, reviewState.text, reviewState.thinking, reviewState.startedAt, reviewMessages, reason)
 						hidden['review'] = review
 						this.messages.push(hidden)
 						const hiddenId = hidden['id'] as string | null
@@ -998,18 +984,11 @@
 							}
 							const responseText = reviewHolding == true ? finalText : (streamingMsg['content'] as string | null)
 							const thinkingText = getMessageThinking(lastAssistant)
-							if ((responseText != null && responseText != '') || thinkingText != '') {
-								appendResponseToSnapshot(agentId, session.id, responseText != null ? responseText : '', thinkingText)
-							}
+							saveGroupAgentResponseSnapshot(contextRecord, agentId, session.id, responseText != null ? responseText : '', thinkingText)
 						} else {
 							streamingMsg['visible'] = false
 						}
 						recordGroupAgentSpeak(group.id, session.id, agentId)
-						const requestSnapshot = readLastLLMRequestSnapshot(agentId, session.id)
-						if (requestSnapshot != null) {
-							contextRecord['requestSnapshot'] = requestSnapshot
-							saveGroupAgentContextRecord(contextRecord)
-						}
 						streamingMsg['isStreaming'] = false
 						this.currentStream = null
 						if (reviewHolding == true) {
@@ -1077,14 +1056,7 @@
 							return
 						}
 						this.currentStream = null
-						const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerState.text)
-						appendResponseToSnapshot(schedulerAgentId, session.id, schedulerState.text, schedulerState.thinking)
-						const schedulerSnapshot = readLastLLMRequestSnapshot(schedulerAgentId, session.id)
-						if (schedulerSnapshot != null && shouldAttachRecentGroupSnapshot(schedulerSnapshot, schedulerState.startedAt) == true) {
-							hidden['requestSnapshot'] = schedulerSnapshot
-						}
-						hidden['triggerReason'] = '敏感流式发言审核：' + keyword
-						hidden['runtimeMessages'] = JSON.parse(JSON.stringify(reviewMessages)) as UTSJSONObject[]
+						const hidden = createGroupHiddenStreamMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerAgentId, schedulerState.text, schedulerState.thinking, schedulerState.startedAt, reviewMessages, '敏感流式发言审核：' + keyword)
 						this.messages.push(hidden)
 						const decision = parseSchedulerReviewDecision(schedulerState.text)
 						const mode = decision['decision'] as string | null

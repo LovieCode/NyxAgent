@@ -60,12 +60,6 @@ export function reduceGroupTextStreamState(state: GroupTextStreamState, event: A
 	return false
 }
 
-export function shouldAttachRecentGroupSnapshot(snapshot: UTSJSONObject | null, startedAt: number): boolean {
-	if (snapshot == null) { return false }
-	const capturedAt = snapshot['capturedAt'] as number | null
-	return capturedAt != null && capturedAt >= startedAt
-}
-
 export function calcGroupInputHeight(lineCount: number): number {
 	if (lineCount <= 1) { return 36 }
 	return Math.min(lineCount * 22 + 12, 120)

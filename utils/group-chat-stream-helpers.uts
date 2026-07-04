@@ -1,0 +1,41 @@
+/**
+ * 群聊流式运行辅助。
+ *
+ * 页面只编排 pipeline；隐藏调度/复盘消息的快照、触发原因和 runtimeMessages 统一在这里落盘。
+ */
+
+import { appendResponseToSnapshot, readLastLLMRequestSnapshot } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+import { createGroupHiddenMessage, saveGroupAgentContextRecord } from '@/utils/group-chat-service.uts'
+
+function shouldAttachRecentSnapshot(snapshot: UTSJSONObject | null, startedAt: number): boolean {
+	if (snapshot == null) { return false }
+	const capturedAt = snapshot['capturedAt'] as number | null
+	return capturedAt != null && capturedAt >= startedAt
+}
+
+function cloneRuntimeMessages(runtimeMessages: UTSJSONObject[]): UTSJSONObject[] {
+	return JSON.parse(JSON.stringify(runtimeMessages)) as UTSJSONObject[]
+}
+
+export function createGroupHiddenStreamMessage(groupId: string, sessionId: string, senderType: string, agentId: string, text: string, thinking: string, startedAt: number, runtimeMessages: UTSJSONObject[], triggerReason: string): UTSJSONObject {
+	appendResponseToSnapshot(agentId, sessionId, text, thinking)
+	const hidden = createGroupHiddenMessage(groupId, sessionId, senderType, text)
+	const snapshot = readLastLLMRequestSnapshot(agentId, sessionId)
+	if (shouldAttachRecentSnapshot(snapshot, startedAt) == true) {
+		hidden['requestSnapshot'] = snapshot
+	}
+	hidden['triggerReason'] = triggerReason
+	hidden['runtimeMessages'] = cloneRuntimeMessages(runtimeMessages)
+	return hidden
+}
+
+export function saveGroupAgentResponseSnapshot(contextRecord: UTSJSONObject, agentId: string, sessionId: string, text: string, thinking: string): void {
+	if (text != '' || thinking != '') {
+		appendResponseToSnapshot(agentId, sessionId, text, thinking)
+	}
+	const snapshot = readLastLLMRequestSnapshot(agentId, sessionId)
+	if (snapshot != null) {
+		contextRecord['requestSnapshot'] = snapshot
+		saveGroupAgentContextRecord(contextRecord)
+	}
+}
