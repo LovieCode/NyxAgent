@@ -4,7 +4,17 @@
  * 参考 AstrBot message 分层：页面负责生命周期和平台 API，消息读取、定位和动作菜单决策放这里。
  */
 
-import { CHAT_ROLE_ASSISTANT, CHAT_ROLE_USER, getMessageParts } from '@/utils/chat-models.uts'
+import {
+	CHAT_ROLE_ASSISTANT,
+	CHAT_ROLE_USER,
+	createFileMessage,
+	createImageMessage,
+	createLocationMessage,
+	createTextMessage,
+	createVoiceMessage,
+	getMessageParts,
+	setImageMessageCaption,
+} from '@/utils/chat-models.uts'
 
 export function getChatMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] {
 	return getMessageParts(msg)
@@ -64,6 +74,42 @@ export function buildChatLocationContent(location: UTSJSONObject): string {
 	const lat = rawLat != null ? rawLat : 0
 	const lng = rawLng != null ? rawLng : 0
 	return '📍 ' + name + (addr != '' ? ' - ' + addr : '') + ' (' + lat + ', ' + lng + ')'
+}
+
+export function appendChatTextMessage(messages: UTSJSONObject[], role: string, content: string): void {
+	if (role == CHAT_ROLE_USER) {
+		messages.push(createTextMessage(CHAT_ROLE_USER, content))
+	} else {
+		messages.push(createTextMessage(role, content))
+	}
+}
+
+export function appendChatImageMessage(messages: UTSJSONObject[], imagePath: string): number {
+	if (imagePath == '') { return -1 }
+	messages.push(createImageMessage(imagePath))
+	return messages.length - 1
+}
+
+export function applyChatImageCaption(messages: UTSJSONObject[], index: number, caption: string | null): boolean {
+	if (index < 0 || index >= messages.length) { return false }
+	if (caption == null || caption == '') { return false }
+	setImageMessageCaption(messages[index], caption)
+	messages.splice(index, 1, messages[index])
+	return true
+}
+
+export function appendChatFileMessage(messages: UTSJSONObject[], fileName: string, filePath: string, fileText: string): void {
+	messages.push(createFileMessage(fileName, filePath, fileText))
+}
+
+export function appendChatLocationMessage(messages: UTSJSONObject[], content: string): void {
+	messages.push(createLocationMessage(content))
+}
+
+export function appendChatVoiceMessage(messages: UTSJSONObject[], tempPath: string): boolean {
+	if (tempPath == '') { return false }
+	messages.push(createVoiceMessage(tempPath))
+	return true
 }
 
 export function hasConfiguredChatDefaultTaskModel(config: UTSJSONObject | null): boolean {

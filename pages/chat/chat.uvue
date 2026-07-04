@@ -130,17 +130,10 @@
 		saveChatConversation,
 	} from '@/utils/chat-conversation-service.uts'
 	import {
-		createImageMessage,
-		createFileMessage,
-		createLocationMessage,
-		createVoiceMessage,
-		createTextMessage,
-		setImageMessageCaption,
 		getMessageContent,
 		getMessageThinking,
 	} from '@/utils/chat-models.uts'
 	import {
-		pushUserTextMessage,
 		deleteChatMessage,
 		updateChatMessageContent,
 		saveEditAndFindLastUserText,
@@ -160,6 +153,12 @@
 		parseRecorderTempPath,
 	} from '@/utils/chat-speech-runtime.uts'
 	import {
+		appendChatFileMessage,
+		appendChatImageMessage,
+		appendChatLocationMessage,
+		appendChatTextMessage,
+		appendChatVoiceMessage,
+		applyChatImageCaption,
 		buildChatLocationContent,
 		buildChatMessageActionItems,
 		calcChatInputHeight,
@@ -411,8 +410,8 @@
 				this.longpressCancelToken++
 			},
 
-			sendMessage() {
-				const text = this.inputText.trim()
+			sendUserPlainText(content: string): void {
+				const text = content.trim()
 				if (text == '' || this.isGenerating == true) {
 					return
 				}
@@ -425,6 +424,10 @@
 				this.inputText = ''
 				this.scrollToBottom()
 				this.simulateAIResponse(text)
+			},
+
+			sendMessage() {
+				this.sendUserPlainText(this.inputText)
 			},
 
 			/** 构建日期时间注入前缀（含农历、节气、节日） */
@@ -538,19 +541,15 @@
 
 			/** 添加文本消息 */
 			addTextMessage(role: string, content: string) {
-				if (role == 'user') {
-					pushUserTextMessage(this.messages, content)
-				} else {
-					this.messages.push(createTextMessage(role, content))
-				}
+				appendChatTextMessage(this.messages, role, content)
 			},
 
 			/** 添加图片消息，返回消息下标用于后续写入转述 */
 			addImageMessage(imagePath: string): number {
-				if (imagePath == '') { return -1 }
-				this.messages.push(createImageMessage(imagePath))
+				const index = appendChatImageMessage(this.messages, imagePath)
+				if (index < 0) { return -1 }
 				this.scrollToBottom()
-				return this.messages.length - 1
+				return index
 			},
 
 			handlePickedImagePath(imagePath: string, fallbackPrompt: string): void {
@@ -575,10 +574,7 @@
 					if (taskId != this.imageCaptionTaskId) {
 						return
 					}
-					if (messageIndex >= 0 && messageIndex < this.messages.length && caption != null && caption != '') {
-						setImageMessageCaption(this.messages[messageIndex], caption)
-						this.messages.splice(messageIndex, 1, this.messages[messageIndex])
-					}
+					applyChatImageCaption(this.messages, messageIndex, caption)
 					this.isGenerating = false
 					if (caption == null || caption == '') {
 						uni.showToast({ position: 'bottom', title: '图片转述未配置或失败，已直接发送', icon: 'none' })
@@ -599,7 +595,7 @@
 					return
 				}
 				const fileText = buildPickedFileContextText(file)
-				this.messages.push(createFileMessage(file.name, file.path, fileText))
+				appendChatFileMessage(this.messages, file.name, file.path, fileText)
 				this.scrollToBottom()
 				this.startGenerationForMedia('用户发送了一个文件：' + file.name)
 			},
@@ -607,15 +603,14 @@
 			/** 添加位置消息 */
 			addLocationMessage(location: UTSJSONObject) {
 				const content = buildChatLocationContent(location)
-				this.messages.push(createLocationMessage(content))
+				appendChatLocationMessage(this.messages, content)
 				this.scrollToBottom()
 				this.startGenerationForMedia(content)
 			},
 
 			/** 添加语音消息 */
 			addVoiceMessage(tempPath: string) {
-				if (tempPath == '') { return }
-				this.messages.push(createVoiceMessage(tempPath))
+				if (appendChatVoiceMessage(this.messages, tempPath) == false) { return }
 				this.scrollToBottom()
 				this.savedFlag = false
 				this.saveCurrentConversation()
@@ -623,16 +618,7 @@
 
 			/** 发送语音识别后的纯文本：Record -> Plain，不把录音路径喂给 Agent。 */
 			sendTranscribedVoiceMessage(text: string) {
-				const content = text.trim()
-				if (content == '' || this.isGenerating == true) { return }
-				if (this.messages.length == 0) {
-					this.conversationId = '' + Date.now()
-				}
-				this.savedFlag = false
-				this.messages.push(createTextMessage('user', content))
-				this.inputText = ''
-				this.scrollToBottom()
-				this.simulateAIResponse(content)
+				this.sendUserPlainText(text)
 			},
 
 			consumeNyxFloatVoiceText(): void {
