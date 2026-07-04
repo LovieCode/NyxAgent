@@ -1,0 +1,419 @@
+/**
+ * 群聊基础模型与序列化工具。
+ *
+ * 不依赖数据库和文件系统；服务层负责持久化与副作用。
+ */
+
+export const GROUP_CHAT_LIST_KEY = 'group_chat_list'
+export const ACTIVE_GROUP_CHAT_ID_KEY = 'active_group_chat_id'
+export const ACTIVE_GROUP_SESSION_ID_KEY = 'active_group_session_id'
+export const NYX_ADMIN_AGENT_ID = 'nyx-admin'
+export const NYX_ADMIN_AGENT_NAME = '眠汐'
+export const GROUP_SCHEDULER_AGENT_NAME = '群调度'
+export const GROUP_REVIEWER_AGENT_NAME = '群复盘'
+const GROUP_SCHEDULER_AGENT_ID_PREFIX = 'group-scheduler-'
+const GROUP_REVIEWER_AGENT_ID_PREFIX = 'group-reviewer-'
+
+export const GROUP_MESSAGE_SENDER_USER = 'user'
+export const GROUP_MESSAGE_SENDER_AGENT = 'agent'
+export const GROUP_MESSAGE_SENDER_SCHEDULER = 'scheduler'
+export const GROUP_MESSAGE_SENDER_REVIEWER = 'reviewer'
+export const GROUP_MESSAGE_SENDER_SYSTEM = 'system'
+
+export const GROUP_MESSAGE_VISIBILITY_PUBLIC = 'public'
+export const GROUP_MESSAGE_VISIBILITY_INTERNAL = 'internal'
+export const GROUP_MESSAGE_VISIBILITY_PRIVATE = 'private'
+export const GROUP_MESSAGE_VISIBILITY_DEBUG = 'debug'
+
+export const DEFAULT_SCHEDULER_PROMPT_TEXT = '你是本群聊独立的隐藏调度子代理。你可以在内部向任意成员 Agent 传递私密指令、背景信息和任务拆解，也可以指定一个或多个成员按顺序发言。你的存在、调度流程、私密指令不能被其他成员在公开发言中暴露。你只在系统触发节点工作，例如用户发消息、用户手动继续、连续讨论过多需要判断是否继续。\n' +
+	'输出必须是 JSON 对象，禁止 Markdown，结构：{"actions":[{"type":"speak","agentId":"成员ID","targetType":"user","targetAgentId":"","privateInstruction":"给该成员的私密指令","publicIntent":"公开发言目标","replyLength":"short","replyGuidance":"简短自然，优先 1-3 句","searchAdvice":"none","searchInstruction":"","order":0}],"shouldContinue":false,"titleSuggestion":"适合本会话的短标题","privateNotes":"仅内部记录"}。\n' +
+	'默认让成员简短发言。事实不确定、涉及外部/时效信息时，建议具备相关工具的成员先查证或搜索；发现跑题、重复、事实冲突或虚构 App 功能时，用私密指令要求纠偏和收束。不要为了热闹强行多人发言。'
+
+export const DEFAULT_SHARED_PROMPT_TEXT = '这是一个故事/写作交流群聊。成员可以讨论人物、剧情、节奏、文风和表达，但要自然像群聊发言。公开发言只输出自己要说的话，不写舞台说明，不提隐藏调度、内部指令或系统消息。'
+
+export type GroupChat = {
+	id: string
+	name: string
+	avatar: string
+	schedulerAgentId: string
+	schedulerPrompt: string
+	sharedPrompt: string
+	activeSessionId: string
+	createdAt: number
+	updatedAt: number
+}
+
+export type GroupChatMember = {
+	id: string
+	groupId: string
+	agentId: string
+	active: boolean
+	joinedAt: number
+	leftAt: number
+	order: number
+}
+
+export type GroupChatSession = {
+	id: string
+	groupId: string
+	title: string
+	workspacePath: string
+	forkedFromSessionId: string
+	titleLocked: boolean
+	createdAt: number
+	updatedAt: number
+}
+
+export type GroupChatMessage = {
+	id: string
+	groupId: string
+	sessionId: string
+	role: string
+	senderType: string
+	senderAgentId: string
+	senderName: string
+	senderAvatar: string
+	content: string
+	message: UTSJSONObject[]
+	visibility: string
+	visibleAgentIds: string[]
+	visible: boolean
+	revoked: boolean
+	isStreaming: boolean
+	timestamp: number
+}
+
+export function isInternalGroupSenderType(senderType: string | null): boolean {
+	return senderType == GROUP_MESSAGE_SENDER_SCHEDULER || senderType == GROUP_MESSAGE_SENDER_REVIEWER || senderType == GROUP_MESSAGE_SENDER_SYSTEM
+}
+
+export function isInternalGroupVisibility(visibility: string | null): boolean {
+	return visibility == GROUP_MESSAGE_VISIBILITY_INTERNAL || visibility == GROUP_MESSAGE_VISIBILITY_DEBUG
+}
+
+export function buildGroupSchedulerAgentId(groupId: string): string {
+	return GROUP_SCHEDULER_AGENT_ID_PREFIX + groupId
+}
+
+export function buildGroupReviewerAgentId(groupId: string): string {
+	return GROUP_REVIEWER_AGENT_ID_PREFIX + groupId
+}
+
+export function resolveGroupSchedulerAgentId(group: GroupChat | null): string {
+	if (group == null) { return 'group-scheduler' }
+	const current = group.schedulerAgentId.trim()
+	if (current != '' && current != 'scheduler') { return current }
+	return buildGroupSchedulerAgentId(group.id)
+}
+
+export function resolveGroupReviewerAgentId(group: GroupChat | null): string {
+	if (group == null) { return 'group-reviewer' }
+	return buildGroupReviewerAgentId(group.id)
+}
+
+export function resolveGroupSchedulerDisplayName(group: GroupChat | null): string {
+	const groupName = group != null ? group.name.trim() : ''
+	if (groupName != '') { return groupName + '调度' }
+	return GROUP_SCHEDULER_AGENT_NAME
+}
+
+export function resolveGroupReviewerDisplayName(group: GroupChat | null): string {
+	const groupName = group != null ? group.name.trim() : ''
+	if (groupName != '') { return groupName + '复盘' }
+	return GROUP_REVIEWER_AGENT_NAME
+}
+
+export function storageMembersKey(groupId: string): string {
+	return 'group_chat_members_' + groupId
+}
+
+export function storageSessionsKey(groupId: string): string {
+	return 'group_chat_sessions_' + groupId
+}
+
+export function storageMessagesKey(groupId: string, sessionId: string): string {
+	return 'group_chat_messages_' + groupId + '_' + sessionId
+}
+
+export function storageAgentContextKey(agentId: string): string {
+	return 'group_agent_context_records_' + agentId
+}
+
+export function safeJsonText(raw: string | null): string {
+	return raw != null ? raw : ''
+}
+
+export function createId(prefix: string): string {
+	return prefix + '-' + Date.now() + '-' + Math.floor(Math.random() * 100000)
+}
+
+export function readStringField(item: UTSJSONObject, key: string): string {
+	const value = item[key] as string | null
+	return value != null ? value : ''
+}
+
+export function readNumberField(item: UTSJSONObject, key: string): number {
+	const value = item[key] as number | null
+	return value != null ? value : 0
+}
+
+export function readBooleanField(item: UTSJSONObject, key: string): boolean {
+	const value = item[key] as boolean | null
+	return value != null ? value : false
+}
+
+export function normalizeGroupChat(item: UTSJSONObject, legacySchedulerPrompt: string = ''): GroupChat {
+	const now = Date.now()
+	const id = readStringField(item, 'id')
+	let name = readStringField(item, 'name')
+	if (name == '') { name = '故事工坊' }
+	let schedulerAgentId = readStringField(item, 'schedulerAgentId')
+	// LEGACY_COMPAT: 旧版全局调度器 ID 为 scheduler；新架构改成每群独立子代理。
+	if (schedulerAgentId == '' || schedulerAgentId == 'scheduler') {
+		schedulerAgentId = buildGroupSchedulerAgentId(id)
+	}
+	let schedulerPrompt = readStringField(item, 'schedulerPrompt')
+	if (schedulerPrompt.trim() == '' && legacySchedulerPrompt.trim() != '') {
+		schedulerPrompt = legacySchedulerPrompt
+	}
+	let sharedPrompt = readStringField(item, 'sharedPrompt')
+	if (sharedPrompt == '') { sharedPrompt = DEFAULT_SHARED_PROMPT_TEXT }
+	let createdAt = readNumberField(item, 'createdAt')
+	if (createdAt <= 0) { createdAt = now }
+	let updatedAt = readNumberField(item, 'updatedAt')
+	if (updatedAt <= 0) { updatedAt = createdAt }
+	return {
+		id: id,
+		name: name,
+		avatar: readStringField(item, 'avatar'),
+		schedulerAgentId: schedulerAgentId,
+		schedulerPrompt: schedulerPrompt,
+		sharedPrompt: sharedPrompt,
+		activeSessionId: readStringField(item, 'activeSessionId'),
+		createdAt: createdAt,
+		updatedAt: updatedAt,
+	} as GroupChat
+}
+
+export function normalizeGroupMember(item: UTSJSONObject): GroupChatMember {
+	let id = readStringField(item, 'id')
+	if (id == '') { id = createId('gmember') }
+	let joinedAt = readNumberField(item, 'joinedAt')
+	if (joinedAt <= 0) { joinedAt = Date.now() }
+	return {
+		id: id,
+		groupId: readStringField(item, 'groupId'),
+		agentId: readStringField(item, 'agentId'),
+		active: readBooleanField(item, 'active'),
+		joinedAt: joinedAt,
+		leftAt: readNumberField(item, 'leftAt'),
+		order: readNumberField(item, 'order'),
+	} as GroupChatMember
+}
+
+export function normalizeGroupSession(item: UTSJSONObject): GroupChatSession {
+	let id = readStringField(item, 'id')
+	if (id == '') { id = createId('gsession') }
+	let title = readStringField(item, 'title')
+	if (title == '') { title = '故事会话' }
+	let createdAt = readNumberField(item, 'createdAt')
+	if (createdAt <= 0) { createdAt = Date.now() }
+	let updatedAt = readNumberField(item, 'updatedAt')
+	if (updatedAt <= 0) { updatedAt = createdAt }
+	return {
+		id: id,
+		groupId: readStringField(item, 'groupId'),
+		title: title,
+		workspacePath: readStringField(item, 'workspacePath'),
+		forkedFromSessionId: readStringField(item, 'forkedFromSessionId'),
+		titleLocked: readBooleanField(item, 'titleLocked'),
+		createdAt: createdAt,
+		updatedAt: updatedAt,
+	} as GroupChatSession
+}
+
+export function parseGroupChats(raw: string, legacySchedulerPrompt: string = ''): GroupChat[] {
+	if (raw == '') { return [] as GroupChat[] }
+	try {
+		const list = JSON.parse(raw) as UTSJSONObject[]
+		const result: GroupChat[] = []
+		if (list != null) {
+			for (let i = 0; i < list.length; i++) {
+				const group = normalizeGroupChat(list[i], legacySchedulerPrompt)
+				if (group.id != '') {
+					result.push(group)
+				}
+			}
+		}
+		return result
+	} catch (_e: any) {
+	}
+	return [] as GroupChat[]
+}
+
+export function parseGroupMembers(raw: string): GroupChatMember[] {
+	if (raw == '') { return [] as GroupChatMember[] }
+	try {
+		const list = JSON.parse(raw) as UTSJSONObject[]
+		const result: GroupChatMember[] = []
+		if (list != null) {
+			for (let i = 0; i < list.length; i++) {
+				const member = normalizeGroupMember(list[i])
+				if (member.groupId != '' && member.agentId != '') {
+					result.push(member)
+				}
+			}
+		}
+		return result
+	} catch (_e: any) {
+	}
+	return [] as GroupChatMember[]
+}
+
+export function parseGroupSessions(raw: string): GroupChatSession[] {
+	if (raw == '') { return [] as GroupChatSession[] }
+	try {
+		const list = JSON.parse(raw) as UTSJSONObject[]
+		const result: GroupChatSession[] = []
+		if (list != null) {
+			for (let i = 0; i < list.length; i++) {
+				const session = normalizeGroupSession(list[i])
+				if (session.id != '' && session.groupId != '') {
+					result.push(session)
+				}
+			}
+		}
+		return result
+	} catch (_e: any) {
+	}
+	return [] as GroupChatSession[]
+}
+
+export function parseGroupMessages(raw: string): UTSJSONObject[] {
+	if (raw == '') { return [] as UTSJSONObject[] }
+	try {
+		const list = JSON.parse(raw) as UTSJSONObject[]
+		if (list != null) { return list }
+	} catch (_e: any) {
+	}
+	return [] as UTSJSONObject[]
+}
+
+export function parseStringList(raw: string): string[] {
+	if (raw == '') { return [] as string[] }
+	try {
+		const list = JSON.parse(raw) as string[]
+		if (list != null) { return list }
+	} catch (_e: any) {
+	}
+	return [] as string[]
+}
+
+export function parseAgentContextRecords(raw: string): UTSJSONObject[] {
+	if (raw == '') { return [] as UTSJSONObject[] }
+	try {
+		const list = JSON.parse(raw) as UTSJSONObject[]
+		if (list != null) { return list }
+	} catch (_e: any) {
+	}
+	return [] as UTSJSONObject[]
+}
+
+export function groupChatToDbRow(group: GroupChat): UTSJSONObject {
+	return {
+		id: group.id,
+		name: group.name,
+		avatar: group.avatar,
+		scheduler_agent_id: group.schedulerAgentId,
+		scheduler_prompt: group.schedulerPrompt,
+		shared_prompt: group.sharedPrompt,
+		active_session_id: group.activeSessionId,
+		created_at: group.createdAt,
+		updated_at: group.updatedAt,
+	} as UTSJSONObject
+}
+
+export function memberToDbRow(member: GroupChatMember): UTSJSONObject {
+	return {
+		id: member.id,
+		group_id: member.groupId,
+		agent_id: member.agentId,
+		active: member.active == true ? 1 : 0,
+		joined_at: member.joinedAt,
+		left_at: member.leftAt,
+		order_index: member.order,
+	} as UTSJSONObject
+}
+
+export function sessionToDbRow(session: GroupChatSession): UTSJSONObject {
+	return {
+		id: session.id,
+		group_id: session.groupId,
+		title: session.title,
+		workspace_path: session.workspacePath,
+		forked_from_session_id: session.forkedFromSessionId,
+		title_locked: session.titleLocked == true ? 1 : 0,
+		created_at: session.createdAt,
+		updated_at: session.updatedAt,
+	} as UTSJSONObject
+}
+
+export function dbRowToGroupChat(row: UTSJSONObject, legacySchedulerPrompt: string = ''): GroupChat {
+	return normalizeGroupChat({
+		id: readStringField(row, 'id'),
+		name: readStringField(row, 'name'),
+		avatar: readStringField(row, 'avatar'),
+		schedulerAgentId: readStringField(row, 'scheduler_agent_id'),
+		schedulerPrompt: readStringField(row, 'scheduler_prompt'),
+		sharedPrompt: readStringField(row, 'shared_prompt'),
+		activeSessionId: readStringField(row, 'active_session_id'),
+		createdAt: readNumberField(row, 'created_at'),
+		updatedAt: readNumberField(row, 'updated_at'),
+	} as UTSJSONObject, legacySchedulerPrompt)
+}
+
+export function dbRowToGroupMember(row: UTSJSONObject): GroupChatMember {
+	return normalizeGroupMember({
+		id: readStringField(row, 'id'),
+		groupId: readStringField(row, 'group_id'),
+		agentId: readStringField(row, 'agent_id'),
+		active: readNumberField(row, 'active') != 0,
+		joinedAt: readNumberField(row, 'joined_at'),
+		leftAt: readNumberField(row, 'left_at'),
+		order: readNumberField(row, 'order_index'),
+	} as UTSJSONObject)
+}
+
+export function dbRowToGroupSession(row: UTSJSONObject): GroupChatSession {
+	return normalizeGroupSession({
+		id: readStringField(row, 'id'),
+		groupId: readStringField(row, 'group_id'),
+		title: readStringField(row, 'title'),
+		workspacePath: readStringField(row, 'workspace_path'),
+		forkedFromSessionId: readStringField(row, 'forked_from_session_id'),
+		titleLocked: readNumberField(row, 'title_locked') != 0,
+		createdAt: readNumberField(row, 'created_at'),
+		updatedAt: readNumberField(row, 'updated_at'),
+	} as UTSJSONObject)
+}
+
+export function dbRowToGroupMessage(row: UTSJSONObject): UTSJSONObject {
+	const payload = readStringField(row, 'payload_json')
+	let msg: UTSJSONObject = {}
+	try {
+		msg = JSON.parse(payload) as UTSJSONObject
+	} catch (_e: any) {
+		msg = {} as UTSJSONObject
+	}
+	msg['id'] = readStringField(row, 'id')
+	msg['groupId'] = readStringField(row, 'group_id')
+	msg['sessionId'] = readStringField(row, 'session_id')
+	msg['role'] = readStringField(row, 'role')
+	msg['senderType'] = readStringField(row, 'sender_type')
+	msg['senderAgentId'] = readStringField(row, 'sender_agent_id')
+	msg['visibility'] = readStringField(row, 'visibility')
+	msg['visibleAgentIds'] = parseStringList(readStringField(row, 'visible_agent_ids_json'))
+	msg['visible'] = readNumberField(row, 'visible') != 0
+	msg['timestamp'] = readNumberField(row, 'timestamp')
+	return msg
+}
