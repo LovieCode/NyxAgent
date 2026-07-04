@@ -178,6 +178,8 @@
 				voiceSessionId: 0 as number,
 				/** 当前播放中的 TTS 音频 */
 				playingSpeechPath: '' as string,
+				/** 主动停止播放时忽略播放器后续错误事件 */
+				isStoppingSpeechPlayback: false as boolean,
 				/** TTS 播放器实例 */
 				speechPlayer: null as InnerAudioContext | null,
 				/** AI 是否正在生成回复 */
@@ -909,6 +911,7 @@
 			stopSpeechPlayback(): void {
 				const player = this.speechPlayer
 				if (player != null) {
+					this.isStoppingSpeechPlayback = true
 					try {
 						player.pause()
 						player.src = ''
@@ -952,6 +955,7 @@
 				}
 				this.stopSpeechPlayback()
 				// PROVIDER_AUDIO_API: TTS 当前落本地临时音频文件，播放时绝对路径要转 file://。
+				this.isStoppingSpeechPlayback = false
 				const audio = uni.createInnerAudioContext()
 				this.speechPlayer = audio
 				const playablePath = this.buildPlayableSpeechPath(path)
@@ -961,6 +965,10 @@
 					this.stopSpeechPlayback()
 				})
 				audio.onError((err: any) => {
+					if (this.isStoppingSpeechPlayback == true || this.speechPlayer != audio || this.playingSpeechPath != path) {
+						console.log('[Speech] 忽略已停止播放器错误: ' + err)
+						return
+					}
 					console.log('[Speech] 播放失败: ' + err)
 					this.stopSpeechPlayback()
 					uni.showToast({ position: 'bottom',  title: '语音播放失败', icon: 'none' })

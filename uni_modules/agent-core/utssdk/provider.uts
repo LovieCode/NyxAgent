@@ -425,6 +425,8 @@ const TTS_FIELD_ADAPTER = 'ttsAdapter'
 const TTS_FIELD_VOICE = 'ttsVoice'
 const TTS_FIELD_RESPONSE_FORMAT = 'ttsResponseFormat'
 const TTS_FIELD_SPEED = 'ttsSpeed'
+const TTS_FIELD_VOLUME = 'ttsVolume'
+const TTS_FIELD_PITCH = 'ttsPitch'
 const TTS_FIELD_EXTRA_PARAMS = 'ttsExtraParams'
 
 function readConfigString(config: UTSJSONObject | null, key: string): string {
@@ -440,6 +442,8 @@ function copyTTSFields(source: UTSJSONObject | null, target: UTSJSONObject): voi
 	target[TTS_FIELD_VOICE] = readConfigString(source, TTS_FIELD_VOICE)
 	target[TTS_FIELD_RESPONSE_FORMAT] = readConfigString(source, TTS_FIELD_RESPONSE_FORMAT)
 	target[TTS_FIELD_SPEED] = readConfigString(source, TTS_FIELD_SPEED)
+	target[TTS_FIELD_VOLUME] = readConfigString(source, TTS_FIELD_VOLUME)
+	target[TTS_FIELD_PITCH] = readConfigString(source, TTS_FIELD_PITCH)
 	target[TTS_FIELD_EXTRA_PARAMS] = readConfigString(source, TTS_FIELD_EXTRA_PARAMS)
 }
 
@@ -498,6 +502,8 @@ export function getDefaultTTSSettings(): UTSJSONObject {
 		voice: readConfigString(config, TTS_FIELD_VOICE),
 		responseFormat: readConfigString(config, TTS_FIELD_RESPONSE_FORMAT),
 		speed: readConfigString(config, TTS_FIELD_SPEED),
+		volume: readConfigString(config, TTS_FIELD_VOLUME),
+		pitch: readConfigString(config, TTS_FIELD_PITCH),
 		extraParams: readConfigString(config, TTS_FIELD_EXTRA_PARAMS),
 	} as UTSJSONObject
 }
@@ -505,7 +511,7 @@ export function getDefaultTTSSettings(): UTSJSONObject {
 /**
  * 设置 TTS 额外参数，和 default_task_tts 保存在一起。
  */
-export function setDefaultTTSSettings(adapter: string, voice: string, responseFormat: string, speed: string, extraParams: string): void {
+export function setDefaultTTSSettings(adapter: string, voice: string, responseFormat: string, speed: string, volume: string, pitch: string, extraParams: string): void {
 	const current = getDefaultTaskModel('tts')
 	let providerId = ''
 	let model = ''
@@ -524,6 +530,8 @@ export function setDefaultTTSSettings(adapter: string, voice: string, responseFo
 		ttsVoice: voice.trim(),
 		ttsResponseFormat: responseFormat.trim(),
 		ttsSpeed: speed.trim(),
+		ttsVolume: volume.trim(),
+		ttsPitch: pitch.trim(),
 		ttsExtraParams: extraParams.trim(),
 	})
 	setAppSetting(TASK_KEY_PREFIX + 'tts', val)

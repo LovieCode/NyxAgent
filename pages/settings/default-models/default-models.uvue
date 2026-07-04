@@ -93,7 +93,7 @@
 						<text class="field-label">TTS 参数</text>
 						<text class="prompt-save-text" @click="saveTtsSettings">保存 TTS 参数</text>
 					</view>
-					<text class="tts-hint">参考 AstrBot：不同 TTS 服务必须配置音色。OpenAI 兼容接口常用 voice/response_format/speed；火山引擎需要 appid、cluster、voice_type。</text>
+					<text class="tts-hint">参考 AstrBot：不同 TTS 服务必须配置音色。OpenAI 兼容接口常用 voice/response_format/speed；火山引擎需要 appid、cluster、voice_type，并支持音量/音高。</text>
 
 					<text class="field-label tts-field-label">接口类型</text>
 					<view class="chip-row tts-adapter-row">
@@ -116,6 +116,17 @@
 						<view class="tts-col-right">
 							<text class="field-label tts-field-label">语速</text>
 							<input class="tts-input" type="text" v-model="ttsSpeed" placeholder="1.0" placeholder-class="ph" />
+						</view>
+					</view>
+
+					<view class="tts-two-col">
+						<view class="tts-col-left">
+							<text class="field-label tts-field-label">音量</text>
+							<input class="tts-input" type="text" v-model="ttsVolume" placeholder="1.0（火山等支持）" placeholder-class="ph" />
+						</view>
+						<view class="tts-col-right">
+							<text class="field-label tts-field-label">音高</text>
+							<input class="tts-input" type="text" v-model="ttsPitch" placeholder="1.0（火山等支持）" placeholder-class="ph" />
 						</view>
 					</view>
 
@@ -160,6 +171,8 @@
 				ttsVoice: '' as string,
 				ttsResponseFormat: '' as string,
 				ttsSpeed: '' as string,
+				ttsVolume: '' as string,
+				ttsPitch: '' as string,
 				ttsExtraParams: '' as string,
 				ttsTempDir: '' as string,
 				savedImageCaptionPrompt: '' as string,
@@ -208,11 +221,15 @@
 				const voice = settings['voice'] as string | null
 				const responseFormat = settings['responseFormat'] as string | null
 				const speed = settings['speed'] as string | null
+				const volume = settings['volume'] as string | null
+				const pitch = settings['pitch'] as string | null
 				const extraParams = settings['extraParams'] as string | null
 				this.ttsAdapter = adapter != null && adapter != '' ? adapter : TTS_ADAPTER_OPENAI_COMPAT
 				this.ttsVoice = voice != null ? voice : ''
 				this.ttsResponseFormat = responseFormat != null ? responseFormat : ''
 				this.ttsSpeed = speed != null ? speed : ''
+				this.ttsVolume = volume != null ? volume : ''
+				this.ttsPitch = pitch != null ? pitch : ''
 				this.ttsExtraParams = extraParams != null ? extraParams : ''
 			},
 
@@ -269,7 +286,7 @@
 					return '语音输入会先用该模型转成文字，再发送到聊天。'
 				}
 				if (type == 'tts') {
-					return '助手回复会用该模型合成语音；下方可配置接口类型、音色、格式和语速。'
+					return '助手回复会用该模型合成语音；下方可配置接口类型、音色、格式、语速、音量和音高。'
 				}
 				return ''
 			},
@@ -385,7 +402,7 @@
 
 			saveTtsSettingsQuiet(): boolean {
 				if (this.validateTtsExtraParams() == false) { return false }
-				setDefaultTTSSettings(this.ttsAdapter, this.ttsVoice, this.ttsResponseFormat, this.ttsSpeed, this.ttsExtraParams)
+				setDefaultTTSSettings(this.ttsAdapter, this.ttsVoice, this.ttsResponseFormat, this.ttsSpeed, this.ttsVolume, this.ttsPitch, this.ttsExtraParams)
 				return true
 			},
 

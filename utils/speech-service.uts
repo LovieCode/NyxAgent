@@ -39,6 +39,8 @@ type SpeechConfig = {
 	ttsVoice: string
 	ttsResponseFormat: string
 	ttsSpeed: string
+	ttsVolume: string
+	ttsPitch: string
 	ttsExtraParams: string
 }
 
@@ -137,6 +139,8 @@ function resolveSpeechConfig(type: string): SpeechConfig | null {
 	let ttsVoice = ''
 	let ttsResponseFormat = ''
 	let ttsSpeed = ''
+	let ttsVolume = ''
+	let ttsPitch = ''
 	let ttsExtraParams = ''
 	if (type == 'tts') {
 		ttsAdapter = readTaskString(task, 'ttsAdapter')
@@ -144,6 +148,8 @@ function resolveSpeechConfig(type: string): SpeechConfig | null {
 		ttsVoice = readTaskString(task, 'ttsVoice')
 		ttsResponseFormat = readTaskString(task, 'ttsResponseFormat')
 		ttsSpeed = readTaskString(task, 'ttsSpeed')
+		ttsVolume = readTaskString(task, 'ttsVolume')
+		ttsPitch = readTaskString(task, 'ttsPitch')
 		ttsExtraParams = readTaskString(task, 'ttsExtraParams')
 	}
 	return {
@@ -155,6 +161,8 @@ function resolveSpeechConfig(type: string): SpeechConfig | null {
 		ttsVoice: ttsVoice,
 		ttsResponseFormat: ttsResponseFormat,
 		ttsSpeed: ttsSpeed,
+		ttsVolume: ttsVolume,
+		ttsPitch: ttsPitch,
 		ttsExtraParams: ttsExtraParams,
 	} as SpeechConfig
 }
@@ -501,6 +509,22 @@ function resolveVolcengineVoice(config: SpeechConfig, modelParams: UTSJSONObject
 	return readFirstParam(modelParams, ['volcengine_voice_type', 'voice_type', 'voice'])
 }
 
+function resolveVolcengineVolume(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
+	let volume = config.ttsVolume.trim()
+	if (volume != '') { return volume }
+	volume = readFirstParam(extraParams, ['volcengine_volume_ratio', 'volume_ratio', 'volume'])
+	if (volume != '') { return volume }
+	return readFirstParam(modelParams, ['volcengine_volume_ratio', 'volume_ratio', 'volume'])
+}
+
+function resolveVolcenginePitch(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
+	let pitch = config.ttsPitch.trim()
+	if (pitch != '') { return pitch }
+	pitch = readFirstParam(extraParams, ['volcengine_pitch_ratio', 'pitch_ratio', 'pitch'])
+	if (pitch != '') { return pitch }
+	return readFirstParam(modelParams, ['volcengine_pitch_ratio', 'pitch_ratio', 'pitch'])
+}
+
 function synthesizeVolcengineSpeech(content: string, config: SpeechConfig, dir: string): Promise<SpeechAudioResult> {
 	return new Promise<SpeechAudioResult>((resolve) => {
 		const modelParams = resolveModelParams(config.providerId, config.model)
@@ -524,7 +548,11 @@ function synthesizeVolcengineSpeech(content: string, config: SpeechConfig, dir: 
 			return
 		}
 		const speedRaw = config.ttsSpeed.trim() != '' ? config.ttsSpeed.trim() : readFirstParam(extraParams, ['volcengine_speed_ratio', 'speed_ratio', 'speed'])
+		const volumeRaw = resolveVolcengineVolume(config, modelParams, extraParams)
+		const pitchRaw = resolveVolcenginePitch(config, modelParams, extraParams)
 		const speedRatio = parseNumberSetting(speedRaw, 1.0, 0.2, 3.0)
+		const volumeRatio = parseNumberSetting(volumeRaw, 1.0, 0.1, 3.0)
+		const pitchRatio = parseNumberSetting(pitchRaw, 1.0, 0.1, 3.0)
 		const outputPath = dir + '/tts_' + Date.now() + '.mp3'
 		const body: UTSJSONObject = {
 			app: {
@@ -539,8 +567,8 @@ function synthesizeVolcengineSpeech(content: string, config: SpeechConfig, dir: 
 				voice_type: voiceType,
 				encoding: 'mp3',
 				speed_ratio: speedRatio,
-				volume_ratio: 1.0,
-				pitch_ratio: 1.0,
+				volume_ratio: volumeRatio,
+				pitch_ratio: pitchRatio,
 			} as UTSJSONObject,
 			request: {
 				reqid: 'nyx_' + Date.now(),
