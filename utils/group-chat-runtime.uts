@@ -1,0 +1,172 @@
+/**
+ * 群聊运行时通用工具。
+ *
+ * 只放无副作用的展示、Agent 字段读取和可见性判断，避免 service/scheduler 互相依赖。
+ */
+
+import { CHAT_PART_PLAIN } from '@/utils/chat-models.uts'
+import {
+	DEFAULT_SCHEDULER_PROMPT_TEXT,
+	DEFAULT_SHARED_PROMPT_TEXT,
+	GROUP_MESSAGE_VISIBILITY_PUBLIC,
+	isInternalGroupSenderType,
+	isInternalGroupVisibility,
+	type GroupChat,
+	type GroupChatSession,
+} from '@/utils/group-chat-models.uts'
+
+export function buildDefaultSchedulerPrompt(): string {
+	return DEFAULT_SCHEDULER_PROMPT_TEXT
+}
+
+export function getGroupSchedulerPrompt(group: GroupChat): string {
+	const text = group.schedulerPrompt.trim()
+	if (text != '') { return text }
+	return buildDefaultSchedulerPrompt()
+}
+
+export function buildDefaultSharedPrompt(): string {
+	return DEFAULT_SHARED_PROMPT_TEXT
+}
+
+export function displaySessionTitle(session: GroupChatSession | null): string {
+	if (session == null) { return '未命名会话' }
+	const title = session.title.trim()
+	if (title != '') { return title }
+	return '未命名会话'
+}
+
+export function readActionText(action: UTSJSONObject, key: string): string {
+	const raw = action[key] as string | null
+	return raw != null ? raw : ''
+}
+
+export function readAgentName(agent: UTSJSONObject | null): string {
+	if (agent == null) { return 'Agent' }
+	const raw = agent['name'] as string | null
+	return raw != null && raw != '' ? raw : 'Agent'
+}
+
+export function readAgentAvatar(agent: UTSJSONObject | null): string {
+	if (agent == null) { return '' }
+	const raw = agent['avatar'] as string | null
+	return raw != null ? raw : ''
+}
+
+export function readAgentModel(agent: UTSJSONObject | null): string {
+	if (agent == null) { return '' }
+	const raw = agent['model'] as string | null
+	return raw != null ? raw : ''
+}
+
+export function readAgentSystemPrompt(agent: UTSJSONObject | null): string {
+	if (agent == null) { return '' }
+	const raw = agent['systemPrompt'] as string | null
+	return raw != null ? raw : ''
+}
+
+export function readAgentHideThinking(agent: UTSJSONObject | null): boolean {
+	if (agent == null) { return false }
+	const raw = agent['hideThinking'] as boolean | null
+	return raw == true
+}
+
+export function readAgentInjectDatetime(agent: UTSJSONObject | null): boolean {
+	if (agent == null) { return true }
+	const raw = agent['injectDatetime'] as boolean | null
+	return raw != null ? raw : true
+}
+
+export function readAgentMsgSegmentation(agent: UTSJSONObject | null): boolean {
+	if (agent == null) { return true }
+	const raw = agent['msgSegmentation'] as boolean | null
+	return raw != null ? raw : true
+}
+
+function stripLeadingSpaces(text: string): string {
+	let index = 0
+	while (index < text.length) {
+		const ch = text.charAt(index)
+		if (ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t') {
+			index++
+		} else {
+			break
+		}
+	}
+	return index > 0 ? text.substring(index) : text
+}
+
+export function stripGroupAgentSpeakerPrefix(text: string, agentName: string): string {
+	const name = agentName.trim()
+	if (name == '' || text == '') { return text }
+	const body = stripLeadingSpaces(text)
+	const cnPrefix = name + '：'
+	const enPrefix = name + ':'
+	let stripped = body
+	if (body.startsWith(cnPrefix)) {
+		stripped = body.substring(cnPrefix.length)
+	} else if (body.startsWith(enPrefix)) {
+		stripped = body.substring(enPrefix.length)
+	} else {
+		return text
+	}
+	return stripLeadingSpaces(stripped)
+}
+
+export function stripGroupAgentSpeakerPrefixFromParts(parts: UTSJSONObject[], agentName: string): void {
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		const type = part['type'] as string | null
+		if (type == CHAT_PART_PLAIN) {
+			const raw = part['text'] as string | null
+			if (raw != null && raw != '') {
+				part['text'] = stripGroupAgentSpeakerPrefix(raw, agentName)
+			}
+			return
+		}
+	}
+}
+
+export function getVisibleGroupMessages(messages: UTSJSONObject[]): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < messages.length; i++) {
+		const senderType = messages[i]['senderType'] as string | null
+		if (isInternalGroupSenderType(senderType) == true) { continue }
+		const visible = messages[i]['visible'] as boolean | null
+		const visibility = messages[i]['visibility'] as string | null
+		if (visible != false && (visibility == null || visibility == '' || visibility == GROUP_MESSAGE_VISIBILITY_PUBLIC)) {
+			result.push(messages[i])
+		}
+	}
+	return result
+}
+
+export function getGroupMessagesVisibleToAgent(messages: UTSJSONObject[], agentId: string): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const senderType = msg['senderType'] as string | null
+		if (isInternalGroupSenderType(senderType) == true) { continue }
+		const visible = msg['visible'] as boolean | null
+		if (visible == false) { continue }
+		const visibility = msg['visibility'] as string | null
+		if (isInternalGroupVisibility(visibility) == true) { continue }
+		if (visibility == null || visibility == '' || visibility == GROUP_MESSAGE_VISIBILITY_PUBLIC) {
+			result.push(msg)
+		} else {
+			const senderAgentId = msg['senderAgentId'] as string | null
+			const targetIds = msg['visibleAgentIds'] as string[] | null
+			if (agentId != '' && senderAgentId == agentId) {
+				result.push(msg)
+			} else if (targetIds != null) {
+				for (let ti = 0; ti < targetIds.length; ti++) {
+					if (targetIds[ti] == agentId) {
+						result.push(msg)
+						break
+					}
+				}
+			}
+		}
+	}
+	return result
+}

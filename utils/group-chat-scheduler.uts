@@ -1,0 +1,633 @@
+/**
+ * 群聊调度、审核与复盘运行时。
+ *
+ * service 只负责基础 CRUD；这里负责隐藏调度 prompt、成员运行时消息和 review 副作用。
+ */
+
+import { getAgentById } from '@/utils/agent.uts'
+import {
+	getInternalFilesDir,
+	joinPath,
+	createDir,
+	exists,
+	readContent,
+	writeContent,
+} from '@/utils/file-manager.uts'
+import {
+	CHAT_ROLE_ASSISTANT,
+	CHAT_ROLE_USER,
+	cloneParts,
+	createTextMessage,
+	extractPlainText,
+	getMessageContent,
+	getMessageParts,
+} from '@/utils/chat-models.uts'
+import { buildRuntimeMessages as buildRuntimeChatMessages } from '@/utils/chat-message-reducer.uts'
+import {
+	getAppSetting,
+	getGroupAgentMetricRows,
+	getGroupChatState,
+	getGroupMemberRows,
+	getGroupTaskRows,
+	incrementGroupAgentMetric,
+	saveGroupMemoryRow,
+	saveGroupReviewRow,
+	saveGroupTaskRow,
+} from '@/utils/database.uts'
+import {
+	ACTIVE_GROUP_SESSION_ID_KEY,
+	GROUP_MESSAGE_SENDER_SCHEDULER,
+	GROUP_MESSAGE_SENDER_USER,
+	GROUP_MESSAGE_VISIBILITY_PRIVATE,
+	createId,
+	dbRowToGroupMember,
+	resolveGroupSchedulerAgentId,
+	resolveGroupSchedulerDisplayName,
+	type GroupChat,
+	type GroupChatMember,
+	type GroupChatSession,
+} from '@/utils/group-chat-models.uts'
+import {
+	displaySessionTitle,
+	getGroupMessagesVisibleToAgent,
+	getGroupSchedulerPrompt,
+	getVisibleGroupMessages,
+	readActionText,
+	readAgentName,
+	readAgentSystemPrompt,
+	stripGroupAgentSpeakerPrefix,
+	stripGroupAgentSpeakerPrefixFromParts,
+} from '@/utils/group-chat-runtime.uts'
+
+function readActiveGroupSessionId(): string {
+	return getGroupChatState(ACTIVE_GROUP_SESSION_ID_KEY)
+}
+
+function readActiveGroupMembers(groupId: string): GroupChatMember[] {
+	const rows = getGroupMemberRows(groupId)
+	const result: GroupChatMember[] = []
+	for (let i = 0; i < rows.length; i++) {
+		const member = dbRowToGroupMember(rows[i])
+		if (member.active == true && getAgentById(member.agentId) != null) {
+			result.push(member)
+		}
+	}
+	result.sort((a: GroupChatMember, b: GroupChatMember): number => {
+		if (a.order < b.order) { return -1 }
+		if (a.order > b.order) { return 1 }
+		return 0
+	})
+	return result
+}
+
+function isSafeWorkspaceId(id: string): boolean {
+	if (id == '') { return false }
+	if (id.indexOf('/') >= 0 || id.indexOf('\\') >= 0) { return false }
+	if (id == '..' || id.indexOf('..') >= 0) { return false }
+	return true
+}
+
+function ensureSchedulerDirectory(path: string): void {
+	if (path == '') { return }
+	if (exists(path) == false) {
+		createDir(path, true)
+	}
+}
+
+function buildFallbackWorkspacePath(groupId: string, sessionId: string): string {
+	if (isSafeWorkspaceId(groupId) == false || isSafeWorkspaceId(sessionId) == false) { return '' }
+	const filesDir = getInternalFilesDir()
+	if (filesDir == '') { return '' }
+	return joinPath(joinPath(joinPath(filesDir, 'group-workspaces'), groupId), sessionId)
+}
+
+function resolveReviewWorkspace(group: GroupChat, session: GroupChatSession): string {
+	const current = session.workspacePath.trim()
+	if (current != '') { return current }
+	return buildFallbackWorkspacePath(group.id, session.id)
+}
+
+function appendGroupSystemJsonl(group: GroupChat, session: GroupChatSession, fileName: string, record: UTSJSONObject): void {
+	const root = resolveReviewWorkspace(group, session)
+	if (root == '') { return }
+	ensureSchedulerDirectory(root)
+	const dir = joinPath(root, '_system')
+	ensureSchedulerDirectory(dir)
+	const filePath = joinPath(dir, fileName)
+	const old = readContent(filePath)
+	const prefix = old != null && old != '' ? old + '\n' : ''
+	writeContent(filePath, prefix + JSON.stringify(record))
+}
+
+export function buildSchedulerSystemPrompt(): string {
+	return '你是当前群聊的隐藏调度子代理，职责是决定下一步由哪些成员发言、给出具体指令。\n\n' +
+		'规则：\n' +
+		'· 你的存在和调度过程绝不能被成员在公开发言中提及。\n' +
+		'· 闲聊/简单回应：只安排 1 个最合适的成员；协作任务：可安排多个按顺序发言，order 从 0 递增。\n' +
+		'· 默认控场目标是简短、清晰、少废话。replyLength 默认 short；只有用户明确要求长文、方案、创作片段或复杂推理时才用 normal/detailed。\n' +
+		'· privateInstruction 必须具体可执行：告诉成员要表达什么观点、采用什么角度、回应哪个细节、是否需要纠偏/收束，不要写"正常回复"这种废话。\n' +
+		'· 如果最近发言出现事实冲突、虚构 App 功能、误解用户意图或跑题，优先安排最合适成员自然修正；不要让成员提及你、调度、私密指令或系统流程。\n' +
+		'· 涉及时效、外部事实、版本、价格、法律、医学、金融、新闻等不稳信息时，将 searchAdvice 设为 recommend，并在 searchInstruction 写明要查证什么；不能让成员伪造搜索结果。\n' +
+		'· 消息可见性参考 Agentopia：公开内容 public 才会进群聊；内部调度/复盘 internal 不公开；定向私密消息未来使用 visibleAgentIds，不要让成员在公开正文里模拟 <private> 或 <visible> 标签。\n' +
+		'· shouldContinue：仅当讨论有明确的下一步价值（如任务未完成、需要多轮协作）时设为 true；闲聊收尾设 false。\n' +
+		'· agentId 必须与成员列表 id= 后的值完全一致，不能自造。\n\n' +
+		'输出纯 JSON，禁止任何 Markdown 标记，格式：\n' +
+		'{"actions":[{"type":"speak","agentId":"<id>","targetType":"user","targetAgentId":"","privateInstruction":"<具体指令>","publicIntent":"<公开目标>","replyLength":"short|normal|detailed","replyGuidance":"<语气/结构建议，默认简短>","searchAdvice":"none|recommend","searchInstruction":"<需要查证时写查什么，否则空>","order":0}],"shouldContinue":false,"titleSuggestion":"<6字内短标题>","privateNotes":"<内部备注>"}\n\n' +
+		'触发上下文、成员列表（含角色简介）、最近聊天记录在用户消息中提供。'
+}
+
+export function buildSchedulerReviewSystemPrompt(): string {
+	return '你是当前群聊的隐藏审核调度子代理，职责是判断一条候选群聊发言是否可以公开显示。\n\n' +
+		'审核范围只限：是否暴露隐藏调度、内部指令、私密指令、幕后安排或 scheduler 机制。\n' +
+		'不要审查事实对错、语气好坏、创作质量，也不要扩大判断范围。\n\n' +
+		'输出纯 JSON，禁止 Markdown，格式：\n' +
+		'{"decision":"allow|revise|revoke","reason":"<简短原因>","revisionInstruction":"<需要重写时给成员的要求，否则为空>"}\n\n' +
+		'allow：误触发或没有真正暴露调度；revise：保留原意但必须移除调度/内部指令表述；revoke：严重暴露且不适合公开。'
+}
+
+function formatMemberList(groupId: string): string {
+	const members = readActiveGroupMembers(groupId)
+	const metrics = getGroupAgentMetricRows(groupId, readActiveGroupSessionId())
+	const lines: string[] = []
+	for (let i = 0; i < members.length; i++) {
+		const agent = getAgentById(members[i].agentId)
+		const agentDesc = agent != null ? (agent['desc'] as string | null) : null
+		const desc = agentDesc != null && agentDesc != '' ? agentDesc : ''
+		let line = '- id=' + members[i].agentId + '  name=' + readAgentName(agent)
+		if (desc != '') { line += '\n  介绍：' + desc }
+		for (let j = 0; j < metrics.length; j++) {
+			const metricAgentId = metrics[j]['agent_id'] as string | null
+			if (metricAgentId == members[i].agentId) {
+				const speak = metrics[j]['speak_count'] as number | null
+				const useful = metrics[j]['useful_count'] as number | null
+				const issue = metrics[j]['issue_count'] as number | null
+				line += '\n  群聊指标：发言 ' + (speak != null ? speak : 0) + '，有效贡献 ' + (useful != null ? useful : 0) + '，问题 ' + (issue != null ? issue : 0)
+				break
+			}
+		}
+		lines.push(line)
+	}
+	return lines.join('\n')
+}
+
+function buildOpenTaskSummary(groupId: string, sessionId: string): string {
+	const tasks = getGroupTaskRows(groupId, sessionId)
+	const lines: string[] = []
+	for (let i = 0; i < tasks.length; i++) {
+		const status = tasks[i]['status'] as string | null
+		if (status != null && status != 'open' && status != 'doing') { continue }
+		const title = tasks[i]['title'] as string | null
+		const owner = tasks[i]['owner_agent_id'] as string | null
+		lines.push('- ' + (title != null ? title : '未命名任务') + ' / owner=' + (owner != null ? owner : '') + ' / status=' + (status != null ? status : 'open'))
+		if (lines.length >= 8) { break }
+	}
+	if (lines.length == 0) { return '(暂无结构化任务)' }
+	return lines.join('\n')
+}
+
+function readCurrentUserDisplayName(): string {
+	const raw = getAppSetting('profile_nickname')
+	const name = raw != null ? raw.trim() : ''
+	return name != '' ? name : '用户'
+}
+
+function resolveGroupSenderDisplayName(senderName: string | null, senderType: string | null, role: string | null): string {
+	const name = senderName != null ? senderName.trim() : ''
+	if (senderType == GROUP_MESSAGE_SENDER_USER || role == CHAT_ROLE_USER) {
+		if (name != '' && name != '用户') { return name }
+		return readCurrentUserDisplayName()
+	}
+	return name != '' ? name : '成员'
+}
+
+function truncateTranscriptContent(content: string, maxLength: number): string {
+	if (content.length <= maxLength) {
+		return content
+	}
+	return content.substring(0, maxLength) + '...[已截断]'
+}
+
+export function buildGroupTranscript(messages: UTSJSONObject[], limit: number = 30): string {
+	const visible = getVisibleGroupMessages(messages)
+	const start = visible.length > limit ? visible.length - limit : 0
+	const lines: string[] = []
+	const keepFullCount = 5
+	const truncateLength = 30
+	for (let i = start; i < visible.length; i++) {
+		const msg = visible[i]
+		const role = msg['role'] as string | null
+		const senderType = msg['senderType'] as string | null
+		const senderName = msg['senderName'] as string | null
+		const messageId = msg['id'] as string | null
+		const name = resolveGroupSenderDisplayName(senderName, senderType, role)
+		const content = getMessageContent(msg)
+		if (content.trim() != '') {
+			const fromLatest = visible.length - i
+			let displayContent = content
+			if (fromLatest > keepFullCount) {
+				displayContent = truncateTranscriptContent(content, truncateLength)
+			}
+			lines.push('--- message #' + (i - start + 1).toString() + ' ---')
+			lines.push('messageId: ' + (messageId != null ? messageId : ''))
+			lines.push('sender: ' + name)
+			lines.push('senderType: ' + (senderType != null ? senderType : '未标记'))
+			lines.push('role: ' + (role != null ? role : '未标记'))
+			lines.push('content:')
+			lines.push(displayContent)
+			lines.push('')
+		}
+	}
+	if (lines.length == 0) { return '(暂无公开发言)' }
+	return lines.join('\n')
+}
+
+export function buildSchedulerRuntimeMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], reason: string, loopTurns: number): UTSJSONObject[] {
+	const schedulerPrompt = getGroupSchedulerPrompt(group)
+	const content = '【动态调度上下文】\n' +
+		'群聊调度子代理：' + resolveGroupSchedulerDisplayName(group) + ' / ' + resolveGroupSchedulerAgentId(group) + '\n' +
+		'群聊调度提示词：\n' + schedulerPrompt + '\n\n' +
+		'调度字段补充：即使上方提示词没有列出，也必须在每个 speak action 中返回 replyLength、replyGuidance、searchAdvice、searchInstruction。默认 replyLength=short、searchAdvice=none；需要查证外部/时效事实时才用 searchAdvice=recommend。\n\n' +
+		'群聊共享规则：\n' + group.sharedPrompt + '\n\n' +
+		'触发原因：' + reason + '\n' +
+		'当前会话名：' + displaySessionTitle(session) + '\n' +
+		'连续讨论轮数：' + loopTurns + '\n\n' +
+		'可调度成员：\n' + formatMemberList(group.id) + '\n\n' +
+		'当前结构化任务：\n' + buildOpenTaskSummary(group.id, session.id) + '\n\n' +
+		'最近公开群聊记录：\n' + buildGroupTranscript(messages, 20) + '\n\n' +
+		'请根据以上上下文决定下一步由谁发言。严格输出 JSON，不加任何解释。'
+	return [createTextMessage(CHAT_ROLE_USER, content)]
+}
+
+export function buildFallbackSchedulerDecision(groupId: string): UTSJSONObject {
+	const members = readActiveGroupMembers(groupId)
+	let agentId = ''
+	if (members.length > 0) {
+		agentId = members[0].agentId
+	}
+	const actions: UTSJSONObject[] = []
+	if (agentId != '') {
+		actions.push({
+			type: 'speak',
+			agentId: agentId,
+			targetType: 'user',
+			targetAgentId: '',
+			privateInstruction: '调度结果解析失败，请根据最近公开群聊记录自然回应用户。',
+			publicIntent: '自然回应用户',
+			replyLength: 'short',
+			replyGuidance: '简短自然，优先 1-3 句。',
+			searchAdvice: 'none',
+			searchInstruction: '',
+			order: 0,
+		} as UTSJSONObject)
+	}
+	return {
+		actions: actions,
+		shouldContinue: false,
+		titleSuggestion: '',
+		privateNotes: 'fallback',
+	} as UTSJSONObject
+}
+
+export function parseSchedulerDecision(raw: string, groupId: string): UTSJSONObject {
+	let jsonText = raw.trim()
+	const first = jsonText.indexOf('{')
+	const last = jsonText.lastIndexOf('}')
+	if (first >= 0 && last > first) {
+		jsonText = jsonText.substring(first, last + 1)
+	}
+	try {
+		const parsed = JSON.parse(jsonText) as UTSJSONObject
+		const actions = parsed['actions'] as UTSJSONObject[] | null
+		if (actions != null) {
+			actions.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
+				const ao = a['order'] as number | null
+				const bo = b['order'] as number | null
+				const av = ao != null ? ao : 0
+				const bv = bo != null ? bo : 0
+				if (av < bv) { return -1 }
+				if (av > bv) { return 1 }
+				return 0
+			})
+			parsed['actions'] = actions
+			return parsed
+		}
+	} catch (_e: any) {
+	}
+	return buildFallbackSchedulerDecision(groupId)
+}
+
+export function buildSchedulerReviewMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], agentId: string, agentName: string, keyword: string, candidateText: string): UTSJSONObject[] {
+	const content = '【调度审核任务】\n' +
+		'你是隐藏的群聊调度 Agent。现在需要审核一条尚未完整公开的成员发言是否暴露了调度机制。\n\n' +
+		'审核目标：只判断是否暴露隐藏调度、内部指令或私密调度过程；不要评价事实对错、文风、内容质量。\n' +
+		'触发关键词：' + keyword + '\n' +
+		'发言成员 ID：' + agentId + '\n' +
+		'发言成员名：' + agentName + '\n' +
+		'当前会话名：' + displaySessionTitle(session) + '\n\n' +
+		'最近公开群聊记录：\n' + buildGroupTranscript(messages, 12) + '\n\n' +
+		'候选完整发言：\n' + candidateText + '\n\n' +
+		'请严格输出 JSON，不加 Markdown，不加解释。\n' +
+		'格式：{"decision":"allow|revise|revoke","reason":"简短原因","revisionInstruction":"如果 decision=revise，给原成员的重写要求；否则为空"}\n' +
+		'allow：误触发或没有真正暴露调度；revise：能保留原意但必须删掉调度/内部指令表述；revoke：严重暴露且不适合公开。'
+	return [createTextMessage(CHAT_ROLE_USER, content)]
+}
+
+export function parseSchedulerReviewDecision(raw: string): UTSJSONObject {
+	let jsonText = raw.trim()
+	const first = jsonText.indexOf('{')
+	const last = jsonText.lastIndexOf('}')
+	if (first >= 0 && last > first) {
+		jsonText = jsonText.substring(first, last + 1)
+	}
+	try {
+		const parsed = JSON.parse(jsonText) as UTSJSONObject
+		const decisionRaw = parsed['decision'] as string | null
+		let decision = decisionRaw != null ? decisionRaw.trim() : ''
+		if (decision != 'allow' && decision != 'revise' && decision != 'revoke') {
+			decision = 'revise'
+		}
+		const reasonRaw = parsed['reason'] as string | null
+		const instructionRaw = parsed['revisionInstruction'] as string | null
+		return {
+			decision: decision,
+			reason: reasonRaw != null ? reasonRaw : '',
+			revisionInstruction: instructionRaw != null ? instructionRaw : '',
+		} as UTSJSONObject
+	} catch (_e: any) {
+	}
+	return {
+		decision: 'revise',
+		reason: '审核结果解析失败',
+		revisionInstruction: '保留原意，删除任何关于调度、内部指令、私密指令或幕后安排的表述。',
+	} as UTSJSONObject
+}
+
+export function buildGroupReviewSystemPrompt(): string {
+	return '你是群聊的隐藏复盘 Agent，职责是在一轮成员发言结束后做内部 Review，不公开发言。\n\n' +
+		'复盘目标：\n' +
+		'· 总结本轮实际推进了什么，不要复述全文。\n' +
+		'· 标记跑题、重复、事实冲突、虚构 App 功能、未满足用户目标等问题。\n' +
+		'· 判断是否值得继续一轮讨论；只有任务未完成、有明确下一步价值时才建议 continue。\n' +
+		'· 如果本轮产生明确待办或协作事项，写入 taskCards；没有就返回空数组。\n' +
+		'· 给出可沉淀到长期记忆的候选笔记，但不要编造用户没有表达过的信息。\n\n' +
+		'输出纯 JSON，禁止 Markdown，格式：\n' +
+		'{"roundSummary":"<一句话复盘>","completed":["<已完成点>"],"issues":["<问题或风险>"],"usefulAgents":[{"agentId":"<成员ID>","reason":"<贡献>"}],"continueAdvice":"continue|stop|neutral","suggestedNext":"<如果继续，建议下一步>","taskCards":[{"title":"<任务标题>","ownerAgentId":"<负责人Agent ID或空>","participants":["<Agent ID>"],"status":"open|doing|done","summary":"<任务说明>"}],"memoryCandidates":[{"agentId":"<成员ID或空>","note":"<可写入记忆的事实/偏好/关系变化>"}]}\n\n' +
+		'字段要求：数组没有内容就返回空数组；continueAdvice 只能是 continue、stop、neutral；不确定时用 neutral。'
+}
+
+function buildLatestSchedulerRecord(messages: UTSJSONObject[]): string {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i]
+		const senderType = msg['senderType'] as string | null
+		if (senderType != GROUP_MESSAGE_SENDER_SCHEDULER) { continue }
+		const content = msg['content'] as string | null
+		const text = content != null ? content.trim() : ''
+		if (text != '') {
+			return truncateTranscriptContent(text, 3000)
+		}
+	}
+	return '(暂无隐藏调度记录)'
+}
+
+export function buildGroupReviewMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], reason: string, loopTurns: number): UTSJSONObject[] {
+	const content = '【群聊回合复盘】\n' +
+		'触发原因：' + reason + '\n' +
+		'群聊名：' + group.name + '\n' +
+		'当前会话名：' + displaySessionTitle(session) + '\n' +
+		'连续讨论轮数：' + loopTurns + '\n\n' +
+		'可复盘成员：\n' + formatMemberList(group.id) + '\n\n' +
+		'当前结构化任务：\n' + buildOpenTaskSummary(group.id, session.id) + '\n\n' +
+		'最近隐藏调度记录：\n' + buildLatestSchedulerRecord(messages) + '\n\n' +
+		'最近公开群聊记录：\n' + buildGroupTranscript(messages, 24) + '\n\n' +
+		'请根据以上上下文输出内部复盘 JSON，不要加解释。'
+	return [createTextMessage(CHAT_ROLE_USER, content)]
+}
+
+export function parseGroupReviewDecision(raw: string): UTSJSONObject {
+	let jsonText = raw.trim()
+	const first = jsonText.indexOf('{')
+	const last = jsonText.lastIndexOf('}')
+	if (first >= 0 && last > first) {
+		jsonText = jsonText.substring(first, last + 1)
+	}
+	try {
+		const parsed = JSON.parse(jsonText) as UTSJSONObject
+		const adviceRaw = parsed['continueAdvice'] as string | null
+		let advice = adviceRaw != null ? adviceRaw.trim() : 'neutral'
+		if (advice != 'continue' && advice != 'stop' && advice != 'neutral') {
+			advice = 'neutral'
+		}
+		parsed['continueAdvice'] = advice
+		return parsed
+	} catch (_e: any) {
+	}
+	return {
+		roundSummary: '复盘结果解析失败',
+		completed: [] as string[],
+		issues: ['review JSON 解析失败'] as string[],
+		usefulAgents: [] as UTSJSONObject[],
+		continueAdvice: 'neutral',
+		suggestedNext: '',
+		taskCards: [] as UTSJSONObject[],
+		memoryCandidates: [] as UTSJSONObject[],
+	} as UTSJSONObject
+}
+
+function readReviewAgentId(item: UTSJSONObject): string {
+	const agentId = item['agentId'] as string | null
+	return agentId != null ? agentId : ''
+}
+
+function readReviewText(item: UTSJSONObject, key: string): string {
+	const value = item[key] as string | null
+	return value != null ? value : ''
+}
+
+export function persistGroupReviewEffects(group: GroupChat, session: GroupChatSession, review: UTSJSONObject, messageId: string): void {
+	const reviewId = createId('greview')
+	const now = Date.now()
+	const summary = readReviewText(review, 'roundSummary')
+	const adviceRaw = readReviewText(review, 'continueAdvice')
+	const advice = adviceRaw != '' ? adviceRaw : 'neutral'
+	const reviewRecord = {
+		id: reviewId,
+		groupId: group.id,
+		sessionId: session.id,
+		messageId: messageId,
+		summary: summary,
+		continueAdvice: advice,
+		payload: review,
+		createdAt: now,
+	} as UTSJSONObject
+	saveGroupReviewRow(reviewRecord)
+	appendGroupSystemJsonl(group, session, 'reviews.jsonl', reviewRecord)
+
+	const usefulAgents = review['usefulAgents'] as UTSJSONObject[] | null
+	if (usefulAgents != null) {
+		for (let i = 0; i < usefulAgents.length; i++) {
+			const agentId = readReviewAgentId(usefulAgents[i])
+			if (agentId != '') {
+				incrementGroupAgentMetric(group.id, session.id, agentId, 0, 1, 0, 0)
+			}
+		}
+	}
+	const issues = review['issues'] as string[] | null
+	if (issues != null && issues.length > 0) {
+		const members = readActiveGroupMembers(group.id)
+		for (let j = 0; j < members.length; j++) {
+			incrementGroupAgentMetric(group.id, session.id, members[j].agentId, 0, 0, 1, 0)
+		}
+	}
+	const taskCards = review['taskCards'] as UTSJSONObject[] | null
+	if (taskCards != null) {
+		for (let t = 0; t < taskCards.length; t++) {
+			const title = readReviewText(taskCards[t], 'title')
+			if (title == '') { continue }
+			const ownerAgentId = readReviewText(taskCards[t], 'ownerAgentId')
+			const participantsRaw = taskCards[t]['participants'] as string[] | null
+			const participants = participantsRaw != null ? participantsRaw : ([] as string[])
+			const statusRaw = readReviewText(taskCards[t], 'status')
+			const status = statusRaw != '' ? statusRaw : 'open'
+			const taskRecord = {
+				id: createId('gtask'),
+				groupId: group.id,
+				sessionId: session.id,
+				title: title,
+				ownerAgentId: ownerAgentId,
+				participants: participants,
+				status: status,
+				sourceReviewId: reviewId,
+				summary: readReviewText(taskCards[t], 'summary'),
+				createdAt: now,
+			} as UTSJSONObject
+			saveGroupTaskRow(taskRecord)
+			appendGroupSystemJsonl(group, session, 'tasks.jsonl', taskRecord)
+		}
+	}
+	const memoryCandidates = review['memoryCandidates'] as UTSJSONObject[] | null
+	if (memoryCandidates != null) {
+		for (let m = 0; m < memoryCandidates.length; m++) {
+			const note = readReviewText(memoryCandidates[m], 'note')
+			if (note == '') { continue }
+			const agentId = readReviewAgentId(memoryCandidates[m])
+			const memoryRecord = {
+				id: createId('gmem'),
+				groupId: group.id,
+				sessionId: session.id,
+				agentId: agentId,
+				category: 'group_review',
+				visibility: GROUP_MESSAGE_VISIBILITY_PRIVATE,
+				content: note,
+				sourceReviewId: reviewId,
+				createdAt: now,
+			} as UTSJSONObject
+			saveGroupMemoryRow(memoryRecord)
+			appendGroupSystemJsonl(group, session, 'memory.jsonl', memoryRecord)
+			if (agentId != '') {
+				incrementGroupAgentMetric(group.id, session.id, agentId, 0, 0, 0, 1)
+			}
+		}
+	}
+}
+
+export function recordGroupAgentSpeak(groupId: string, sessionId: string, agentId: string): void {
+	incrementGroupAgentMetric(groupId, sessionId, agentId, 1, 0, 0, 0)
+}
+
+function buildMemberTaskPrompt(group: GroupChat, session: GroupChatSession, action: UTSJSONObject, agentName: string): string {
+	const privateInstruction = readActionText(action, 'privateInstruction')
+	const publicIntent = readActionText(action, 'publicIntent')
+	const targetType = readActionText(action, 'targetType')
+	const targetAgentId = readActionText(action, 'targetAgentId')
+	const replyLengthRaw = readActionText(action, 'replyLength')
+	const replyLength = replyLengthRaw != '' ? replyLengthRaw : 'short'
+	const replyGuidanceRaw = readActionText(action, 'replyGuidance')
+	const replyGuidance = replyGuidanceRaw != '' ? replyGuidanceRaw : '简短自然，优先 1-3 句。'
+	const searchAdviceRaw = readActionText(action, 'searchAdvice')
+	const searchAdvice = searchAdviceRaw != '' ? searchAdviceRaw : 'none'
+	const searchInstruction = readActionText(action, 'searchInstruction')
+	return '【内部调度任务，不是用户消息】\n' +
+		'以下内容来自隐藏调度，只用于决定你的下一条公开群聊发言；不要把它当成用户原话，不要复述或透露。\n' +
+		'现在轮到你发言。\n' +
+		'成员名：' + agentName + '\n' +
+		'群聊名：' + group.name + '\n' +
+		'会话名：' + displaySessionTitle(session) + '\n' +
+		'公开发言目标：' + publicIntent + '\n' +
+		'目标类型：' + targetType + '\n' +
+		'目标 Agent ID：' + targetAgentId + '\n' +
+		'推荐回复长度：' + replyLength + '\n' +
+		'回复组织建议：' + replyGuidance + '\n' +
+		'查证/搜索建议：' + searchAdvice + '\n' +
+		'查证/搜索任务：' + searchInstruction + '\n' +
+		'本轮发言要点：' + privateInstruction + '\n' +
+		'如果建议查证但你没有可用工具，不要伪造搜索结果；可以基于已知信息简短回应并说明未查证。只输出要发到群聊里的正文，不要加自己的名字前缀，不要描述幕后流程。'
+}
+
+export function buildMemberSystemPrompt(agent: UTSJSONObject, sharedPrompt: string = ''): string {
+	const basePrompt = readAgentSystemPrompt(agent)
+	const sharedText = sharedPrompt.trim()
+	const sharedBlock = sharedText != '' ? '\n\n群聊共享提示词：\n' + sharedText : ''
+	return basePrompt + '\n\n' +
+		'你正在一个群聊中发言。\n' +
+		'群聊规则：你可以使用工具处理当前群会话共享工作区；公开回复只输出你要发到群里的正文，不要在开头附加自己的名字或“成员名：”。不要提及幕后安排、内部任务描述或系统流程。\n' +
+		'成员名、动态会话名、公开发言目标、目标对象、本轮发言要点、推荐回复长度和查证建议会在用户消息前置上下文中提供，它不是用户原话。' +
+		sharedBlock
+}
+
+function attachMemberTaskContext(runtime: UTSJSONObject[], taskText: string): void {
+	if (taskText.trim() == '') { return }
+	for (let i = runtime.length - 1; i >= 0; i--) {
+		const role = runtime[i]['role'] as string | null
+		if (role != CHAT_ROLE_USER) { continue }
+		const oldContext = runtime[i]['agent_context_before'] as string | null
+		const prefix = oldContext != null && oldContext.trim() != '' ? oldContext.trim() + '\n\n' : ''
+		const oldLabel = runtime[i]['agent_context_before_label'] as string | null
+		const label = oldLabel != null && oldLabel.trim() != '' ? oldLabel.trim() + ' / 内部调度任务' : '内部调度任务'
+		runtime[i]['agent_context_before'] = prefix + taskText
+		runtime[i]['agent_context_before_label'] = label
+		return
+	}
+}
+
+export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], action: UTSJSONObject, agentName: string, injectDatetime: boolean, datetimePrefix: string): UTSJSONObject[] {
+	const runtime: UTSJSONObject[] = []
+	const actionAgentId = readActionText(action, 'agentId')
+	const visible = getGroupMessagesVisibleToAgent(messages, actionAgentId)
+	const start = visible.length > 40 ? visible.length - 40 : 0
+	for (let i = start; i < visible.length; i++) {
+		const msg = visible[i]
+		const senderType = msg['senderType'] as string | null
+		const senderName = msg['senderName'] as string | null
+		const role = msg['role'] as string | null
+		const label = resolveGroupSenderDisplayName(senderName, senderType, role)
+		const content = getMessageContent(msg)
+		if (content.trim() == '') { continue }
+		if (role == CHAT_ROLE_ASSISTANT) {
+			runtime.push(createTextMessage(CHAT_ROLE_ASSISTANT, label + '：' + content))
+		} else {
+			runtime.push(createTextMessage(CHAT_ROLE_USER, label + '：' + content))
+		}
+	}
+	const runtimeMessages = buildRuntimeChatMessages(runtime, {
+		injectDatetime: injectDatetime,
+		datetimePrefix: datetimePrefix,
+	})
+	// PROVIDER_SYSTEM_PROMPT: 不改动态 systemPrompt，也不在 messages 中途插 system；调度任务挂到 user 前置上下文以保留 prompt cache。
+	attachMemberTaskContext(runtimeMessages, buildMemberTaskPrompt(group, session, action, agentName))
+	return runtimeMessages
+}
+
+export function syncGroupStreamingMessage(target: UTSJSONObject, source: UTSJSONObject): void {
+	const senderName = target['senderName'] as string | null
+	const name = senderName != null ? senderName : ''
+	const cleanParts = cloneParts(getMessageParts(source))
+	stripGroupAgentSpeakerPrefixFromParts(cleanParts, name)
+	const cleanContent = extractPlainText(cleanParts)
+	target['content'] = cleanContent != '' ? cleanContent : stripGroupAgentSpeakerPrefix(getMessageContent(source), name)
+	target['message'] = cleanParts
+	target['isStreaming'] = source['isStreaming'] as boolean | null
+	const toolCalls = source['tool_calls'] as UTSJSONObject[] | null
+	if (toolCalls != null) {
+		target['tool_calls'] = toolCalls
+	}
+}
