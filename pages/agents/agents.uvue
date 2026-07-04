@@ -230,109 +230,51 @@
 	 * 聊天会话列表页
 	 * 扁平化粉白主题
 	 */
-	import { getAgents, saveAgents, MINXI_BASE_STYLE } from '@/utils/agent.uts'
+	import { getAgents, saveAgents } from '@/utils/agent.uts'
 	import { getAgentDir } from '@/utils/file-manager.uts'
-	import { deleteRuntimeState, getAppSetting, getConversationsByAgent, getRuntimeState, setAppSetting, setRuntimeState } from '@/utils/database.uts'
+	import { deleteRuntimeState, getAppSetting, getRuntimeState, setAppSetting, setRuntimeState } from '@/utils/database.uts'
 	import { getAllProviders } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import {
 		type GroupChat,
 		createDefaultWritingGroupChat,
-		displaySessionTitle,
 		ensureGroupActiveSession,
-		getActiveGroupMembers,
 		getGroupChats,
 		setActiveGroupChat,
 		setActiveGroupSessionId,
 	} from '@/utils/group-chat-service.uts'
+	import {
+		AGENT_CREATE_ICONS,
+		AGENT_CREATE_TEMPLATES,
+		DEFAULT_AGENT_CREATE_ICON,
+		DEV_ONLY_FORCE_FIRST_RUN_GUIDE,
+		FIRST_RUN_GUIDE_DONE_KEY,
+		FIRST_RUN_PROVIDER_EDIT_ID_KEY,
+		FIRST_RUN_PROVIDER_EDIT_PRESET_KEY,
+		FIRST_RUN_PROVIDER_EDIT_SOURCE_KEY,
+		FIRST_RUN_PROVIDER_EDIT_SOURCE_VALUE,
+		FIRST_RUN_PROVIDER_OPTIONS,
+		buildFirstRunProviderPreset,
+		firstRunProviderOptionAt,
+		readCreateTemplateDesc,
+		readCreateTemplateIcon,
+		readCreateTemplateKey,
+		readCreateTemplateName,
+		readCreateTemplatePrompt,
+		readFirstRunProviderDesc,
+		readFirstRunProviderId,
+		readFirstRunProviderName,
+	} from '@/utils/agent-create-presets.uts'
+	import {
+		buildAgentChatList,
+		formatAgentChatTime,
+		isAgentGroupChatItem,
+		readAgentChatAvatar,
+		readAgentChatDesc,
+		readAgentChatIcon,
+		readAgentChatKey,
+		readAgentChatName,
+	} from '@/utils/agent-chat-list.uts'
 	import { setActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
-
-	/** 可用图标列表 */
-	const AVAILABLE_ICONS: string[] = [
-		'robot', 'code', 'edit', 'translate', 'bulb',
-		'star', 'heart', 'camera', 'sound', 'fire'
-	]
-	const DEFAULT_ICON = 'robot'
-	const CREATE_TEMPLATES: UTSJSONObject[] = [
-		{
-			key: 'ai-assistant',
-			icon: 'robot',
-			name: '小夜',
-			desc: '沉稳可靠，有问必答，话不多但句句到位',
-			prompt: MINXI_BASE_STYLE + '\n你的角色：你叫小夜，通用助手，冷静可靠，话少但到位。先给结论，再补必要信息。用户只是闲聊时，轻松接话；用户要办事时，效率优先，主动拆步骤、查事实、给可执行方案。别说空话，别装神秘。\n参考用语：马上、搞定、有道理、稍等、说重点、别急、嗯、可以、辛苦了、跟着走就行'
-		} as UTSJSONObject,
-		{
-			key: 'coding-helper',
-			icon: 'code',
-			name: '零',
-			desc: '毒舌代码审查官，骂完还是会帮你改',
-			prompt: MINXI_BASE_STYLE + '\n你的角色：你叫零，代码搭档和审查官。看到烂代码可以吐槽，但先定位问题，再给最小可行修复。解释技术问题用简单比喻，代码、变量名、命令保持英文。改代码前先看上下文，别乱重构；不确定库版本、接口行为或报错原因时先求证。\n参考用语：你来真的？、编译过了？、加个空安全、重构成这样、别偷懒、基本功啊、还不笨、行吧、先跑一遍、抽象一下'
-		} as UTSJSONObject,
-		{
-			key: 'writing-helper',
-			icon: 'edit',
-			name: '千夏',
-			desc: '对文字有强迫症，改完让你的句子发光',
-			prompt: MINXI_BASE_STYLE + '\n你的角色：你叫千夏，文字编辑和写作搭档。你挑剔但不卖弄，优先保留原意、语气和节奏，只把表达变干净、准确、有质感。润色先给成稿，必要时再说明改动。写长文时结构清楚，别堆形容词，别把话写油。\n参考用语：这里不通顺、换个词更好、节奏不对、精简一下、保留原意、这版可以、你再看看、有感觉了、有点啰嗦、清透了'
-		} as UTSJSONObject,
-		{
-			key: 'translate',
-			icon: 'translate',
-			name: '凛',
-			desc: '多语种无缝切换，干净利落不废话',
-			prompt: MINXI_BASE_STYLE + '\n你的角色：你叫凛，翻译和本地化搭档。准确优先，兼顾语境、语气、文化差异和术语一致性。不添油加醋，不偷工减料。用户只要翻译时直接给译文；需要对照时再给原文/译文。遇到歧义要点出来，别硬猜。\n参考用语：准确优先、原文是这个意思、这里需要意译、术语统一了、语境优先、搞定了、保持风格、你说得对、保留原味'
-		} as UTSJSONObject,
-		{
-			key: 'idea-lab',
-			icon: 'bulb',
-			name: '星',
-			desc: '脑洞清奇，话题跳脱但总能绕回来',
-			prompt: MINXI_BASE_STYLE + '\n你的角色：你叫星，灵感和方案搭档。可以脑洞大，但最后要落回可执行方案。头脑风暴时先铺选项，再标出最推荐的一条；区分"靠谱方案"和"好玩但冒险"。聊天可以跳一点，但别散，记得把线拉回来。\n参考用语：换个角度想想、这个有点意思、脑洞时间、不一定靠谱但好玩、落地方案是、先铺选项、你觉得呢、总之、有点意思吧、节奏对了'
-		} as UTSJSONObject,
-		{
-			key: 'custom',
-			icon: 'star',
-			name: '自定义',
-			desc: '从空白人设开始配置',
-			prompt: '你是一个由用户自定义的 AI 联系人。请遵循用户设定的人设、能力范围和输出习惯，用中文自然回复。'
-		} as UTSJSONObject
-	]
-	const FIRST_RUN_GUIDE_DONE_KEY = 'first_run_model_guide_done'
-	const FIRST_RUN_PROVIDER_EDIT_SOURCE_KEY = 'provider_edit_source'
-	const FIRST_RUN_PROVIDER_EDIT_SOURCE_VALUE = 'first_run_guide'
-	const FIRST_RUN_PROVIDER_EDIT_PRESET_KEY = 'provider_edit_preset'
-	const FIRST_RUN_PROVIDER_EDIT_ID_KEY = 'provider_edit_id'
-	// DEV_ONLY_FORCE_FIRST_RUN_GUIDE: 临时强制展示首启引导，验完 UI 后改回 false。
-	const DEV_ONLY_FORCE_FIRST_RUN_GUIDE = false
-	const FIRST_RUN_PROVIDER_OPTIONS: UTSJSONObject[] = [
-		{
-			id: 'deepseek',
-			name: 'DeepSeek',
-			desc: '便宜好用，不能识图',
-			baseUrl: 'https://api.deepseek.com',
-			model: 'deepseek-v4-flash',
-		} as UTSJSONObject,
-		{
-			id: 'openai',
-			name: 'OpenAI',
-			desc: '适合 GPT 系列',
-			baseUrl: 'https://api.openai.com',
-			model: 'gpt-4o-mini',
-		} as UTSJSONObject,
-		{
-			id: 'volcengine',
-			name: '豆包',
-			desc: '可以使用网络搜索插件',
-			baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-			model: 'doubao-seed-1-6-flash-250615',
-		} as UTSJSONObject,
-		{
-			id: 'custom',
-			name: '自定义',
-			desc: '兼容 OpenAI 格式',
-			baseUrl: '',
-			model: '',
-		} as UTSJSONObject,
-	]
 
 	export default {
 		data() {
@@ -347,7 +289,7 @@
 				/** 创建表单数据 */
 				createData: {
 					templateKey: 'ai-assistant',
-					icon: DEFAULT_ICON,
+					icon: DEFAULT_AGENT_CREATE_ICON,
 					name: '' as string,
 					desc: '' as string,
 					avatar: '' as string,
@@ -357,11 +299,11 @@
 		},
 		computed: {
 			iconList(): string[] {
-				return AVAILABLE_ICONS
+				return AGENT_CREATE_ICONS
 			},
 
 			templateList(): UTSJSONObject[] {
-				return CREATE_TEMPLATES
+				return AGENT_CREATE_TEMPLATES
 			},
 
 			firstRunProviderOptions(): UTSJSONObject[] {
@@ -391,28 +333,23 @@
 		},
 		methods: {
 			templateKey(tpl: UTSJSONObject): string {
-				const value = tpl['key'] as string | null
-				return value != null ? value : ''
+				return readCreateTemplateKey(tpl)
 			},
 
 			templateIcon(tpl: UTSJSONObject): string {
-				const value = tpl['icon'] as string | null
-				return value != null ? value : DEFAULT_ICON
+				return readCreateTemplateIcon(tpl)
 			},
 
 			templateName(tpl: UTSJSONObject): string {
-				const value = tpl['name'] as string | null
-				return value != null ? value : '模板'
+				return readCreateTemplateName(tpl)
 			},
 
 			templateDesc(tpl: UTSJSONObject): string {
-				const value = tpl['desc'] as string | null
-				return value != null ? value : ''
+				return readCreateTemplateDesc(tpl)
 			},
 
 			templatePrompt(tpl: UTSJSONObject): string {
-				const value = tpl['prompt'] as string | null
-				return value != null ? value : ''
+				return readCreateTemplatePrompt(tpl)
 			},
 
 			createTemplateKey(): string {
@@ -422,7 +359,7 @@
 
 			createIcon(): string {
 				const value = this.createData['icon'] as string | null
-				return value != null && value != '' ? value : DEFAULT_ICON
+				return value != null && value != '' ? value : DEFAULT_AGENT_CREATE_ICON
 			},
 
 			createAvatar(): string {
@@ -431,20 +368,15 @@
 			},
 
 			firstRunProviderName(item: UTSJSONObject): string {
-				const value = item['name'] as string | null
-				return value != null ? value : ''
+				return readFirstRunProviderName(item)
 			},
 
 			firstRunProviderDesc(item: UTSJSONObject): string {
-				const value = item['desc'] as string | null
-				return value != null ? value : ''
+				return readFirstRunProviderDesc(item)
 			},
 
 			firstRunProviderItem(index: number): UTSJSONObject {
-				if (index >= 0 && index < FIRST_RUN_PROVIDER_OPTIONS.length) {
-					return FIRST_RUN_PROVIDER_OPTIONS[index]
-				}
-				return FIRST_RUN_PROVIDER_OPTIONS[0]
+				return firstRunProviderOptionAt(index)
 			},
 
 			firstRunProviderCardClass(index: number): string {
@@ -452,10 +384,7 @@
 			},
 
 			getFirstRunProviderOption(): UTSJSONObject {
-				if (this.firstRunProviderIndex >= 0 && this.firstRunProviderIndex < FIRST_RUN_PROVIDER_OPTIONS.length) {
-					return FIRST_RUN_PROVIDER_OPTIONS[this.firstRunProviderIndex]
-				}
-				return FIRST_RUN_PROVIDER_OPTIONS[0]
+				return firstRunProviderOptionAt(this.firstRunProviderIndex)
 			},
 
 			selectFirstRunProvider(index: number): void {
@@ -506,18 +435,8 @@
 
 			openProviderEditorFromGuide(): void {
 				const option = this.getFirstRunProviderOption()
-				const rawProviderId = option['id'] as string | null
-				const rawProviderName = option['name'] as string | null
-				const providerId = rawProviderId != null ? rawProviderId : 'custom'
-				const providerName = rawProviderName != null && rawProviderName != '' ? rawProviderName : '自定义'
-				const apiBase = option['baseUrl'] as string | null
-				const model = option['model'] as string | null
-				const preset: UTSJSONObject = {
-					id: providerId,
-					name: providerName,
-					apiBase: apiBase != null ? apiBase : '',
-					model: model != null ? model : '',
-				} as UTSJSONObject
+				const providerId = readFirstRunProviderId(option)
+				const preset = buildFirstRunProviderPreset(option)
 				setRuntimeState(FIRST_RUN_PROVIDER_EDIT_SOURCE_KEY, FIRST_RUN_PROVIDER_EDIT_SOURCE_VALUE)
 				setRuntimeState(FIRST_RUN_PROVIDER_EDIT_PRESET_KEY, JSON.stringify(preset))
 				if (this.firstRunProviderExists(providerId) == true) {
@@ -571,7 +490,7 @@
 			},
 
 			resetCreateData(): void {
-				const tpl = CREATE_TEMPLATES[0]
+				const tpl = AGENT_CREATE_TEMPLATES[0]
 				this.createData = {
 					templateKey: this.templateKey(tpl),
 					icon: this.templateIcon(tpl),
@@ -602,136 +521,35 @@
 			},
 
 			rebuildChatList(): void {
-				const result: UTSJSONObject[] = []
-				for (let i = 0; i < this.agentList.length; i++) {
-					const agent = this.agentList[i]
-					const id = agent['id'] as string | null
-					if (id == null || id == '') { continue }
-					result.push({
-						type: 'agent',
-						id: id,
-						name: agent['name'] as string,
-						desc: this.getAgentStatus(agent),
-						icon: agent['icon'] as string,
-						avatar: this.getAgentAvatar(agent),
-						updatedAt: this.getAgentUpdatedAt(id),
-					} as UTSJSONObject)
-				}
-				for (let i = 0; i < this.groupList.length; i++) {
-					const group = this.groupList[i]
-					result.push({
-						type: 'group',
-						id: group.id,
-						name: group.name,
-						desc: this.getGroupSummary(group),
-						icon: 'robot',
-						avatar: '',
-						updatedAt: group.updatedAt,
-					} as UTSJSONObject)
-				}
-				result.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
-					const at = a['updatedAt'] as number | null
-					const bt = b['updatedAt'] as number | null
-					const av = at != null ? at : 0
-					const bv = bt != null ? bt : 0
-					if (av == bv) { return 0 }
-					return av > bv ? -1 : 1
-				})
-				this.chatList = result
-			},
-
-			/** 安全获取私聊头像路径 */
-			getAgentAvatar(agent: UTSJSONObject): string {
-				const avatar = agent['avatar']
-				if (avatar != null) {
-					return avatar as string
-				}
-				return ''
-			},
-
-			/** 获取私聊状态描述（优先显示最新对话预览） */
-			getAgentStatus(agent: UTSJSONObject): string {
-				const id = agent['id'] as string
-				if (id == null || id == '') { return agent['desc'] as string }
-				try {
-					const convs = getConversationsByAgent(id)
-					if (convs != null && convs.length > 0) {
-						const latest = convs[0]
-						const preview = latest['preview'] as string
-						if (preview != null && preview != '') {
-							return preview
-						}
-					}
-				} catch (_e: any) {
-					// 忽略错误，回退到静态描述
-				}
-				return agent['desc'] as string
-			},
-
-			getAgentUpdatedAt(agentId: string): number {
-				try {
-					const convs = getConversationsByAgent(agentId)
-					if (convs != null && convs.length > 0) {
-						const latest = convs[0]
-						const rawTime = latest['updated_at'] as number | null
-						if (rawTime != null && rawTime > 0) {
-							return rawTime
-						}
-					}
-				} catch (_e: any) {
-				}
-				return 0
-			},
-
-			getGroupSummary(group: GroupChat): string {
-				const members = getActiveGroupMembers(group.id)
-				const session = ensureGroupActiveSession(group)
-				return members.length.toString() + ' 个成员 · 当前会话：' + displaySessionTitle(session)
+				this.chatList = buildAgentChatList(this.agentList, this.groupList)
 			},
 
 			getChatKey(item: UTSJSONObject): string {
-				const type = item['type'] as string | null
-				const id = item['id'] as string | null
-				return (type != null ? type : 'chat') + '-' + (id != null ? id : '')
+				return readAgentChatKey(item)
 			},
 
 			isGroupItem(item: UTSJSONObject): boolean {
-				const type = item['type'] as string | null
-				return type == 'group'
+				return isAgentGroupChatItem(item)
 			},
 
 			getChatName(item: UTSJSONObject): string {
-				const name = item['name'] as string | null
-				return name != null && name != '' ? name : '未命名会话'
+				return readAgentChatName(item)
 			},
 
 			getChatDesc(item: UTSJSONObject): string {
-				const desc = item['desc'] as string | null
-				return desc != null && desc != '' ? desc : '点进去开始聊天'
+				return readAgentChatDesc(item)
 			},
 
 			getChatAvatar(item: UTSJSONObject): string {
-				const avatar = item['avatar'] as string | null
-				return avatar != null ? avatar : ''
+				return readAgentChatAvatar(item)
 			},
 
 			getChatIcon(item: UTSJSONObject): string {
-				const type = item['type'] as string | null
-				if (type == 'group') { return 'robot' }
-				const icon = item['icon'] as string | null
-				return icon != null && icon != '' ? icon : 'robot'
+				return readAgentChatIcon(item)
 			},
 
 			formatChatTime(item: UTSJSONObject): string {
-				const raw = item['updatedAt'] as number | null
-				const timestamp = raw != null ? raw : 0
-				if (timestamp <= 0) { return '' }
-				const d = new Date(timestamp)
-				const month = (d.getMonth() + 1).toString()
-				const day = d.getDate().toString()
-				const hour = d.getHours() < 10 ? '0' + d.getHours().toString() : d.getHours().toString()
-				const minute = d.getMinutes() < 10 ? '0' + d.getMinutes().toString() : d.getMinutes().toString()
-				return month + '/' + day + ' ' + hour + ':' + minute
+				return formatAgentChatTime(item)
 			},
 
 			openAgent(agent: UTSJSONObject) {
@@ -816,14 +634,14 @@
 
 			resetPromptByTemplate(): void {
 				const key = this.createTemplateKey()
-				for (let i = 0; i < CREATE_TEMPLATES.length; i++) {
-					const tpl = CREATE_TEMPLATES[i]
+				for (let i = 0; i < AGENT_CREATE_TEMPLATES.length; i++) {
+					const tpl = AGENT_CREATE_TEMPLATES[i]
 					if (this.templateKey(tpl) == key) {
 						this.createData['systemPrompt'] = this.templatePrompt(tpl)
 						return
 					}
 				}
-				this.createData['systemPrompt'] = this.templatePrompt(CREATE_TEMPLATES[0])
+				this.createData['systemPrompt'] = this.templatePrompt(AGENT_CREATE_TEMPLATES[0])
 			},
 
 			clearCreateAvatar(): void {
@@ -865,7 +683,7 @@
 				const desc = (rawDesc != null ? rawDesc : '').trim()
 				const systemPrompt = (rawPrompt != null ? rawPrompt : '').trim()
 				if (name == '') {
-					uni.showToast({ position: 'bottom', 
+					uni.showToast({ position: 'bottom',
 						title: '请输入名称',
 						icon: 'none'
 					})
@@ -876,10 +694,10 @@
 				const id = 'custom-' + Date.now() + '-' + Math.floor(Math.random() * 1000)
 				const rawIcon = this.createData['icon'] as string | null
 				const rawAvatar = this.createData['avatar'] as string | null
-				const icon = rawIcon != null ? rawIcon : 'robot'
+				const icon = rawIcon != null ? rawIcon : DEFAULT_AGENT_CREATE_ICON
 				const avatar = rawAvatar != null ? rawAvatar : ''
 				const finalDesc = desc != '' ? desc : '自定义联系人'
-				const finalPrompt = systemPrompt != '' ? systemPrompt : this.templatePrompt(CREATE_TEMPLATES[0])
+				const finalPrompt = systemPrompt != '' ? systemPrompt : this.templatePrompt(AGENT_CREATE_TEMPLATES[0])
 
 				// 默认模型从 SQLite app_settings 读取，缺省时回退内置模型。
 				const defaultModel = getAppSetting('settings_model')
@@ -914,7 +732,7 @@
 				// 刷新列表
 				this.loadChats()
 
-				uni.showToast({ position: 'bottom', 
+				uni.showToast({ position: 'bottom',
 					title: '创建成功',
 					icon: 'success'
 				})

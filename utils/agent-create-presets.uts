@@ -1,0 +1,158 @@
+/**
+ * Agent 创建模板与首启模型引导预设。
+ *
+ * 页面只负责展示和交互，这里集中维护默认人设、图标和 provider 预设。
+ */
+
+import { MINXI_BASE_STYLE } from '@/utils/agent.uts'
+
+/** 可用图标列表 */
+export const AGENT_CREATE_ICONS: string[] = [
+	'robot', 'code', 'edit', 'translate', 'bulb',
+	'star', 'heart', 'camera', 'sound', 'fire'
+]
+export const DEFAULT_AGENT_CREATE_ICON = 'robot'
+export const AGENT_CREATE_TEMPLATES: UTSJSONObject[] = [
+	{
+		key: 'ai-assistant',
+		icon: 'robot',
+		name: '小夜',
+		desc: '沉稳可靠，有问必答，话不多但句句到位',
+		prompt: MINXI_BASE_STYLE + '\n你的角色：你叫小夜，通用助手，冷静可靠，话少但到位。先给结论，再补必要信息。用户只是闲聊时，轻松接话；用户要办事时，效率优先，主动拆步骤、查事实、给可执行方案。别说空话，别装神秘。\n参考用语：马上、搞定、有道理、稍等、说重点、别急、嗯、可以、辛苦了、跟着走就行'
+	} as UTSJSONObject,
+	{
+		key: 'coding-helper',
+		icon: 'code',
+		name: '零',
+		desc: '毒舌代码审查官，骂完还是会帮你改',
+		prompt: MINXI_BASE_STYLE + '\n你的角色：你叫零，代码搭档和审查官。看到烂代码可以吐槽，但先定位问题，再给最小可行修复。解释技术问题用简单比喻，代码、变量名、命令保持英文。改代码前先看上下文，别乱重构；不确定库版本、接口行为或报错原因时先求证。\n参考用语：你来真的？、编译过了？、加个空安全、重构成这样、别偷懒、基本功啊、还不笨、行吧、先跑一遍、抽象一下'
+	} as UTSJSONObject,
+	{
+		key: 'writing-helper',
+		icon: 'edit',
+		name: '千夏',
+		desc: '对文字有强迫症，改完让你的句子发光',
+		prompt: MINXI_BASE_STYLE + '\n你的角色：你叫千夏，文字编辑和写作搭档。你挑剔但不卖弄，优先保留原意、语气和节奏，只把表达变干净、准确、有质感。润色先给成稿，必要时再说明改动。写长文时结构清楚，别堆形容词，别把话写油。\n参考用语：这里不通顺、换个词更好、节奏不对、精简一下、保留原意、这版可以、你再看看、有感觉了、有点啰嗦、清透了'
+	} as UTSJSONObject,
+	{
+		key: 'translate',
+		icon: 'translate',
+		name: '凛',
+		desc: '多语种无缝切换，干净利落不废话',
+		prompt: MINXI_BASE_STYLE + '\n你的角色：你叫凛，翻译和本地化搭档。准确优先，兼顾语境、语气、文化差异和术语一致性。不添油加醋，不偷工减料。用户只要翻译时直接给译文；需要对照时再给原文/译文。遇到歧义要点出来，别硬猜。\n参考用语：准确优先、原文是这个意思、这里需要意译、术语统一了、语境优先、搞定了、保持风格、你说得对、保留原味'
+	} as UTSJSONObject,
+	{
+		key: 'idea-lab',
+		icon: 'bulb',
+		name: '星',
+		desc: '脑洞清奇，话题跳脱但总能绕回来',
+		prompt: MINXI_BASE_STYLE + '\n你的角色：你叫星，灵感和方案搭档。可以脑洞大，但最后要落回可执行方案。头脑风暴时先铺选项，再标出最推荐的一条；区分"靠谱方案"和"好玩但冒险"。聊天可以跳一点，但别散，记得把线拉回来。\n参考用语：换个角度想想、这个有点意思、脑洞时间、不一定靠谱但好玩、落地方案是、先铺选项、你觉得呢、总之、有点意思吧、节奏对了'
+	} as UTSJSONObject,
+	{
+		key: 'custom',
+		icon: 'star',
+		name: '自定义',
+		desc: '从空白人设开始配置',
+		prompt: '你是一个由用户自定义的 AI 联系人。请遵循用户设定的人设、能力范围和输出习惯，用中文自然回复。'
+	} as UTSJSONObject
+]
+export const FIRST_RUN_GUIDE_DONE_KEY = 'first_run_model_guide_done'
+export const FIRST_RUN_PROVIDER_EDIT_SOURCE_KEY = 'provider_edit_source'
+export const FIRST_RUN_PROVIDER_EDIT_SOURCE_VALUE = 'first_run_guide'
+export const FIRST_RUN_PROVIDER_EDIT_PRESET_KEY = 'provider_edit_preset'
+export const FIRST_RUN_PROVIDER_EDIT_ID_KEY = 'provider_edit_id'
+// DEV_ONLY_FORCE_FIRST_RUN_GUIDE: 临时强制展示首启引导，验完 UI 后改回 false。
+export const DEV_ONLY_FORCE_FIRST_RUN_GUIDE = false
+export const FIRST_RUN_PROVIDER_OPTIONS: UTSJSONObject[] = [
+	{
+		id: 'deepseek',
+		name: 'DeepSeek',
+		desc: '便宜好用，不能识图',
+		baseUrl: 'https://api.deepseek.com',
+		model: 'deepseek-v4-flash',
+	} as UTSJSONObject,
+	{
+		id: 'openai',
+		name: 'OpenAI',
+		desc: '适合 GPT 系列',
+		baseUrl: 'https://api.openai.com',
+		model: 'gpt-4o-mini',
+	} as UTSJSONObject,
+	{
+		id: 'volcengine',
+		name: '豆包',
+		desc: '可以使用网络搜索插件',
+		baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+		model: 'doubao-seed-1-6-flash-250615',
+	} as UTSJSONObject,
+	{
+		id: 'custom',
+		name: '自定义',
+		desc: '兼容 OpenAI 格式',
+		baseUrl: '',
+		model: '',
+	} as UTSJSONObject,
+]
+
+export function readCreateTemplateKey(tpl: UTSJSONObject): string {
+	const value = tpl['key'] as string | null
+	return value != null ? value : ''
+}
+
+export function readCreateTemplateIcon(tpl: UTSJSONObject): string {
+	const value = tpl['icon'] as string | null
+	return value != null ? value : DEFAULT_AGENT_CREATE_ICON
+}
+
+export function readCreateTemplateName(tpl: UTSJSONObject): string {
+	const value = tpl['name'] as string | null
+	return value != null ? value : '模板'
+}
+
+export function readCreateTemplateDesc(tpl: UTSJSONObject): string {
+	const value = tpl['desc'] as string | null
+	return value != null ? value : ''
+}
+
+export function readCreateTemplatePrompt(tpl: UTSJSONObject): string {
+	const value = tpl['prompt'] as string | null
+	return value != null ? value : ''
+}
+
+export function readFirstRunProviderName(item: UTSJSONObject): string {
+	const value = item['name'] as string | null
+	return value != null ? value : ''
+}
+
+export function readFirstRunProviderDesc(item: UTSJSONObject): string {
+	const value = item['desc'] as string | null
+	return value != null ? value : ''
+}
+
+export function readFirstRunProviderId(item: UTSJSONObject): string {
+	const value = item['id'] as string | null
+	return value != null ? value : 'custom'
+}
+
+export function readFirstRunProviderDisplayName(item: UTSJSONObject): string {
+	const value = item['name'] as string | null
+	return value != null && value != '' ? value : '自定义'
+}
+
+export function firstRunProviderOptionAt(index: number): UTSJSONObject {
+	if (index >= 0 && index < FIRST_RUN_PROVIDER_OPTIONS.length) {
+		return FIRST_RUN_PROVIDER_OPTIONS[index]
+	}
+	return FIRST_RUN_PROVIDER_OPTIONS[0]
+}
+
+export function buildFirstRunProviderPreset(option: UTSJSONObject): UTSJSONObject {
+	const apiBase = option['baseUrl'] as string | null
+	const model = option['model'] as string | null
+	return {
+		id: readFirstRunProviderId(option),
+		name: readFirstRunProviderDisplayName(option),
+		apiBase: apiBase != null ? apiBase : '',
+		model: model != null ? model : '',
+	} as UTSJSONObject
+}
