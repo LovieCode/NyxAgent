@@ -190,8 +190,8 @@ function writeArrayBufferToFile(path: string, data: ArrayBuffer): boolean {
 	clearSpeechWriteError()
 	try {
 		const fm = uni.getFileSystemManager()
-		// ArrayBuffer 直接写入；encoding 只给 string 用，传 binary 会触发文件系统类型错误。
-		fm.writeFileSync(path, data)
+		// UTS 签名要求 encoding 必填；ArrayBuffer 会按二进制写入，不能传非法 binary。
+		fm.writeFileSync(path, data, 'utf-8')
 		return true
 	} catch (e: any) {
 		setSpeechWriteError('写入音频失败', e)
