@@ -295,11 +295,21 @@
 	 * 私聊设置页面 - 编辑昵称/备注/头像/删除私聊
 	 */
 	import { getAgentById, updateAgent, deleteAgent, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentTTSSettings, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, NYX_ADMIN_AGENT_ID } from '@/utils/agent.uts'
-	import { getAllProviders, getProviderModels, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { getAllProviders, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { deleteRuntimeState, getAppSetting, getRuntimeState, setRuntimeState, updateSystemPromptForAgent } from '@/utils/database.uts'
-	import { getGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
+	import { getGlobalGenerationSettings } from '@/utils/generation-settings.uts'
 	import { clearActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
 	import { getSkills, getAgentSkillIds, filterExistingSkillIds, skillIdListContains, readSkillId, readSkillName, readSkillDescription, readSkillEnabled, getSkillDocumentCount } from '@/utils/skills.uts'
+	import {
+		buildAgentCurrentModelLabel,
+		buildAgentGenerationHint,
+		buildAgentSettingsToolRows,
+		buildEnabledAgentProviders,
+		parseAgentFloatSetting,
+		parseAgentIntSetting,
+		readAgentProviderModels,
+		resolveAgentModelSelection,
+	} from '@/utils/agent-settings-models.uts'
 	import {
 		buildAgentSettingsToolOptions,
 		getAgentSettingsToolCardClass,
@@ -359,67 +369,18 @@
 		computed: {
 			/** 已启用的提供商列表 */
 			enabledProviders(): UTSJSONObject[] {
-				const list: UTSJSONObject[] = []
-				for (let i = 0; i < this.allProviders.length; i++) {
-					if ((this.allProviders[i]['enabled'] as number) == 1) {
-						list.push(this.allProviders[i])
-					}
-				}
-				return list
+				return buildEnabledAgentProviders(this.allProviders)
 			},
 			/** 当前选中提供商的模型列表 */
 			providerModels(): ModelInfo[] {
-				if (this.selectedProviderId == '') return []
-				return getProviderModels(this.selectedProviderId)
+				return readAgentProviderModels(this.selectedProviderId)
 			},
 			toolRows(): UTSJSONObject[][] {
-				const rows: UTSJSONObject[][] = []
-				let current: UTSJSONObject[] = []
-				for (let i = 0; i < this.availableTools.length; i++) {
-					current.push(this.availableTools[i])
-					if (current.length == 2) {
-						rows.push(current)
-						current = []
-					}
-				}
-				if (current.length > 0) {
-					rows.push(current)
-				}
-				return rows
+				return buildAgentSettingsToolRows(this.availableTools, 2)
 			},
 			/** 显示文本：提供商 / 模型（向后兼容纯模型名） */
 			currentModelLabel(): string {
-				const sep = '||'
-				const idx = this.currentModel.indexOf(sep)
-				if (idx >= 0) {
-					const providerId = this.currentModel.substring(0, idx)
-					const modelId = this.currentModel.substring(idx + sep.length)
-					for (let i = 0; i < this.allProviders.length; i++) {
-						if ((this.allProviders[i]['id'] as string) == providerId) {
-							return (this.allProviders[i]['name'] as string) + ' / ' + modelId
-						}
-					}
-					if (providerId == '') {
-						return '（默认提供商） / ' + modelId
-					}
-					return providerId + ' / ' + modelId
-				}
-				// 旧格式：纯模型名 → 在所有启用的提供商中查找匹配
-				if (this.currentModel != '') {
-					for (let i = 0; i < this.allProviders.length; i++) {
-						if ((this.allProviders[i]['enabled'] as number) == 1) {
-							const providerId = this.allProviders[i]['id'] as string
-							const models = getProviderModels(providerId)
-							for (let j = 0; j < models.length; j++) {
-								if (models[j].id == this.currentModel) {
-									return (this.allProviders[i]['name'] as string) + ' / ' + this.currentModel
-								}
-							}
-						}
-					}
-					return this.currentModel + '（未关联提供商）'
-				}
-				return '未选择模型'
+				return buildAgentCurrentModelLabel(this.currentModel, this.allProviders)
 			},
 			canDeleteAgent(): boolean {
 				return this.agentId != NYX_ADMIN_AGENT_ID
@@ -514,36 +475,9 @@
 				this.initModelSelection()
 			},
 
-			clampNumber(value: number, min: number, max: number): number {
-				if (value < min) return min
-				if (value > max) return max
-				return value
-			},
-
-			parseFloatSetting(value: string, fallback: number, min: number, max: number): number {
-				const parsed = parseFloat(value)
-				if (isNaN(parsed)) {
-					return fallback
-				}
-				return this.clampNumber(parsed, min, max)
-			},
-
-			parseIntSetting(value: string, fallback: number, min: number, max: number): number {
-				const parsed = parseInt(value)
-				if (isNaN(parsed)) {
-					return fallback
-				}
-				return this.clampNumber(parsed, min, max)
-			},
-
-			buildGenerationHint(settings: GenerationSettings): string {
-				const iterationText = settings.maxIterations == 0 ? '不限制' : (settings.maxIterations + '')
-				return '温度 ' + settings.temperature + ' · 输出 ' + settings.maxTokens + ' · 迭代 ' + iterationText + ' · ' + (settings.streamEnabled ? '流式' : '非流式')
-			},
-
 			loadGenerationSettings(agent: UTSJSONObject) {
 				const global = getGlobalGenerationSettings()
-				this.globalGenerationHint = this.buildGenerationHint(global)
+				this.globalGenerationHint = buildAgentGenerationHint(global)
 				const rawTemperature = agent['temperature'] as number | null
 				const rawMaxTokens = agent['maxTokens'] as number | null
 				const rawMaxIterations = agent['maxIterations'] as number | null
@@ -572,19 +506,9 @@
 
 			/** 从 currentModel 解析出选中的提供商和模型 */
 			initModelSelection() {
-				const sep = '||'
-				const idx = this.currentModel.indexOf(sep)
-				if (idx >= 0) {
-					this.selectedProviderId = this.currentModel.substring(0, idx)
-					this.selectedModelId = this.currentModel.substring(idx + sep.length)
-				} else {
-					this.selectedModelId = this.currentModel
-					// 尝试从已启用的提供商中找匹配
-					const enabled = this.enabledProviders
-					if (enabled.length > 0) {
-						this.selectedProviderId = enabled[0]['id'] as string
-					}
-				}
+				const selection = resolveAgentModelSelection(this.currentModel, this.enabledProviders)
+				this.selectedProviderId = selection.providerId
+				this.selectedModelId = selection.modelId
 			},
 
 			toggleModelPanel() {
@@ -779,9 +703,9 @@
 				let maxIterations: number | null = null
 				let streamEnabled: boolean | null = null
 				if (this.useGlobalGeneration == false) {
-					const parsedTemperature = this.parseFloatSetting(this.temperatureStr, globalGeneration.temperature, 0, 2)
-					const parsedMaxTokens = this.parseIntSetting(this.maxTokensStr, globalGeneration.maxTokens, 256, 65536)
-					const parsedMaxIterations = this.parseIntSetting(this.maxIterationsStr, globalGeneration.maxIterations, 0, 100)
+					const parsedTemperature = parseAgentFloatSetting(this.temperatureStr, globalGeneration.temperature, 0, 2)
+					const parsedMaxTokens = parseAgentIntSetting(this.maxTokensStr, globalGeneration.maxTokens, 256, 65536)
+					const parsedMaxIterations = parseAgentIntSetting(this.maxIterationsStr, globalGeneration.maxIterations, 0, 100)
 					temperature = parsedTemperature
 					maxTokens = parsedMaxTokens
 					maxIterations = parsedMaxIterations

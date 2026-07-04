@@ -1,0 +1,137 @@
+/**
+ * 私聊设置页模型与生成参数辅助。
+ *
+ * 页面只处理交互；模型标签、面板选择和参数格式化放这里，别把 uvue 写成配置计算器。
+ */
+
+import { getProviderModels, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
+import { type GenerationSettings } from '@/utils/generation-settings.uts'
+
+export type AgentSettingsModelSelection = {
+	providerId: string
+	modelId: string
+}
+
+export function buildEnabledAgentProviders(providers: UTSJSONObject[]): UTSJSONObject[] {
+	const list: UTSJSONObject[] = []
+	for (let i = 0; i < providers.length; i++) {
+		const enabled = providers[i]['enabled'] as number | null
+		if (enabled == 1) {
+			list.push(providers[i])
+		}
+	}
+	return list
+}
+
+export function buildAgentSettingsToolRows(tools: UTSJSONObject[], columns: number): UTSJSONObject[][] {
+	const rows: UTSJSONObject[][] = []
+	const safeColumns = columns > 0 ? columns : 2
+	let current: UTSJSONObject[] = []
+	for (let i = 0; i < tools.length; i++) {
+		current.push(tools[i])
+		if (current.length == safeColumns) {
+			rows.push(current)
+			current = []
+		}
+	}
+	if (current.length > 0) {
+		rows.push(current)
+	}
+	return rows
+}
+
+function readProviderId(provider: UTSJSONObject): string {
+	const raw = provider['id'] as string | null
+	return raw != null ? raw : ''
+}
+
+function readProviderName(provider: UTSJSONObject): string {
+	const raw = provider['name'] as string | null
+	return raw != null ? raw : ''
+}
+
+export function buildAgentCurrentModelLabel(currentModel: string, providers: UTSJSONObject[]): string {
+	const sep = '||'
+	const idx = currentModel.indexOf(sep)
+	if (idx >= 0) {
+		const providerId = currentModel.substring(0, idx)
+		const modelId = currentModel.substring(idx + sep.length)
+		for (let i = 0; i < providers.length; i++) {
+			if (readProviderId(providers[i]) == providerId) {
+				return readProviderName(providers[i]) + ' / ' + modelId
+			}
+		}
+		if (providerId == '') {
+			return '（默认提供商） / ' + modelId
+		}
+		return providerId + ' / ' + modelId
+	}
+	if (currentModel != '') {
+		for (let i = 0; i < providers.length; i++) {
+			const enabled = providers[i]['enabled'] as number | null
+			if (enabled == 1) {
+				const providerId = readProviderId(providers[i])
+				const models = getProviderModels(providerId)
+				for (let j = 0; j < models.length; j++) {
+					if (models[j].id == currentModel) {
+						return readProviderName(providers[i]) + ' / ' + currentModel
+					}
+				}
+			}
+		}
+		return currentModel + '（未关联提供商）'
+	}
+	return '未选择模型'
+}
+
+export function resolveAgentModelSelection(currentModel: string, enabledProviders: UTSJSONObject[]): AgentSettingsModelSelection {
+	const sep = '||'
+	const idx = currentModel.indexOf(sep)
+	if (idx >= 0) {
+		return {
+			providerId: currentModel.substring(0, idx),
+			modelId: currentModel.substring(idx + sep.length),
+		} as AgentSettingsModelSelection
+	}
+	let providerId = ''
+	if (enabledProviders.length > 0) {
+		providerId = readProviderId(enabledProviders[0])
+	}
+	return {
+		providerId: providerId,
+		modelId: currentModel,
+	} as AgentSettingsModelSelection
+}
+
+export function readAgentProviderModels(providerId: string): ModelInfo[] {
+	if (providerId == '') { return [] }
+	return getProviderModels(providerId)
+}
+
+export function clampAgentSettingNumber(value: number, min: number, max: number): number {
+	if (value < min) { return min }
+	if (value > max) { return max }
+	return value
+}
+
+export function parseAgentFloatSetting(value: string, fallback: number, min: number, max: number): number {
+	const parsed = parseFloat(value)
+	if (isNaN(parsed)) {
+		return fallback
+	}
+	return clampAgentSettingNumber(parsed, min, max)
+}
+
+export function parseAgentIntSetting(value: string, fallback: number, min: number, max: number): number {
+	const parsed = parseInt(value)
+	if (isNaN(parsed)) {
+		return fallback
+	}
+	return clampAgentSettingNumber(parsed, min, max)
+}
+
+export function buildAgentGenerationHint(settings: GenerationSettings): string {
+	const iterationText = settings.maxIterations == 0 ? '不限制' : (settings.maxIterations + '')
+	const streamText = settings.streamEnabled == true ? '流式' : '非流式'
+	return '温度 ' + settings.temperature + ' · 输出 ' + settings.maxTokens + ' · 迭代 ' + iterationText + ' · ' + streamText
+}
