@@ -202,6 +202,11 @@ function applyAgentDefaultFlagsInMemory(agents: UTSJSONObject[]): UTSJSONObject[
 	return agents
 }
 
+/** 保存智能体列表 */
+export function saveAgents(agents: UTSJSONObject[]): void {
+	setAppSetting('agent_list', JSON.stringify(agents))
+}
+
 /** 获取所有智能体 */
 export function getAgents(): UTSJSONObject[] {
 	const stored = getAppSetting('agent_list')
@@ -220,11 +225,6 @@ export function getAgents(): UTSJSONObject[] {
 		}
 	}
 	return defaultAgents
-}
-
-/** 保存智能体列表 */
-export function saveAgents(agents: UTSJSONObject[]): void {
-	setAppSetting('agent_list', JSON.stringify(agents))
 }
 
 export function ensureNyxAdminAgent(): void {
