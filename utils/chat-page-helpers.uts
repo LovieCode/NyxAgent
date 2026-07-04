@@ -65,3 +65,45 @@ export function buildChatLocationContent(location: UTSJSONObject): string {
 	const lng = rawLng != null ? rawLng : 0
 	return '📍 ' + name + (addr != '' ? ' - ' + addr : '') + ' (' + lat + ', ' + lng + ')'
 }
+
+export function hasConfiguredChatDefaultTaskModel(config: UTSJSONObject | null): boolean {
+	if (config == null) { return false }
+	const providerIdRaw = config['providerId'] as string | null
+	const modelRaw = config['model'] as string | null
+	const providerId = providerIdRaw != null ? providerIdRaw : ''
+	const model = modelRaw != null ? modelRaw : ''
+	return providerId != '' && model != ''
+}
+
+export function calcChatInputHeight(lineCount: number): number {
+	if (lineCount <= 1) {
+		return 36
+	}
+	return Math.min(lineCount * 22 + 12, 200)
+}
+
+export function readChatMessageContentForEdit(msg: UTSJSONObject): string {
+	const rawContent = msg['content'] as string | null
+	return rawContent != null ? rawContent : ''
+}
+
+export function isChatAssistantMessage(msg: UTSJSONObject): boolean {
+	return readChatMessageRole(msg) == CHAT_ROLE_ASSISTANT
+}
+
+export function readChatSpeechAudioPath(msg: UTSJSONObject): string {
+	const existing = msg['ttsAudioPath'] as string | null
+	return existing != null ? existing : ''
+}
+
+export function clearChatSpeechAudioPath(msg: UTSJSONObject): void {
+	msg['ttsAudioPath'] = ''
+}
+
+export function stringifyChatContextPreview(preview: UTSJSONObject): string {
+	try {
+		return JSON.stringify(preview, null, 2)
+	} catch (_e: any) {
+		return JSON.stringify(preview)
+	}
+}

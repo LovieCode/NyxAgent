@@ -162,11 +162,18 @@
 	import {
 		buildChatLocationContent,
 		buildChatMessageActionItems,
+		calcChatInputHeight,
+		clearChatSpeechAudioPath,
 		findLastChatAssistantMessage,
 		getChatMessagePartsForView,
 		hasChatMessageRef,
+		hasConfiguredChatDefaultTaskModel,
+		isChatAssistantMessage,
 		isChatAssistantRole,
+		readChatMessageContentForEdit,
 		readChatMessageRole,
+		readChatSpeechAudioPath,
+		stringifyChatContextPreview,
 	} from '@/utils/chat-page-helpers.uts'
 	import {
 		appendBufferedChatAgentEvent,
@@ -335,13 +342,7 @@
 			/** 加载当前智能体信息 */
 			/** 加载用户昵称 */
 			hasValidDefaultTaskModel(type: string): boolean {
-				const config = getDefaultTaskModel(type)
-				if (config == null) { return false }
-				const providerIdRaw = config['providerId'] as string | null
-				const modelRaw = config['model'] as string | null
-				const providerId = providerIdRaw != null ? providerIdRaw : ''
-				const model = modelRaw != null ? modelRaw : ''
-				return providerId != '' && model != ''
+				return hasConfiguredChatDefaultTaskModel(getDefaultTaskModel(type))
 			},
 
 			getMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] {
@@ -402,12 +403,7 @@
 
 			/** 根据行数 JS 动态调整输入框高度 */
 			onInputLineChange(e: UniTextareaLineChangeEvent) {
-				const lineCount = e.detail.lineCount
-				if (lineCount <= 1) {
-					this.inputHeight = 36
-				} else {
-					this.inputHeight = Math.min(lineCount * 22 + 12, 200)
-				}
+				this.inputHeight = calcChatInputHeight(e.detail.lineCount)
 			},
 
 			/** 滚动时通知所有 ChatBubble 取消长按 */
@@ -492,8 +488,7 @@
 			editMessage(index: number) {
 				const msg = this.messages[index]
 				if (msg == null) { return }
-				const rawContent = msg['content']
-				this.editBuffer = rawContent != null ? (rawContent as string) : ''
+				this.editBuffer = readChatMessageContentForEdit(msg)
 				this.editingIndex = index
 			},
 
@@ -975,15 +970,14 @@
 				if (index < 0 || index >= this.messages.length) { return }
 				const msg = this.messages[index]
 				if (msg == null) { return }
-				const role = msg['role'] as string | null
-				if (role != 'assistant') { return }
-				const existing = msg['ttsAudioPath'] as string | null
-				if (existing != null && existing != '') {
+				if (isChatAssistantMessage(msg) == false) { return }
+				const existing = readChatSpeechAudioPath(msg)
+				if (existing != '') {
 					if (this.isPlayableSpeechCache(existing) == true) {
 						this.playSpeechPath(existing)
 						return
 					}
-					msg['ttsAudioPath'] = ''
+					clearChatSpeechAudioPath(msg)
 					this.savedFlag = false
 					this.saveCurrentConversation()
 				}
@@ -995,13 +989,13 @@
 				if (this.hasValidDefaultTaskModel('tts') == false) { return }
 				const msg = this.findLastAssistantMessage()
 				if (msg == null) { return }
-				const existing = msg['ttsAudioPath'] as string | null
-				if (existing != null && existing != '') {
+				const existing = readChatSpeechAudioPath(msg)
+				if (existing != '') {
 					if (this.isPlayableSpeechCache(existing) == true) {
 						this.playSpeechPath(existing)
 						return
 					}
-					msg['ttsAudioPath'] = ''
+					clearChatSpeechAudioPath(msg)
 					this.savedFlag = false
 					this.saveCurrentConversation()
 				}
@@ -1105,13 +1099,7 @@
 					uni.showToast({ position: 'bottom', title: '还没有真实请求快照', icon: 'none' })
 					return
 				}
-				let previewText = ''
-				try {
-					previewText = JSON.stringify(preview, null, 2)
-				} catch (_e: any) {
-					previewText = JSON.stringify(preview)
-				}
-				setContextPreviewPayload(previewText)
+				setContextPreviewPayload(stringifyChatContextPreview(preview))
 				uni.navigateTo({
 					url: '/pages/context-preview/context-preview'
 				})
