@@ -117,6 +117,14 @@ export function createImagePart(imagePath: string): UTSJSONObject {
 	} as UTSJSONObject
 }
 
+export function getMessageParts(message: UTSJSONObject): UTSJSONObject[] {
+	const parts = message['message'] as UTSJSONObject[] | null
+	if (parts != null) {
+		return parts
+	}
+	return [] as UTSJSONObject[]
+}
+
 export function setImageMessageCaption(message: UTSJSONObject, caption: string): void {
 	const parts = getMessageParts(message)
 	for (let i = 0; i < parts.length; i++) {
@@ -179,14 +187,6 @@ export function extractPlainText(parts: UTSJSONObject[]): string {
 		}
 	}
 	return text
-}
-
-export function getMessageParts(message: UTSJSONObject): UTSJSONObject[] {
-	const parts = message['message'] as UTSJSONObject[] | null
-	if (parts != null) {
-		return parts
-	}
-	return [] as UTSJSONObject[]
 }
 
 export function createChatMessage(role: string, parts: UTSJSONObject[], timestamp: number): UTSJSONObject {
