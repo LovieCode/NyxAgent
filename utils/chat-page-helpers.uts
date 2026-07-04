@@ -1,0 +1,67 @@
+/**
+ * Chat 页面展示/交互纯辅助。
+ *
+ * 参考 AstrBot message 分层：页面负责生命周期和平台 API，消息读取、定位和动作菜单决策放这里。
+ */
+
+import { CHAT_ROLE_ASSISTANT, CHAT_ROLE_USER, getMessageParts } from '@/utils/chat-models.uts'
+
+export function getChatMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] {
+	return getMessageParts(msg)
+}
+
+export function readChatMessageRole(msg: UTSJSONObject): string {
+	const raw = msg['role'] as string | null
+	return raw != null ? raw : ''
+}
+
+export function isChatAssistantRole(role: string): boolean {
+	return role == CHAT_ROLE_ASSISTANT
+}
+
+export function findLastChatAssistantMessage(messages: UTSJSONObject[]): UTSJSONObject | null {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		if (readChatMessageRole(messages[i]) == CHAT_ROLE_ASSISTANT) {
+			return messages[i]
+		}
+	}
+	return null
+}
+
+export function hasChatMessageRef(messages: UTSJSONObject[], target: UTSJSONObject): boolean {
+	for (let i = 0; i < messages.length; i++) {
+		if (messages[i] == target) {
+			return true
+		}
+	}
+	return false
+}
+
+export function buildChatMessageActionItems(role: string, assistantContent: string, ttsEnabled: boolean): string[] {
+	const actions: string[] = []
+	if (role == CHAT_ROLE_USER || role == CHAT_ROLE_ASSISTANT) {
+		actions.push('删除')
+		actions.push('编辑')
+		if (role == CHAT_ROLE_ASSISTANT) {
+			if (ttsEnabled == true && assistantContent != '') {
+				actions.push('播放语音')
+			}
+			actions.push('重新回答')
+		}
+		return actions
+	}
+	actions.push('删除')
+	return actions
+}
+
+export function buildChatLocationContent(location: UTSJSONObject): string {
+	const rawName = location['name'] as string | null
+	const rawAddr = location['address'] as string | null
+	const rawLat = location['latitude'] as number | null
+	const rawLng = location['longitude'] as number | null
+	const name = rawName != null ? rawName : '未知位置'
+	const addr = rawAddr != null ? rawAddr : ''
+	const lat = rawLat != null ? rawLat : 0
+	const lng = rawLng != null ? rawLng : 0
+	return '📍 ' + name + (addr != '' ? ' - ' + addr : '') + ' (' + lat + ', ' + lng + ')'
+}

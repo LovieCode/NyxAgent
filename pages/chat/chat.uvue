@@ -160,6 +160,15 @@
 		parseRecorderTempPath,
 	} from '@/utils/chat-speech-runtime.uts'
 	import {
+		buildChatLocationContent,
+		buildChatMessageActionItems,
+		findLastChatAssistantMessage,
+		getChatMessagePartsForView,
+		hasChatMessageRef,
+		isChatAssistantRole,
+		readChatMessageRole,
+	} from '@/utils/chat-page-helpers.uts'
+	import {
 		appendBufferedChatAgentEvent,
 		isBufferedChatAgentEvent,
 		reduceBufferedChatAgentEvents,
@@ -178,7 +187,7 @@
 				/** 消息列表 */
 				messages: [] as UTSJSONObject[],
 				/** 当前输入文本 */
-				inputText: '',
+				inputText: '' as string,
 				/** 是否正在语音输入 */
 				isListening: false as boolean,
 				/** 是否正在把录音转成文字 */
@@ -204,7 +213,7 @@
 				/** 流式期间滚动节流定时器 */
 				streamScrollTimer: -1 as number,
 				/** 图片转述任务序号，用于取消过期的 caption 回调 */
-				imageCaptionTaskId: 0,
+				imageCaptionTaskId: 0 as number,
 				/** 当前智能体 ID */
 				currentAgentId: '' as string,
 				/** 当前智能体名称 */
@@ -228,13 +237,13 @@
 				/** 流式滚动节拍计数器 */
 				_streamScrollTick: 0 as number,
 				/** 滚动位置 */
-				scrollTop: 0,
+				scrollTop: 0 as number,
 				/** 当前对话唯一 ID */
 				conversationId: '' as string,
 				/** 是否已存过当前对话（防止重复存） */
 				savedFlag: false as boolean,
 				/** 输入框 JS 驱动高度 */
-				inputHeight: 36,
+				inputHeight: 36 as number,
 				/** 是否显示工具栏面板 */
 				showToolPanel: false as boolean,
 				/** 行内编辑 */
@@ -336,31 +345,15 @@
 			},
 
 			getMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] {
-				const parts = msg['message'] as UTSJSONObject[] | null
-				if (parts != null) {
-					return parts
-				}
-				return [] as UTSJSONObject[]
+				return getChatMessagePartsForView(msg)
 			},
 
 			findLastAssistantMessage(): UTSJSONObject | null {
-				for (let i = this.messages.length - 1; i >= 0; i--) {
-					const msg = this.messages[i]
-					const role = msg['role'] as string | null
-					if (role == 'assistant') {
-						return msg
-					}
-				}
-				return null
+				return findLastChatAssistantMessage(this.messages)
 			},
 
 			hasMessageRef(target: UTSJSONObject): boolean {
-				for (let i = 0; i < this.messages.length; i++) {
-					if (this.messages[i] == target) {
-						return true
-					}
-				}
-				return false
+				return hasChatMessageRef(this.messages, target)
 			},
 
 			appendLatestResponseSnapshot(): void {
@@ -424,7 +417,7 @@
 
 			sendMessage() {
 				const text = this.inputText.trim()
-				if (text == '' || this.isGenerating) {
+				if (text == '' || this.isGenerating == true) {
 					return
 				}
 				if (this.messages.length == 0) {
@@ -457,22 +450,12 @@
 				if (this.messageActionSheetOpen == true) { return }
 				const msg = this.messages[index]
 				if (msg == null) { return }
-				const roleRaw = msg['role']
-				if (roleRaw == null) { return }
-				const role = roleRaw as string
-				let actions: string[] = []
-				if (role == 'user' || role == 'assistant') {
-					actions = ['删除', '编辑']
-					if (role == 'assistant') {
-						const content = getMessageContent(msg).trim()
-						if (this.hasValidDefaultTaskModel('tts') == true && content != '') {
-							actions.push('播放语音')
-						}
-						actions.push('重新回答')
-					}
-				} else {
-					actions = ['删除']
-				}
+				const role = readChatMessageRole(msg)
+				if (role == '') { return }
+				const isAssistant = isChatAssistantRole(role)
+				const assistantContent = isAssistant == true ? getMessageContent(msg).trim() : ''
+				const ttsEnabled = isAssistant == true ? this.hasValidDefaultTaskModel('tts') : false
+				const actions = buildChatMessageActionItems(role, assistantContent, ttsEnabled)
 				const msgIndex = index
 				this.messageActionSheetOpen = true
 				uni.showActionSheet({
@@ -628,15 +611,7 @@
 
 			/** 添加位置消息 */
 			addLocationMessage(location: UTSJSONObject) {
-				const rawName = location['name'] as string | null
-				const rawAddr = location['address'] as string | null
-				const rawLat = location['latitude'] as number | null
-				const rawLng = location['longitude'] as number | null
-				const name = rawName != null ? rawName : '未知位置'
-				const addr = rawAddr != null ? rawAddr : ''
-				const lat = rawLat != null ? rawLat : 0
-				const lng = rawLng != null ? rawLng : 0
-				const content = '📍 ' + name + (addr != '' ? ' - ' + addr : '') + ' (' + lat + ', ' + lng + ')'
+				const content = buildChatLocationContent(location)
 				this.messages.push(createLocationMessage(content))
 				this.scrollToBottom()
 				this.startGenerationForMedia(content)
