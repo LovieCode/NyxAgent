@@ -111,8 +111,21 @@
 </template>
 
 <script lang="uts">
-	import { getSkills, upsertSkill, deleteSkill, createSkillRecord, createSkillDocument, createSkillFromMarkdown, normalizeSkillName, readSkillId, readSkillName, readSkillDescription, readSkillEnabled, readSkillDocuments, readSkillDocumentTitle, readSkillDocumentContent, getSkillDocumentCount } from '@/utils/skills.uts'
+	import { getSkills, upsertSkill, deleteSkill, createSkillDocument, createSkillFromMarkdown, normalizeSkillName, readSkillId, readSkillName, readSkillDescription, readSkillEnabled, readSkillDocuments, readSkillDocumentTitle, getSkillDocumentCount } from '@/utils/skills.uts'
 	import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+	import {
+		buildCurrentSkillRecord,
+		buildSkillTextPreview,
+		createEmptySkillRecord,
+		ensureSkillDocumentList,
+		findSkillByIdInList,
+		normalizeSkillDocumentIndex,
+		readSkillCreatedAt,
+		readSkillDocumentContentAt,
+		readSkillDocumentTitleAt,
+		removeSkillDocumentAt,
+		writeSkillDocumentFields,
+	} from '@/utils/skills-page-helpers.uts'
 
 	export default {
 		data() {
@@ -210,25 +223,11 @@
 			},
 
 			getDocContentPreview(): string {
-				const content = this.docContent.trim()
-				if (content == '') {
-					return '点击打开全屏编辑器，写入纯文本指令...'
-				}
-				if (content.length > 160) {
-					return content.substring(0, 160) + '...'
-				}
-				return content
+				return buildSkillTextPreview(this.docContent, '点击打开全屏编辑器，写入纯文本指令...')
 			},
 
 			getImportMarkdownPreview(): string {
-				const content = this.importMarkdown.trim()
-				if (content == '') {
-					return '点击打开全屏编辑器，粘贴 SKILL.md 内容...'
-				}
-				if (content.length > 160) {
-					return content.substring(0, 160) + '...'
-				}
-				return content
+				return buildSkillTextPreview(this.importMarkdown, '点击打开全屏编辑器，粘贴 SKILL.md 内容...')
 			},
 
 			openDocContentEditor() {
@@ -269,12 +268,8 @@
 				this.skillName = readSkillName(skill)
 				this.skillDescription = readSkillDescription(skill)
 				this.skillEnabled = readSkillEnabled(skill)
-				const rawCreatedAt = skill['createdAt'] as number | null
-				this.skillCreatedAt = rawCreatedAt != null ? rawCreatedAt : Date.now()
-				this.documents = readSkillDocuments(skill)
-				if (this.documents.length == 0) {
-					this.documents.push(createSkillDocument('SKILL.md', ''))
-				}
+				this.skillCreatedAt = readSkillCreatedAt(skill)
+				this.documents = ensureSkillDocumentList(readSkillDocuments(skill))
 				this.selectedDocIndex = 0
 				this.loadSelectedDocumentFields()
 				this.hasUnsaved = false
@@ -292,12 +287,7 @@
 			},
 
 			findSkillById(id: string): UTSJSONObject | null {
-				for (let i = 0; i < this.skills.length; i++) {
-					if (readSkillId(this.skills[i]) == id) {
-						return this.skills[i]
-					}
-				}
-				return null
+				return findSkillByIdInList(this.skills, id)
 			},
 
 			runPendingSkillAction() {
@@ -320,33 +310,13 @@
 			},
 
 			loadSelectedDocumentFields() {
-				if (this.documents.length == 0) {
-					this.docTitle = 'SKILL.md'
-					this.docContent = ''
-					return
-				}
-				if (this.selectedDocIndex < 0) {
-					this.selectedDocIndex = 0
-				}
-				if (this.selectedDocIndex >= this.documents.length) {
-					this.selectedDocIndex = this.documents.length - 1
-				}
-				const doc = this.documents[this.selectedDocIndex]
-				this.docTitle = readSkillDocumentTitle(doc)
-				this.docContent = readSkillDocumentContent(doc)
+				this.selectedDocIndex = normalizeSkillDocumentIndex(this.selectedDocIndex, this.documents.length)
+				this.docTitle = readSkillDocumentTitleAt(this.documents, this.selectedDocIndex)
+				this.docContent = readSkillDocumentContentAt(this.documents, this.selectedDocIndex)
 			},
 
 			syncDocumentFields() {
-				if (this.documents.length == 0) {
-					return
-				}
-				if (this.selectedDocIndex < 0 || this.selectedDocIndex >= this.documents.length) {
-					return
-				}
-				const doc = this.documents[this.selectedDocIndex]
-				doc['title'] = this.docTitle.trim() != '' ? this.docTitle.trim() : 'doc-' + (this.selectedDocIndex + 1) + '.md'
-				doc['content'] = this.docContent
-				doc['updatedAt'] = Date.now()
+				writeSkillDocumentFields(this.documents, this.selectedDocIndex, this.docTitle, this.docContent)
 			},
 
 			selectDocument(index: number) {
@@ -368,34 +338,15 @@
 					uni.showToast({ position: 'bottom', title: '至少保留一个文档', icon: 'none' })
 					return
 				}
-				const next: UTSJSONObject[] = []
-				for (let i = 0; i < this.documents.length; i++) {
-					if (i != this.selectedDocIndex) {
-						next.push(this.documents[i])
-					}
-				}
-				this.documents = next
-				if (this.selectedDocIndex >= this.documents.length) {
-					this.selectedDocIndex = this.documents.length - 1
-				}
+				this.documents = removeSkillDocumentAt(this.documents, this.selectedDocIndex)
+				this.selectedDocIndex = normalizeSkillDocumentIndex(this.selectedDocIndex, this.documents.length)
 				this.loadSelectedDocumentFields()
 				this.hasUnsaved = true
 			},
 
 			buildCurrentSkill(): UTSJSONObject {
 				this.syncDocumentFields()
-				const name = normalizeSkillName(this.skillName)
-				const desc = this.skillDescription.trim()
-				const skill: UTSJSONObject = {
-					id: this.selectedSkillId,
-					name: name,
-					description: desc != '' ? desc : '纯文本 Skill',
-					enabled: this.skillEnabled,
-					documents: this.documents,
-					createdAt: this.skillCreatedAt > 0 ? this.skillCreatedAt : Date.now(),
-					updatedAt: Date.now(),
-				} as UTSJSONObject
-				return skill
+				return buildCurrentSkillRecord(this.selectedSkillId, this.skillName, this.skillDescription, this.skillEnabled, this.documents, this.skillCreatedAt)
 			},
 
 			saveCurrentSkillSilently() {
@@ -429,9 +380,7 @@
 			},
 
 			createNewSkillNow() {
-				const docs: UTSJSONObject[] = []
-				docs.push(createSkillDocument('SKILL.md', ''))
-				const skill = createSkillRecord('new-skill-' + Date.now(), '描述这个 Skill 适用的任务', docs)
+				const skill = createEmptySkillRecord()
 				upsertSkill(skill)
 				this.skills = getSkills()
 				this.loadSkillToEditor(skill)

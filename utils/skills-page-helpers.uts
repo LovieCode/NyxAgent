@@ -1,0 +1,100 @@
+import {
+	createSkillDocument,
+	createSkillRecord,
+	normalizeSkillName,
+	readSkillDocumentContent,
+	readSkillDocumentTitle,
+	readSkillId,
+} from '@/utils/skills.uts'
+
+export function buildSkillTextPreview(content: string, emptyText: string): string {
+	const text = content.trim()
+	if (text == '') {
+		return emptyText
+	}
+	if (text.length > 160) {
+		return text.substring(0, 160) + '...'
+	}
+	return text
+}
+
+export function readSkillCreatedAt(skill: UTSJSONObject): number {
+	const rawCreatedAt = skill['createdAt'] as number | null
+	return rawCreatedAt != null ? rawCreatedAt : Date.now()
+}
+
+export function ensureSkillDocumentList(documents: UTSJSONObject[]): UTSJSONObject[] {
+	if (documents.length > 0) {
+		return documents
+	}
+	const list: UTSJSONObject[] = []
+	list.push(createSkillDocument('SKILL.md', ''))
+	return list
+}
+
+export function normalizeSkillDocumentIndex(index: number, length: number): number {
+	if (length <= 0) { return 0 }
+	if (index < 0) { return 0 }
+	if (index >= length) { return length - 1 }
+	return index
+}
+
+export function readSkillDocumentTitleAt(documents: UTSJSONObject[], index: number): string {
+	if (documents.length == 0) { return 'SKILL.md' }
+	const safeIndex = normalizeSkillDocumentIndex(index, documents.length)
+	return readSkillDocumentTitle(documents[safeIndex])
+}
+
+export function readSkillDocumentContentAt(documents: UTSJSONObject[], index: number): string {
+	if (documents.length == 0) { return '' }
+	const safeIndex = normalizeSkillDocumentIndex(index, documents.length)
+	return readSkillDocumentContent(documents[safeIndex])
+}
+
+export function writeSkillDocumentFields(documents: UTSJSONObject[], index: number, title: string, content: string): void {
+	if (documents.length == 0) { return }
+	if (index < 0 || index >= documents.length) { return }
+	const doc = documents[index]
+	doc['title'] = title.trim() != '' ? title.trim() : 'doc-' + (index + 1) + '.md'
+	doc['content'] = content
+	doc['updatedAt'] = Date.now()
+}
+
+export function removeSkillDocumentAt(documents: UTSJSONObject[], index: number): UTSJSONObject[] {
+	const next: UTSJSONObject[] = []
+	for (let i = 0; i < documents.length; i++) {
+		if (i != index) {
+			next.push(documents[i])
+		}
+	}
+	return next
+}
+
+export function buildCurrentSkillRecord(selectedSkillId: string, skillName: string, skillDescription: string, skillEnabled: boolean, documents: UTSJSONObject[], skillCreatedAt: number): UTSJSONObject {
+	const name = normalizeSkillName(skillName)
+	const desc = skillDescription.trim()
+	return {
+		id: selectedSkillId,
+		name: name,
+		description: desc != '' ? desc : '纯文本 Skill',
+		enabled: skillEnabled,
+		documents: documents,
+		createdAt: skillCreatedAt > 0 ? skillCreatedAt : Date.now(),
+		updatedAt: Date.now(),
+	} as UTSJSONObject
+}
+
+export function createEmptySkillRecord(): UTSJSONObject {
+	const docs: UTSJSONObject[] = []
+	docs.push(createSkillDocument('SKILL.md', ''))
+	return createSkillRecord('new-skill-' + Date.now(), '描述这个 Skill 适用的任务', docs)
+}
+
+export function findSkillByIdInList(skills: UTSJSONObject[], id: string): UTSJSONObject | null {
+	for (let i = 0; i < skills.length; i++) {
+		if (readSkillId(skills[i]) == id) {
+			return skills[i]
+		}
+	}
+	return null
+}
