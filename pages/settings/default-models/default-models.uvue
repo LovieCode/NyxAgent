@@ -88,6 +88,41 @@
 					</view>
 				</scroll-view>
 
+				<view v-if="isTtsTask(task)" class="tts-box">
+					<view class="prompt-header-row">
+						<text class="field-label">TTS 参数</text>
+						<text class="prompt-save-text" @click="saveTtsSettings">保存 TTS 参数</text>
+					</view>
+					<text class="tts-hint">参考 AstrBot：不同 TTS 服务必须配置音色。OpenAI 兼容接口常用 voice/response_format/speed；火山引擎需要 appid、cluster、voice_type。</text>
+
+					<text class="field-label tts-field-label">接口类型</text>
+					<view class="chip-row tts-adapter-row">
+						<view class="chip" :class="ttsAdapter == 'openai_compatible' ? 'chip-active' : ''" @click="selectTtsAdapter('openai_compatible')">
+							<text class="chip-text" :class="ttsAdapter == 'openai_compatible' ? 'chip-text-active' : ''">OpenAI 兼容</text>
+						</view>
+						<view class="chip" :class="ttsAdapter == 'volcengine' ? 'chip-active' : ''" @click="selectTtsAdapter('volcengine')">
+							<text class="chip-text" :class="ttsAdapter == 'volcengine' ? 'chip-text-active' : ''">火山引擎</text>
+						</view>
+					</view>
+
+					<text class="field-label tts-field-label">音色 / Voice</text>
+					<input class="tts-input" type="text" v-model="ttsVoice" placeholder="OpenAI: alloy / 千问: Cherry / 火山: voice_type" placeholder-class="ph" />
+
+					<view class="tts-two-col">
+						<view class="tts-col-left">
+							<text class="field-label tts-field-label">格式</text>
+							<input class="tts-input" type="text" v-model="ttsResponseFormat" placeholder="wav / mp3 / opus / aac / flac" placeholder-class="ph" />
+						</view>
+						<view class="tts-col-right">
+							<text class="field-label tts-field-label">语速</text>
+							<input class="tts-input" type="text" v-model="ttsSpeed" placeholder="1.0" placeholder-class="ph" />
+						</view>
+					</view>
+
+					<text class="field-label tts-field-label">高级参数 JSON</text>
+					<textarea class="prompt-input tts-extra-input" v-model="ttsExtraParams" auto-height placeholder='{"appid":"...","volcengine_cluster":"volcano_tts"}' placeholder-class="ph" />
+				</view>
+
 				<view v-if="isVisionTask(task)" class="prompt-box">
 					<view class="prompt-header-row">
 						<text class="field-label">图片转述提示词</text>
@@ -102,7 +137,7 @@
 </template>
 
 <script lang="uts">
-	import { getAllProviders, setDefaultTaskModel, getAllDefaultTaskModels, getProviderModels, parseModels, getImageCaptionPrompt, setImageCaptionPrompt } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { getAllProviders, setDefaultTaskModel, getAllDefaultTaskModels, getProviderModels, parseModels, getImageCaptionPrompt, setImageCaptionPrompt, getDefaultTTSSettings, setDefaultTTSSettings, TTS_ADAPTER_OPENAI_COMPAT } from '@/uni_modules/agent-core/utssdk/provider.uts'
 
 	export default {
 		data() {
@@ -110,6 +145,11 @@
 				allProviders: [] as UTSJSONObject[],
 				taskList: [] as UTSJSONObject[],
 				imageCaptionPrompt: '',
+				ttsAdapter: TTS_ADAPTER_OPENAI_COMPAT as string,
+				ttsVoice: '' as string,
+				ttsResponseFormat: '' as string,
+				ttsSpeed: '' as string,
+				ttsExtraParams: '' as string,
 				savedImageCaptionPrompt: '' as string,
 				hasUnsavedPrompt: false as boolean,
 				isConfirmingLeave: false as boolean,
@@ -144,8 +184,23 @@
 				this.allProviders = getAllProviders()
 				this.taskList = getAllDefaultTaskModels()
 				this.imageCaptionPrompt = getImageCaptionPrompt()
+				this.loadTtsSettings()
 				this.savedImageCaptionPrompt = this.imageCaptionPrompt
 				this.hasUnsavedPrompt = false
+			},
+
+			loadTtsSettings() {
+				const settings = getDefaultTTSSettings()
+				const adapter = settings['adapter'] as string | null
+				const voice = settings['voice'] as string | null
+				const responseFormat = settings['responseFormat'] as string | null
+				const speed = settings['speed'] as string | null
+				const extraParams = settings['extraParams'] as string | null
+				this.ttsAdapter = adapter != null && adapter != '' ? adapter : TTS_ADAPTER_OPENAI_COMPAT
+				this.ttsVoice = voice != null ? voice : ''
+				this.ttsResponseFormat = responseFormat != null ? responseFormat : ''
+				this.ttsSpeed = speed != null ? speed : ''
+				this.ttsExtraParams = extraParams != null ? extraParams : ''
 			},
 
 			taskIcon(type: string): string {
@@ -184,6 +239,11 @@
 				return type == 'stt' || type == 'tts'
 			},
 
+			isTtsTask(task: UTSJSONObject): boolean {
+				const type = task['type'] as string | null
+				return type == 'tts'
+			},
+
 			isSpeechDisabled(task: UTSJSONObject): boolean {
 				const providerId = task['providerId'] as string | null
 				const model = task['model'] as string | null
@@ -196,7 +256,7 @@
 					return '语音输入会先用该模型转成文字，再发送到聊天。'
 				}
 				if (type == 'tts') {
-					return '助手回复会用该模型合成语音；可自动播放，也可长按助手消息播放。'
+					return '助手回复会用该模型合成语音；下方可配置接口类型、音色、格式和语速。'
 				}
 				return ''
 			},
@@ -289,6 +349,38 @@
 				this.saveTaskModel(taskIndex)
 			},
 
+			selectTtsAdapter(adapter: string) {
+				this.ttsAdapter = adapter
+				this.saveTtsSettings()
+			},
+
+			validateTtsExtraParams(): boolean {
+				const text = this.ttsExtraParams.trim()
+				if (text == '') { return true }
+				try {
+					const parsed = JSON.parse(text)
+					if (parsed == null || typeof parsed != 'object') {
+						uni.showToast({ title: '高级参数必须是 JSON 对象', icon: 'none' })
+						return false
+					}
+					return true
+				} catch (_e: any) {
+					uni.showToast({ title: '高级参数不是合法 JSON', icon: 'none' })
+					return false
+				}
+			},
+
+			saveTtsSettingsQuiet(): boolean {
+				if (this.validateTtsExtraParams() == false) { return false }
+				setDefaultTTSSettings(this.ttsAdapter, this.ttsVoice, this.ttsResponseFormat, this.ttsSpeed, this.ttsExtraParams)
+				return true
+			},
+
+			saveTtsSettings() {
+				if (this.saveTtsSettingsQuiet() == false) { return }
+				uni.showToast({ title: '已保存 TTS 参数', icon: 'success' })
+			},
+
 			saveTaskModel(taskIndex: number) {
 				const task = this.taskList[taskIndex]
 				if (task == null) return
@@ -301,12 +393,21 @@
 					uni.showToast({ title: '对话模型不能为空', icon: 'none' })
 					return
 				}
+				if (type == 'tts' && this.validateTtsExtraParams() == false) {
+					return
+				}
 				if (providerId == '' || model == '') {
 					setDefaultTaskModel(type, providerId, model)
+					if (type == 'tts') {
+						this.saveTtsSettingsQuiet()
+					}
 					uni.showToast({ title: '已停用默认任务模型', icon: 'none' })
 					return
 				}
 				setDefaultTaskModel(type, providerId, model)
+				if (type == 'tts') {
+					this.saveTtsSettingsQuiet()
+				}
 				uni.showToast({ title: '已保存', icon: 'success' })
 			},
 
@@ -491,6 +592,58 @@
 		font-size: 13px;
 		color: #374151;
 		line-height: 19px;
+	}
+
+
+	.tts-box {
+		margin-top: 10px;
+		background-color: #FFF7FB;
+		border-radius: 8px;
+		padding: 10px;
+	}
+
+	.tts-hint {
+		font-size: 12px;
+		color: #6B7280;
+		line-height: 17px;
+		margin-bottom: 8px;
+	}
+
+	.tts-field-label {
+		margin-top: 8px;
+	}
+
+	.tts-adapter-row {
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+
+	.tts-input {
+		width: 100%;
+		min-height: 38px;
+		background-color: #FFFFFF;
+		border-radius: 7px;
+		padding: 8px;
+		font-size: 13px;
+		color: #374151;
+	}
+
+	.tts-two-col {
+		flex-direction: row;
+	}
+
+	.tts-col-left {
+		flex: 1;
+		margin-right: 6px;
+	}
+
+	.tts-col-right {
+		flex: 1;
+	}
+
+	.tts-extra-input {
+		min-height: 68px;
+		background-color: #FFFFFF;
 	}
 
 	/* 保存按钮 */

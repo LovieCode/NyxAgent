@@ -418,6 +418,31 @@ const taskTypeNames: UTSJSONObject = {
 /** 任务类型 key 前缀 */
 const TASK_KEY_PREFIX = 'default_task_'
 
+export const TTS_ADAPTER_OPENAI_COMPAT = 'openai_compatible'
+export const TTS_ADAPTER_VOLCENGINE = 'volcengine'
+
+const TTS_FIELD_ADAPTER = 'ttsAdapter'
+const TTS_FIELD_VOICE = 'ttsVoice'
+const TTS_FIELD_RESPONSE_FORMAT = 'ttsResponseFormat'
+const TTS_FIELD_SPEED = 'ttsSpeed'
+const TTS_FIELD_EXTRA_PARAMS = 'ttsExtraParams'
+
+function readConfigString(config: UTSJSONObject | null, key: string): string {
+	if (config == null) { return '' }
+	const raw = config[key] as string | null
+	return raw != null ? raw : ''
+}
+
+function copyTTSFields(source: UTSJSONObject | null, target: UTSJSONObject): void {
+	let adapter = readConfigString(source, TTS_FIELD_ADAPTER)
+	if (adapter == '') { adapter = TTS_ADAPTER_OPENAI_COMPAT }
+	target[TTS_FIELD_ADAPTER] = adapter
+	target[TTS_FIELD_VOICE] = readConfigString(source, TTS_FIELD_VOICE)
+	target[TTS_FIELD_RESPONSE_FORMAT] = readConfigString(source, TTS_FIELD_RESPONSE_FORMAT)
+	target[TTS_FIELD_SPEED] = readConfigString(source, TTS_FIELD_SPEED)
+	target[TTS_FIELD_EXTRA_PARAMS] = readConfigString(source, TTS_FIELD_EXTRA_PARAMS)
+}
+
 /**
  * 获取任务类型中文名
  */
@@ -462,19 +487,70 @@ export function getDefaultTaskModel(type: string): UTSJSONObject | null {
 }
 
 /**
- * 设置某个任务的默认提供商 + 模型
+ * 获取 TTS 额外参数。
  */
-export function setDefaultTaskModel(type: string, providerId: string, model: string): void {
-	const key = TASK_KEY_PREFIX + type
-	if (providerId == '' || model == '') {
-		setAppSetting(key, '')
-		return
+export function getDefaultTTSSettings(): UTSJSONObject {
+	const config = getDefaultTaskModel('tts')
+	let adapter = readConfigString(config, TTS_FIELD_ADAPTER)
+	if (adapter == '') { adapter = TTS_ADAPTER_OPENAI_COMPAT }
+	return {
+		adapter: adapter,
+		voice: readConfigString(config, TTS_FIELD_VOICE),
+		responseFormat: readConfigString(config, TTS_FIELD_RESPONSE_FORMAT),
+		speed: readConfigString(config, TTS_FIELD_SPEED),
+		extraParams: readConfigString(config, TTS_FIELD_EXTRA_PARAMS),
+	} as UTSJSONObject
+}
+
+/**
+ * 设置 TTS 额外参数，和 default_task_tts 保存在一起。
+ */
+export function setDefaultTTSSettings(adapter: string, voice: string, responseFormat: string, speed: string, extraParams: string): void {
+	const current = getDefaultTaskModel('tts')
+	let providerId = ''
+	let model = ''
+	if (current != null) {
+		const rawPid = current['providerId'] as string | null
+		const rawModel = current['model'] as string | null
+		providerId = rawPid != null ? rawPid : ''
+		model = rawModel != null ? rawModel : ''
 	}
+	let normalizedAdapter = adapter.trim()
+	if (normalizedAdapter == '') { normalizedAdapter = TTS_ADAPTER_OPENAI_COMPAT }
 	const val = JSON.stringify({
 		providerId: providerId,
 		model: model,
+		ttsAdapter: normalizedAdapter,
+		ttsVoice: voice.trim(),
+		ttsResponseFormat: responseFormat.trim(),
+		ttsSpeed: speed.trim(),
+		ttsExtraParams: extraParams.trim(),
 	})
-	setAppSetting(key, val)
+	setAppSetting(TASK_KEY_PREFIX + 'tts', val)
+}
+
+/**
+ * 设置某个任务的默认提供商 + 模型。
+ */
+export function setDefaultTaskModel(type: string, providerId: string, model: string): void {
+	const key = TASK_KEY_PREFIX + type
+	const current = type == 'tts' ? getDefaultTaskModel('tts') : null
+	const next: UTSJSONObject = {
+		providerId: providerId,
+		model: model,
+	} as UTSJSONObject
+	if (type == 'tts') {
+		copyTTSFields(current, next)
+	}
+	if (providerId == '' || model == '') {
+		if (type == 'tts') {
+			setAppSetting(key, JSON.stringify(next))
+			return
+		}
+		setAppSetting(key, '')
+		return
+	}
+	setAppSetting(key, JSON.stringify(next))
 }
 
 export function getMemoryOrganizeTaskModel(): UTSJSONObject | null {
@@ -630,12 +706,16 @@ export function getAllDefaultTaskModels(): UTSJSONObject[] {
 			providerId = rawPid != null ? (rawPid as string) : ''
 			model = rawModel != null ? (rawModel as string) : ''
 		}
-		result.push({
+		const item: UTSJSONObject = {
 			type: t,
 			typeName: getTaskTypeName(t),
 			providerId: providerId,
 			model: model,
-		} as UTSJSONObject)
+		} as UTSJSONObject
+		if (t == 'tts') {
+			copyTTSFields(config, item)
+		}
+		result.push(item)
 	}
 	return result
 }

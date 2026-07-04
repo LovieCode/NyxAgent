@@ -10,7 +10,7 @@
  * - POST /v1/audio/speech
  */
 
-import { getDefaultTaskModel, getProviderById, normalizeBaseUrl } from '@/uni_modules/agent-core/utssdk/provider.uts'
+import { getDefaultTaskModel, getProviderById, getProviderModels, normalizeBaseUrl, TTS_ADAPTER_OPENAI_COMPAT, TTS_ADAPTER_VOLCENGINE } from '@/uni_modules/agent-core/utssdk/provider.uts'
 import { getInternalCacheDir, createDir, exists } from '@/utils/file-manager.uts'
 
 export type SpeechTextResult = {
@@ -30,6 +30,11 @@ type SpeechConfig = {
 	apiKey: string
 	baseUrl: string
 	model: string
+	ttsAdapter: string
+	ttsVoice: string
+	ttsResponseFormat: string
+	ttsSpeed: string
+	ttsExtraParams: string
 }
 
 function failText(error: string): SpeechTextResult {
@@ -78,6 +83,11 @@ function readProviderString(provider: UTSJSONObject, key: string): string {
 	return raw != null ? raw : ''
 }
 
+function readTaskString(task: UTSJSONObject, key: string): string {
+	const raw = task[key] as string | null
+	return raw != null ? raw : ''
+}
+
 function getDefaultAudioBaseUrl(providerId: string): string {
 	if (providerId == 'openai') { return 'https://api.openai.com' }
 	return ''
@@ -99,11 +109,29 @@ function resolveSpeechConfig(type: string): SpeechConfig | null {
 		baseUrl = getDefaultAudioBaseUrl(providerId)
 	}
 	if (apiKey == '' || baseUrl == '') { return null }
+	let ttsAdapter = ''
+	let ttsVoice = ''
+	let ttsResponseFormat = ''
+	let ttsSpeed = ''
+	let ttsExtraParams = ''
+	if (type == 'tts') {
+		ttsAdapter = readTaskString(task, 'ttsAdapter')
+		if (ttsAdapter == '') { ttsAdapter = TTS_ADAPTER_OPENAI_COMPAT }
+		ttsVoice = readTaskString(task, 'ttsVoice')
+		ttsResponseFormat = readTaskString(task, 'ttsResponseFormat')
+		ttsSpeed = readTaskString(task, 'ttsSpeed')
+		ttsExtraParams = readTaskString(task, 'ttsExtraParams')
+	}
 	return {
 		providerId: providerId,
 		apiKey: apiKey,
 		baseUrl: baseUrl,
 		model: model,
+		ttsAdapter: ttsAdapter,
+		ttsVoice: ttsVoice,
+		ttsResponseFormat: ttsResponseFormat,
+		ttsSpeed: ttsSpeed,
+		ttsExtraParams: ttsExtraParams,
 	} as SpeechConfig
 }
 
@@ -143,6 +171,298 @@ function writeArrayBufferToFile(path: string, data: ArrayBuffer): boolean {
 		console.log('[Speech] 写入音频失败: ' + e)
 		return false
 	}
+}
+
+
+function writeBase64ToFile(path: string, data: string): boolean {
+	if (path == '' || data == '') { return false }
+	try {
+		const fm = uni.getFileSystemManager()
+		fm.writeFileSync(path, data, 'base64')
+		return true
+	} catch (e: any) {
+		console.log('[Speech] 写入 base64 音频失败: ' + e)
+		return false
+	}
+}
+
+function decodeArrayBuffer(buffer: ArrayBuffer): string {
+	const bytes = new Uint8Array(buffer)
+	let result = ''
+	let i = 0
+	while (i < bytes.length) {
+		const b1 = bytes[i]
+		if (b1 < 0x80) {
+			result += String.fromCharCode(b1)
+			i += 1
+		} else if (b1 >= 0xC0 && b1 < 0xE0) {
+			const b2 = bytes[i + 1]
+			result += String.fromCharCode(((b1 & 0x1F) << 6) | (b2 & 0x3F))
+			i += 2
+		} else if (b1 >= 0xE0 && b1 < 0xF0) {
+			const b2 = bytes[i + 1]
+			const b3 = bytes[i + 2]
+			result += String.fromCharCode(((b1 & 0x0F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F))
+			i += 3
+		} else if (b1 >= 0xF0) {
+			const b2 = bytes[i + 1]
+			const b3 = bytes[i + 2]
+			const b4 = bytes[i + 3]
+			const code = ((b1 & 0x07) << 18) | ((b2 & 0x3F) << 12) | ((b3 & 0x3F) << 6) | (b4 & 0x3F)
+			const sc = code - 0x10000
+			result += String.fromCharCode(0xD800 + (sc >> 10))
+			result += String.fromCharCode(0xDC00 + (sc & 0x3FF))
+			i += 4
+		} else {
+			i += 1
+		}
+	}
+	return result
+}
+
+function parseJSONObject(text: string): UTSJSONObject | null {
+	if (text.trim() == '') { return null }
+	try {
+		const parsed = JSON.parse(text)
+		if (parsed == null || typeof parsed != 'object') { return null }
+		return parsed as UTSJSONObject
+	} catch (_e: any) {
+		return null
+	}
+}
+
+function resolveModelParams(providerId: string, model: string): UTSJSONObject | null {
+	const models = getProviderModels(providerId)
+	for (let i = 0; i < models.length; i++) {
+		if (models[i].id == model) {
+			const rawParams = models[i].params
+			const params = rawParams != null ? rawParams : ''
+			return parseJSONObject(params)
+		}
+	}
+	return null
+}
+
+function readParamAsString(params: UTSJSONObject | null, key: string): string {
+	if (params == null) { return '' }
+	const raw = params[key]
+	if (raw == null) { return '' }
+	if (typeof raw == 'string') { return (raw as string).trim() }
+	if (typeof raw == 'number') { return (raw as number) + '' }
+	if (typeof raw == 'boolean') { return (raw as boolean) == true ? 'true' : 'false' }
+	return ''
+}
+
+function readFirstParam(params: UTSJSONObject | null, keys: string[]): string {
+	for (let i = 0; i < keys.length; i++) {
+		const value = readParamAsString(params, keys[i])
+		if (value != '') { return value }
+	}
+	return ''
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+	if (value < min) { return min }
+	if (value > max) { return max }
+	return value
+}
+
+function parseNumberSetting(value: string, fallback: number, min: number, max: number): number {
+	if (value.trim() == '') { return fallback }
+	const parsed = parseFloat(value)
+	if (isNaN(parsed)) { return fallback }
+	return clampNumber(parsed, min, max)
+}
+
+function getTTSOutputExtension(format: string): string {
+	const f = format.trim().toLowerCase()
+	if (f.indexOf('mp3') == 0) { return 'mp3' }
+	if (f.indexOf('opus') == 0) { return 'opus' }
+	if (f.indexOf('aac') == 0) { return 'aac' }
+	if (f.indexOf('flac') == 0) { return 'flac' }
+	if (f.indexOf('pcm') == 0) { return 'pcm' }
+	return 'wav'
+}
+
+function buildArrayBufferErrorPreview(data: any | null): string {
+	if (data == null) { return '' }
+	try {
+		const text = decodeArrayBuffer(data as ArrayBuffer)
+		const trimmed = text.trim()
+		if (trimmed == '') { return '' }
+		return trimmed.substring(0, trimmed.length < 180 ? trimmed.length : 180)
+	} catch (_e: any) {
+		return ''
+	}
+}
+
+function buildJsonErrorPreview(data: any | null): string {
+	if (data == null) { return '' }
+	try {
+		const text = typeof data == 'string' ? (data as string) : JSON.stringify(data)
+		const trimmed = text.trim()
+		if (trimmed == '') { return '' }
+		return trimmed.substring(0, trimmed.length < 180 ? trimmed.length : 180)
+	} catch (_e: any) {
+		return ''
+	}
+}
+
+function resolveOpenAITTSVoice(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
+	let voice = config.ttsVoice.trim()
+	if (voice != '') { return voice }
+	voice = readFirstParam(extraParams, ['voice', 'openai-tts-voice', 'dashscope_tts_voice', 'mimo-tts-voice', 'edge-tts-voice'])
+	if (voice != '') { return voice }
+	voice = readFirstParam(modelParams, ['voice', 'openai-tts-voice', 'dashscope_tts_voice', 'mimo-tts-voice', 'edge-tts-voice'])
+	if (voice != '') { return voice }
+	return 'alloy'
+}
+
+function resolveOpenAITTSFormat(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
+	let format = config.ttsResponseFormat.trim()
+	if (format != '') { return format }
+	format = readFirstParam(extraParams, ['response_format', 'format', 'openai-tts-format'])
+	if (format != '') { return format }
+	format = readFirstParam(modelParams, ['response_format', 'format', 'openai-tts-format'])
+	if (format != '') { return format }
+	return 'wav'
+}
+
+function resolveOpenAITTSSpeed(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
+	let speed = config.ttsSpeed.trim()
+	if (speed != '') { return speed }
+	speed = readFirstParam(extraParams, ['speed', 'openai-tts-speed'])
+	if (speed != '') { return speed }
+	return readFirstParam(modelParams, ['speed', 'openai-tts-speed'])
+}
+
+function buildOpenAITTSBody(content: string, config: SpeechConfig): UTSJSONObject {
+	const modelParams = resolveModelParams(config.providerId, config.model)
+	const extraParams = parseJSONObject(config.ttsExtraParams)
+	const voice = resolveOpenAITTSVoice(config, modelParams, extraParams)
+	const responseFormat = resolveOpenAITTSFormat(config, modelParams, extraParams)
+	const speedText = resolveOpenAITTSSpeed(config, modelParams, extraParams)
+	const body: UTSJSONObject = {
+		model: config.model,
+		voice: voice,
+		response_format: responseFormat,
+		input: content,
+	} as UTSJSONObject
+	if (speedText != '') {
+		body['speed'] = parseNumberSetting(speedText, 1.0, 0.25, 4.0)
+	}
+	const instructions = readFirstParam(extraParams, ['instructions', 'tts_instructions'])
+	if (instructions != '') {
+		body['instructions'] = instructions
+	}
+	return body
+}
+
+function resolveVolcengineTTSUrl(baseUrl: string): string {
+	const normalized = normalizeBaseUrl(baseUrl)
+	if (normalized.indexOf('openspeech.bytedance.com') >= 0) {
+		if (normalized.endsWith('/tts')) { return normalized }
+		if (normalized.endsWith('/api')) { return normalized + '/v1/tts' }
+		return normalized + '/api/v1/tts'
+	}
+	return 'https://openspeech.bytedance.com/api/v1/tts'
+}
+
+function resolveVolcengineVoice(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
+	let voice = config.ttsVoice.trim()
+	if (voice != '') { return voice }
+	voice = readFirstParam(extraParams, ['volcengine_voice_type', 'voice_type', 'voice'])
+	if (voice != '') { return voice }
+	return readFirstParam(modelParams, ['volcengine_voice_type', 'voice_type', 'voice'])
+}
+
+function synthesizeVolcengineSpeech(content: string, config: SpeechConfig, dir: string): Promise<SpeechAudioResult> {
+	return new Promise<SpeechAudioResult>((resolve) => {
+		const modelParams = resolveModelParams(config.providerId, config.model)
+		const extraParams = parseJSONObject(config.ttsExtraParams)
+		let appId = readFirstParam(extraParams, ['appid', 'app_id', 'volcengine_appid'])
+		if (appId == '') {
+			appId = readFirstParam(modelParams, ['appid', 'app_id', 'volcengine_appid'])
+		}
+		let clusterRaw = readFirstParam(extraParams, ['volcengine_cluster', 'cluster'])
+		if (clusterRaw == '') {
+			clusterRaw = readFirstParam(modelParams, ['volcengine_cluster', 'cluster'])
+		}
+		const cluster = clusterRaw != '' ? clusterRaw : 'volcano_tts'
+		const voiceType = resolveVolcengineVoice(config, modelParams, extraParams)
+		if (appId == '') {
+			resolve(failAudio('火山引擎 TTS 缺少 appid，请在 TTS 高级参数 JSON 填 {"appid":"..."}'))
+			return
+		}
+		if (voiceType == '') {
+			resolve(failAudio('火山引擎 TTS 缺少音色 voice_type，请在音色里填写'))
+			return
+		}
+		const speedRaw = config.ttsSpeed.trim() != '' ? config.ttsSpeed.trim() : readFirstParam(extraParams, ['volcengine_speed_ratio', 'speed_ratio', 'speed'])
+		const speedRatio = parseNumberSetting(speedRaw, 1.0, 0.2, 3.0)
+		const outputPath = dir + '/tts_' + Date.now() + '.mp3'
+		const body: UTSJSONObject = {
+			app: {
+				appid: appId,
+				token: config.apiKey,
+				cluster: cluster,
+			} as UTSJSONObject,
+			user: {
+				uid: 'nyx_' + Date.now(),
+			} as UTSJSONObject,
+			audio: {
+				voice_type: voiceType,
+				encoding: 'mp3',
+				speed_ratio: speedRatio,
+				volume_ratio: 1.0,
+				pitch_ratio: 1.0,
+			} as UTSJSONObject,
+			request: {
+				reqid: 'nyx_' + Date.now(),
+				text: content,
+				text_type: 'plain',
+				operation: 'query',
+				with_frontend: 1,
+				frontend_type: 'unitTson',
+			} as UTSJSONObject,
+		} as UTSJSONObject
+		uni.request({
+			url: resolveVolcengineTTSUrl(config.baseUrl),
+			method: 'POST',
+			header: {
+				Authorization: 'Bearer;' + config.apiKey,
+				'Content-Type': 'application/json',
+			} as UTSJSONObject,
+			data: body,
+			success: (res) => {
+				const statusCode = res.statusCode as number
+				if (statusCode < 200 || statusCode >= 300) {
+					const preview = buildJsonErrorPreview(res.data)
+					resolve(failAudio('语音合成失败：HTTP ' + statusCode + (preview != '' ? ' ' + preview : '')))
+					return
+				}
+				const data = typeof res.data == 'string' ? parseJSONObject(res.data as string) : (res.data as UTSJSONObject)
+				if (data == null) {
+					resolve(failAudio('语音合成响应为空'))
+					return
+				}
+				const audioBase64 = data['data'] as string | null
+				if (audioBase64 == null || audioBase64 == '') {
+					const message = data['message'] as string | null
+					resolve(failAudio(message != null && message != '' ? message : '语音合成结果为空'))
+					return
+				}
+				if (writeBase64ToFile(outputPath, audioBase64) == false) {
+					resolve(failAudio('语音文件写入失败'))
+					return
+				}
+				resolve(okAudio(outputPath))
+			},
+			fail: (err: any) => {
+				resolve(failAudio('语音合成网络失败：' + err))
+			},
+		})
+	})
 }
 
 export function transcribeAudio(audioPath: string): Promise<SpeechTextResult> {
@@ -205,15 +525,18 @@ export function synthesizeSpeech(text: string): Promise<SpeechAudioResult> {
 			resolve(failAudio('语音缓存目录不可用'))
 			return
 		}
-		const outputPath = dir + '/tts_' + Date.now() + '.wav'
+		if (config.ttsAdapter == TTS_ADAPTER_VOLCENGINE) {
+			synthesizeVolcengineSpeech(content, config, dir).then((result) => {
+				resolve(result)
+			})
+			return
+		}
+		const body = buildOpenAITTSBody(content, config)
+		const responseFormat = body['response_format'] as string | null
+		const outputFormat = responseFormat != null && responseFormat != '' ? responseFormat : 'wav'
+		const outputPath = dir + '/tts_' + Date.now() + '.' + getTTSOutputExtension(outputFormat)
 		const url = buildAudioApiUrl(config.baseUrl, '/audio/speech')
-		// PROVIDER_AUDIO_API: 参考 AstrBot OpenAI TTS，默认 voice=alloy/response_format=wav。
-		const body: UTSJSONObject = {
-			model: config.model,
-			voice: 'alloy',
-			response_format: 'wav',
-			input: content,
-		} as UTSJSONObject
+		// PROVIDER_AUDIO_API: OpenAI-compatible TTS。voice/response_format/speed 来自默认模型页和模型自定义参数。
 		uni.request({
 			url: url,
 			method: 'POST',
@@ -226,7 +549,8 @@ export function synthesizeSpeech(text: string): Promise<SpeechAudioResult> {
 			success: (res) => {
 				const statusCode = res.statusCode as number
 				if (statusCode < 200 || statusCode >= 300) {
-					resolve(failAudio('语音合成失败：HTTP ' + statusCode))
+					const preview = buildArrayBufferErrorPreview(res.data)
+					resolve(failAudio('语音合成失败：HTTP ' + statusCode + (preview != '' ? ' ' + preview : '')))
 					return
 				}
 				const data = res.data as ArrayBuffer | null
