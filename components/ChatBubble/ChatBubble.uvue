@@ -168,26 +168,20 @@
 </template>
 
 <script lang="uts">
-	type ContentPartView = {
-		type: string
-		text: string
-		url: string
-		path: string
-		filename: string
-		caption: string
-		isLast: boolean
-	}
-	type DisplayBlock = {
-		type: string
-		text: string
-		thinking: string
-		name: string
-		args: string
-		ts: number
-		finished_ts: number
-		status: string
-		result: string
-	}
+	import {
+		type ChatContentPartView,
+		type ChatDisplayBlock,
+		buildChatContentParts,
+		buildChatDisplayBlocks,
+		buildChatFallbackMessageParts,
+		buildChatRenderContentParts,
+		formatChatToolElapsed,
+		getChatPartLabel,
+		getChatToolDisplayName,
+		getChatToolStatusText,
+		hasRunningChatToolBlock,
+	} from '@/utils/chat-bubble-render.uts'
+
 	export default {
 		props: {
 			role: {
@@ -308,47 +302,14 @@
 				if (raw != null && raw.length > 0) {
 					return raw
 				}
-				const fallback: UTSJSONObject[] = []
-				if (this.thinking != '') {
-					fallback.push({ type: 'think', think: this.thinking } as UTSJSONObject)
-				}
-				if (this.msgType == 'image' && this.imageUrl != '') {
-					fallback.push({ type: 'image', url: this.imageUrl, path: this.imageUrl } as UTSJSONObject)
-				} else if (this.content != '') {
-					fallback.push({ type: 'plain', text: this.content } as UTSJSONObject)
-				}
-				return fallback
+				return buildChatFallbackMessageParts(this.thinking, this.msgType, this.imageUrl, this.content)
 			},
-			displayBlocks(): DisplayBlock[] {
+			displayBlocks(): ChatDisplayBlock[] {
 				const _tick = this.timerTick
-				const result: DisplayBlock[] = []
-				const source = this.messageParts
-				for (let i = 0; i < source.length; i++) {
-					const part = source[i]
-					const typeRaw = part['type'] as string | null
-					const partType = typeRaw != null ? typeRaw : ''
-					if (partType == 'plain' || partType == 'text') {
-						const txt = part['text'] as string | null
-						result.push({ type: 'text', text: txt != null ? txt : '', thinking: '', name: '', args: '', ts: 0, finished_ts: 0, status: '', result: '' } as DisplayBlock)
-					} else if (partType == 'think' || partType == 'thinking') {
-						const thk = part['think'] as string | null
-						const oldThk = part['thinking'] as string | null
-						result.push({ type: 'thinking', text: '', thinking: thk != null ? thk : (oldThk != null ? oldThk : ''), name: '', args: '', ts: 0, finished_ts: 0, status: '', result: '' } as DisplayBlock)
-					} else if (partType == 'tool_call' || partType == 'toolCall') {
-						const calls = part['tool_calls'] as UTSJSONObject[] | null
-						if (calls != null) {
-							for (let j = 0; j < calls.length; j++) {
-								result.push(this.buildToolBlock(calls[j]))
-							}
-						} else {
-							result.push(this.buildToolBlock(part))
-						}
-					}
-				}
-				return result
+				return buildChatDisplayBlocks(this.messageParts)
 			},
-			reasoningBlocks(): DisplayBlock[] {
-				const result: DisplayBlock[] = []
+			reasoningBlocks(): ChatDisplayBlock[] {
+				const result: ChatDisplayBlock[] = []
 				for (let i = 0; i < this.displayBlocks.length; i++) {
 					const block = this.displayBlocks[i]
 					if (block.type == 'thinking' || block.type == 'toolCall') {
@@ -357,75 +318,11 @@
 				}
 				return result
 			},
-			contentParts(): ContentPartView[] {
-				const result: ContentPartView[] = []
-				const source = this.messageParts
-				for (let i = 0; i < source.length; i++) {
-					const part = source[i]
-					const typeRaw = part['type'] as string | null
-					const partType = typeRaw != null ? typeRaw : ''
-					if (partType == 'think' || partType == 'thinking' || partType == 'tool_call' || partType == 'toolCall') {
-						continue
-					}
-					let text = ''
-					let url = ''
-					let path = ''
-					let filename = ''
-					let caption = ''
-					const rawText = part['text'] as string | null
-					if (rawText != null) { text = rawText }
-					const rawUrl = part['url'] as string | null
-					if (rawUrl != null) { url = rawUrl }
-					const rawPath = part['path'] as string | null
-					if (rawPath != null) { path = rawPath }
-					const rawCaption = part['caption'] as string | null
-					if (rawCaption != null) { caption = rawCaption }
-					if (url == '' && path != '') { url = path }
-					const rawFile = part['filename'] as string | null
-					const rawName = part['name'] as string | null
-					if (rawFile != null && rawFile != '') {
-						filename = rawFile
-					} else if (rawName != null) {
-						filename = rawName
-					}
-					result.push({ type: partType == 'text' ? 'plain' : partType, text: text, url: url, path: path, filename: filename, caption: caption, isLast: false } as ContentPartView)
-				}
-				return result
+			contentParts(): ChatContentPartView[] {
+				return buildChatContentParts(this.messageParts)
 			},
-			renderContentParts(): ContentPartView[] {
-				const result: ContentPartView[] = []
-				const source = this.contentParts
-				for (let i = 0; i < source.length; i++) {
-					const part = source[i]
-					if (this.role == 'assistant' && this.msgSegmentation == true && part.type == 'plain') {
-						const segments = this.splitTextSegments(part.text)
-						for (let j = 0; j < segments.length; j++) {
-							result.push({
-								type: part.type,
-								text: segments[j],
-								url: part.url,
-								path: part.path,
-								filename: part.filename,
-								caption: part.caption,
-								isLast: false,
-							} as ContentPartView)
-						}
-					} else {
-						result.push({
-							type: part.type,
-							text: part.text,
-							url: part.url,
-							path: part.path,
-							filename: part.filename,
-							caption: part.caption,
-							isLast: false,
-						} as ContentPartView)
-					}
-				}
-				if (result.length > 0) {
-					result[result.length - 1].isLast = true
-				}
-				return result
+			renderContentParts(): ChatContentPartView[] {
+				return buildChatRenderContentParts(this.contentParts, this.role, this.msgSegmentation)
 			},
 			isErrorBool(): boolean {
 				return this.isError == true
@@ -466,70 +363,14 @@
 			onAvatarClick() {
 				this.$emit('avatarClick')
 			},
-			buildToolBlock(item: UTSJSONObject): DisplayBlock {
-				const name = item['name'] as string | null
-				const args1 = item['arguments'] as string | null
-				const args2 = item['args'] as string | null
-				const rawTs = item['ts'] as number | null
-				const rawFt = item['finished_ts'] as number | null
-				const status = item['status'] as string | null
-				const result = item['result'] as string | null
-				return {
-					type: 'toolCall',
-					text: '',
-					thinking: '',
-					name: name != null ? name : '',
-					args: args1 != null ? args1 : (args2 != null ? args2 : ''),
-					ts: rawTs != null ? rawTs : 0,
-					finished_ts: rawFt != null ? rawFt : 0,
-					status: status != null ? status : '',
-					result: result != null ? result : '',
-				} as DisplayBlock
-			},
 			isLastContentPart(index: number): boolean {
 				if (this.role == 'assistant') {
 					return index == this.renderContentParts.length - 1
 				}
 				return index == this.contentParts.length - 1
 			},
-			splitTextSegments(text: string): string[] {
-				const result: string[] = []
-				if (text == '') {
-					return result
-				}
-				const normalized = text.replace(/\r/g, '\n')
-				const lines = normalized.split('\n')
-				let para = ''
-				for (let i = 0; i < lines.length; i++) {
-					const raw = lines[i]
-					if (raw.trim() == '') {
-						if (para != '') {
-							result.push(para.trim())
-							para = ''
-						}
-					} else {
-						if (para != '') {
-							para = para + '\n'
-						}
-						para = para + raw
-					}
-				}
-				if (para != '') {
-					result.push(para.trim())
-				}
-				if (result.length == 0 && text.trim() != '') {
-					result.push(text.trim())
-				}
-				return result
-			},
 			syncToolTimer() {
-				let hasRunning = false
-				for (let i = 0; i < this.displayBlocks.length; i++) {
-					if (this.displayBlocks[i].status == 'running') {
-						hasRunning = true
-						break
-					}
-				}
+				const hasRunning = hasRunningChatToolBlock(this.displayBlocks)
 				if (hasRunning == true && this.timerRunning == false) {
 					this.timerRunning = true
 					this.tick()
@@ -539,71 +380,28 @@
 				}
 			},
 			tick() {
-				if (this.timerRunning == false) return
+				if (this.timerRunning == false) { return }
 				this.timerTick = this.timerTick + 1
 				this._renderSwitch = !this._renderSwitch
-				let anyRunning = false
-				for (let i = 0; i < this.displayBlocks.length; i++) {
-					if (this.displayBlocks[i].status == 'running') {
-						anyRunning = true
-						break
-					}
-				}
+				const anyRunning = hasRunningChatToolBlock(this.displayBlocks)
 				if (anyRunning == false) {
 					this.timerRunning = false
 					return
 				}
 				setTimeout(() => { this.tick() }, 1000)
 			},
-			getToolElapsed(block: DisplayBlock): string {
+			getToolElapsed(block: ChatDisplayBlock): string {
 				const _tick = this.timerTick
-				const ts = block.ts
-				const finished = block.finished_ts
-				if (ts == 0) return ''
-				if (finished > 0) {
-					const elapsed = ((finished - ts) / 1000)
-					return elapsed.toFixed(1) + 's'
-				}
-				const now = Date.now()
-				const elapsed = ((now - ts) / 1000)
-				return elapsed.toFixed(1) + 's'
+				return formatChatToolElapsed(block)
 			},
-			getToolStatusText(block: DisplayBlock): string {
-				if (block.status == 'running') return '运行中'
-				if (block.status == 'completed') return '完成'
-				if (block.status == 'error') return '失败'
-				if (block.status == 'pending') return '等待'
-				return '工具'
+			getToolStatusText(block: ChatDisplayBlock): string {
+				return getChatToolStatusText(block)
 			},
 			getToolDisplayName(name: string): string {
-				if (name == 'file_read') return '读取文件'
-				if (name == 'file_write') return '写入文件'
-				if (name == 'file_delete') return '删除文件'
-				if (name == 'file_list') return '列出文件'
-				if (name == 'file_info') return '文件信息'
-				if (name == 'directory_create') return '创建目录'
-				if (name == 'memory_search') return '搜索记忆'
-				if (name == 'memory_buffer_write') return '写短缓存'
-				if (name == 'memory_core_list') return '列出记忆'
-				if (name == 'memory_core_save') return '保存记忆'
-				if (name == 'memory_core_forget') return '遗忘记忆'
-				if (name == 'web_search') return '网络搜索'
-				return name
+				return getChatToolDisplayName(name)
 			},
-			getPartLabel(part: ContentPartView): string {
-				if (part.type == 'file') {
-					return '[文件] ' + (part.filename != '' ? part.filename : (part.path != '' ? part.path : '未命名文件'))
-				}
-				if (part.type == 'record' || part.type == 'voice') {
-					return '[语音] ' + (part.path != '' ? part.path : part.url)
-				}
-				if (part.type == 'audio') {
-					return '[音频] ' + (part.filename != '' ? part.filename : (part.path != '' ? part.path : part.url))
-				}
-				if (part.type == 'video') {
-					return '[视频] ' + (part.filename != '' ? part.filename : (part.path != '' ? part.path : part.url))
-				}
-				return '[' + part.type + '] ' + (part.text != '' ? part.text : part.path)
+			getPartLabel(part: ChatContentPartView): string {
+				return getChatPartLabel(part)
 			},
 			toggleToolCallExpand(index: number) {
 				while (this.toolCallExpanded.length <= index) {

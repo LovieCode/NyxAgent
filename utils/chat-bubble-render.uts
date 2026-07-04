@@ -1,0 +1,254 @@
+/**
+ * ChatBubble 渲染投影工具。
+ *
+ * 组件只负责触摸交互和模板；消息 part、工具调用块和分段文本在这里统一归一化。
+ */
+
+export type ChatContentPartView = {
+	type: string
+	text: string
+	url: string
+	path: string
+	filename: string
+	caption: string
+	isLast: boolean
+}
+
+export type ChatDisplayBlock = {
+	type: string
+	text: string
+	thinking: string
+	name: string
+	args: string
+	ts: number
+	finished_ts: number
+	status: string
+	result: string
+}
+
+function readStringField(obj: UTSJSONObject, key: string): string {
+	const raw = obj[key] as string | null
+	return raw != null ? raw : ''
+}
+
+function readNumberField(obj: UTSJSONObject, key: string): number {
+	const raw = obj[key] as number | null
+	return raw != null ? raw : 0
+}
+
+function emptyDisplayBlock(type: string): ChatDisplayBlock {
+	return {
+		type: type,
+		text: '',
+		thinking: '',
+		name: '',
+		args: '',
+		ts: 0,
+		finished_ts: 0,
+		status: '',
+		result: '',
+	} as ChatDisplayBlock
+}
+
+function buildTextBlock(text: string): ChatDisplayBlock {
+	const block = emptyDisplayBlock('text')
+	block.text = text
+	return block
+}
+
+function buildThinkingBlock(text: string): ChatDisplayBlock {
+	const block = emptyDisplayBlock('thinking')
+	block.thinking = text
+	return block
+}
+
+export function buildChatFallbackMessageParts(thinking: string, msgType: string, imageUrl: string, content: string): UTSJSONObject[] {
+	const fallback: UTSJSONObject[] = []
+	if (thinking != '') {
+		fallback.push({ type: 'think', think: thinking } as UTSJSONObject)
+	}
+	if (msgType == 'image' && imageUrl != '') {
+		fallback.push({ type: 'image', url: imageUrl, path: imageUrl } as UTSJSONObject)
+	} else if (content != '') {
+		fallback.push({ type: 'plain', text: content } as UTSJSONObject)
+	}
+	return fallback
+}
+
+function buildChatToolBlock(item: UTSJSONObject): ChatDisplayBlock {
+	const block = emptyDisplayBlock('toolCall')
+	const args1 = readStringField(item, 'arguments')
+	const args2 = readStringField(item, 'args')
+	block.name = readStringField(item, 'name')
+	block.args = args1 != '' ? args1 : args2
+	block.ts = readNumberField(item, 'ts')
+	block.finished_ts = readNumberField(item, 'finished_ts')
+	block.status = readStringField(item, 'status')
+	block.result = readStringField(item, 'result')
+	return block
+}
+
+export function buildChatDisplayBlocks(source: UTSJSONObject[]): ChatDisplayBlock[] {
+	const result: ChatDisplayBlock[] = []
+	for (let i = 0; i < source.length; i++) {
+		const part = source[i]
+		const partType = readStringField(part, 'type')
+		if (partType == 'plain' || partType == 'text') {
+			result.push(buildTextBlock(readStringField(part, 'text')))
+		} else if (partType == 'think' || partType == 'thinking') {
+			let thinking = readStringField(part, 'think')
+			if (thinking == '') { thinking = readStringField(part, 'thinking') }
+			result.push(buildThinkingBlock(thinking))
+		} else if (partType == 'tool_call' || partType == 'toolCall') {
+			const calls = part['tool_calls'] as UTSJSONObject[] | null
+			if (calls != null) {
+				for (let j = 0; j < calls.length; j++) {
+					result.push(buildChatToolBlock(calls[j]))
+				}
+			} else {
+				result.push(buildChatToolBlock(part))
+			}
+		}
+	}
+	return result
+}
+
+export function buildChatContentParts(source: UTSJSONObject[]): ChatContentPartView[] {
+	const result: ChatContentPartView[] = []
+	for (let i = 0; i < source.length; i++) {
+		const part = source[i]
+		const rawType = readStringField(part, 'type')
+		if (rawType == 'think' || rawType == 'thinking' || rawType == 'tool_call' || rawType == 'toolCall') {
+			continue
+		}
+		let url = readStringField(part, 'url')
+		const path = readStringField(part, 'path')
+		if (url == '' && path != '') { url = path }
+		let filename = readStringField(part, 'filename')
+		if (filename == '') { filename = readStringField(part, 'name') }
+		result.push({
+			type: rawType == 'text' ? 'plain' : rawType,
+			text: readStringField(part, 'text'),
+			url: url,
+			path: path,
+			filename: filename,
+			caption: readStringField(part, 'caption'),
+			isLast: false,
+		} as ChatContentPartView)
+	}
+	return result
+}
+
+function splitChatTextSegments(text: string): string[] {
+	const result: string[] = []
+	if (text == '') { return result }
+	const normalized = text.replace(/\r/g, '\n')
+	const lines = normalized.split('\n')
+	let para = ''
+	for (let i = 0; i < lines.length; i++) {
+		const raw = lines[i]
+		if (raw.trim() == '') {
+			if (para != '') {
+				result.push(para.trim())
+				para = ''
+			}
+		} else {
+			if (para != '') { para = para + '\n' }
+			para = para + raw
+		}
+	}
+	if (para != '') { result.push(para.trim()) }
+	if (result.length == 0 && text.trim() != '') { result.push(text.trim()) }
+	return result
+}
+
+function copyContentPart(part: ChatContentPartView, text: string): ChatContentPartView {
+	return {
+		type: part.type,
+		text: text,
+		url: part.url,
+		path: part.path,
+		filename: part.filename,
+		caption: part.caption,
+		isLast: false,
+	} as ChatContentPartView
+}
+
+export function buildChatRenderContentParts(source: ChatContentPartView[], role: string, msgSegmentation: boolean): ChatContentPartView[] {
+	const result: ChatContentPartView[] = []
+	for (let i = 0; i < source.length; i++) {
+		const part = source[i]
+		if (role == 'assistant' && msgSegmentation == true && part.type == 'plain') {
+			const segments = splitChatTextSegments(part.text)
+			for (let j = 0; j < segments.length; j++) {
+				result.push(copyContentPart(part, segments[j]))
+			}
+		} else {
+			result.push(copyContentPart(part, part.text))
+		}
+	}
+	if (result.length > 0) {
+		result[result.length - 1].isLast = true
+	}
+	return result
+}
+
+export function hasRunningChatToolBlock(blocks: ChatDisplayBlock[]): boolean {
+	for (let i = 0; i < blocks.length; i++) {
+		if (blocks[i].status == 'running') { return true }
+	}
+	return false
+}
+
+export function formatChatToolElapsed(block: ChatDisplayBlock): string {
+	const ts = block.ts
+	const finished = block.finished_ts
+	if (ts == 0) { return '' }
+	if (finished > 0) {
+		const elapsed = ((finished - ts) / 1000)
+		return elapsed.toFixed(1) + 's'
+	}
+	const now = Date.now()
+	const elapsed = ((now - ts) / 1000)
+	return elapsed.toFixed(1) + 's'
+}
+
+export function getChatToolStatusText(block: ChatDisplayBlock): string {
+	if (block.status == 'running') { return '运行中' }
+	if (block.status == 'completed') { return '完成' }
+	if (block.status == 'error') { return '失败' }
+	if (block.status == 'pending') { return '等待' }
+	return '工具'
+}
+
+export function getChatToolDisplayName(name: string): string {
+	if (name == 'file_read') { return '读取文件' }
+	if (name == 'file_write') { return '写入文件' }
+	if (name == 'file_delete') { return '删除文件' }
+	if (name == 'file_list') { return '列出文件' }
+	if (name == 'file_info') { return '文件信息' }
+	if (name == 'directory_create') { return '创建目录' }
+	if (name == 'memory_search') { return '搜索记忆' }
+	if (name == 'memory_buffer_write') { return '写短缓存' }
+	if (name == 'memory_core_list') { return '列出记忆' }
+	if (name == 'memory_core_save') { return '保存记忆' }
+	if (name == 'memory_core_forget') { return '遗忘记忆' }
+	if (name == 'web_search') { return '网络搜索' }
+	return name
+}
+
+export function getChatPartLabel(part: ChatContentPartView): string {
+	if (part.type == 'file') {
+		return '[文件] ' + (part.filename != '' ? part.filename : (part.path != '' ? part.path : '未命名文件'))
+	}
+	if (part.type == 'record' || part.type == 'voice') {
+		return '[语音] ' + (part.path != '' ? part.path : part.url)
+	}
+	if (part.type == 'audio') {
+		return '[音频] ' + (part.filename != '' ? part.filename : (part.path != '' ? part.path : part.url))
+	}
+	if (part.type == 'video') {
+		return '[视频] ' + (part.filename != '' ? part.filename : (part.path != '' ? part.path : part.url))
+	}
+	return '[' + part.type + '] ' + (part.text != '' ? part.text : part.path)
+}
