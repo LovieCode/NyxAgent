@@ -1,0 +1,53 @@
+/**
+ * Chat 页面语音运行时辅助。
+ *
+ * 页面保留状态机，路径解析、录音回调解析和播放器销毁放这里，避免 UI 文件继续膨胀。
+ */
+
+import { exists } from '@/utils/file-manager.uts'
+
+export function parseRecorderTempPath(res: any): string {
+	try {
+		const raw = JSON.stringify(res)
+		if (raw == null || raw == '') { return '' }
+		const parsed = JSON.parse(raw) as UTSJSONObject
+		const rawTempPath = parsed['tempFilePath'] as string | null
+		return rawTempPath != null ? rawTempPath : ''
+	} catch (_e: any) {
+	}
+	return ''
+}
+
+export function buildPlayableSpeechPath(path: string): string {
+	if (path == '') { return '' }
+	if (path.startsWith('file://') || path.startsWith('http://') || path.startsWith('https://') || path.startsWith('unifile://')) {
+		return path
+	}
+	if (path.startsWith('/')) {
+		return 'file://' + path
+	}
+	return path
+}
+
+export function isPlayableSpeechCachePath(path: string): boolean {
+	if (path == '') { return false }
+	if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('unifile://')) { return true }
+	if (path.startsWith('file://')) {
+		const rawPath = path.substring(7)
+		return exists(rawPath)
+	}
+	if (path.startsWith('/')) { return exists(path) }
+	return true
+}
+
+export function destroySpeechPlayer(player: InnerAudioContext | null): void {
+	if (player == null) { return }
+	try {
+		player.stop()
+	} catch (_e: any) {
+	}
+	try {
+		player.destroy()
+	} catch (_e2: any) {
+	}
+}

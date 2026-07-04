@@ -150,9 +150,20 @@
 		finalizeAssistantTurn,
 		reduceAgentEvent,
 	} from '@/utils/chat-message-reducer.uts'
-	import { getAgentConversationDir, exists } from '@/utils/file-manager.uts'
+	import { getAgentConversationDir } from '@/utils/file-manager.uts'
 	import { setContextPreviewPayload, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import { transcribeAudio, synthesizeSpeech } from '@/utils/speech-service.uts'
+	import {
+		buildPlayableSpeechPath as buildPlayableSpeechAudioPath,
+		destroySpeechPlayer,
+		isPlayableSpeechCachePath,
+		parseRecorderTempPath,
+	} from '@/utils/chat-speech-runtime.uts'
+	import {
+		appendBufferedChatAgentEvent,
+		isBufferedChatAgentEvent,
+		reduceBufferedChatAgentEvents,
+	} from '@/utils/chat-stream-events.uts'
 	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, type PickedLocalFile } from '@/utils/attachment-reader.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { NYX_FLOAT_CONTEXT_CHAT, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
@@ -797,14 +808,14 @@
 			organizeMemoryFromToolbar() {
 				this.showToolPanel = false
 				if (this.isGenerating == true) {
-					uni.showToast({ position: 'bottom', 
+					uni.showToast({ position: 'bottom',
 						title: '当前任务进行中',
 						icon: 'none'
 					})
 					return
 				}
 				if (this.messages.length == 0) {
-					uni.showToast({ position: 'bottom', 
+					uni.showToast({ position: 'bottom',
 						title: '暂无可整理内容',
 						icon: 'none'
 					})
@@ -817,7 +828,7 @@
 					this.currentAgentId,
 					this.conversationId
 				)
-				uni.showToast({ position: 'bottom', 
+				uni.showToast({ position: 'bottom',
 					title: started == true ? '记忆整理已开始' : '暂无可整理内容',
 					icon: 'none'
 				})
@@ -828,13 +839,13 @@
 				this.showToolPanel = false
 				if (this.isGenerating == true) {
 					this.stopGenerating()
-					uni.showToast({ position: 'bottom', 
+					uni.showToast({ position: 'bottom',
 						title: '已终止',
 						icon: 'none'
 					})
 					return
 				}
-				uni.showToast({ position: 'bottom', 
+				uni.showToast({ position: 'bottom',
 					title: '当前没有运行中的任务',
 					icon: 'none'
 				})
@@ -861,11 +872,7 @@
 				recorder.onStop((res: any): void => {
 					if (sessionId != this.voiceSessionId) { return }
 					this.isListening = false
-					const raw = JSON.stringify(res)
-					if (raw == null || raw == '') { return }
-					const parsed = JSON.parse(raw) as UTSJSONObject
-					const rawTempPath = parsed['tempFilePath'] as string | null
-					const tempPath = rawTempPath != null ? rawTempPath : ''
+					const tempPath = parseRecorderTempPath(res)
 					if (tempPath != '') {
 						this.handleVoiceRecordStopped(tempPath)
 					}
@@ -914,39 +921,18 @@
 					this.isStoppingSpeechPlayback = true
 					this.speechPlayer = null
 					this.playingSpeechPath = ''
-					try {
-						player.stop()
-					} catch (_e: any) {
-					}
-					try {
-						player.destroy()
-					} catch (_e2: any) {
-					}
+					destroySpeechPlayer(player)
 					return
 				}
 				this.playingSpeechPath = ''
 			},
 
 			buildPlayableSpeechPath(path: string): string {
-				if (path == '') { return '' }
-				if (path.startsWith('file://') || path.startsWith('http://') || path.startsWith('https://') || path.startsWith('unifile://')) {
-					return path
-				}
-				if (path.startsWith('/')) {
-					return 'file://' + path
-				}
-				return path
+				return buildPlayableSpeechAudioPath(path)
 			},
 
 			isPlayableSpeechCache(path: string): boolean {
-				if (path == '') { return false }
-				if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('unifile://')) { return true }
-				if (path.startsWith('file://')) {
-					const rawPath = path.substring(7)
-					return exists(rawPath)
-				}
-				if (path.startsWith('/')) { return exists(path) }
-				return true
+				return isPlayableSpeechCachePath(path)
 			},
 
 			playSpeechPath(path: string): void {
@@ -1048,7 +1034,7 @@
 			},
 
 			isBufferedAgentEvent(event: AgentEvent): boolean {
-				return event.type == 'text_delta' || event.type == 'thinking_delta'
+				return isBufferedChatAgentEvent(event)
 			},
 
 			clearStreamFlushTimer() {
@@ -1066,25 +1052,7 @@
 			},
 
 			appendBufferedAgentEvent(event: AgentEvent) {
-				const lastIndex = this.streamEventQueue.length - 1
-				if (lastIndex >= 0) {
-					const last = this.streamEventQueue[lastIndex]
-					if (last.type == event.type) {
-						if (event.type == 'text_delta') {
-							const oldText = last.text != null ? (last.text as string) : ''
-							const nextText = event.text != null ? (event.text as string) : ''
-							last.text = oldText + nextText
-							return
-						}
-						if (event.type == 'thinking_delta') {
-							const oldThinking = last.thinkingText != null ? (last.thinkingText as string) : ''
-							const nextThinking = event.thinkingText != null ? (event.thinkingText as string) : ''
-							last.thinkingText = oldThinking + nextThinking
-							return
-						}
-					}
-				}
-				this.streamEventQueue.push(event)
+				appendBufferedChatAgentEvent(this.streamEventQueue, event)
 			},
 
 			scheduleStreamFlush() {
@@ -1101,12 +1069,7 @@
 				if (this.streamEventQueue.length == 0) { return }
 				const pending = this.streamEventQueue
 				this.streamEventQueue = [] as AgentEvent[]
-				let messageChanged = false
-				for (let i = 0; i < pending.length; i++) {
-					if (reduceAgentEvent(this.messages, pending[i]) == true) {
-						messageChanged = true
-					}
-				}
+				const messageChanged = reduceBufferedChatAgentEvents(this.messages, pending)
 				if (messageChanged == true) {
 					this.scrollToBottom()
 				}
@@ -1257,7 +1220,7 @@
 					return
 				}
 				if (event.type == 'memory_organize_start') {
-					uni.showToast({ position: 'bottom', 
+					uni.showToast({ position: 'bottom',
 						title: event.message != null ? (event.message as string) : '记忆整理已开始',
 						icon: 'none'
 					})

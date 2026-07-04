@@ -1,0 +1,44 @@
+/**
+ * Chat 流式事件缓冲辅助。
+ *
+ * 借 AstrBot pipeline 分层思路：页面负责调度，事件合并和批量 reduce 放到工具层。
+ */
+
+import { AgentEvent } from '@/utils/event.uts'
+import { reduceAgentEvent } from '@/utils/chat-message-reducer.uts'
+
+export function isBufferedChatAgentEvent(event: AgentEvent): boolean {
+	return event.type == 'text_delta' || event.type == 'thinking_delta'
+}
+
+export function appendBufferedChatAgentEvent(queue: AgentEvent[], event: AgentEvent): void {
+	const lastIndex = queue.length - 1
+	if (lastIndex >= 0) {
+		const last = queue[lastIndex]
+		if (last.type == event.type) {
+			if (event.type == 'text_delta') {
+				const oldText = last.text != null ? (last.text as string) : ''
+				const nextText = event.text != null ? (event.text as string) : ''
+				last.text = oldText + nextText
+				return
+			}
+			if (event.type == 'thinking_delta') {
+				const oldThinking = last.thinkingText != null ? (last.thinkingText as string) : ''
+				const nextThinking = event.thinkingText != null ? (event.thinkingText as string) : ''
+				last.thinkingText = oldThinking + nextThinking
+				return
+			}
+		}
+	}
+	queue.push(event)
+}
+
+export function reduceBufferedChatAgentEvents(messages: UTSJSONObject[], pending: AgentEvent[]): boolean {
+	let messageChanged = false
+	for (let i = 0; i < pending.length; i++) {
+		if (reduceAgentEvent(messages, pending[i]) == true) {
+			messageChanged = true
+		}
+	}
+	return messageChanged
+}
