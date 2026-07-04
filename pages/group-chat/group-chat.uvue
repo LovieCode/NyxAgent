@@ -129,18 +129,35 @@
 	import { getAgentById } from '@/utils/agent.uts'
 	import { loadChatUserProfile } from '@/utils/chat-conversation-service.uts'
 	import { buildChatDatetimePrefix } from '@/utils/datetime-context.uts'
-	import { CHAT_ROLE_ASSISTANT, createPlainPart, getMessageContent, getMessageParts, getMessageThinking, setImageMessageCaption } from '@/utils/chat-models.uts'
+	import { getMessageContent, getMessageThinking, setImageMessageCaption } from '@/utils/chat-models.uts'
 	import { reduceAgentEvent, finalizeAssistantTurn } from '@/utils/chat-message-reducer.uts'
 	import { detectSchedulerLeakCandidate, getSchedulerLeakHoldSize } from '@/utils/group-chat-moderation.uts'
 	import { setActiveAgentRuntimeId, setContextPreviewPayload, setFilesInitialPath, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, type PickedLocalFile } from '@/utils/attachment-reader.uts'
+	import {
+		appendGroupVisiblePlainText,
+		buildGroupDispatchHistoryText,
+		buildGroupMemberAgentItems as buildGroupMemberAgentItemsForPage,
+		buildGroupMemberAgentNames,
+		buildGroupToolbarTrackStyle,
+		findLastGroupAssistantMessage,
+		findLastGroupAssistantMessageFrom,
+		getGroupMessagePartsForView,
+		isGroupAgentMessage,
+		isGroupUserMessage,
+		normalizeGroupUserSenderNames,
+		readGroupMessageHideThinking,
+		readGroupMessageMsgSegmentation,
+		readGroupMessageSenderName,
+		readGroupUserMessageSenderName,
+		replaceGroupVisiblePlainText,
+	} from '@/utils/group-chat-page-helpers.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { NYX_FLOAT_CONTEXT_GROUP, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
 	import {
 		GROUP_MESSAGE_SENDER_AGENT,
 		GROUP_MESSAGE_SENDER_REVIEWER,
 		GROUP_MESSAGE_SENDER_SCHEDULER,
-		GROUP_MESSAGE_SENDER_USER,
 		type GroupChat,
 		type GroupChatSession,
 		applyGroupSessionTitleSuggestion,
@@ -180,9 +197,7 @@
 		readAgentInjectDatetime,
 		readAgentMsgSegmentation,
 		resolveGroupReviewerAgentId,
-		resolveGroupReviewerDisplayName,
 		resolveGroupSchedulerAgentId,
-		resolveGroupSchedulerDisplayName,
 		revokeGroupAgentMessage,
 		saveGroupAgentContextRecord,
 		saveGroupMessages,
@@ -237,11 +252,7 @@
 				return getVisibleGroupMessages(this.messages)
 			},
 			toolbarTrackStyle(): string {
-				let width = this.toolbarViewportWidth
-				if (width <= 0) { width = 375 }
-				const base = -this.toolbarPageIndex * width
-				const offset = base + this.toolbarDragOffset
-				return 'transform: translateX(' + offset + 'px);'
+				return buildGroupToolbarTrackStyle(this.toolbarPageIndex, this.toolbarViewportWidth, this.toolbarDragOffset)
 			}
 		},
 		onLoad() {
@@ -422,50 +433,27 @@
 					this.inputHeight = Math.min(lineCount * 22 + 12, 120)
 				}
 			},
-			getMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] { return getMessageParts(msg) },
+			getMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] { return getGroupMessagePartsForView(msg) },
 			readMessageHideThinking(msg: UTSJSONObject): boolean {
-				const raw = msg['hideThinking'] as boolean | null
-				return raw == true
+				return readGroupMessageHideThinking(msg)
 			},
 			readMessageMsgSegmentation(msg: UTSJSONObject): boolean {
-				const raw = msg['msgSegmentation'] as boolean | null
-				return raw != null ? raw : true
+				return readGroupMessageMsgSegmentation(msg)
 			},
 			isAgentMessage(msg: UTSJSONObject): boolean {
-				const senderType = msg['senderType'] as string | null
-				return senderType == GROUP_MESSAGE_SENDER_AGENT
+				return isGroupAgentMessage(msg)
 			},
 			isUserMessage(msg: UTSJSONObject): boolean {
-				const senderType = msg['senderType'] as string | null
-				return senderType == GROUP_MESSAGE_SENDER_USER
+				return isGroupUserMessage(msg)
 			},
 			readMessageSenderName(msg: UTSJSONObject): string {
-				const raw = msg['senderName'] as string | null
-				return raw != null ? raw : ''
+				return readGroupMessageSenderName(msg)
 			},
 			readUserMessageSenderName(msg: UTSJSONObject): string {
-				const raw = msg['senderName'] as string | null
-				const name = raw != null ? raw.trim() : ''
-				if (name != '' && name != '用户') { return name }
-				return this.userNickname != '' ? this.userNickname : '用户'
+				return readGroupUserMessageSenderName(msg, this.userNickname)
 			},
 			normalizeUserSenderNames(): void {
-				const displayName = this.userNickname != '' ? this.userNickname : '用户'
-				if (displayName == '用户') { return }
-				let changed = false
-				for (let i = 0; i < this.messages.length; i++) {
-					const msg = this.messages[i]
-					const senderType = msg['senderType'] as string | null
-					if (senderType == GROUP_MESSAGE_SENDER_USER) {
-						const raw = msg['senderName'] as string | null
-						const name = raw != null ? raw.trim() : ''
-						if (name == '' || name == '用户') {
-							msg['senderName'] = displayName
-							changed = true
-						}
-					}
-				}
-				if (changed == true) {
+				if (normalizeGroupUserSenderNames(this.messages, this.userNickname) == true) {
 					this.saveMessages()
 				}
 			},
@@ -473,56 +461,16 @@
 				setTimeout(() => { this.scrollTop = this.scrollTop + 999999 }, 80)
 			},
 			findLastAssistantMessage(list: UTSJSONObject[]): UTSJSONObject | null {
-				for (let i = list.length - 1; i >= 0; i--) {
-					const role = list[i]['role'] as string | null
-					if (role == CHAT_ROLE_ASSISTANT) {
-						return list[i]
-					}
-				}
-				return null
+				return findLastGroupAssistantMessage(list)
 			},
 			findLastAssistantMessageFrom(list: UTSJSONObject[], startIndex: number): UTSJSONObject | null {
-				for (let i = list.length - 1; i >= startIndex; i--) {
-					const role = list[i]['role'] as string | null
-					if (role == CHAT_ROLE_ASSISTANT) {
-						return list[i]
-					}
-				}
-				return null
+				return findLastGroupAssistantMessageFrom(list, startIndex)
 			},
 			appendVisiblePlainText(msg: UTSJSONObject, text: string): void {
-				if (text == '') { return }
-				const parts = msg['message'] as UTSJSONObject[] | null
-				let list: UTSJSONObject[] = []
-				if (parts != null) {
-					list = parts
-				}
-				if (parts == null) {
-					msg['message'] = list
-				}
-				const lastIndex = list.length - 1
-				if (lastIndex >= 0) {
-					const last = list[lastIndex]
-					const type = last['type'] as string | null
-					if (type == 'plain') {
-						const oldText = last['text'] as string | null
-						last['text'] = (oldText != null ? oldText : '') + text
-					} else {
-						list.push(createPlainPart(text))
-					}
-				} else {
-					list.push(createPlainPart(text))
-				}
-				const oldContent = msg['content'] as string | null
-				msg['content'] = (oldContent != null ? oldContent : '') + text
+				appendGroupVisiblePlainText(msg, text)
 			},
 			replaceVisiblePlainText(msg: UTSJSONObject, text: string): void {
-				msg['content'] = text
-				if (text != '') {
-					msg['message'] = [createPlainPart(text)]
-				} else {
-					msg['message'] = [] as UTSJSONObject[]
-				}
+				replaceGroupVisiblePlainText(msg, text)
 			},
 			saveMessages(): void {
 				if (this.groupId == '' || this.sessionId == '') { return }
@@ -735,25 +683,7 @@
 				this.startGroupGenerationForMedia('用户发送了一个文件：' + file.name)
 			},
 			buildGroupMemberAgentItems(): UTSJSONObject[] {
-				const members = getActiveGroupMembers(this.groupId)
-				const result: UTSJSONObject[] = []
-				const group = this.group
-				result.push({
-					agentId: resolveGroupSchedulerAgentId(group),
-					name: resolveGroupSchedulerDisplayName(group),
-				} as UTSJSONObject)
-				result.push({
-					agentId: resolveGroupReviewerAgentId(group),
-					name: resolveGroupReviewerDisplayName(group),
-				} as UTSJSONObject)
-				for (let i = 0; i < members.length; i++) {
-					const agent = getAgentById(members[i].agentId)
-					result.push({
-						agentId: members[i].agentId,
-						name: readAgentName(agent),
-					} as UTSJSONObject)
-				}
-				return result
+				return buildGroupMemberAgentItemsForPage(this.groupId, this.group)
 			},
 			chooseAgentForMemory(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
@@ -771,11 +701,7 @@
 					uni.showToast({ position: 'bottom', title: '群里还没有成员', icon: 'none' })
 					return
 				}
-				const names: string[] = []
-				for (let i = 0; i < items.length; i++) {
-					const name = items[i]['name'] as string | null
-					names.push(name != null ? name : '联系人')
-				}
+				const names = buildGroupMemberAgentNames(items)
 				uni.showActionSheet({
 					itemList: names,
 					success: (res) => {
@@ -868,42 +794,12 @@
 			showDispatchHistory(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
 				this.showToolPanel = false
-				const lines: string[] = []
-				for (let i = this.messages.length - 1; i >= 0; i--) {
-					const msg = this.messages[i]
-					const senderType = msg['senderType'] as string | null
-					if (senderType != GROUP_MESSAGE_SENDER_SCHEDULER && senderType != GROUP_MESSAGE_SENDER_REVIEWER) { continue }
-					const reason = msg['triggerReason'] as string | null
-					const visibility = msg['visibility'] as string | null
-					const kind = senderType != null ? senderType : 'internal'
-					const level = visibility != null && visibility != '' ? visibility : 'internal'
-					const ts = msg['timestamp'] as number | null
-					const d = ts != null && ts > 0 ? new Date(ts) : new Date()
-					const hh = d.getHours() < 10 ? '0' + d.getHours().toString() : d.getHours().toString()
-					const mm = d.getMinutes() < 10 ? '0' + d.getMinutes().toString() : d.getMinutes().toString()
-					lines.push('=== ' + hh + ':' + mm + ' [' + kind + '/' + level + '] ' + (reason != null ? reason : '') + ' ===')
-					const content = msg['content'] as string | null
-					const text = content != null ? content : ''
-					const first = text.indexOf('{')
-					const last = text.lastIndexOf('}')
-					if (first >= 0 && last > first) {
-						try {
-							const parsed = JSON.parse(text.substring(first, last + 1)) as UTSJSONObject
-							lines.push(JSON.stringify(parsed, null, 2))
-						} catch (_e: any) {
-							lines.push(text)
-						}
-					} else {
-						lines.push(text)
-					}
-					lines.push('')
-					if (lines.length >= 200) { break }
-				}
-				if (lines.length == 0) {
+				const previewText = buildGroupDispatchHistoryText(this.messages)
+				if (previewText == '') {
 					uni.showToast({ position: 'bottom', title: '还没有调度记录', icon: 'none' })
 					return
 				}
-				setContextPreviewPayload(lines.join('\n'))
+				setContextPreviewPayload(previewText)
 				uni.navigateTo({ url: '/pages/context-preview/context-preview' })
 			},
 			runScheduler(reason: string): void {

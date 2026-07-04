@@ -1,0 +1,215 @@
+/**
+ * 群聊页面展示辅助。
+ *
+ * 借 AstrBot message/pipeline 分层思路：页面只编排交互，消息展示、成员选择和调度日志格式化放这里。
+ */
+
+import { getAgentById } from '@/utils/agent.uts'
+import { CHAT_ROLE_ASSISTANT, createPlainPart, getMessageParts } from '@/utils/chat-models.uts'
+import {
+	GROUP_MESSAGE_SENDER_AGENT,
+	GROUP_MESSAGE_SENDER_REVIEWER,
+	GROUP_MESSAGE_SENDER_SCHEDULER,
+	GROUP_MESSAGE_SENDER_USER,
+	type GroupChat,
+	getActiveGroupMembers,
+	readAgentName,
+	resolveGroupReviewerAgentId,
+	resolveGroupReviewerDisplayName,
+	resolveGroupSchedulerAgentId,
+	resolveGroupSchedulerDisplayName,
+} from '@/utils/group-chat-service.uts'
+
+export function buildGroupToolbarTrackStyle(pageIndex: number, viewportWidth: number, dragOffset: number): string {
+	let width = viewportWidth
+	if (width <= 0) { width = 375 }
+	const base = -pageIndex * width
+	const offset = base + dragOffset
+	return 'transform: translateX(' + offset + 'px);'
+}
+
+export function getGroupMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] {
+	return getMessageParts(msg)
+}
+
+export function readGroupMessageHideThinking(msg: UTSJSONObject): boolean {
+	const raw = msg['hideThinking'] as boolean | null
+	return raw == true
+}
+
+export function readGroupMessageMsgSegmentation(msg: UTSJSONObject): boolean {
+	const raw = msg['msgSegmentation'] as boolean | null
+	return raw != null ? raw : true
+}
+
+export function isGroupAgentMessage(msg: UTSJSONObject): boolean {
+	const senderType = msg['senderType'] as string | null
+	return senderType == GROUP_MESSAGE_SENDER_AGENT
+}
+
+export function isGroupUserMessage(msg: UTSJSONObject): boolean {
+	const senderType = msg['senderType'] as string | null
+	return senderType == GROUP_MESSAGE_SENDER_USER
+}
+
+export function readGroupMessageSenderName(msg: UTSJSONObject): string {
+	const raw = msg['senderName'] as string | null
+	return raw != null ? raw : ''
+}
+
+export function readGroupUserMessageSenderName(msg: UTSJSONObject, userNickname: string): string {
+	const raw = msg['senderName'] as string | null
+	const name = raw != null ? raw.trim() : ''
+	if (name != '' && name != '用户') { return name }
+	return userNickname != '' ? userNickname : '用户'
+}
+
+export function normalizeGroupUserSenderNames(messages: UTSJSONObject[], userNickname: string): boolean {
+	const displayName = userNickname != '' ? userNickname : '用户'
+	if (displayName == '用户') { return false }
+	let changed = false
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const senderType = msg['senderType'] as string | null
+		if (senderType == GROUP_MESSAGE_SENDER_USER) {
+			const raw = msg['senderName'] as string | null
+			const name = raw != null ? raw.trim() : ''
+			if (name == '' || name == '用户') {
+				msg['senderName'] = displayName
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
+export function findLastGroupAssistantMessage(list: UTSJSONObject[]): UTSJSONObject | null {
+	for (let i = list.length - 1; i >= 0; i--) {
+		const role = list[i]['role'] as string | null
+		if (role == CHAT_ROLE_ASSISTANT) {
+			return list[i]
+		}
+	}
+	return null
+}
+
+export function findLastGroupAssistantMessageFrom(list: UTSJSONObject[], startIndex: number): UTSJSONObject | null {
+	for (let i = list.length - 1; i >= startIndex; i--) {
+		const role = list[i]['role'] as string | null
+		if (role == CHAT_ROLE_ASSISTANT) {
+			return list[i]
+		}
+	}
+	return null
+}
+
+export function appendGroupVisiblePlainText(msg: UTSJSONObject, text: string): void {
+	if (text == '') { return }
+	const parts = msg['message'] as UTSJSONObject[] | null
+	let list: UTSJSONObject[] = []
+	if (parts != null) {
+		list = parts
+	}
+	if (parts == null) {
+		msg['message'] = list
+	}
+	const lastIndex = list.length - 1
+	if (lastIndex >= 0) {
+		const last = list[lastIndex]
+		const type = last['type'] as string | null
+		if (type == 'plain') {
+			const oldText = last['text'] as string | null
+			last['text'] = (oldText != null ? oldText : '') + text
+		} else {
+			list.push(createPlainPart(text))
+		}
+	} else {
+		list.push(createPlainPart(text))
+	}
+	const oldContent = msg['content'] as string | null
+	msg['content'] = (oldContent != null ? oldContent : '') + text
+}
+
+export function replaceGroupVisiblePlainText(msg: UTSJSONObject, text: string): void {
+	msg['content'] = text
+	if (text != '') {
+		msg['message'] = [createPlainPart(text)]
+	} else {
+		msg['message'] = [] as UTSJSONObject[]
+	}
+}
+
+export function buildGroupMemberAgentItems(groupId: string, group: GroupChat | null): UTSJSONObject[] {
+	const members = getActiveGroupMembers(groupId)
+	const result: UTSJSONObject[] = []
+	result.push({
+		agentId: resolveGroupSchedulerAgentId(group),
+		name: resolveGroupSchedulerDisplayName(group),
+	} as UTSJSONObject)
+	result.push({
+		agentId: resolveGroupReviewerAgentId(group),
+		name: resolveGroupReviewerDisplayName(group),
+	} as UTSJSONObject)
+	for (let i = 0; i < members.length; i++) {
+		const agent = getAgentById(members[i].agentId)
+		result.push({
+			agentId: members[i].agentId,
+			name: readAgentName(agent),
+		} as UTSJSONObject)
+	}
+	return result
+}
+
+export function buildGroupMemberAgentNames(items: UTSJSONObject[]): string[] {
+	const names: string[] = []
+	for (let i = 0; i < items.length; i++) {
+		const name = items[i]['name'] as string | null
+		names.push(name != null ? name : '联系人')
+	}
+	return names
+}
+
+function formatDispatchTime(msg: UTSJSONObject): string {
+	const ts = msg['timestamp'] as number | null
+	const d = ts != null && ts > 0 ? new Date(ts) : new Date()
+	const hh = d.getHours() < 10 ? '0' + d.getHours().toString() : d.getHours().toString()
+	const mm = d.getMinutes() < 10 ? '0' + d.getMinutes().toString() : d.getMinutes().toString()
+	return hh + ':' + mm
+}
+
+function appendDispatchMessage(lines: string[], msg: UTSJSONObject): void {
+	const senderType = msg['senderType'] as string | null
+	const reason = msg['triggerReason'] as string | null
+	const visibility = msg['visibility'] as string | null
+	const kind = senderType != null ? senderType : 'internal'
+	const level = visibility != null && visibility != '' ? visibility : 'internal'
+	lines.push('=== ' + formatDispatchTime(msg) + ' [' + kind + '/' + level + '] ' + (reason != null ? reason : '') + ' ===')
+	const content = msg['content'] as string | null
+	const text = content != null ? content : ''
+	const first = text.indexOf('{')
+	const last = text.lastIndexOf('}')
+	if (first >= 0 && last > first) {
+		try {
+			const parsed = JSON.parse(text.substring(first, last + 1)) as UTSJSONObject
+			lines.push(JSON.stringify(parsed, null, 2))
+		} catch (_e: any) {
+			lines.push(text)
+		}
+	} else {
+		lines.push(text)
+	}
+	lines.push('')
+}
+
+export function buildGroupDispatchHistoryText(messages: UTSJSONObject[]): string {
+	const lines: string[] = []
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i]
+		const senderType = msg['senderType'] as string | null
+		if (senderType != GROUP_MESSAGE_SENDER_SCHEDULER && senderType != GROUP_MESSAGE_SENDER_REVIEWER) { continue }
+		appendDispatchMessage(lines, msg)
+		if (lines.length >= 200) { break }
+	}
+	if (lines.length == 0) { return '' }
+	return lines.join('\n')
+}
