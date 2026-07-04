@@ -145,7 +145,7 @@
 							break
 						}
 					}
-					if (!found && enabled.length > 0) {
+					if (found == false && enabled.length > 0) {
 						providerId = enabled[0]['id'] as string
 					}
 				} else {

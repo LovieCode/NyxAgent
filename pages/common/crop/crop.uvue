@@ -126,7 +126,7 @@
 	}
 
 	function onTouchStart(e: UniTouchEvent) {
-		if (!loaded || e.touches.length == 0) { return }
+		if (loaded == false || e.touches.length == 0) { return }
 		touchStartX = e.touches[0].screenX
 		touchStartY = e.touches[0].screenY
 
@@ -140,7 +140,7 @@
 	}
 
 	function onTouchMove(e: UniTouchEvent) {
-		if (!loaded || e.touches.length == 0) { return }
+		if (loaded == false || e.touches.length == 0) { return }
 
 		if (e.touches.length >= 2 && touchDist > 0) {
 			// === 捏合缩放：以手指初始距离为基准计算缩放比 ===

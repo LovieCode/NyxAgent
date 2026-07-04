@@ -109,7 +109,7 @@ export function getAgentDir(agentId: string): string {
 	const root = getAgentsRoot()
 	if (root == '') return ''
 	const dir = root + '/' + agentId
-	if (!exists(dir)) {
+	if (exists(dir) == false) {
 		createDir(dir)
 	}
 	return dir
@@ -126,7 +126,7 @@ export function getAgentConversationDir(agentId: string, conversationId: string)
 	const agentDir = getAgentDir(agentId)
 	if (agentDir == '') { return '' }
 	const dir = agentDir + '/' + conversationId
-	if (!exists(dir)) {
+	if (exists(dir) == false) {
 		createDir(dir)
 	}
 	return dir
@@ -478,7 +478,7 @@ export function migrateLegacyUserDir(): void {
 		setAppSetting(LEGACY_USER_DIR_MIGRATED_KEY, '1')
 		return
 	}
-	if (!exists(legacyDir)) {
+	if (exists(legacyDir) == false) {
 		setAppSetting(LEGACY_USER_DIR_MIGRATED_KEY, '1')
 		return
 	}

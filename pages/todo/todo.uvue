@@ -435,7 +435,7 @@
 					for (let fi = 0; fi < files.length; fi++) {
 						const file = files[fi] as FileItem
 						if (file.isDirectory) continue
-						if (!file.name.endsWith('.md')) continue
+						if (file.name.endsWith('.md') == false) { continue }
 						const content = readContent(file.path)
 						if (content == null) continue
 						const noteId = file.name.substring(0, file.name.length - 3)
@@ -480,7 +480,7 @@
 					for (let ei = 0; ei < existingFiles.length; ei++) {
 						const file = existingFiles[ei] as FileItem
 						if (file.isDirectory) continue
-						if (!file.name.endsWith('.md')) continue
+						if (file.name.endsWith('.md') == false) { continue }
 						const noteId = file.name.substring(0, file.name.length - 3)
 						let found = false
 						for (let ci = 0; ci < currentIds.length; ci++) {
@@ -489,7 +489,7 @@
 								break
 							}
 						}
-						if (!found) {
+						if (found == false) {
 							deleteItem(file.path, false)
 						}
 					}

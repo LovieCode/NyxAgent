@@ -151,7 +151,7 @@ function parseStorageArray(storage: UTSJSONObject, key: string): UTSJSONObject[]
 }
 
 function appendAsset(assets: UTSJSONObject[], specs: UTSJSONObject[], kind: string, sourcePath: string, zipPath: string, ref: string): void {
-	if (!isLocalExportPath(sourcePath)) {
+	if (isLocalExportPath(sourcePath) == false) {
 		return
 	}
 	appendFileSpec(specs, sourcePath, zipPath)
@@ -489,7 +489,7 @@ function appendKnowledgeOwnerFiles(specs: UTSJSONObject[], ownerType: string, ow
 		const noteFiles = listDir(notesDir)
 		for (let i = 0; i < noteFiles.length; i++) {
 			const nf = noteFiles[i]
-			if (!nf.isDirectory && nf.name.endsWith('.md')) {
+			if (nf.isDirectory == false && nf.name.endsWith('.md')) {
 				appendFileSpec(specs, nf.path, rootZipPath + '/notes/' + nf.name)
 			}
 		}

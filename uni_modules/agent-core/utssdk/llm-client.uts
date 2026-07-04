@@ -526,7 +526,7 @@ function runAgentLoop(
 					let argsObj: UTSJSONObject
 					try {
 						argsObj = JSON.parse(tc.arguments) as UTSJSONObject
-					} catch (_) {
+					} catch (_e: any) {
 						argsObj = {} as UTSJSONObject
 					}
 

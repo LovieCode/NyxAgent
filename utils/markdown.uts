@@ -170,7 +170,7 @@ export function parseTodoMarkdown(markdown: string): UTSJSONObject[] {
 	const result: UTSJSONObject[] = []
 	for (let i = 0; i < lines.length && result.length < 300; i++) {
 		const line = lines[i].trim()
-		if (!(line.startsWith('- [ ]') || line.startsWith('- [x]') || line.startsWith('- [X]'))) continue
+		if ((line.startsWith('- [ ]') || line.startsWith('- [x]') || line.startsWith('- [X]')) == false) { continue }
 		const completed = line.startsWith('- [x]') || line.startsWith('- [X]')
 		let rest = stripHtmlComment(line.substring(5).trim())
 		let priority = 'medium'

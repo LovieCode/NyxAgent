@@ -228,7 +228,7 @@ export class WorkspaceFileTool implements AgentTool {
 				return
 			}
 			if (action == 'info') {
-				if (!exists(absPath)) {
+				if (exists(absPath) == false) {
 					resolve({ content: '路径不存在: ' + path, isError: true } as ToolResult)
 					return
 				}
@@ -236,7 +236,7 @@ export class WorkspaceFileTool implements AgentTool {
 				return
 			}
 			if (action == 'read') {
-				if (!exists(absPath)) {
+				if (exists(absPath) == false) {
 					resolve({ content: '文件不存在或无权限访问: ' + path, isError: true } as ToolResult)
 					return
 				}

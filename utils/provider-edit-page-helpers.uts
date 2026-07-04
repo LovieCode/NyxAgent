@@ -157,14 +157,14 @@ export function normalizeProviderModelsForSave(editModels: ModelInfo[]): ModelIn
 		const ctxVal = m.ctxStr
 		if (ctxVal != null && ctxVal != '') {
 			const parsed = Number.parseInt(ctxVal)
-			if (!isNaN(parsed) && parsed > 0) {
+			if (isNaN(parsed) == false && parsed > 0) {
 				m.context = parsed
 			}
 		}
 		const mtVal = m.maxTokensStr
 		if (mtVal != null && mtVal != '') {
 			const parsed = Number.parseInt(mtVal)
-			if (!isNaN(parsed) && parsed > 0) {
+			if (isNaN(parsed) == false && parsed > 0) {
 				m.maxTokens = parsed
 			}
 		}

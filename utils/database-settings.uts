@@ -178,7 +178,7 @@ export function saveProvider(
 	const now = Date.now()
 	// 用 tableExists 替代 SELECT 查询，避免 Android 单行结果问题
 	const tableExists = db.tableExists('providers')
-	if (!tableExists) {
+	if (tableExists == false) {
 		// 表不存在时直接 INSERT
 		db.run(
 			'INSERT INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',

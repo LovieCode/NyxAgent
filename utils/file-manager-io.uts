@@ -99,7 +99,7 @@ export function listDir(dirPath: string): FileItem[] {
 	}
 	try {
 		const dir = new File(absPath)
-		if (!dir.exists() || !dir.isDirectory()) {
+		if (dir.exists() == false || dir.isDirectory() == false) {
 			return []
 		}
 		const names = dir.list()
@@ -164,7 +164,7 @@ export function listDir(dirPath: string): FileItem[] {
 function statItemByAbsPath(absPath: string, displayPath: string): FileItem {
 	try {
 		const file = new File(absPath)
-		if (!file.exists()) {
+		if (file.exists() == false) {
 			return makeFileItem(basename(displayPath), displayPath, false, 0, 0)
 		}
 		const isDir = file.isDirectory()
@@ -361,7 +361,7 @@ export function readContent(filePath: string): string | null {
 	}
 	try {
 		const file = new File(absPath)
-		if (!file.exists() || file.isDirectory()) {
+		if (file.exists() == false || file.isDirectory()) {
 			return null
 		}
 		return file.readText(UTF8_CHARSET)
@@ -394,7 +394,7 @@ export function deleteItem(path: string, recursive: boolean = true): FileOpResul
 	if (normalized == '') {
 		return failResult('路径不能为空')
 	}
-	if (!exists(normalized)) {
+	if (exists(normalized) == false) {
 		return failResult('路径不存在')
 	}
 	// #ifdef APP-ANDROID
@@ -475,7 +475,7 @@ export function renameItem(oldPath: string, newPath: string): FileOpResult {
 	if (normalizedOld == '' || normalizedNew == '') {
 		return failResult('路径不能为空')
 	}
-	if (!exists(normalizedOld)) {
+	if (exists(normalizedOld) == false) {
 		return failResult('原路径不存在')
 	}
 	if (exists(normalizedNew)) {
@@ -528,7 +528,7 @@ export function copyItem(srcPath: string, destPath: string): FileOpResult {
 	if (normalizedSrc == '' || normalizedDest == '') {
 		return failResult('路径不能为空')
 	}
-	if (!exists(normalizedSrc)) {
+	if (exists(normalizedSrc) == false) {
 		return failResult('源路径不存在')
 	}
 	if (exists(normalizedDest)) {
@@ -575,7 +575,7 @@ export function copyItem(srcPath: string, destPath: string): FileOpResult {
  */
 function copyDirRecursive(srcPath: string, destPath: string): FileOpResult {
 	const createResult = createDir(destPath, true)
-	if (!createResult.ok) {
+	if (createResult.ok == false) {
 		return createResult
 	}
 	const items = listDir(srcPath)
@@ -585,12 +585,12 @@ function copyDirRecursive(srcPath: string, destPath: string): FileOpResult {
 		const childDest = joinPath(destPath, item.name)
 		if (item.isDirectory) {
 			const subResult = copyDirRecursive(childSrc, childDest)
-			if (!subResult.ok) {
+			if (subResult.ok == false) {
 				return subResult
 			}
 		} else {
 			const copyResult = copyItem(childSrc, childDest)
-			if (!copyResult.ok) {
+			if (copyResult.ok == false) {
 				return copyResult
 			}
 		}

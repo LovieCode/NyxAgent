@@ -41,7 +41,7 @@ export function ensureMetadataCache(): void {
 
 /**
  * 获取模型能力
- * 从 models.dev 元数据缓存中查询（扁平结构，直接下标访问，无需 Object.keys）
+ * 从 models.dev 元数据缓存中查询（扁平结构，直接下标访问，无需动态枚举）
  * @param modelId 模型 ID（例如 "openai/gpt-4o"、"deepseek/deepseek-chat"）
  * @returns 模型能力对象，所有字段默认为 false
  */
