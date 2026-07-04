@@ -1,0 +1,102 @@
+import { deleteRuntimeState, setRuntimeState } from '@/utils/database.uts'
+import { getSkillDocumentCount, readSkillDescription, readSkillEnabled, readSkillId, readSkillName, skillIdListContains } from '@/utils/skills.uts'
+
+export type AgentSettingsProfileForm = {
+	name: string
+	desc: string
+	systemPrompt: string
+	avatar: string
+	model: string
+	ttsVoice: string
+	ttsVolume: string
+	ttsPitch: string
+}
+
+export function readAgentSettingsProfileForm(agent: UTSJSONObject, fallbackModel: string): AgentSettingsProfileForm {
+	const rawName = agent['name'] as string | null
+	const rawDesc = agent['desc'] as string | null
+	const rawPrompt = agent['systemPrompt'] as string | null
+	const rawAvatar = agent['avatar'] as string | null
+	const rawModel = agent['model'] as string | null
+	const rawTtsVoice = agent['ttsVoice'] as string | null
+	const rawTtsVolume = agent['ttsVolume'] as string | null
+	const rawTtsPitch = agent['ttsPitch'] as string | null
+	return {
+		name: rawName != null ? rawName : '',
+		desc: rawDesc != null ? rawDesc : '',
+		systemPrompt: rawPrompt != null ? rawPrompt : '',
+		avatar: rawAvatar != null ? rawAvatar : '',
+		model: rawModel != null && rawModel != '' ? rawModel : fallbackModel,
+		ttsVoice: rawTtsVoice != null ? rawTtsVoice : '',
+		ttsVolume: rawTtsVolume != null ? rawTtsVolume : '',
+		ttsPitch: rawTtsPitch != null ? rawTtsPitch : '',
+	} as AgentSettingsProfileForm
+}
+
+
+export function readAgentSettingsSkillId(skill: UTSJSONObject): string {
+	return readSkillId(skill)
+}
+
+export function readAgentSettingsSkillMeta(skill: UTSJSONObject): string {
+	return getSkillDocumentCount(skill) + ' 文档 · ' + (readSkillEnabled(skill) ? '可用' : '已停用')
+}
+
+export function isAgentSettingsSkillSelected(selectedSkillIds: string[], skill: UTSJSONObject): boolean {
+	return skillIdListContains(selectedSkillIds, readSkillId(skill))
+}
+
+export function toggleAgentSettingsSkillSelection(selectedSkillIds: string[], skill: UTSJSONObject): string[] {
+	const skillId = readSkillId(skill)
+	if (skillId == '') { return selectedSkillIds }
+	const next: string[] = []
+	let removed = false
+	for (let i = 0; i < selectedSkillIds.length; i++) {
+		if (selectedSkillIds[i] == skillId) {
+			removed = true
+		} else {
+			next.push(selectedSkillIds[i])
+		}
+	}
+	if (removed == false) {
+		next.push(skillId)
+	}
+	return next
+}
+
+export function readAgentSettingsSkillName(skill: UTSJSONObject): string {
+	return readSkillName(skill)
+}
+
+export function readAgentSettingsSkillDesc(skill: UTSJSONObject): string {
+	return readSkillDescription(skill)
+}
+
+export function clearAgentSettingsEditorRuntime(): void {
+	deleteRuntimeState('editor_draft')
+	deleteRuntimeState('editor_result')
+	deleteRuntimeState('editor_result_ready')
+	deleteRuntimeState('editor_file_path')
+	deleteRuntimeState('editor_saved')
+	deleteRuntimeState('editor_saved_path')
+}
+
+export function prepareAgentSettingsTextEditor(content: string, title: string, target: string, placeholder: string): void {
+	clearAgentSettingsEditorRuntime()
+	setRuntimeState('editor_mode', 'text')
+	setRuntimeState('editor_content', content)
+	setRuntimeState('editor_title', title)
+	setRuntimeState('editor_target', target)
+	setRuntimeState('editor_placeholder', placeholder)
+}
+
+export function readChooseImageFirstPath(res: any): string {
+	const raw = JSON.stringify(res)
+	if (raw == null || raw == '') { return '' }
+	const parsed = JSON.parse(raw) as UTSJSONObject
+	const paths = parsed['tempFilePaths'] as string[] | null
+	if (paths != null && paths.length > 0) {
+		return paths[0]
+	}
+	return ''
+}

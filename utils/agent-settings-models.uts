@@ -135,3 +135,93 @@ export function buildAgentGenerationHint(settings: GenerationSettings): string {
 	const streamText = settings.streamEnabled == true ? '流式' : '非流式'
 	return '温度 ' + settings.temperature + ' · 输出 ' + settings.maxTokens + ' · 迭代 ' + iterationText + ' · ' + streamText
 }
+
+export type AgentSettingsGenerationForm = {
+	useGlobalGeneration: boolean
+	temperatureStr: string
+	maxTokensStr: string
+	maxIterationsStr: string
+	streamEnabled: boolean
+	truncateThresholdStr: string
+	truncateDropCountStr: string
+	cacheEnabled: boolean
+	hideThinking: boolean
+	injectDatetime: boolean
+	msgSegmentation: boolean
+	globalGenerationHint: string
+}
+
+export type AgentSettingsGenerationSaveState = {
+	temperature: number | null
+	maxTokens: number | null
+	maxIterations: number | null
+	streamEnabled: boolean | null
+	temperatureStr: string
+	maxTokensStr: string
+	maxIterationsStr: string
+	truncateThreshold: number
+	truncateDropCount: number
+}
+
+export function readAgentGenerationForm(agent: UTSJSONObject, global: GenerationSettings): AgentSettingsGenerationForm {
+	const rawTemperature = agent['temperature'] as number | null
+	const rawMaxTokens = agent['maxTokens'] as number | null
+	const rawMaxIterations = agent['maxIterations'] as number | null
+	const rawStreamEnabled = agent['streamEnabled'] as boolean | null
+	const hasOverride = rawTemperature != null || rawMaxTokens != null || rawMaxIterations != null || rawStreamEnabled != null
+	const rawThreshold = agent['truncateThreshold'] as number | null
+	const rawDropCount = agent['truncateDropCount'] as number | null
+	const rawCacheEnabled = agent['cacheEnabled'] as boolean | null
+	const rawHideThinking = agent['hideThinking'] as boolean | null
+	const rawInjectDatetime = agent['injectDatetime'] as boolean | null
+	const rawMsgSeg = agent['msgSegmentation'] as boolean | null
+	return {
+		useGlobalGeneration: hasOverride == false,
+		temperatureStr: (rawTemperature != null ? rawTemperature : global.temperature) + '',
+		maxTokensStr: (rawMaxTokens != null ? rawMaxTokens : global.maxTokens) + '',
+		maxIterationsStr: (rawMaxIterations != null ? rawMaxIterations : global.maxIterations) + '',
+		streamEnabled: rawStreamEnabled != null ? rawStreamEnabled : global.streamEnabled,
+		truncateThresholdStr: (rawThreshold != null ? rawThreshold : 40) + '',
+		truncateDropCountStr: (rawDropCount != null ? rawDropCount : 20) + '',
+		cacheEnabled: rawCacheEnabled != false,
+		hideThinking: rawHideThinking == true,
+		injectDatetime: rawInjectDatetime != false,
+		msgSegmentation: rawMsgSeg != null ? rawMsgSeg : true,
+		globalGenerationHint: buildAgentGenerationHint(global),
+	} as AgentSettingsGenerationForm
+}
+
+export function buildAgentGenerationSaveState(useGlobalGeneration: boolean, temperatureText: string, maxTokensText: string, maxIterationsText: string, streamEnabledValue: boolean, truncateThresholdText: string, truncateDropCountText: string, global: GenerationSettings): AgentSettingsGenerationSaveState {
+	let temperature: number | null = null
+	let maxTokens: number | null = null
+	let maxIterations: number | null = null
+	let streamEnabled: boolean | null = null
+	let normalizedTemperature = temperatureText
+	let normalizedMaxTokens = maxTokensText
+	let normalizedMaxIterations = maxIterationsText
+	if (useGlobalGeneration == false) {
+		const parsedTemperature = parseAgentFloatSetting(temperatureText, global.temperature, 0, 2)
+		const parsedMaxTokens = parseAgentIntSetting(maxTokensText, global.maxTokens, 256, 65536)
+		const parsedMaxIterations = parseAgentIntSetting(maxIterationsText, global.maxIterations, 0, 100)
+		temperature = parsedTemperature
+		maxTokens = parsedMaxTokens
+		maxIterations = parsedMaxIterations
+		streamEnabled = streamEnabledValue
+		normalizedTemperature = parsedTemperature + ''
+		normalizedMaxTokens = parsedMaxTokens + ''
+		normalizedMaxIterations = parsedMaxIterations + ''
+	}
+	const threshold = parseFloat(truncateThresholdText)
+	const dropScore = parseFloat(truncateDropCountText)
+	return {
+		temperature: temperature,
+		maxTokens: maxTokens,
+		maxIterations: maxIterations,
+		streamEnabled: streamEnabled,
+		temperatureStr: normalizedTemperature,
+		maxTokensStr: normalizedMaxTokens,
+		maxIterationsStr: normalizedMaxIterations,
+		truncateThreshold: isNaN(threshold) ? 40 : threshold,
+		truncateDropCount: isNaN(dropScore) ? 20 : dropScore,
+	} as AgentSettingsGenerationSaveState
+}

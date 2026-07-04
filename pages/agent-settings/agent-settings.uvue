@@ -299,14 +299,13 @@
 	import { deleteRuntimeState, getAppSetting, getRuntimeState, setRuntimeState, updateSystemPromptForAgent } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings } from '@/utils/generation-settings.uts'
 	import { clearActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
-	import { getSkills, getAgentSkillIds, filterExistingSkillIds, skillIdListContains, readSkillId, readSkillName, readSkillDescription, readSkillEnabled, getSkillDocumentCount } from '@/utils/skills.uts'
+	import { getSkills, getAgentSkillIds, filterExistingSkillIds } from '@/utils/skills.uts'
 	import {
 		buildAgentCurrentModelLabel,
-		buildAgentGenerationHint,
 		buildAgentSettingsToolRows,
+		buildAgentGenerationSaveState,
 		buildEnabledAgentProviders,
-		parseAgentFloatSetting,
-		parseAgentIntSetting,
+		readAgentGenerationForm,
 		readAgentProviderModels,
 		resolveAgentModelSelection,
 	} from '@/utils/agent-settings-models.uts'
@@ -321,6 +320,17 @@
 		readAgentSettingsToolName,
 		toggleAgentSettingsToolSelection,
 	} from '@/utils/agent-settings-tools.uts'
+	import {
+		prepareAgentSettingsTextEditor,
+		readAgentSettingsProfileForm,
+		readAgentSettingsSkillDesc,
+		readAgentSettingsSkillMeta,
+		readAgentSettingsSkillId,
+		readAgentSettingsSkillName,
+		readChooseImageFirstPath,
+		isAgentSettingsSkillSelected,
+		toggleAgentSettingsSkillSelection,
+	} from '@/utils/agent-settings-page-helpers.uts'
 
 	export default {
 		data() {
@@ -452,22 +462,15 @@
 				this.availableTools = this.buildToolOptions()
 				const agent = getAgentById(id)
 				if (agent != null) {
-					this.agentName = agent['name'] as string
-					this.agentDesc = agent['desc'] as string
-					const rawPrompt = agent['systemPrompt']
-					this.agentSystemPrompt = rawPrompt != null ? (rawPrompt as string) : ''
-					const rawAvatar = agent['avatar']
-					this.agentAvatar = rawAvatar != null ? (rawAvatar as string) : ''
-					const rawModel = agent['model']
-					if (rawModel != null) {
-						this.currentModel = rawModel as string
-					}
-					const rawTtsVoice = agent['ttsVoice'] as string | null
-					const rawTtsVolume = agent['ttsVolume'] as string | null
-					const rawTtsPitch = agent['ttsPitch'] as string | null
-					this.ttsVoice = rawTtsVoice != null ? rawTtsVoice : ''
-					this.ttsVolume = rawTtsVolume != null ? rawTtsVolume : ''
-					this.ttsPitch = rawTtsPitch != null ? rawTtsPitch : ''
+					const profile = readAgentSettingsProfileForm(agent, this.currentModel)
+					this.agentName = profile.name
+					this.agentDesc = profile.desc
+					this.agentSystemPrompt = profile.systemPrompt
+					this.agentAvatar = profile.avatar
+					this.currentModel = profile.model
+					this.ttsVoice = profile.ttsVoice
+					this.ttsVolume = profile.ttsVolume
+					this.ttsPitch = profile.ttsPitch
 					this.selectedSkillIds = filterExistingSkillIds(getAgentSkillIds(agent))
 					this.selectedToolIds = getAgentEnabledToolIds(agent, false)
 					this.loadGenerationSettings(agent)
@@ -476,32 +479,19 @@
 			},
 
 			loadGenerationSettings(agent: UTSJSONObject) {
-				const global = getGlobalGenerationSettings()
-				this.globalGenerationHint = buildAgentGenerationHint(global)
-				const rawTemperature = agent['temperature'] as number | null
-				const rawMaxTokens = agent['maxTokens'] as number | null
-				const rawMaxIterations = agent['maxIterations'] as number | null
-				const rawStreamEnabled = agent['streamEnabled'] as boolean | null
-				const hasOverride = rawTemperature != null || rawMaxTokens != null || rawMaxIterations != null || rawStreamEnabled != null
-				this.useGlobalGeneration = hasOverride == false
-				this.temperatureStr = (rawTemperature != null ? rawTemperature : global.temperature) + ''
-				this.maxTokensStr = (rawMaxTokens != null ? rawMaxTokens : global.maxTokens) + ''
-				this.maxIterationsStr = (rawMaxIterations != null ? rawMaxIterations : global.maxIterations) + ''
-				this.streamEnabled = rawStreamEnabled != null ? rawStreamEnabled : global.streamEnabled
-
-				// 截断/缓存 ID/隐藏思考/注入日期
-				const rawThreshold = agent['truncateThreshold'] as number | null
-				const rawDropCount = agent['truncateDropCount'] as number | null
-				const rawCacheEnabled = agent['cacheEnabled'] as boolean | null
-				const rawHideThinking = agent['hideThinking'] as boolean | null
-				const rawInjectDatetime = agent['injectDatetime'] as boolean | null
-				const rawMsgSeg = agent['msgSegmentation'] as boolean | null
-				this.truncateThresholdStr = (rawThreshold != null ? rawThreshold : 40) + ''
-				this.truncateDropCountStr = (rawDropCount != null ? rawDropCount : 20) + ''
-				this.cacheEnabled = rawCacheEnabled != false
-				this.hideThinking = rawHideThinking == true
-				this.injectDatetime = rawInjectDatetime != false
-				this.msgSegmentation = rawMsgSeg != null ? rawMsgSeg : true
+				const form = readAgentGenerationForm(agent, getGlobalGenerationSettings())
+				this.globalGenerationHint = form.globalGenerationHint
+				this.useGlobalGeneration = form.useGlobalGeneration
+				this.temperatureStr = form.temperatureStr
+				this.maxTokensStr = form.maxTokensStr
+				this.maxIterationsStr = form.maxIterationsStr
+				this.streamEnabled = form.streamEnabled
+				this.truncateThresholdStr = form.truncateThresholdStr
+				this.truncateDropCountStr = form.truncateDropCountStr
+				this.cacheEnabled = form.cacheEnabled
+				this.hideThinking = form.hideThinking
+				this.injectDatetime = form.injectDatetime
+				this.msgSegmentation = form.msgSegmentation
 			},
 
 			/** 从 currentModel 解析出选中的提供商和模型 */
@@ -533,39 +523,24 @@
 			},
 
 			getSkillName(skill: UTSJSONObject): string {
-				return readSkillName(skill)
+				return readAgentSettingsSkillName(skill)
 			},
 
 			getSkillDesc(skill: UTSJSONObject): string {
-				return readSkillDescription(skill)
+				return readAgentSettingsSkillDesc(skill)
 			},
 
 			getSkillMeta(skill: UTSJSONObject): string {
-				return getSkillDocumentCount(skill) + ' 文档 · ' + (readSkillEnabled(skill) ? '可用' : '已停用')
+				return readAgentSettingsSkillMeta(skill)
 			},
 
 			isAgentSkillSelected(skill: UTSJSONObject): boolean {
-				return skillIdListContains(this.selectedSkillIds, readSkillId(skill))
+				return isAgentSettingsSkillSelected(this.selectedSkillIds, skill)
 			},
 
 			toggleAgentSkill(skill: UTSJSONObject) {
-				const skillId = readSkillId(skill)
-				if (skillId == '') {
-					return
-				}
-				const next: string[] = []
-				let removed = false
-				for (let i = 0; i < this.selectedSkillIds.length; i++) {
-					if (this.selectedSkillIds[i] == skillId) {
-						removed = true
-					} else {
-						next.push(this.selectedSkillIds[i])
-					}
-				}
-				if (removed == false) {
-					next.push(skillId)
-				}
-				this.selectedSkillIds = next
+				if (readAgentSettingsSkillId(skill) == '') { return }
+				this.selectedSkillIds = toggleAgentSettingsSkillSelection(this.selectedSkillIds, skill)
 				this.hasUnsaved = true
 			},
 
@@ -617,35 +592,21 @@
 					sourceType: ['album', 'camera'],
 					sizeType: ['compressed'],
 					success: (res: any) => {
-						const raw = JSON.stringify(res)
-						if (raw == null || raw == '') { return }
-						const parsed = JSON.parse(raw) as UTSJSONObject
-						const paths = parsed['tempFilePaths'] as string[]
-						if (paths != null && paths.length > 0) {
-							deleteRuntimeState('crop_result')
-							setRuntimeState('crop_target', 'agent_avatar')
-							setRuntimeState('crop_image_path', paths[0])
-							uni.navigateTo({
-								url: '/pages/common/crop/crop'
-							})
-						}
+						const path = readChooseImageFirstPath(res)
+						if (path == '') { return }
+						deleteRuntimeState('crop_result')
+						setRuntimeState('crop_target', 'agent_avatar')
+						setRuntimeState('crop_image_path', path)
+						uni.navigateTo({
+							url: '/pages/common/crop/crop'
+						})
 					}
 				})
 			},
 
 			/** 打开全屏编辑器编辑联系人备注 */
 			openDescEditor() {
-				deleteRuntimeState('editor_draft')
-				deleteRuntimeState('editor_result')
-				deleteRuntimeState('editor_result_ready')
-				deleteRuntimeState('editor_file_path')
-				deleteRuntimeState('editor_saved')
-				deleteRuntimeState('editor_saved_path')
-				setRuntimeState('editor_mode', 'text')
-				setRuntimeState('editor_content', this.agentDesc)
-				setRuntimeState('editor_title', '编辑描述')
-				setRuntimeState('editor_target', 'desc')
-				setRuntimeState('editor_placeholder', '写一下这个联系人的人设、用途或备注')
+				prepareAgentSettingsTextEditor(this.agentDesc, '编辑描述', 'desc', '写一下这个联系人的人设、用途或备注')
 				uni.navigateTo({
 					url: '/pages/common/editor/editor'
 				})
@@ -653,17 +614,7 @@
 
 			/** 打开全屏编辑器编辑系统提示词 */
 			openSystemPromptEditor() {
-				deleteRuntimeState('editor_draft')
-				deleteRuntimeState('editor_result')
-				deleteRuntimeState('editor_result_ready')
-				deleteRuntimeState('editor_file_path')
-				deleteRuntimeState('editor_saved')
-				deleteRuntimeState('editor_saved_path')
-				setRuntimeState('editor_mode', 'text')
-				setRuntimeState('editor_content', this.agentSystemPrompt)
-				setRuntimeState('editor_title', '编辑提示词')
-				setRuntimeState('editor_target', 'systemPrompt')
-				setRuntimeState('editor_placeholder', '定义说话风格、能力边界和输出习惯')
+				prepareAgentSettingsTextEditor(this.agentSystemPrompt, '编辑提示词', 'systemPrompt', '定义说话风格、能力边界和输出习惯')
 				uni.navigateTo({
 					url: '/pages/common/editor/editor'
 				})
@@ -697,28 +648,15 @@
 				updateAgent(this.agentId, name, desc, this.agentAvatar, this.agentSystemPrompt)
 				updateAgentModel(this.agentId, this.currentModel)
 				updateAgentTTSSettings(this.agentId, this.ttsVoice, this.ttsVolume, this.ttsPitch)
-				const globalGeneration = getGlobalGenerationSettings()
-				let temperature: number | null = null
-				let maxTokens: number | null = null
-				let maxIterations: number | null = null
-				let streamEnabled: boolean | null = null
+				const generation = buildAgentGenerationSaveState(this.useGlobalGeneration, this.temperatureStr, this.maxTokensStr, this.maxIterationsStr, this.streamEnabled, this.truncateThresholdStr, this.truncateDropCountStr, getGlobalGenerationSettings())
 				if (this.useGlobalGeneration == false) {
-					const parsedTemperature = parseAgentFloatSetting(this.temperatureStr, globalGeneration.temperature, 0, 2)
-					const parsedMaxTokens = parseAgentIntSetting(this.maxTokensStr, globalGeneration.maxTokens, 256, 65536)
-					const parsedMaxIterations = parseAgentIntSetting(this.maxIterationsStr, globalGeneration.maxIterations, 0, 100)
-					temperature = parsedTemperature
-					maxTokens = parsedMaxTokens
-					maxIterations = parsedMaxIterations
-					streamEnabled = this.streamEnabled
-					this.temperatureStr = parsedTemperature + ''
-					this.maxTokensStr = parsedMaxTokens + ''
-					this.maxIterationsStr = parsedMaxIterations + ''
+					this.temperatureStr = generation.temperatureStr
+					this.maxTokensStr = generation.maxTokensStr
+					this.maxIterationsStr = generation.maxIterationsStr
 				}
-				updateAgentGenerationSettings(this.agentId, temperature, maxTokens, maxIterations, streamEnabled)
+				updateAgentGenerationSettings(this.agentId, generation.temperature, generation.maxTokens, generation.maxIterations, generation.streamEnabled)
 				// 保存截断/缓存 ID/隐藏思考
-				const threshold = parseFloat(this.truncateThresholdStr)
-				const dropScore = parseFloat(this.truncateDropCountStr)
-				updateAgentTruncation(this.agentId, isNaN(threshold) ? 40 : threshold, isNaN(dropScore) ? 20 : dropScore)
+				updateAgentTruncation(this.agentId, generation.truncateThreshold, generation.truncateDropCount)
 				updateAgentCache(this.agentId, this.cacheEnabled)
 				updateAgentHideThinking(this.agentId, this.hideThinking)
 				updateAgentInjectDatetime(this.agentId, this.injectDatetime)
