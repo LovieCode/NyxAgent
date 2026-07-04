@@ -367,16 +367,6 @@ export function parseNumberSetting(value: string, fallback: number, min: number,
 	return clampNumber(parsed, min, max)
 }
 
-export function getTTSOutputExtension(format: string): string {
-	const f = format.trim().toLowerCase()
-	if (f.indexOf('mp3') == 0) { return 'mp3' }
-	if (f.indexOf('opus') == 0) { return 'opus' }
-	if (f.indexOf('aac') == 0) { return 'aac' }
-	if (f.indexOf('flac') == 0) { return 'flac' }
-	if (f.indexOf('pcm') == 0) { return 'pcm' }
-	return 'wav'
-}
-
 function buildArrayBufferErrorPreview(data: any | null): string {
 	if (data == null) { return '' }
 	try {
@@ -435,98 +425,4 @@ export function buildSpeechErrorPreview(data: any | null): string {
 	const jsonPreview = buildJsonErrorPreview(data)
 	if (jsonPreview != '') { return jsonPreview }
 	return buildArrayBufferErrorPreview(data)
-}
-
-function isOpenAIProvider(config: SpeechConfig): boolean {
-	const normalized = normalizeBaseUrl(config.baseUrl).toLowerCase()
-	return config.providerId == 'openai' || normalized.indexOf('api.openai.com') >= 0
-}
-
-function resolveOpenAITTSVoice(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
-	let voice = config.ttsVoice.trim()
-	if (voice != '') { return voice }
-	voice = readFirstParam(extraParams, ['voice', 'openai-tts-voice', 'dashscope_tts_voice', 'mimo-tts-voice', 'edge-tts-voice'])
-	if (voice != '') { return voice }
-	voice = readFirstParam(modelParams, ['voice', 'openai-tts-voice', 'dashscope_tts_voice', 'mimo-tts-voice', 'edge-tts-voice'])
-	if (voice != '') { return voice }
-	if (isOpenAIProvider(config) == true) { return 'alloy' }
-	return ''
-}
-
-function resolveOpenAITTSFormat(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
-	let format = config.ttsResponseFormat.trim()
-	if (format != '') { return format }
-	format = readFirstParam(extraParams, ['response_format', 'format', 'openai-tts-format'])
-	if (format != '') { return format }
-	format = readFirstParam(modelParams, ['response_format', 'format', 'openai-tts-format'])
-	if (format != '') { return format }
-	return ''
-}
-
-function resolveOpenAITTSSpeed(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
-	let speed = config.ttsSpeed.trim()
-	if (speed != '') { return speed }
-	speed = readFirstParam(extraParams, ['speed', 'openai-tts-speed'])
-	if (speed != '') { return speed }
-	return readFirstParam(modelParams, ['speed', 'openai-tts-speed'])
-}
-
-export function buildOpenAITTSBody(content: string, config: SpeechConfig): UTSJSONObject {
-	const modelParams = resolveModelParams(config.providerId, config.model)
-	const extraParams = parseJSONObject(config.ttsExtraParams)
-	const voice = resolveOpenAITTSVoice(config, modelParams, extraParams)
-	const responseFormat = resolveOpenAITTSFormat(config, modelParams, extraParams)
-	const speedText = resolveOpenAITTSSpeed(config, modelParams, extraParams)
-	const body: UTSJSONObject = {
-		model: config.model,
-		input: content,
-	} as UTSJSONObject
-	if (voice != '') {
-		body['voice'] = voice
-	}
-	if (responseFormat != '') {
-		body['response_format'] = responseFormat
-	}
-	if (speedText != '') {
-		body['speed'] = parseNumberSetting(speedText, 1.0, 0.25, 4.0)
-	}
-	const instructions = readFirstParam(extraParams, ['instructions', 'tts_instructions'])
-	if (instructions != '') {
-		body['instructions'] = instructions
-	}
-	return body
-}
-
-export function resolveVolcengineTTSUrl(baseUrl: string): string {
-	const normalized = normalizeBaseUrl(baseUrl)
-	if (normalized.indexOf('openspeech.bytedance.com') >= 0) {
-		if (normalized.endsWith('/tts')) { return normalized }
-		if (normalized.endsWith('/api')) { return normalized + '/v1/tts' }
-		return normalized + '/api/v1/tts'
-	}
-	return 'https://openspeech.bytedance.com/api/v1/tts'
-}
-
-export function resolveVolcengineVoice(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
-	let voice = config.ttsVoice.trim()
-	if (voice != '') { return voice }
-	voice = readFirstParam(extraParams, ['volcengine_voice_type', 'voice_type', 'voice'])
-	if (voice != '') { return voice }
-	return readFirstParam(modelParams, ['volcengine_voice_type', 'voice_type', 'voice'])
-}
-
-export function resolveVolcengineVolume(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
-	let volume = config.ttsVolume.trim()
-	if (volume != '') { return volume }
-	volume = readFirstParam(extraParams, ['volcengine_volume_ratio', 'volume_ratio', 'volume'])
-	if (volume != '') { return volume }
-	return readFirstParam(modelParams, ['volcengine_volume_ratio', 'volume_ratio', 'volume'])
-}
-
-export function resolveVolcenginePitch(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
-	let pitch = config.ttsPitch.trim()
-	if (pitch != '') { return pitch }
-	pitch = readFirstParam(extraParams, ['volcengine_pitch_ratio', 'pitch_ratio', 'pitch'])
-	if (pitch != '') { return pitch }
-	return readFirstParam(modelParams, ['volcengine_pitch_ratio', 'pitch_ratio', 'pitch'])
 }

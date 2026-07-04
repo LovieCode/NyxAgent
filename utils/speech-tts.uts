@@ -10,23 +10,25 @@ import {
 	type SpeechConfig,
 	buildAudioApiUrl,
 	buildJsonErrorPreview,
-	buildOpenAITTSBody,
 	buildSpeechErrorPreview,
 	buildSpeechWriteErrorMessage,
 	failAudio,
-	getTTSOutputExtension,
 	okAudio,
 	parseJSONObject,
 	parseNumberSetting,
 	readFirstParam,
 	resolveModelParams,
+	writeArrayBufferToFile,
+	writeBase64ToFile,
+} from '@/utils/speech-runtime.uts'
+import {
+	buildOpenAITTSBody,
+	getTTSOutputExtension,
 	resolveVolcenginePitch,
 	resolveVolcengineTTSUrl,
 	resolveVolcengineVoice,
 	resolveVolcengineVolume,
-	writeArrayBufferToFile,
-	writeBase64ToFile,
-} from '@/utils/speech-runtime.uts'
+} from '@/utils/speech-tts-params.uts'
 
 function synthesizeVolcengineSpeech(content: string, config: SpeechConfig, dir: string): Promise<SpeechAudioResult> {
 	return new Promise<SpeechAudioResult>((resolve) => {
