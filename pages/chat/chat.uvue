@@ -221,7 +221,7 @@
 				/** 是否已存过当前对话（防止重复存） */
 				savedFlag: false as boolean,
 				/** 输入框 JS 驱动高度 */
-				inputHeight: 40,
+				inputHeight: 36,
 				/** 是否显示工具栏面板 */
 				showToolPanel: false as boolean,
 				/** 行内编辑 */
@@ -398,9 +398,9 @@
 			onInputLineChange(e: UniTextareaLineChangeEvent) {
 				const lineCount = e.detail.lineCount
 				if (lineCount <= 1) {
-					this.inputHeight = 40
+					this.inputHeight = 36
 				} else {
-					this.inputHeight = Math.min(lineCount * 22 + 16, 200)
+					this.inputHeight = Math.min(lineCount * 22 + 12, 200)
 				}
 			},
 
@@ -1371,12 +1371,12 @@
 	/* 文本输入框 */
 	.text-input {
 		width: 100%;
-		min-height: 32px;
+		min-height: 30px;
 		max-height: 200px;
 		padding-left: 4px;
 		padding-right: 4px;
-		padding-top: 8px;
-		padding-bottom: 8px;
+		padding-top: 6px;
+		padding-bottom: 3px;
 		font-size: 15px;
 		color: var(--rice-text-color);
 		background-color: transparent;

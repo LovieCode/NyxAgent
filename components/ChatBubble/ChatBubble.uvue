@@ -7,7 +7,7 @@
 					@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
 					@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
 					@touchend="onBubbleTouchEnd">
-					<view v-for="(part, pi) in contentParts" :key="'user-part-' + pi" class="part-wrap">
+					<view v-for="(part, pi) in contentParts" :key="'user-part-' + pi" class="part-wrap" :class="isLastContentPart(pi) == true ? '' : 'part-wrap-spaced'">
 						<view v-if="part.type == 'image' && part.url != ''" class="image-part">
 							<image :src="part.url" class="bubble-image" mode="widthFix" />
 							<view v-if="part.caption != ''" class="caption-card user-caption-card">
@@ -139,7 +139,7 @@
 						</view>
 					</view>
 
-					<view v-for="(part, pi) in renderContentParts" :key="'assistant-part-' + pi" class="part-wrap">
+					<view v-for="(part, pi) in renderContentParts" :key="'assistant-part-' + pi" class="part-wrap" :class="isLastContentPart(pi) == true ? '' : 'part-wrap-spaced'">
 						<view v-if="part.type == 'image' && part.url != ''" class="image-part">
 							<image :src="part.url" class="bubble-image" mode="widthFix" />
 							<view v-if="part.caption != ''" class="caption-card">
@@ -687,7 +687,10 @@
 	.user-bubble {
 		background-color: var(--rice-primary-color);
 		border-radius: 16px;
-		padding: 6px 12px;
+		padding-left: 12px;
+		padding-right: 12px;
+		padding-top: 6px;
+		padding-bottom: 5px;
 		flex-shrink: 1;
 	}
 	.user-bubble:active {
@@ -702,7 +705,10 @@
 		flex-shrink: 1;
 		background-color: var(--rice-background-2);
 		border-radius: 16px;
-		padding: 10px;
+		padding-left: 10px;
+		padding-right: 10px;
+		padding-top: 10px;
+		padding-bottom: 8px;
 	}
 	.ai-content:active {
 		background-color: #E5E7EB;
@@ -815,6 +821,9 @@
 		font-weight: bold;
 	}
 	.part-wrap {
+		flex-direction: column;
+	}
+	.part-wrap-spaced {
 		margin-bottom: 4px;
 	}
 	.bubble-image {
