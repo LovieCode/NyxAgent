@@ -5,6 +5,8 @@
  */
 
 import { AgentEvent } from '@/utils/event.uts'
+import { appendResponseToSnapshot } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+import { CHAT_ROLE_ASSISTANT, getMessageContent, getMessageThinking } from '@/utils/chat-models.uts'
 import { reduceAgentEvent } from '@/utils/chat-message-reducer.uts'
 
 export function isBufferedChatAgentEvent(event: AgentEvent): boolean {
@@ -41,4 +43,21 @@ export function reduceBufferedChatAgentEvents(messages: UTSJSONObject[], pending
 		}
 	}
 	return messageChanged
+}
+
+function findLatestAssistantMessage(messages: UTSJSONObject[]): UTSJSONObject | null {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const role = messages[i]['role'] as string | null
+		if (role == CHAT_ROLE_ASSISTANT) { return messages[i] }
+	}
+	return null
+}
+
+export function appendLatestChatResponseSnapshot(messages: UTSJSONObject[], agentId: string, conversationId: string): void {
+	const msg = findLatestAssistantMessage(messages)
+	if (msg == null) { return }
+	const responseText = getMessageContent(msg)
+	const thinkingText = getMessageThinking(msg)
+	if (responseText == '' && thinkingText == '') { return }
+	appendResponseToSnapshot(agentId, conversationId, responseText, thinkingText)
 }

@@ -118,7 +118,7 @@
 	 * 对话页面 - AI Agent 主聊天界面
 	 * 扁平化粉白主题
 	 */
-	import { agentChat, readLastLLMRequestSnapshot, organizeAgentMemory, captionImage, appendResponseToSnapshot } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+		import { agentChat, readLastLLMRequestSnapshot, organizeAgentMemory, captionImage } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
 	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
 	import { getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { buildChatDatetimePrefix } from '@/utils/datetime-context.uts'
@@ -129,10 +129,9 @@
 		getCurrentAgentSystemPrompt,
 		saveChatConversation,
 	} from '@/utils/chat-conversation-service.uts'
-	import {
-		getMessageContent,
-		getMessageThinking,
-	} from '@/utils/chat-models.uts'
+		import {
+			getMessageContent,
+		} from '@/utils/chat-models.uts'
 	import {
 		deleteChatMessage,
 		updateChatMessageContent,
@@ -173,11 +172,12 @@
 		readChatMessageRole,
 		stringifyChatContextPreview,
 	} from '@/utils/chat-page-helpers.uts'
-	import {
-		appendBufferedChatAgentEvent,
-		isBufferedChatAgentEvent,
-		reduceBufferedChatAgentEvents,
-	} from '@/utils/chat-stream-events.uts'
+		import {
+			appendBufferedChatAgentEvent,
+			appendLatestChatResponseSnapshot,
+			isBufferedChatAgentEvent,
+			reduceBufferedChatAgentEvents,
+		} from '@/utils/chat-stream-events.uts'
 	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, type PickedLocalFile } from '@/utils/attachment-reader.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { NYX_FLOAT_CONTEXT_CHAT, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
@@ -353,15 +353,6 @@
 
 			hasMessageRef(target: UTSJSONObject): boolean {
 				return hasChatMessageRef(this.messages, target)
-			},
-
-			appendLatestResponseSnapshot(): void {
-				const msg = this.findLastAssistantMessage()
-				if (msg == null) { return }
-				const responseText = getMessageContent(msg)
-				const thinkingText = getMessageThinking(msg)
-				if (responseText == '' && thinkingText == '') { return }
-				appendResponseToSnapshot(this.currentAgentId, this.conversationId, responseText, thinkingText)
 			},
 
 			loadUserNickname() {
@@ -1165,7 +1156,7 @@
 					})
 				} else if (event.type == 'agent_end') {
 					finalizeAssistantTurn(this.messages, this.msgSegmentation)
-					this.appendLatestResponseSnapshot()
+					appendLatestChatResponseSnapshot(this.messages, this.currentAgentId, this.conversationId)
 					this.isGenerating = false
 					this.currentStream = null
 					this.clearStreamFlushTimer()
