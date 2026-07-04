@@ -13,6 +13,11 @@
 import { getDefaultTaskModel, getProviderById, getProviderModels, normalizeBaseUrl, TTS_ADAPTER_OPENAI_COMPAT, TTS_ADAPTER_VOLCENGINE } from '@/uni_modules/agent-core/utssdk/provider.uts'
 import { getInternalCacheDir, createDir, exists } from '@/utils/file-manager.uts'
 
+// #ifdef APP-ANDROID
+import File from 'java.io.File'
+import Base64 from 'android.util.Base64'
+// #endif
+
 export type SpeechTextResult = {
 	ok: boolean
 	text: string
@@ -36,6 +41,8 @@ type SpeechConfig = {
 	ttsSpeed: string
 	ttsExtraParams: string
 }
+
+let lastSpeechWriteError = ''
 
 function failText(error: string): SpeechTextResult {
 	return {
@@ -67,6 +74,23 @@ function okAudio(path: string): SpeechAudioResult {
 		path: path,
 		error: '',
 	} as SpeechAudioResult
+}
+
+function clearSpeechWriteError(): void {
+	lastSpeechWriteError = ''
+}
+
+function setSpeechWriteError(prefix: string, error: any | null): void {
+	const raw = error != null ? ('' + error) : ''
+	lastSpeechWriteError = raw != '' ? prefix + '：' + raw : prefix
+	console.log('[Speech] ' + lastSpeechWriteError)
+}
+
+function buildSpeechWriteErrorMessage(): string {
+	if (lastSpeechWriteError != '') {
+		return '语音文件写入失败：' + lastSpeechWriteError
+	}
+	return '语音文件写入失败'
 }
 
 function buildAudioApiUrl(baseUrl: string, path: string): string {
@@ -163,27 +187,77 @@ function buildSpeechCacheDir(): string {
 
 function writeArrayBufferToFile(path: string, data: ArrayBuffer): boolean {
 	if (path == '') { return false }
+	clearSpeechWriteError()
+	// #ifdef APP-ANDROID
 	try {
-		const fm = uni.getFileSystemManager()
-		fm.writeFileSync(path, data, 'binary')
+		const file = new File(path)
+		const parent = file.parentFile
+		if (parent != null && parent.exists() == false) {
+			parent.mkdirs()
+		}
+		file.writeBytes(new Uint8Array(data))
 		return true
 	} catch (e: any) {
-		console.log('[Speech] 写入音频失败: ' + e)
+		setSpeechWriteError('Android 写入音频失败', e)
 		return false
 	}
+	// #endif
+	// #ifndef APP-ANDROID
+	try {
+		const fm = uni.getFileSystemManager()
+		// ArrayBuffer 直接写入；encoding 只给 string 用，传 binary 会触发文件系统类型错误。
+		fm.writeFileSync(path, data)
+		return true
+	} catch (e: any) {
+		setSpeechWriteError('写入音频失败', e)
+		return false
+	}
+	// #endif
 }
 
+function normalizeBase64Audio(data: string): string {
+	let text = data.trim()
+	const commaIndex = text.indexOf(',')
+	if (text.indexOf('base64,') >= 0 && commaIndex >= 0) {
+		text = text.substring(commaIndex + 1)
+	}
+	while (text.indexOf('\n') >= 0) {
+		text = text.replace('\n', '')
+	}
+	while (text.indexOf('\r') >= 0) {
+		text = text.replace('\r', '')
+	}
+	return text
+}
 
 function writeBase64ToFile(path: string, data: string): boolean {
 	if (path == '' || data == '') { return false }
+	clearSpeechWriteError()
+	const base64 = normalizeBase64Audio(data)
+	// #ifdef APP-ANDROID
 	try {
-		const fm = uni.getFileSystemManager()
-		fm.writeFileSync(path, data, 'base64')
+		const file = new File(path)
+		const parent = file.parentFile
+		if (parent != null && parent.exists() == false) {
+			parent.mkdirs()
+		}
+		file.writeBytes(Base64.decode(base64, Base64.DEFAULT))
 		return true
 	} catch (e: any) {
-		console.log('[Speech] 写入 base64 音频失败: ' + e)
+		setSpeechWriteError('Android 写入 base64 音频失败', e)
 		return false
 	}
+	// #endif
+	// #ifndef APP-ANDROID
+	try {
+		const fm = uni.getFileSystemManager()
+		fm.writeFileSync(path, base64, 'base64')
+		return true
+	} catch (e: any) {
+		setSpeechWriteError('写入 base64 音频失败', e)
+		return false
+	}
+	// #endif
 }
 
 function decodeArrayBuffer(buffer: ArrayBuffer): string {
@@ -296,16 +370,57 @@ function buildArrayBufferErrorPreview(data: any | null): string {
 	}
 }
 
+function readErrorMessageFromObject(obj: UTSJSONObject | null): string {
+	if (obj == null) { return '' }
+	const message = obj['message'] as string | null
+	if (message != null && message != '') { return message }
+	const errorMessage = obj['error_message'] as string | null
+	if (errorMessage != null && errorMessage != '') { return errorMessage }
+	const errorMsg = obj['error_msg'] as string | null
+	if (errorMsg != null && errorMsg != '') { return errorMsg }
+	const error = obj['error']
+	if (error == null) { return '' }
+	if (typeof error == 'string') { return (error as string) }
+	if (typeof error == 'object') {
+		const errorObj = error as UTSJSONObject
+		const nestedMessage = errorObj['message'] as string | null
+		if (nestedMessage != null && nestedMessage != '') { return nestedMessage }
+		const nestedCode = errorObj['code'] as string | null
+		if (nestedCode != null && nestedCode != '') { return nestedCode }
+	}
+	return ''
+}
+
+function buildTextErrorPreview(text: string): string {
+	const trimmed = text.trim()
+	if (trimmed == '') { return '' }
+	const parsed = parseJSONObject(trimmed)
+	const message = readErrorMessageFromObject(parsed)
+	if (message != '') { return message }
+	return trimmed.substring(0, trimmed.length < 180 ? trimmed.length : 180)
+}
+
 function buildJsonErrorPreview(data: any | null): string {
 	if (data == null) { return '' }
 	try {
-		const text = typeof data == 'string' ? (data as string) : JSON.stringify(data)
-		const trimmed = text.trim()
-		if (trimmed == '') { return '' }
-		return trimmed.substring(0, trimmed.length < 180 ? trimmed.length : 180)
+		if (typeof data == 'string') { return buildTextErrorPreview(data as string) }
+		const message = readErrorMessageFromObject(data as UTSJSONObject)
+		if (message != '') { return message }
+		return buildTextErrorPreview(JSON.stringify(data))
 	} catch (_e: any) {
 		return ''
 	}
+}
+
+function buildSpeechErrorPreview(data: any | null): string {
+	const jsonPreview = buildJsonErrorPreview(data)
+	if (jsonPreview != '') { return jsonPreview }
+	return buildArrayBufferErrorPreview(data)
+}
+
+function isOpenAIProvider(config: SpeechConfig): boolean {
+	const normalized = normalizeBaseUrl(config.baseUrl).toLowerCase()
+	return config.providerId == 'openai' || normalized.indexOf('api.openai.com') >= 0
 }
 
 function resolveOpenAITTSVoice(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
@@ -315,7 +430,8 @@ function resolveOpenAITTSVoice(config: SpeechConfig, modelParams: UTSJSONObject 
 	if (voice != '') { return voice }
 	voice = readFirstParam(modelParams, ['voice', 'openai-tts-voice', 'dashscope_tts_voice', 'mimo-tts-voice', 'edge-tts-voice'])
 	if (voice != '') { return voice }
-	return 'alloy'
+	if (isOpenAIProvider(config) == true) { return 'alloy' }
+	return ''
 }
 
 function resolveOpenAITTSFormat(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
@@ -325,7 +441,7 @@ function resolveOpenAITTSFormat(config: SpeechConfig, modelParams: UTSJSONObject
 	if (format != '') { return format }
 	format = readFirstParam(modelParams, ['response_format', 'format', 'openai-tts-format'])
 	if (format != '') { return format }
-	return 'wav'
+	return ''
 }
 
 function resolveOpenAITTSSpeed(config: SpeechConfig, modelParams: UTSJSONObject | null, extraParams: UTSJSONObject | null): string {
@@ -344,10 +460,14 @@ function buildOpenAITTSBody(content: string, config: SpeechConfig): UTSJSONObjec
 	const speedText = resolveOpenAITTSSpeed(config, modelParams, extraParams)
 	const body: UTSJSONObject = {
 		model: config.model,
-		voice: voice,
-		response_format: responseFormat,
 		input: content,
 	} as UTSJSONObject
+	if (voice != '') {
+		body['voice'] = voice
+	}
+	if (responseFormat != '') {
+		body['response_format'] = responseFormat
+	}
 	if (speedText != '') {
 		body['speed'] = parseNumberSetting(speedText, 1.0, 0.25, 4.0)
 	}
@@ -453,7 +573,7 @@ function synthesizeVolcengineSpeech(content: string, config: SpeechConfig, dir: 
 					return
 				}
 				if (writeBase64ToFile(outputPath, audioBase64) == false) {
-					resolve(failAudio('语音文件写入失败'))
+					resolve(failAudio(buildSpeechWriteErrorMessage()))
 					return
 				}
 				resolve(okAudio(outputPath))
@@ -533,7 +653,7 @@ export function synthesizeSpeech(text: string): Promise<SpeechAudioResult> {
 		}
 		const body = buildOpenAITTSBody(content, config)
 		const responseFormat = body['response_format'] as string | null
-		const outputFormat = responseFormat != null && responseFormat != '' ? responseFormat : 'wav'
+		const outputFormat = responseFormat != null && responseFormat != '' ? responseFormat : 'mp3'
 		const outputPath = dir + '/tts_' + Date.now() + '.' + getTTSOutputExtension(outputFormat)
 		const url = buildAudioApiUrl(config.baseUrl, '/audio/speech')
 		// PROVIDER_AUDIO_API: OpenAI-compatible TTS。voice/response_format/speed 来自默认模型页和模型自定义参数。
@@ -549,7 +669,7 @@ export function synthesizeSpeech(text: string): Promise<SpeechAudioResult> {
 			success: (res) => {
 				const statusCode = res.statusCode as number
 				if (statusCode < 200 || statusCode >= 300) {
-					const preview = buildArrayBufferErrorPreview(res.data)
+					const preview = buildSpeechErrorPreview(res.data)
 					resolve(failAudio('语音合成失败：HTTP ' + statusCode + (preview != '' ? ' ' + preview : '')))
 					return
 				}
@@ -559,7 +679,7 @@ export function synthesizeSpeech(text: string): Promise<SpeechAudioResult> {
 					return
 				}
 				if (writeArrayBufferToFile(outputPath, data) == false) {
-					resolve(failAudio('语音文件写入失败'))
+					resolve(failAudio(buildSpeechWriteErrorMessage()))
 					return
 				}
 				resolve(okAudio(outputPath))
