@@ -7,6 +7,7 @@
  * 依赖（逐步迁入 SDK）：
  * - event.uts ✅ → SDK types.uts
  * - memory.uts ✅ → SDK memory.uts
+ * - llm-diagnostics.uts ✅ → LLM 调用诊断、快照与日志
  * - provider.uts ⏳ → 待迁移
  * - agent-tools.uts ⏳ → 待迁移
  * - agent.uts / skills.uts / generation-settings.uts → 业务层
@@ -56,21 +57,14 @@ import { AgentEventStream, AgentEvent } from '@/utils/event.uts'
 import { buildImportantMemoryInjection, buildBufferInjection, getMemoryEnabled, saveMemoryManagerLog, MemoryManagerLog, getMemoryCompactionCursor, saveMemoryCompactionCursor } from './memory'
 import { buildAgentSkillsPrompt } from '@/utils/skills.uts'
 import { wrapUserContentForAgent, makeAgentContextBlock, type AgentContextBlock } from '@/utils/message-context.uts'
-import { addConversationTokenUsage, getAppSetting, getConversationTokenUsageStats, setAppSetting } from '@/utils/database.uts'
+import { appendResponseToSnapshot as appendResponseToSnapshotDiagnostic, clearLastTokenUsage, formatBodyForLog, isLLMDebugLogEnabled, logLLMDebug, readLastLLMPreviewState, readLastLLMRequestSnapshot as readLastLLMRequestSnapshotDiagnostic, readLastTokenUsageForCall, saveLastLLMCall, saveLastLLMRequestSnapshot, saveLastTokenUsage } from './llm-diagnostics'
 
-const LAST_TOKEN_USAGE_KEY = 'last_token_usage'
-const LAST_LLM_CALL_KEY = 'last_llm_call'
-const LAST_LLM_REQUEST_SNAPSHOT_KEY = 'last_llm_request_snapshot'
-const LLM_DEBUG_LOG_SETTING_KEY = 'llm_debug_log_enabled'
-
-function isLLMDebugLogEnabled(): boolean {
-	return getAppSetting(LLM_DEBUG_LOG_SETTING_KEY) == 'true'
+export function readLastLLMRequestSnapshot(agentId: string = '', conversationId: string = ''): UTSJSONObject | null {
+	return readLastLLMRequestSnapshotDiagnostic(agentId, conversationId)
 }
 
-function logLLMDebug(message: string): void {
-	if (isLLMDebugLogEnabled() == true) {
-		console.log(message)
-	}
+export function appendResponseToSnapshot(agentId: string, conversationId: string, responseText: string, thinkingText: string = ''): void {
+	appendResponseToSnapshotDiagnostic(agentId, conversationId, responseText, thinkingText)
 }
 
 function pad2(value: number): string {
@@ -1101,242 +1095,6 @@ function prepareAgentContext(
 }
 
 
-
-function readPromptCacheHitTokens(usage: UTSJSONObject): number | null {
-	let hitTokens = usage['prompt_cache_hit_tokens'] as number | null
-	if (hitTokens == null) hitTokens = usage['cache_read_input_tokens'] as number | null
-	if (hitTokens == null) hitTokens = usage['prompt_cache_read_tokens'] as number | null
-	if (hitTokens == null) hitTokens = usage['cached_tokens'] as number | null
-	const promptDetails = usage['prompt_tokens_details'] as UTSJSONObject | null
-	if (hitTokens == null && promptDetails != null) {
-		hitTokens = promptDetails['cached_tokens'] as number | null
-	}
-	const inputDetails = usage['input_tokens_details'] as UTSJSONObject | null
-	if (hitTokens == null && inputDetails != null) {
-		hitTokens = inputDetails['cached_tokens'] as number | null
-		if (hitTokens == null) hitTokens = inputDetails['cache_read_tokens'] as number | null
-	}
-	return hitTokens
-}
-
-/** 标准化 Token 用量字段，兼容 OpenAI/Anthropic 命名。 */
-function normalizeTokenUsage(usage: UTSJSONObject): UTSJSONObject {
-	let promptTokens = usage['prompt_tokens'] as number | null
-	let completionTokens = usage['completion_tokens'] as number | null
-	let totalTokens = usage['total_tokens'] as number | null
-	const promptCacheHitTokens = readPromptCacheHitTokens(usage)
-	if (promptTokens == null) promptTokens = usage['input_tokens'] as number | null
-	if (completionTokens == null) completionTokens = usage['output_tokens'] as number | null
-	if (totalTokens == null && promptTokens != null && completionTokens != null) {
-		totalTokens = promptTokens + completionTokens
-	}
-	const obj: UTSJSONObject = {} as UTSJSONObject
-	if (promptTokens != null) obj['prompt_tokens'] = promptTokens
-	if (completionTokens != null) obj['completion_tokens'] = completionTokens
-	if (totalTokens != null) obj['total_tokens'] = totalTokens
-	if (promptCacheHitTokens != null) {
-		obj['prompt_cache_hit_tokens'] = promptCacheHitTokens
-		obj['prompt_cache_hit_tokens_reported'] = true
-	}
-	return obj
-}
-
-/** 保存最近一次 API 调用的 Token 用量。 */
-function saveLastTokenUsage(usage: UTSJSONObject): UTSJSONObject {
-	const obj = normalizeTokenUsage(usage)
-	const json = JSON.stringify(obj)
-	setAppSetting(LAST_TOKEN_USAGE_KEY, json)
-	logLLMDebug('[LLM] Token 用量已保存: ' + json)
-	return obj
-}
-
-function clearLastTokenUsage(): void {
-	setAppSetting(LAST_TOKEN_USAGE_KEY, '')
-}
-
-function readLastTokenUsageForCall(): UTSJSONObject | null {
-	try {
-		const rawUsage = getAppSetting(LAST_TOKEN_USAGE_KEY)
-		if (rawUsage != null && rawUsage != '') {
-			return JSON.parse(rawUsage) as UTSJSONObject
-		}
-	} catch (_e: any) {}
-	return null
-}
-
-function buildScopedLLMStorageKey(baseKey: string, agentId: string, conversationId: string): string {
-	const aid = agentId.trim()
-	const cid = conversationId.trim()
-	if (aid == '' && cid == '') {
-		return baseKey
-	}
-	return baseKey + '_' + aid + '_' + cid
-}
-
-function cloneJsonObject(obj: UTSJSONObject): UTSJSONObject {
-	return JSON.parse(JSON.stringify(obj)) as UTSJSONObject
-}
-
-function saveLastLLMRequestSnapshot(
-	baseUrl: string,
-	url: string,
-	model: string,
-	body: UTSJSONObject,
-	messageCount: number,
-	toolCount: number,
-	streamEnabled: boolean,
-	cacheKey: string,
-	agentId: string,
-	conversationId: string,
-	workspaceRoot: string
-): void {
-	const now = Date.now()
-	const snapshot: UTSJSONObject = {
-		type: 'real_llm_request_snapshot',
-		capturedAt: now,
-		timeText: formatMemoryMessageTime(now),
-		agentId: agentId,
-		conversationId: conversationId,
-		workspaceRoot: workspaceRoot,
-		baseUrl: baseUrl,
-		url: url,
-		model: model,
-		stream: streamEnabled,
-		messageCount: messageCount,
-		toolCount: toolCount,
-		cacheKey: cacheKey,
-		requestBody: cloneJsonObject(body),
-	} as UTSJSONObject
-	const json = JSON.stringify(snapshot)
-	setAppSetting(LAST_LLM_REQUEST_SNAPSHOT_KEY, json)
-	const scopedKey = buildScopedLLMStorageKey(LAST_LLM_REQUEST_SNAPSHOT_KEY, agentId, conversationId)
-	if (scopedKey != LAST_LLM_REQUEST_SNAPSHOT_KEY) {
-		setAppSetting(scopedKey, json)
-	}
-}
-
-export function readLastLLMRequestSnapshot(agentId: string = '', conversationId: string = ''): UTSJSONObject | null {
-	try {
-		const scopedKey = buildScopedLLMStorageKey(LAST_LLM_REQUEST_SNAPSHOT_KEY, agentId, conversationId)
-		const raw = getAppSetting(scopedKey)
-		if (raw != null && raw != '') {
-			return JSON.parse(raw) as UTSJSONObject
-		}
-		if (scopedKey == LAST_LLM_REQUEST_SNAPSHOT_KEY) {
-			return null
-		}
-	} catch (_e: any) {}
-	return null
-}
-
-export function appendResponseToSnapshot(agentId: string, conversationId: string, responseText: string, thinkingText: string = ''): void {
-	try {
-		const scopedKey = buildScopedLLMStorageKey(LAST_LLM_REQUEST_SNAPSHOT_KEY, agentId, conversationId)
-		const raw = getAppSetting(scopedKey)
-		if (raw == null || raw == '') { return }
-		const snapshot = JSON.parse(raw) as UTSJSONObject
-		snapshot['responseText'] = responseText
-		snapshot['thinkingText'] = thinkingText
-		const usage = readLastTokenUsageForCall()
-		if (usage != null) {
-			snapshot['usage'] = cloneJsonObject(usage)
-		}
-		if (conversationId != '') {
-			snapshot['conversationTokenUsageStats'] = getConversationTokenUsageStats(conversationId)
-		}
-		const updated = JSON.stringify(snapshot)
-		setAppSetting(scopedKey, updated)
-		if (scopedKey != LAST_LLM_REQUEST_SNAPSHOT_KEY) {
-			setAppSetting(LAST_LLM_REQUEST_SNAPSHOT_KEY, updated)
-		}
-	} catch (_e: any) {}
-}
-
-function saveLastLLMCall(
-	success: boolean,
-	streamEnabled: boolean,
-	model: string,
-	baseUrl: string,
-	statusCode: number,
-	errorMessage: string,
-	usage: UTSJSONObject | null,
-	messageCount: number,
-	toolCount: number,
-	textLength: number,
-	hasToolCalls: boolean,
-	conversationId: string = ''
-): void {
-	const now = Date.now()
-	const obj: UTSJSONObject = {
-		success: success,
-		stream: streamEnabled,
-		model: model,
-		baseUrl: baseUrl,
-		statusCode: statusCode,
-		errorMessage: errorMessage,
-		messageCount: messageCount,
-		toolCount: toolCount,
-		textLength: textLength,
-		hasToolCalls: hasToolCalls,
-		timestamp: now,
-		timeText: formatMemoryMessageTime(now),
-	} as UTSJSONObject
-	if (usage != null) {
-		obj['usage'] = usage
-		const cacheReported = usage['prompt_cache_hit_tokens_reported'] as boolean | null
-		if (success == true && cacheReported == true && conversationId != '') {
-			const promptTokens = usage['prompt_tokens'] as number | null
-			const cacheHitTokens = usage['prompt_cache_hit_tokens'] as number | null
-			try {
-				addConversationTokenUsage(
-					conversationId,
-					promptTokens != null ? promptTokens : 0,
-					cacheHitTokens != null ? cacheHitTokens : 0
-				)
-			} catch (_e: any) {}
-		}
-	}
-	const json = JSON.stringify(obj)
-	setAppSetting(LAST_LLM_CALL_KEY, json)
-}
-
-/**
- * 调用 OpenAI 兼容的 Chat Completions API（核心函数）
- * @param baseUrl API 基础 URL（已规范化）
- * @param apiKey API 密钥
- * @param model 模型名
- * @param systemPrompt 系统提示词（仅首次传入，后续为空字符串以使用 workingMessages）
- * @param messages 消息列表
- * @param tools 工具定义列表
- * @param done 回调：(text, toolCalls) => void
- *     - text: assistant 的文本回复（可为空字符串）
- *     - toolCalls: 工具调用列表（没有则为 null）
- */
-/**
- * 格式化 body 用于日志输出（去掉 messages 字段节省空间）
- */
-function formatBodyForLog(body: UTSJSONObject): string {
-	const logBody: UTSJSONObject = {}
-	const msgs = body['messages'] as UTSJSONObject[] | null
-	if (msgs != null) {
-		logBody['messages'] = '[' + msgs.length + ' messages]'
-	}
-	const modelVal = body['model'] as string | null
-	if (modelVal != null) logBody['model'] = modelVal
-	const maxTokens = body['max_tokens'] as number | null
-	if (maxTokens != null) logBody['max_tokens'] = maxTokens
-	const temperature = body['temperature'] as number | null
-	if (temperature != null) logBody['temperature'] = temperature
-	const stream = body['stream'] as boolean | null
-	if (stream != null) logBody['stream'] = stream
-	const cacheKey = body['cache_key'] as string | null
-	if (cacheKey != null) logBody['cache_key'] = cacheKey
-	const thinking = body['thinking'] as UTSJSONObject | null
-	if (thinking != null) logBody['thinking'] = thinking
-	const reasoningEffort = body['reasoning_effort'] as string | null
-	if (reasoningEffort != null) logBody['reasoning_effort'] = reasoningEffort
-	return JSON.stringify(logBody)
-}
 
 function buildChatCompletionUrl(baseUrl: string): string {
 	const hasApiVersion = baseUrl.indexOf('/v1') >= 0 || baseUrl.indexOf('/api/v') >= 0
@@ -2405,21 +2163,8 @@ export function buildAgentContextPreview(
 			}
 		}
 	}
-	// 读取上次调用的真实 Token 用量
-	let lastTokenUsage: UTSJSONObject | null = null
-	let lastCallInfo: UTSJSONObject | null = null
-	try {
-		const rawUsage = getAppSetting(LAST_TOKEN_USAGE_KEY)
-		if (rawUsage != null && rawUsage != '') {
-			lastTokenUsage = JSON.parse(rawUsage) as UTSJSONObject
-		}
-	} catch (_e: any) {}
-	try {
-		const rawCall = getAppSetting(LAST_LLM_CALL_KEY)
-		if (rawCall != null && rawCall != '') {
-			lastCallInfo = JSON.parse(rawCall) as UTSJSONObject
-		}
-	} catch (_e2: any) {}
+	// 读取上次调用的真实诊断数据。
+	const diagnosticsState = readLastLLMPreviewState(conversationId)
 	const openaiTools: UTSJSONObject[] = []
 	for (let i = 0; i < prepared.toolDefs.length; i++) {
 		const t = prepared.toolDefs[i]
@@ -2444,9 +2189,9 @@ export function buildAgentContextPreview(
 		droppedCount: prepared.droppedCount,
 		droppedScore: prepared.droppedScore,
 		droppedPreview: buildDroppedMessagesPreview(prepared.droppedMessages),
-		lastTokenUsage: lastTokenUsage,
-		lastCallInfo: lastCallInfo,
-		conversationTokenUsageStats: getConversationTokenUsageStats(conversationId),
+		lastTokenUsage: diagnosticsState['lastTokenUsage'],
+		lastCallInfo: diagnosticsState['lastCallInfo'],
+		conversationTokenUsageStats: diagnosticsState['conversationTokenUsageStats'],
 		workingMessages: prepared.workingMessages,
 		openaiMessages: apiMessages,
 		toolDefs: prepared.toolDefs,
