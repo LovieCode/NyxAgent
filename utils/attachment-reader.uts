@@ -15,6 +15,14 @@ export type PickedImageSelection = {
 	error: string
 }
 
+export type PickedFileSelection = {
+	ok: boolean
+	file: PickedLocalFile
+	isImage: boolean
+	contextText: string
+	error: string
+}
+
 function emptyPickedFile(): PickedLocalFile {
 	return {
 		name: '文件',
@@ -38,6 +46,26 @@ function failPickedImage(error: string): PickedImageSelection {
 		path: '',
 		error: error,
 	} as PickedImageSelection
+}
+
+function okPickedFile(file: PickedLocalFile, isImage: boolean, contextText: string): PickedFileSelection {
+	return {
+		ok: true,
+		file: file,
+		isImage: isImage,
+		contextText: contextText,
+		error: '',
+	} as PickedFileSelection
+}
+
+function failPickedFile(error: string): PickedFileSelection {
+	return {
+		ok: false,
+		file: emptyPickedFile(),
+		isImage: false,
+		contextText: '',
+		error: error,
+	} as PickedFileSelection
 }
 
 function readStringField(obj: UTSJSONObject, key: string): string {
@@ -169,4 +197,14 @@ export function buildPickedFileContextText(file: PickedLocalFile): string {
 		tail = '\n\n[内容过长，已截断前 ' + MAX_ATTACHMENT_TEXT_CHARS + ' 字符]'
 	}
 	return '文件名：' + file.name + '\n文件内容：\n' + body + tail
+}
+
+export function readPickedFileSelection(res: any): PickedFileSelection {
+	const file = parsePickedFileInfo(res)
+	if (file.path == '') {
+		return failPickedFile('未选择文件')
+	}
+	const image = isPickedImageFile(file)
+	const contextText = image == true ? '' : buildPickedFileContextText(file)
+	return okPickedFile(file, image, contextText)
 }
