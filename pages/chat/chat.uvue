@@ -146,11 +146,14 @@
 	import { setContextPreviewPayload, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import { transcribeAudio, synthesizeSpeech } from '@/utils/speech-service.uts'
 	import {
+		buildChatVoiceStartGuard,
 		clearChatSpeechCachePath,
 		createSpeechPlayer,
 		destroySpeechPlayer,
 		parseRecorderTempPath,
 		readChatSpeechCacheState,
+		shouldIgnoreSpeechPlayerError,
+		writeChatSpeechCachePath,
 	} from '@/utils/chat-speech-runtime.uts'
 	import {
 		appendChatFileMessage,
@@ -797,15 +800,11 @@
 			// ===== 语音输入 =====
 
 			startVoice() {
-				if (this.isGenerating == true || this.isTranscribing == true) {
-					uni.showToast({ position: 'bottom',  title: '当前任务进行中', icon: 'none' })
-					return
-				}
-				if (this.isListening == true) {
-					return
-				}
-				if (this.hasValidDefaultTaskModel('stt') == false) {
-					uni.showToast({ position: 'bottom',  title: '请先在设置中配置语音识别模型', icon: 'none' })
+				const guard = buildChatVoiceStartGuard(this.isGenerating, this.isTranscribing, this.isListening, this.hasValidDefaultTaskModel('stt'))
+				if (guard.ok == false) {
+					if (guard.message != '') {
+						uni.showToast({ position: 'bottom',  title: guard.message, icon: 'none' })
+					}
 					return
 				}
 				this.isListening = true
@@ -893,7 +892,7 @@
 					this.stopSpeechPlayback()
 				})
 				audio.onError((err: any) => {
-					if (this.isStoppingSpeechPlayback == true || this.speechPlayer != audio || this.playingSpeechPath != path) {
+					if (shouldIgnoreSpeechPlayerError(this.isStoppingSpeechPlayback, this.speechPlayer, audio, this.playingSpeechPath, path) == true) {
 						return
 					}
 					console.log('[Speech] 播放失败: ' + err)
@@ -935,7 +934,7 @@
 					if (this.conversationId != conversationId) { return }
 					if (this.hasMessageRef(msg) == false) { return }
 					if (result.ok == true) {
-						msg['ttsAudioPath'] = result.path
+						writeChatSpeechCachePath(msg, result.path)
 						this.savedFlag = false
 						this.saveCurrentConversation()
 						if (autoPlay == true) {

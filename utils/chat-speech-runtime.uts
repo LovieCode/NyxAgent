@@ -12,6 +12,38 @@ export type ChatSpeechCacheState = {
 	stale: boolean
 }
 
+export type ChatVoiceStartGuard = {
+	ok: boolean
+	message: string
+}
+
+function allowVoiceStart(): ChatVoiceStartGuard {
+	return {
+		ok: true,
+		message: '',
+	} as ChatVoiceStartGuard
+}
+
+function blockVoiceStart(message: string): ChatVoiceStartGuard {
+	return {
+		ok: false,
+		message: message,
+	} as ChatVoiceStartGuard
+}
+
+export function buildChatVoiceStartGuard(isGenerating: boolean, isTranscribing: boolean, isListening: boolean, sttEnabled: boolean): ChatVoiceStartGuard {
+	if (isGenerating == true || isTranscribing == true) {
+		return blockVoiceStart('当前任务进行中')
+	}
+	if (isListening == true) {
+		return blockVoiceStart('')
+	}
+	if (sttEnabled == false) {
+		return blockVoiceStart('请先在设置中配置语音识别模型')
+	}
+	return allowVoiceStart()
+}
+
 export function parseRecorderTempPath(res: any): string {
 	try {
 		const raw = JSON.stringify(res)
@@ -65,6 +97,13 @@ export function destroySpeechPlayer(player: InnerAudioContext | null): void {
 	}
 }
 
+export function shouldIgnoreSpeechPlayerError(isStopping: boolean, currentPlayer: InnerAudioContext | null, eventPlayer: InnerAudioContext, currentPath: string, eventPath: string): boolean {
+	if (isStopping == true) { return true }
+	if (currentPlayer != eventPlayer) { return true }
+	if (currentPath != eventPath) { return true }
+	return false
+}
+
 export function readChatSpeechCacheState(msg: UTSJSONObject): ChatSpeechCacheState {
 	const rawPath = msg['ttsAudioPath'] as string | null
 	const path = rawPath != null ? rawPath : ''
@@ -78,4 +117,8 @@ export function readChatSpeechCacheState(msg: UTSJSONObject): ChatSpeechCacheSta
 
 export function clearChatSpeechCachePath(msg: UTSJSONObject): void {
 	msg['ttsAudioPath'] = ''
+}
+
+export function writeChatSpeechCachePath(msg: UTSJSONObject, path: string): void {
+	msg['ttsAudioPath'] = path
 }
