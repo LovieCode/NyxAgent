@@ -11,7 +11,7 @@
  */
 
 import { getDefaultTaskModel, getProviderById, getProviderModels, normalizeBaseUrl, TTS_ADAPTER_OPENAI_COMPAT, TTS_ADAPTER_VOLCENGINE } from '@/uni_modules/agent-core/utssdk/provider.uts'
-import { getInternalCacheDir, createDir, exists } from '@/utils/file-manager.uts'
+import { getInternalCacheDir, createDir, exists, deleteItem } from '@/utils/file-manager.uts'
 
 // #ifdef APP-ANDROID
 import File from 'java.io.File'
@@ -175,14 +175,35 @@ function readTranscriptionText(data: any | null): string {
 	return text != null ? text.trim() : ''
 }
 
-function buildSpeechCacheDir(): string {
+function getSpeechCacheDirPath(): string {
 	const root = getInternalCacheDir()
 	if (root == '') { return '' }
-	const dir = root + '/speech'
+	return root + '/speech'
+}
+
+export function getSpeechTempDir(): string {
+	return getSpeechCacheDirPath()
+}
+
+function buildSpeechCacheDir(): string {
+	const dir = getSpeechCacheDirPath()
+	if (dir == '') { return '' }
 	if (exists(dir) == false) {
 		createDir(dir)
 	}
 	return dir
+}
+
+export function clearSpeechTempFiles(): boolean {
+	const dir = getSpeechCacheDirPath()
+	if (dir == '') { return false }
+	if (exists(dir) == false) { return true }
+	const result = deleteItem(dir, true)
+	if (result.ok == false) {
+		console.log('[Speech] 清理语音缓存失败: ' + result.error)
+		return false
+	}
+	return true
 }
 
 function writeArrayBufferToFile(path: string, data: ArrayBuffer): boolean {

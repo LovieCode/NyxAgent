@@ -121,6 +121,16 @@
 
 					<text class="field-label tts-field-label">高级参数 JSON</text>
 					<textarea class="prompt-input tts-extra-input" v-model="ttsExtraParams" auto-height placeholder='{"appid":"...","volcengine_cluster":"volcano_tts"}' placeholder-class="ph" />
+
+					<view class="tts-temp-row">
+						<view class="tts-temp-info">
+							<text class="tts-temp-title">临时目录</text>
+							<text class="tts-temp-path">{{ttsTempDir != '' ? ttsTempDir : '不可用'}}</text>
+						</view>
+						<view class="tts-clear-btn" @click="clearTtsTempFiles">
+							<text class="tts-clear-text">清理缓存</text>
+						</view>
+					</view>
 				</view>
 
 				<view v-if="isVisionTask(task)" class="prompt-box">
@@ -138,6 +148,7 @@
 
 <script lang="uts">
 	import { getAllProviders, setDefaultTaskModel, getAllDefaultTaskModels, getProviderModels, parseModels, getImageCaptionPrompt, setImageCaptionPrompt, getDefaultTTSSettings, setDefaultTTSSettings, TTS_ADAPTER_OPENAI_COMPAT } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { getSpeechTempDir, clearSpeechTempFiles } from '@/utils/speech-service.uts'
 
 	export default {
 		data() {
@@ -150,6 +161,7 @@
 				ttsResponseFormat: '' as string,
 				ttsSpeed: '' as string,
 				ttsExtraParams: '' as string,
+				ttsTempDir: '' as string,
 				savedImageCaptionPrompt: '' as string,
 				hasUnsavedPrompt: false as boolean,
 				isConfirmingLeave: false as boolean,
@@ -190,6 +202,7 @@
 			},
 
 			loadTtsSettings() {
+				this.ttsTempDir = getSpeechTempDir()
 				const settings = getDefaultTTSSettings()
 				const adapter = settings['adapter'] as string | null
 				const voice = settings['voice'] as string | null
@@ -379,6 +392,16 @@
 			saveTtsSettings() {
 				if (this.saveTtsSettingsQuiet() == false) { return }
 				uni.showToast({ title: '已保存 TTS 参数', icon: 'success' })
+			},
+
+			clearTtsTempFiles() {
+				const ok = clearSpeechTempFiles()
+				if (ok == true) {
+					uni.showToast({ title: '已清理语音缓存', icon: 'success' })
+					this.ttsTempDir = getSpeechTempDir()
+					return
+				}
+				uni.showToast({ title: '清理语音缓存失败', icon: 'none' })
 			},
 
 			saveTaskModel(taskIndex: number) {
@@ -644,6 +667,45 @@
 	.tts-extra-input {
 		min-height: 68px;
 		background-color: #FFFFFF;
+	}
+
+	.tts-temp-row {
+		margin-top: 10px;
+		padding: 9px;
+		border-radius: 8px;
+		background-color: #FFFFFF;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.tts-temp-info {
+		flex: 1;
+		margin-right: 8px;
+	}
+
+	.tts-temp-title {
+		font-size: 12px;
+		font-weight: 600;
+		color: #374151;
+	}
+
+	.tts-temp-path {
+		margin-top: 3px;
+		font-size: 11px;
+		color: #9CA3AF;
+		line-height: 15px;
+	}
+
+	.tts-clear-btn {
+		padding: 7px 10px;
+		border-radius: 999px;
+		background-color: #FEE2E2;
+	}
+
+	.tts-clear-text {
+		font-size: 12px;
+		font-weight: 600;
+		color: #DC2626;
 	}
 
 	/* 保存按钮 */

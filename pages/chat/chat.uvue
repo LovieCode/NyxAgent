@@ -150,7 +150,7 @@
 		finalizeAssistantTurn,
 		reduceAgentEvent,
 	} from '@/utils/chat-message-reducer.uts'
-	import { getAgentConversationDir } from '@/utils/file-manager.uts'
+	import { getAgentConversationDir, exists } from '@/utils/file-manager.uts'
 	import { setContextPreviewPayload, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import { transcribeAudio, synthesizeSpeech } from '@/utils/speech-service.uts'
 	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, type PickedLocalFile } from '@/utils/attachment-reader.uts'
@@ -919,6 +919,28 @@
 				this.playingSpeechPath = ''
 			},
 
+			buildPlayableSpeechPath(path: string): string {
+				if (path == '') { return '' }
+				if (path.startsWith('file://') || path.startsWith('http://') || path.startsWith('https://') || path.startsWith('unifile://')) {
+					return path
+				}
+				if (path.startsWith('/')) {
+					return 'file://' + path
+				}
+				return path
+			},
+
+			isPlayableSpeechCache(path: string): boolean {
+				if (path == '') { return false }
+				if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('unifile://')) { return true }
+				if (path.startsWith('file://')) {
+					const rawPath = path.substring(7)
+					return exists(rawPath)
+				}
+				if (path.startsWith('/')) { return exists(path) }
+				return true
+			},
+
 			playSpeechPath(path: string): void {
 				if (path == '') {
 					uni.showToast({ position: 'bottom',  title: '语音路径为空', icon: 'none' })
@@ -929,11 +951,12 @@
 					return
 				}
 				this.stopSpeechPlayback()
-				// PROVIDER_AUDIO_API: TTS 当前落本地 wav 文件，使用 uni inner audio 统一播放。
+				// PROVIDER_AUDIO_API: TTS 当前落本地临时音频文件，播放时绝对路径要转 file://。
 				const audio = uni.createInnerAudioContext()
 				this.speechPlayer = audio
+				const playablePath = this.buildPlayableSpeechPath(path)
 				this.playingSpeechPath = path
-				audio.src = path
+				audio.src = playablePath
 				audio.onEnded(() => {
 					this.stopSpeechPlayback()
 				})
@@ -982,8 +1005,13 @@
 				if (role != 'assistant') { return }
 				const existing = msg['ttsAudioPath'] as string | null
 				if (existing != null && existing != '') {
-					this.playSpeechPath(existing)
-					return
+					if (this.isPlayableSpeechCache(existing) == true) {
+						this.playSpeechPath(existing)
+						return
+					}
+					msg['ttsAudioPath'] = ''
+					this.savedFlag = false
+					this.saveCurrentConversation()
 				}
 				uni.showToast({ position: 'bottom',  title: '语音生成中', icon: 'none' })
 				this.synthesizeAssistantSpeech(msg, true)
@@ -995,8 +1023,13 @@
 				if (msg == null) { return }
 				const existing = msg['ttsAudioPath'] as string | null
 				if (existing != null && existing != '') {
-					this.playSpeechPath(existing)
-					return
+					if (this.isPlayableSpeechCache(existing) == true) {
+						this.playSpeechPath(existing)
+						return
+					}
+					msg['ttsAudioPath'] = ''
+					this.savedFlag = false
+					this.saveCurrentConversation()
 				}
 				this.synthesizeAssistantSpeech(msg, true)
 			},
