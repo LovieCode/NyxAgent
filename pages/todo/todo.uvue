@@ -186,16 +186,20 @@
 	import { getAgentDir, getUserDir, migrateLegacyUserDir, readContent, writeContent, listDir, deleteItem, joinPath, type FileItem } from '@/utils/file-manager.uts'
 	import { parseTodoMarkdown, parseNoteMarkdown, buildTodoMarkdown, buildNoteMarkdown, type KnowledgeRenderBlock } from '@/utils/markdown.uts'
 	import { getAgents } from '@/utils/agent.uts'
-	import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 	import {
+		applyNoteEditorState,
 		buildFilteredNoteList,
 		buildFilteredTodoList,
 		buildNotePreviewBlocks,
+		consumeNoteEditorRuntimeState,
 		countNoteInlineTodos,
 		filterKnowledgeItemsByAgent,
 		formatNoteUpdatedAtNow,
 		formatTodoCreatedAt,
 		formatTodoCreatedAtNow,
+		prepareNoteEditorRuntimeState,
+		readNoteEditorStateFromNote,
+		type NoteEditorState,
 	} from '@/utils/todo-page-helpers.uts'
 
 	/** 虚拟用户条目，显示在所有 agent 之前 */
@@ -514,117 +518,24 @@
 				return countNoteInlineTodos(note)
 			},
 
-			clearNoteEditorStorage() {
-				deleteRuntimeState('note_editor_id')
-				deleteRuntimeState('note_editor_title')
-				deleteRuntimeState('note_editor_content')
-				deleteRuntimeState('note_editor_agent_id')
-				deleteRuntimeState('note_editor_result')
-			},
-
 			openNoteEditor(noteId: string, title: string, content: string, agentId: string) {
-				this.clearNoteEditorStorage()
-				setRuntimeState('note_editor_id', noteId)
-				setRuntimeState('note_editor_title', title)
-				setRuntimeState('note_editor_content', content)
-				setRuntimeState('note_editor_agent_id', agentId)
+				prepareNoteEditorRuntimeState(noteId, title, content, agentId)
 				uni.navigateTo({
 					url: '/pages/note-editor/note-editor'
 				})
 			},
 
 			consumeNoteEditorResult() {
-				const raw = getRuntimeState('note_editor_result')
-				if (raw == null || raw == '') {
+				const payload = consumeNoteEditorRuntimeState()
+				if (payload == null) {
 					return
 				}
-
-				deleteRuntimeState('note_editor_result')
-
-				try {
-					const payload = JSON.parse(raw) as UTSJSONObject
-					const noteIdValue = payload['id'] as string | null
-					const titleValue = payload['title'] as string | null
-					const contentValue = payload['content'] as string | null
-					const agentIdValue = payload['agentId'] as string | null
-					const agentNameValue = payload['agentName'] as string | null
-
-					let noteId = ''
-					if (noteIdValue != null) {
-						noteId = noteIdValue
-					}
-					let title = ''
-					if (titleValue != null) {
-						title = titleValue.trim()
-					}
-					if (title == '') {
-						title = '无标题'
-					}
-					let content = ''
-					if (contentValue != null) {
-						content = contentValue
-					}
-					if (content.trim() == '') {
-						return
-					}
-					let agentId = '__user__'
-					if (agentIdValue != null) {
-						if (agentIdValue != '') {
-							agentId = agentIdValue
-						}
-					}
-					let agentName = ''
-					if (agentNameValue != null) {
-						agentName = agentNameValue
-					}
-					if (agentName == '') {
-						agentName = '用户'
-					}
-					const timeStr = this.formatNow()
-
-					if (noteId == '') {
-						const newNote = {
-							id: '' + Date.now(),
-							title: title,
-							content: content,
-							updatedAt: timeStr,
-							agentId: agentId,
-							agentName: agentName
-						} as UTSJSONObject
-						this.notes.unshift(newNote)
-					} else {
-						let updated = false
-						for (let i = 0; i < this.notes.length; i++) {
-							if ((this.notes[i]['id'] as string) == noteId) {
-								this.notes[i]['title'] = title
-								this.notes[i]['content'] = content
-								this.notes[i]['updatedAt'] = timeStr
-								this.notes[i]['agentId'] = agentId
-								this.notes[i]['agentName'] = agentName
-								updated = true
-								break
-							}
-						}
-						if (!updated) {
-							const restoredNote = {
-								id: noteId,
-								title: title,
-								content: content,
-								updatedAt: timeStr,
-								agentId: agentId,
-								agentName: agentName
-							} as UTSJSONObject
-							this.notes.unshift(restoredNote)
-						}
-					}
-
-					this.saveNotes()
-					uni.showToast({ position: 'bottom',
-						title: '已保存',
-						icon: 'success'
-					})
-				} catch (_e: any) {
-				}
+				this.notes = applyNoteEditorState(this.notes, payload, this.formatNow())
+				this.saveNotes()
+				uni.showToast({ position: 'bottom',
+					title: '已保存',
+					icon: 'success'
+				})
 			},
 
 			createNote() {
@@ -632,29 +543,8 @@
 			},
 
 			editNote(note : UTSJSONObject) {
-				const noteIdValue = note['id'] as string | null
-				const titleValue = note['title'] as string | null
-				const contentValue = note['content'] as string | null
-				const agentIdValue = note['agentId'] as string | null
-				let noteId = ''
-				if (noteIdValue != null) {
-					noteId = noteIdValue
-				}
-				let title = ''
-				if (titleValue != null) {
-					title = titleValue
-				}
-				let content = ''
-				if (contentValue != null) {
-					content = contentValue
-				}
-				let agentId = '__user__'
-				if (agentIdValue != null) {
-					if (agentIdValue != '') {
-						agentId = agentIdValue
-					}
-				}
-				this.openNoteEditor(noteId, title, content, agentId)
+				const state: NoteEditorState = readNoteEditorStateFromNote(note)
+				this.openNoteEditor(state.noteId, state.title, state.content, state.agentId)
 			},
 
 			confirmDeleteNote(id : string) {

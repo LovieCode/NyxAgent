@@ -4,7 +4,16 @@
  * 页面负责文件读写和交互；过滤、排序、时间格式和预览渲染放这里。
  */
 
+import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 import { renderKnowledgeMarkdown, countInlineTodos, type KnowledgeRenderBlock } from '@/utils/markdown.uts'
+
+export type NoteEditorState = {
+	noteId: string
+	title: string
+	content: string
+	agentId: string
+	agentName: string
+}
 
 function readTodoPriorityScore(priority: string): number {
 	if (priority == 'high') { return 3 }
@@ -134,4 +143,105 @@ export function countNoteInlineTodos(note: UTSJSONObject): number {
 		return 0
 	}
 	return countInlineTodos(content)
+}
+
+export function clearNoteEditorRuntimeState(): void {
+	deleteRuntimeState('note_editor_id')
+	deleteRuntimeState('note_editor_title')
+	deleteRuntimeState('note_editor_content')
+	deleteRuntimeState('note_editor_agent_id')
+	deleteRuntimeState('note_editor_result')
+}
+
+export function prepareNoteEditorRuntimeState(noteId: string, title: string, content: string, agentId: string): void {
+	clearNoteEditorRuntimeState()
+	setRuntimeState('note_editor_id', noteId)
+	setRuntimeState('note_editor_title', title)
+	setRuntimeState('note_editor_content', content)
+	setRuntimeState('note_editor_agent_id', agentId)
+}
+
+function readStringFromPayload(payload: UTSJSONObject, key: string): string {
+	const value = payload[key] as string | null
+	return value != null ? value : ''
+}
+
+export function consumeNoteEditorRuntimeState(): NoteEditorState | null {
+	const raw = getRuntimeState('note_editor_result')
+	if (raw == null || raw == '') { return null }
+	deleteRuntimeState('note_editor_result')
+	try {
+		const payload = JSON.parse(raw) as UTSJSONObject
+		const noteId = readStringFromPayload(payload, 'id')
+		let title = readStringFromPayload(payload, 'title').trim()
+		if (title == '') { title = '无标题' }
+		const content = readStringFromPayload(payload, 'content')
+		if (content.trim() == '') { return null }
+		let agentId = readStringFromPayload(payload, 'agentId')
+		if (agentId == '') { agentId = '__user__' }
+		let agentName = readStringFromPayload(payload, 'agentName')
+		if (agentName == '') { agentName = '用户' }
+		return {
+			noteId: noteId,
+			title: title,
+			content: content,
+			agentId: agentId,
+			agentName: agentName,
+		} as NoteEditorState
+	} catch (_e: any) {
+		return null
+	}
+}
+
+function buildNoteFromEditorState(noteId: string, payload: NoteEditorState, updatedAt: string): UTSJSONObject {
+	return {
+		id: noteId,
+		title: payload.title,
+		content: payload.content,
+		updatedAt: updatedAt,
+		agentId: payload.agentId,
+		agentName: payload.agentName,
+	} as UTSJSONObject
+}
+
+export function applyNoteEditorState(notes: UTSJSONObject[], payload: NoteEditorState, updatedAt: string): UTSJSONObject[] {
+	const targetId = payload.noteId
+	const next: UTSJSONObject[] = []
+	if (targetId == '') {
+		next.push(buildNoteFromEditorState('' + Date.now(), payload, updatedAt))
+		for (let i = 0; i < notes.length; i++) {
+			next.push(notes[i])
+		}
+		return next
+	}
+	let updated = false
+	for (let i = 0; i < notes.length; i++) {
+		const id = notes[i]['id'] as string | null
+		if (id == targetId) {
+			next.push(buildNoteFromEditorState(targetId, payload, updatedAt))
+			updated = true
+		} else {
+			next.push(notes[i])
+		}
+	}
+	if (updated == false) {
+		next.unshift(buildNoteFromEditorState(targetId, payload, updatedAt))
+	}
+	return next
+}
+
+export function readNoteEditorStateFromNote(note: UTSJSONObject): NoteEditorState {
+	const noteId = readStringFromPayload(note, 'id')
+	const title = readStringFromPayload(note, 'title')
+	const content = readStringFromPayload(note, 'content')
+	let agentId = readStringFromPayload(note, 'agentId')
+	if (agentId == '') { agentId = '__user__' }
+	const agentName = readStringFromPayload(note, 'agentName')
+	return {
+		noteId: noteId,
+		title: title,
+		content: content,
+		agentId: agentId,
+		agentName: agentName,
+	} as NoteEditorState
 }
