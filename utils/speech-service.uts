@@ -12,6 +12,7 @@
 
 import { getDefaultTaskModel, getProviderById, getProviderModels, normalizeBaseUrl, TTS_ADAPTER_OPENAI_COMPAT, TTS_ADAPTER_VOLCENGINE } from '@/uni_modules/agent-core/utssdk/provider.uts'
 import { getInternalCacheDir, createDir, exists, deleteItem } from '@/utils/file-manager.uts'
+import { getAgentById } from '@/utils/agent.uts'
 
 // #ifdef APP-ANDROID
 import File from 'java.io.File'
@@ -119,7 +120,7 @@ function getDefaultAudioBaseUrl(providerId: string): string {
 	return ''
 }
 
-function resolveSpeechConfig(type: string): SpeechConfig | null {
+function resolveSpeechConfig(type: string, agentId: string = ''): SpeechConfig | null {
 	const task = getDefaultTaskModel(type)
 	if (task == null) { return null }
 	const providerIdRaw = task['providerId'] as string | null
@@ -151,6 +152,17 @@ function resolveSpeechConfig(type: string): SpeechConfig | null {
 		ttsVolume = readTaskString(task, 'ttsVolume')
 		ttsPitch = readTaskString(task, 'ttsPitch')
 		ttsExtraParams = readTaskString(task, 'ttsExtraParams')
+		if (agentId != '') {
+			const agent = getAgentById(agentId)
+			if (agent != null) {
+				const agentVoice = readTaskString(agent, 'ttsVoice')
+				const agentVolume = readTaskString(agent, 'ttsVolume')
+				const agentPitch = readTaskString(agent, 'ttsPitch')
+				if (agentVoice != '') { ttsVoice = agentVoice }
+				if (agentVolume != '') { ttsVolume = agentVolume }
+				if (agentPitch != '') { ttsPitch = agentPitch }
+			}
+		}
 	}
 	return {
 		providerId: providerId,
@@ -661,14 +673,14 @@ export function transcribeAudio(audioPath: string): Promise<SpeechTextResult> {
 	})
 }
 
-export function synthesizeSpeech(text: string): Promise<SpeechAudioResult> {
+export function synthesizeSpeech(text: string, agentId: string = ''): Promise<SpeechAudioResult> {
 	return new Promise<SpeechAudioResult>((resolve) => {
 		const content = text.trim()
 		if (content == '') {
 			resolve(failAudio('朗读文本为空'))
 			return
 		}
-		const config = resolveSpeechConfig('tts')
+		const config = resolveSpeechConfig('tts', agentId)
 		if (config == null) {
 			resolve(failAudio('请先在设置中配置语音合成模型'))
 			return

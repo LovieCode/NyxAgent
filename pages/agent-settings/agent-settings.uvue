@@ -101,6 +101,29 @@
 				<view class="setting-divider"></view>
 				<view class="card-header">
 					<oui-icon-unix name="setting" size="11px" color="#6B7280" style="margin-right:5px" />
+					<text class="card-label">语音音色</text>
+				</view>
+				<text class="voice-section-desc">当前联系人专属 TTS 覆盖；留空就继承 设置 / 默认模型 里的全局参数。</text>
+				<view class="param-row">
+					<view class="param-item">
+						<text class="param-label">音色 / Voice</text>
+						<input class="param-input" type="text" v-model="ttsVoice" placeholder="留空继承默认音色" @input="hasUnsaved = true" />
+					</view>
+				</view>
+				<view class="param-row">
+					<view class="param-item">
+						<text class="param-label">音量</text>
+						<input class="param-input" type="text" v-model="ttsVolume" placeholder="留空继承，火山等支持" @input="hasUnsaved = true" />
+					</view>
+					<view class="param-item">
+						<text class="param-label">音高</text>
+						<input class="param-input" type="text" v-model="ttsPitch" placeholder="留空继承，火山等支持" @input="hasUnsaved = true" />
+					</view>
+				</view>
+
+				<view class="setting-divider"></view>
+				<view class="card-header">
+					<oui-icon-unix name="setting" size="11px" color="#6B7280" style="margin-right:5px" />
 					<text class="card-label">生成参数</text>
 				</view>
 				<view class="setting-row">
@@ -271,7 +294,7 @@
 	/**
 	 * 私聊设置页面 - 编辑昵称/备注/头像/删除私聊
 	 */
-	import { getAgentById, updateAgent, deleteAgent, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, agentToolIdListContains, AGENT_TOOL_APP_GUIDE, AGENT_TOOL_WORKSPACE_FILE, AGENT_TOOL_MEMORY_SEARCH, AGENT_TOOL_MEMORY_BUFFER_WRITE, AGENT_TOOL_WEB_SEARCH, AGENT_TOOL_ASTRBOT_TASK, NYX_ADMIN_AGENT_ID } from '@/utils/agent.uts'
+	import { getAgentById, updateAgent, deleteAgent, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentTTSSettings, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, agentToolIdListContains, AGENT_TOOL_APP_GUIDE, AGENT_TOOL_WORKSPACE_FILE, AGENT_TOOL_MEMORY_SEARCH, AGENT_TOOL_MEMORY_BUFFER_WRITE, AGENT_TOOL_WEB_SEARCH, AGENT_TOOL_ASTRBOT_TASK, NYX_ADMIN_AGENT_ID } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { deleteRuntimeState, getAppSetting, getRuntimeState, setRuntimeState, updateSystemPromptForAgent } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
@@ -296,6 +319,9 @@
 				showModelPanel: false as boolean,
 				selectedProviderId: '' as string,
 				selectedModelId: '' as string,
+				ttsVoice: '' as string,
+				ttsVolume: '' as string,
+				ttsPitch: '' as string,
 				useGlobalGeneration: true as boolean,
 				temperatureStr: '' as string,
 				maxTokensStr: '' as string,
@@ -465,6 +491,12 @@
 					if (rawModel != null) {
 						this.currentModel = rawModel as string
 					}
+					const rawTtsVoice = agent['ttsVoice'] as string | null
+					const rawTtsVolume = agent['ttsVolume'] as string | null
+					const rawTtsPitch = agent['ttsPitch'] as string | null
+					this.ttsVoice = rawTtsVoice != null ? rawTtsVoice : ''
+					this.ttsVolume = rawTtsVolume != null ? rawTtsVolume : ''
+					this.ttsPitch = rawTtsPitch != null ? rawTtsPitch : ''
 					this.selectedSkillIds = filterExistingSkillIds(getAgentSkillIds(agent))
 					this.selectedToolIds = getAgentEnabledToolIds(agent, false)
 					this.loadGenerationSettings(agent)
@@ -769,6 +801,7 @@
 				}
 				updateAgent(this.agentId, name, desc, this.agentAvatar, this.agentSystemPrompt)
 				updateAgentModel(this.agentId, this.currentModel)
+				updateAgentTTSSettings(this.agentId, this.ttsVoice, this.ttsVolume, this.ttsPitch)
 				const globalGeneration = getGlobalGenerationSettings()
 				let temperature: number | null = null
 				let maxTokens: number | null = null
@@ -1221,6 +1254,13 @@
 		font-size: 11px;
 		color: var(--rice-text-color-3);
 		line-height: 16px;
+	}
+
+	.voice-section-desc {
+		font-size: 11px;
+		color: var(--rice-text-color-3);
+		line-height: 16px;
+		margin-bottom: 8px;
 	}
 
 	.context-tip {

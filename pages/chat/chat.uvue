@@ -987,7 +987,7 @@
 				if (text == '') { return }
 				const conversationId = this.conversationId
 				this.isSynthesizingSpeech = true
-				synthesizeSpeech(text).then((result) => {
+				synthesizeSpeech(text, this.agentId).then((result) => {
 					this.isSynthesizingSpeech = false
 					if (this.conversationId != conversationId) { return }
 					if (this.hasMessageRef(msg) == false) { return }
