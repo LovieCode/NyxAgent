@@ -184,9 +184,19 @@
 
 <script lang="uts">
 	import { getAgentDir, getUserDir, migrateLegacyUserDir, readContent, writeContent, listDir, deleteItem, joinPath, type FileItem } from '@/utils/file-manager.uts'
-	import { renderKnowledgeMarkdown, countInlineTodos, parseTodoMarkdown, parseNoteMarkdown, buildTodoMarkdown, buildNoteMarkdown, type KnowledgeRenderBlock } from '@/utils/markdown.uts'
+	import { parseTodoMarkdown, parseNoteMarkdown, buildTodoMarkdown, buildNoteMarkdown, type KnowledgeRenderBlock } from '@/utils/markdown.uts'
 	import { getAgents } from '@/utils/agent.uts'
 	import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+	import {
+		buildFilteredNoteList,
+		buildFilteredTodoList,
+		buildNotePreviewBlocks,
+		countNoteInlineTodos,
+		filterKnowledgeItemsByAgent,
+		formatNoteUpdatedAtNow,
+		formatTodoCreatedAt,
+		formatTodoCreatedAtNow,
+	} from '@/utils/todo-page-helpers.uts'
 
 	/** 虚拟用户条目，显示在所有 agent 之前 */
 	const USER_AGENT_ENTRY: UTSJSONObject = {
@@ -224,49 +234,10 @@
 		},
 		computed: {
 			filteredTodos() : UTSJSONObject[] {
-				let list: UTSJSONObject[] = []
-				if (this.filter == 'pending') {
-					list = this.todos.filter((todo : UTSJSONObject) : boolean => {
-						return (todo['completed'] as boolean) == false
-					})
-				} else if (this.filter == 'done') {
-					list = this.todos.filter((todo : UTSJSONObject) : boolean => {
-						return (todo['completed'] as boolean) == true
-					})
-				} else {
-					for (let i = 0; i < this.todos.length; i++) {
-						list.push(this.todos[i])
-					}
-				}
-				list.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
-					const aDone = a['completed'] as boolean
-					const bDone = b['completed'] as boolean
-					if (aDone != bDone) {
-						return aDone ? 1 : -1
-					}
-					const aScore = this.getPriorityScore(a['priority'] as string)
-					const bScore = this.getPriorityScore(b['priority'] as string)
-					if (aScore != bScore) {
-						return bScore - aScore
-					}
-					const aTime = a['createdAt'] as string
-					const bTime = b['createdAt'] as string
-					if (aTime > bTime) return -1
-					if (aTime < bTime) return 1
-					return 0
-				})
-				return list
+				return buildFilteredTodoList(this.todos, this.filter)
 			},
 			filteredNotes() : UTSJSONObject[] {
-				if (this.searchQuery == '') {
-					return this.notes
-				}
-				let query = this.searchQuery.toLowerCase()
-				return this.notes.filter((note : UTSJSONObject) : boolean => {
-					let title = (note['title'] as string).toLowerCase()
-					let content = (note['content'] as string).toLowerCase()
-					return title.indexOf(query) >= 0 || content.indexOf(query) >= 0
-				})
+				return buildFilteredNoteList(this.notes, this.searchQuery)
 			}
 		},
 		onLoad() {
@@ -302,24 +273,12 @@
 
 			/** 获取某 agent 的已筛选待办（用于 template） */
 			getAgentTodos(agentId: string): UTSJSONObject[] {
-				const result: UTSJSONObject[] = []
-				for (let i = 0; i < this.filteredTodos.length; i++) {
-					if ((this.filteredTodos[i]['agentId'] as string) == agentId) {
-						result.push(this.filteredTodos[i])
-					}
-				}
-				return result
+				return filterKnowledgeItemsByAgent(this.filteredTodos, agentId)
 			},
 
 			/** 获取某 agent 的已筛选笔记（用于 template） */
 			getAgentNotes(agentId: string): UTSJSONObject[] {
-				const result: UTSJSONObject[] = []
-				for (let i = 0; i < this.filteredNotes.length; i++) {
-					if ((this.filteredNotes[i]['agentId'] as string) == agentId) {
-						result.push(this.filteredNotes[i])
-					}
-				}
-				return result
+				return filterKnowledgeItemsByAgent(this.filteredNotes, agentId)
 			},
 			// ===== 视图切换 =====
 			switchView(view : string) {
@@ -433,13 +392,7 @@
 				}
 				const agentId = targetAgent != null ? (targetAgent['id'] as string) : ''
 				const agentName = targetAgent != null ? (targetAgent['name'] as string) : ''
-				let now = new Date()
-				let timeStr = now.getFullYear() + '-' +
-					this.padZero(now.getMonth() + 1) + '-' +
-					this.padZero(now.getDate()) + ' ' +
-					this.padZero(now.getHours()) + ':' +
-					this.padZero(now.getMinutes()) + ':' +
-					this.padZero(now.getSeconds())
+				const timeStr = formatTodoCreatedAtNow()
 				let newTodo = {
 					id: '' + Date.now(),
 					title: this.newTodoTitle.trim(),
@@ -458,30 +411,8 @@
 				})
 			},
 
-			getPriorityLabel(priority : string) : string {
-				if (priority == 'high') {
-					return '高'
-				} else if (priority == 'medium') {
-					return '中'
-				}
-				return '低'
-			},
-
-			getPriorityScore(priority : string) : number {
-				if (priority == 'high') {
-					return 3
-				}
-				if (priority == 'medium') {
-					return 2
-				}
-				return 1
-			},
-
 			formatTodoTime(value : string) : string {
-				if (value.length == 16) {
-					return value + ':00'
-				}
-				return value
+				return formatTodoCreatedAt(value)
 			},
 
 
@@ -572,34 +503,15 @@
 			},
 
 			formatNow() : string {
-				let now = new Date()
-				return now.getFullYear() + '-' +
-					this.padZero(now.getMonth() + 1) + '-' +
-					this.padZero(now.getDate()) + ' ' +
-					this.padZero(now.getHours()) + ':' +
-					this.padZero(now.getMinutes())
+				return formatNoteUpdatedAtNow()
 			},
 
 			getNoteRenderBlocks(note : UTSJSONObject) : KnowledgeRenderBlock[] {
-				const content = note['content'] as string | null
-				if (content == null || content == '') {
-					return [] as KnowledgeRenderBlock[]
-				}
-				const blocks = renderKnowledgeMarkdown(content)
-				const result: KnowledgeRenderBlock[] = []
-				for (let i = 0; i < blocks.length && result.length < 4; i++) {
-					const block = blocks[i] as KnowledgeRenderBlock
-					result.push(block)
-				}
-				return result
+				return buildNotePreviewBlocks(note)
 			},
 
 			getInlineTodoCount(note : UTSJSONObject) : number {
-				const content = note['content'] as string | null
-				if (content == null || content == '') {
-					return 0
-				}
-				return countInlineTodos(content)
+				return countNoteInlineTodos(note)
 			},
 
 			clearNoteEditorStorage() {
@@ -770,14 +682,6 @@
 					title: '已删除',
 					icon: 'success'
 				})
-			},
-
-			// ===== 通用 =====
-			padZero(n : number) : string {
-				if (n < 10) {
-					return '0' + n
-				}
-				return '' + n
 			}
 		}
 	}

@@ -1,0 +1,137 @@
+/**
+ * 待办/笔记页面展示辅助。
+ *
+ * 页面负责文件读写和交互；过滤、排序、时间格式和预览渲染放这里。
+ */
+
+import { renderKnowledgeMarkdown, countInlineTodos, type KnowledgeRenderBlock } from '@/utils/markdown.uts'
+
+function readTodoPriorityScore(priority: string): number {
+	if (priority == 'high') { return 3 }
+	if (priority == 'medium') { return 2 }
+	return 1
+}
+
+function cloneKnowledgeItems(items: UTSJSONObject[]): UTSJSONObject[] {
+	const list: UTSJSONObject[] = []
+	for (let i = 0; i < items.length; i++) {
+		list.push(items[i])
+	}
+	return list
+}
+
+export function buildFilteredTodoList(todos: UTSJSONObject[], filter: string): UTSJSONObject[] {
+	const list: UTSJSONObject[] = []
+	for (let i = 0; i < todos.length; i++) {
+		const todo = todos[i]
+		const completed = todo['completed'] as boolean | null
+		if (filter == 'pending' && completed == true) { continue }
+		if (filter == 'done' && completed != true) { continue }
+		list.push(todo)
+	}
+	list.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
+		const aDoneRaw = a['completed'] as boolean | null
+		const bDoneRaw = b['completed'] as boolean | null
+		const aDone = aDoneRaw == true
+		const bDone = bDoneRaw == true
+		if (aDone != bDone) {
+			return aDone ? 1 : -1
+		}
+		const aPriorityRaw = a['priority'] as string | null
+		const bPriorityRaw = b['priority'] as string | null
+		const aScore = readTodoPriorityScore(aPriorityRaw != null ? aPriorityRaw : '')
+		const bScore = readTodoPriorityScore(bPriorityRaw != null ? bPriorityRaw : '')
+		if (aScore != bScore) {
+			return bScore - aScore
+		}
+		const aTimeRaw = a['createdAt'] as string | null
+		const bTimeRaw = b['createdAt'] as string | null
+		const aTime = aTimeRaw != null ? aTimeRaw : ''
+		const bTime = bTimeRaw != null ? bTimeRaw : ''
+		if (aTime > bTime) { return -1 }
+		if (aTime < bTime) { return 1 }
+		return 0
+	})
+	return list
+}
+
+export function buildFilteredNoteList(notes: UTSJSONObject[], searchQuery: string): UTSJSONObject[] {
+	const query = searchQuery.trim().toLowerCase()
+	if (query == '') { return cloneKnowledgeItems(notes) }
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < notes.length; i++) {
+		const note = notes[i]
+		const titleRaw = note['title'] as string | null
+		const contentRaw = note['content'] as string | null
+		const title = titleRaw != null ? titleRaw.toLowerCase() : ''
+		const content = contentRaw != null ? contentRaw.toLowerCase() : ''
+		if (title.indexOf(query) >= 0 || content.indexOf(query) >= 0) {
+			result.push(note)
+		}
+	}
+	return result
+}
+
+export function filterKnowledgeItemsByAgent(items: UTSJSONObject[], agentId: string): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < items.length; i++) {
+		const itemAgentId = items[i]['agentId'] as string | null
+		if (itemAgentId == agentId) {
+			result.push(items[i])
+		}
+	}
+	return result
+}
+
+function padZero(n: number): string {
+	if (n < 10) { return '0' + n }
+	return '' + n
+}
+
+export function formatTodoCreatedAtNow(): string {
+	const now = new Date()
+	return now.getFullYear() + '-' +
+		padZero(now.getMonth() + 1) + '-' +
+		padZero(now.getDate()) + ' ' +
+		padZero(now.getHours()) + ':' +
+		padZero(now.getMinutes()) + ':' +
+		padZero(now.getSeconds())
+}
+
+export function formatNoteUpdatedAtNow(): string {
+	const now = new Date()
+	return now.getFullYear() + '-' +
+		padZero(now.getMonth() + 1) + '-' +
+		padZero(now.getDate()) + ' ' +
+		padZero(now.getHours()) + ':' +
+		padZero(now.getMinutes())
+}
+
+export function formatTodoCreatedAt(value: string): string {
+	if (value.length == 16) {
+		return value + ':00'
+	}
+	return value
+}
+
+export function buildNotePreviewBlocks(note: UTSJSONObject): KnowledgeRenderBlock[] {
+	const content = note['content'] as string | null
+	if (content == null || content == '') {
+		return [] as KnowledgeRenderBlock[]
+	}
+	const blocks = renderKnowledgeMarkdown(content)
+	const result: KnowledgeRenderBlock[] = []
+	for (let i = 0; i < blocks.length && result.length < 4; i++) {
+		const block = blocks[i] as KnowledgeRenderBlock
+		result.push(block)
+	}
+	return result
+}
+
+export function countNoteInlineTodos(note: UTSJSONObject): number {
+	const content = note['content'] as string | null
+	if (content == null || content == '') {
+		return 0
+	}
+	return countInlineTodos(content)
+}
