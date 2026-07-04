@@ -4,6 +4,8 @@
  * 页面保留数据读取和弹窗交互；Markdown 渲染、时间格式化、选择集合这些纯逻辑放这里。
  */
 
+import { getAppSetting } from '@/utils/database.uts'
+
 export function readHistoryPartPath(part: UTSJSONObject): string {
 	const url = part['url'] as string | null
 	if (url != null && url != '') { return url }
@@ -67,6 +69,123 @@ export function renderHistoryMessagePartsMarkdown(msg: UTSJSONObject): string {
 		}
 	}
 	return text.trim()
+}
+
+export function resolveHistoryGroupPreviewSenderName(senderName: string | null, senderType: string | null, role: string | null): string {
+	const name = senderName != null ? senderName.trim() : ''
+	if (senderType == 'user' || role == 'user') {
+		if (name != '' && name != '用户') { return name }
+		// 用户资料从 SQLite app_settings 读取。
+		const raw = getAppSetting('profile_nickname')
+		const profileName = raw != null ? raw.trim() : ''
+		return profileName != '' ? profileName : '用户'
+	}
+	return name != '' ? name : '成员'
+}
+
+export function buildLegacyHistoryContextPreview(messages: UTSJSONObject[], centerIndex: number): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	let start = centerIndex - 12
+	if (start < 0) { start = 0 }
+	for (let i = start; i <= centerIndex && i < messages.length; i++) {
+		const msg = messages[i]
+		const visible = msg['visible'] as boolean | null
+		if (visible == false) { continue }
+		const roleRaw = msg['role'] as string | null
+		const role = roleRaw != null ? roleRaw : ''
+		if (role != 'user' && role != 'assistant') { continue }
+		const senderName = msg['senderName'] as string | null
+		const senderType = msg['senderType'] as string | null
+		const contentRaw = msg['content'] as string | null
+		const timestampRaw = msg['timestamp'] as number | null
+		result.push({
+			role: role,
+			senderType: senderType != null ? senderType : '',
+			senderName: resolveHistoryGroupPreviewSenderName(senderName, senderType, role),
+			content: contentRaw != null ? contentRaw : '',
+			timestamp: timestampRaw != null ? timestampRaw : 0,
+		} as UTSJSONObject)
+	}
+	return result
+}
+
+export function shouldIncludeHistoryDialogMessage(msg: UTSJSONObject): boolean {
+	const roleRaw = msg['role'] as string | null
+	const role = roleRaw != null ? roleRaw : ''
+	if (role != 'user' && role != 'assistant') { return false }
+	const visible = msg['visible'] as boolean | null
+	if (visible == false) { return false }
+	return true
+}
+
+export function isHistoryDialogPartType(type: string): boolean {
+	return type == 'plain' || type == 'text' || type == 'image' || type == 'file' || type == 'location' || type == 'record' || type == 'voice' || type == 'audio'
+}
+
+function copyHistoryStringField(source: UTSJSONObject, target: UTSJSONObject, key: string): void {
+	const value = source[key] as string | null
+	if (value != null && value != '') { target[key] = value }
+}
+
+export function copyHistoryDialogPart(part: UTSJSONObject): UTSJSONObject | null {
+	const typeRaw = part['type'] as string | null
+	const type = typeRaw != null ? typeRaw : ''
+	if (isHistoryDialogPartType(type) == false) { return null }
+	const clean: UTSJSONObject = { type: type } as UTSJSONObject
+	copyHistoryStringField(part, clean, 'text')
+	copyHistoryStringField(part, clean, 'url')
+	copyHistoryStringField(part, clean, 'path')
+	copyHistoryStringField(part, clean, 'filename')
+	copyHistoryStringField(part, clean, 'caption')
+	return clean
+}
+
+export function buildHistoryDialogParts(parts: UTSJSONObject[]): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < parts.length; i++) {
+		const clean = copyHistoryDialogPart(parts[i])
+		if (clean != null) { result.push(clean) }
+	}
+	return result
+}
+
+export function buildHistoryDialogMessageJson(msg: UTSJSONObject, includeSender: boolean): UTSJSONObject | null {
+	if (shouldIncludeHistoryDialogMessage(msg) == false) { return null }
+	const roleRaw = msg['role'] as string | null
+	const contentRaw = msg['content'] as string | null
+	const timestampRaw = msg['timestamp'] as number | null
+	const partsRaw = msg['message'] as UTSJSONObject[] | null
+	const content = contentRaw != null ? contentRaw : ''
+	let cleanParts: UTSJSONObject[] = []
+	if (partsRaw != null && partsRaw.length > 0) {
+		cleanParts = buildHistoryDialogParts(partsRaw)
+	}
+	if (content == '' && cleanParts.length == 0) { return null }
+	const clean: UTSJSONObject = {
+		role: roleRaw != null ? roleRaw : '',
+		content: content,
+		timestamp: timestampRaw != null ? timestampRaw : 0,
+	} as UTSJSONObject
+	if (includeSender == true) {
+		const senderType = msg['senderType'] as string | null
+		const senderName = msg['senderName'] as string | null
+		const senderAgentId = msg['senderAgentId'] as string | null
+		const role = roleRaw != null ? roleRaw : ''
+		clean['senderType'] = senderType != null ? senderType : ''
+		clean['senderName'] = resolveHistoryGroupPreviewSenderName(senderName, senderType, role)
+		if (senderAgentId != null && senderAgentId != '') { clean['senderAgentId'] = senderAgentId }
+	}
+	if (cleanParts.length > 0) { clean['message'] = cleanParts }
+	return clean
+}
+
+export function buildHistoryDialogJson(messages: UTSJSONObject[], includeSender: boolean): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < messages.length; i++) {
+		const clean = buildHistoryDialogMessageJson(messages[i], includeSender)
+		if (clean != null) { result.push(clean) }
+	}
+	return result
 }
 
 export function formatHistoryTime(ts: any | null): string {
