@@ -1,0 +1,166 @@
+import {
+	buildMemoryTargetPersonId,
+	memoryPersonIdToLabel,
+	type MemoryCoreInput,
+	type MemorySearchFilter,
+} from '@/uni_modules/agent-core/utssdk/memory.uts'
+
+export function readMemoryAgentId(agent: UTSJSONObject): string {
+	const value = agent['id'] as string | null
+	return value != null ? value : ''
+}
+
+export function readMemoryAgentName(agent: UTSJSONObject): string {
+	const value = agent['name'] as string | null
+	return value != null && value != '' ? value : readMemoryAgentId(agent)
+}
+
+export function formatMemoryScopeLabel(scope: string): string {
+	if (scope == 'always') { return '总是注入' }
+	if (scope == 'person_only') { return '面对某人' }
+	if (scope == 'conversation_only') { return '当前对话' }
+	if (scope == 'manual_only') { return '仅查询' }
+	if (scope == 'rule') { return '规则' }
+	return scope
+}
+
+export function formatMemoryCategoryLabel(category: string): string {
+	if (category == 'impression') { return '印象' }
+	if (category == 'important') { return '重要' }
+	if (category == 'rule') { return '规则' }
+	if (category == 'preference') { return '偏好' }
+	if (category == 'fact') { return '事实' }
+	return category
+}
+
+export function formatMemoryItemScopeLabel(item: UTSJSONObject): string {
+	const value = item['scope'] as string | null
+	return formatMemoryScopeLabel(value != null ? value : '')
+}
+
+export function formatMemoryItemCategoryLabel(item: UTSJSONObject): string {
+	const value = item['category'] as string | null
+	return formatMemoryCategoryLabel(value != null ? value : '')
+}
+
+export function formatMemoryItemPriorityText(item: UTSJSONObject): string {
+	const value = item['priority'] as number | null
+	if (value == null) { return '3' }
+	return value + ''
+}
+
+export function formatMemoryItemPinnedText(item: UTSJSONObject): string {
+	const value = item['pinned'] as number | null
+	return value == 1 ? '已置顶' : '未置顶'
+}
+
+export function formatMemoryItemTargetLabel(item: UTSJSONObject): string {
+	const value = item['person_id'] as string | null
+	return memoryPersonIdToLabel(value != null ? value : '')
+}
+
+export function buildMemoryTargetPersonKey(targetType: string, targetId: string): string {
+	return buildMemoryTargetPersonId(targetType, targetId)
+}
+
+export function buildMemoryTargetDisplayLabel(targetType: string, targetId: string): string {
+	return memoryPersonIdToLabel(buildMemoryTargetPersonKey(targetType, targetId))
+}
+
+export function resolveMemoryTargetId(targetType: string, currentId: string, agents: UTSJSONObject[]): string {
+	if (targetType == 'user') { return '' }
+	if (targetType == 'custom') { return '' }
+	if (targetType == 'agent') {
+		if (currentId != '') { return currentId }
+		if (agents.length > 0) { return readMemoryAgentId(agents[0]) }
+		return ''
+	}
+	return currentId
+}
+
+export function buildMemorySearchFilter(query: string): MemorySearchFilter {
+	return {
+		query: query.trim(),
+		searchMode: 'fuzzy',
+		scope: '',
+		category: '',
+		priorityMin: 0,
+		priorityMax: 0,
+		startTime: 0,
+		endTime: 0,
+		limit: 50,
+	} as MemorySearchFilter
+}
+
+export function parseMemoryPriorityValue(value: string): number {
+	const parsed = parseInt(value)
+	if (isNaN(parsed)) { return 3 }
+	if (parsed < 1) { return 1 }
+	if (parsed > 5) { return 5 }
+	return parsed
+}
+
+export function buildMemoryCoreInput(scope: string, category: string, content: string, priorityText: string, pinned: boolean): MemoryCoreInput {
+	return {
+		scope: scope,
+		category: category,
+		content: content,
+		priority: parseMemoryPriorityValue(priorityText),
+		pinned: pinned,
+	} as MemoryCoreInput
+}
+
+export function readMemoryItemId(item: UTSJSONObject): string {
+	const value = item['id'] as string | null
+	return value != null ? value : ''
+}
+
+export function buildMemoryForgetPreview(item: UTSJSONObject): string {
+	const rawContent = item['content'] as string | null
+	let preview = rawContent != null ? rawContent : ''
+	if (preview.length > 36) {
+		preview = preview.substring(0, 36) + '...'
+	}
+	return preview
+}
+
+export function readUniModalConfirm(res: any): boolean {
+	const raw = JSON.stringify(res)
+	if (raw == null || raw == '') { return false }
+	const parsed = JSON.parse(raw) as UTSJSONObject
+	return parsed['confirm'] == true
+}
+
+export function parseMemoryLogNumber(obj: UTSJSONObject, key: string): number {
+	const val = obj[key]
+	if (val == null) { return 0 }
+	if (typeof val == 'number') { return val as number }
+	const num = parseFloat(val as string)
+	return isNaN(num) ? 0 : num
+}
+
+export function parseMemoryLogString(obj: UTSJSONObject, key: string): string {
+	const val = obj[key]
+	return val != null ? (val as string) : ''
+}
+
+export function parseMemoryLogOps(log: UTSJSONObject): UTSJSONObject[] {
+	try {
+		const raw = parseMemoryLogString(log, 'details')
+		if (raw == '') { return [] as UTSJSONObject[] }
+		return JSON.parse(raw) as UTSJSONObject[]
+	} catch (_e: any) {
+		return [] as UTSJSONObject[]
+	}
+}
+
+export function formatMemoryLogTime(log: UTSJSONObject): string {
+	const ts = parseMemoryLogNumber(log, 'executed_at')
+	if (ts == 0) { return '' }
+	const d = new Date(ts)
+	const m = (d.getMonth() + 1).toString().padStart(2, '0')
+	const day = d.getDate().toString().padStart(2, '0')
+	const h = d.getHours().toString().padStart(2, '0')
+	const min = d.getMinutes().toString().padStart(2, '0')
+	return m + '-' + day + ' ' + h + ':' + min
+}

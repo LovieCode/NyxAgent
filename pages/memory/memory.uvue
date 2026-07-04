@@ -225,13 +225,32 @@
 		archiveCoreMemory,
 		clearCoreMemoryForTarget,
 		searchCoreMemoryAdvanced,
-		buildMemoryTargetPersonId,
-		memoryPersonIdToLabel,
 		listMemoryManagerLogs,
-		type MemoryCoreInput,
-		type MemorySearchFilter,
 	} from '@/uni_modules/agent-core/utssdk/memory.uts'
 	import { getAgents } from '@/utils/agent.uts'
+	import {
+		buildMemoryCoreInput,
+		buildMemoryForgetPreview,
+		buildMemorySearchFilter,
+		buildMemoryTargetDisplayLabel,
+		buildMemoryTargetPersonKey,
+		formatMemoryCategoryLabel,
+		formatMemoryItemCategoryLabel,
+		formatMemoryItemPinnedText,
+		formatMemoryItemPriorityText,
+		formatMemoryItemScopeLabel,
+		formatMemoryItemTargetLabel,
+		formatMemoryLogTime,
+		formatMemoryScopeLabel,
+		parseMemoryLogNumber,
+		parseMemoryLogOps,
+		parseMemoryLogString,
+		readMemoryAgentId,
+		readMemoryAgentName,
+		readMemoryItemId,
+		readUniModalConfirm,
+		resolveMemoryTargetId,
+	} from '@/utils/memory-page-helpers.uts'
 	import { consumeMemoryRouteAgentId, consumeMemoryRouteConversationId, getActiveAgentRuntimeId, getActiveConversationRuntimeId } from '@/utils/runtime-state.uts'
 
 	export default {
@@ -264,11 +283,11 @@
 		},
 		computed: {
 			newTargetLabel(): string {
-				return memoryPersonIdToLabel(this.buildNewTargetPersonId())
+				return buildMemoryTargetDisplayLabel(this.newTargetType, this.newTargetId)
 			},
 
 			viewTargetLabel(): string {
-				return memoryPersonIdToLabel(this.buildViewTargetPersonId())
+				return buildMemoryTargetDisplayLabel(this.viewTargetType, this.viewTargetId)
 			},
 		},
 		onLoad() {
@@ -292,91 +311,57 @@
 		},
 		methods: {
 			readAgentId(agent: UTSJSONObject): string {
-				const value = agent['id'] as string | null
-				return value != null ? value : ''
+				return readMemoryAgentId(agent)
 			},
 
 			readAgentName(agent: UTSJSONObject): string {
-				const value = agent['name'] as string | null
-				return value != null ? value : this.readAgentId(agent)
+				return readMemoryAgentName(agent)
 			},
 
 			scopeLabel(scope: string): string {
-				if (scope == 'always') return '总是注入'
-				if (scope == 'person_only') return '面对某人'
-				if (scope == 'conversation_only') return '当前对话'
-				if (scope == 'manual_only') return '仅查询'
-				if (scope == 'rule') return '规则'
-				return scope
+				return formatMemoryScopeLabel(scope)
 			},
 
 			categoryLabel(category: string): string {
-				if (category == 'impression') return '印象'
-				if (category == 'important') return '重要'
-				if (category == 'rule') return '规则'
-				if (category == 'preference') return '偏好'
-				if (category == 'fact') return '事实'
-				return category
+				return formatMemoryCategoryLabel(category)
 			},
 
 			itemScopeLabel(item: UTSJSONObject): string {
-				const value = item['scope'] as string | null
-				return this.scopeLabel(value != null ? value : '')
+				return formatMemoryItemScopeLabel(item)
 			},
 
 			itemCategoryLabel(item: UTSJSONObject): string {
-				const value = item['category'] as string | null
-				return this.categoryLabel(value != null ? value : '')
+				return formatMemoryItemCategoryLabel(item)
 			},
 
 			itemPriorityText(item: UTSJSONObject): string {
-				const value = item['priority'] as number | null
-				if (value == null) return '3'
-				return value + ''
+				return formatMemoryItemPriorityText(item)
 			},
 
 			itemPinnedText(item: UTSJSONObject): string {
-				const value = item['pinned'] as number | null
-				return value == 1 ? '已置顶' : '未置顶'
+				return formatMemoryItemPinnedText(item)
 			},
 
 			itemTargetLabel(item: UTSJSONObject): string {
-				const value = item['person_id'] as string | null
-				return memoryPersonIdToLabel(value != null ? value : '')
+				return formatMemoryItemTargetLabel(item)
 			},
 
 			buildNewTargetPersonId(): string {
-				return buildMemoryTargetPersonId(this.newTargetType, this.newTargetId)
+				return buildMemoryTargetPersonKey(this.newTargetType, this.newTargetId)
 			},
 
 			buildViewTargetPersonId(): string {
-				return buildMemoryTargetPersonId(this.viewTargetType, this.viewTargetId)
+				return buildMemoryTargetPersonKey(this.viewTargetType, this.viewTargetId)
 			},
 
 			selectNewTargetType(targetType: string) {
 				this.newTargetType = targetType
-				if (targetType == 'user') {
-					this.newTargetId = ''
-				} else if (targetType == 'agent') {
-					if (this.newTargetId == '' && this.agents.length > 0) {
-						this.newTargetId = this.readAgentId(this.agents[0])
-					}
-				} else if (targetType == 'custom') {
-					this.newTargetId = ''
-				}
+				this.newTargetId = resolveMemoryTargetId(targetType, this.newTargetId, this.agents)
 			},
 
 			selectViewTargetType(targetType: string) {
 				this.viewTargetType = targetType
-				if (targetType == 'user') {
-					this.viewTargetId = ''
-				} else if (targetType == 'agent') {
-					if (this.viewTargetId == '' && this.agents.length > 0) {
-						this.viewTargetId = this.readAgentId(this.agents[0])
-					}
-				} else if (targetType == 'custom') {
-					this.viewTargetId = ''
-				}
+				this.viewTargetId = resolveMemoryTargetId(targetType, this.viewTargetId, this.agents)
 				this.loadMemory()
 			},
 
@@ -403,17 +388,7 @@
 
 			/** 执行关键词搜索 */
 			doSearch(personId: string) {
-				const filter: MemorySearchFilter = {
-					query: this.searchQuery.trim(),
-					searchMode: 'fuzzy',
-					scope: '',
-					category: '',
-					priorityMin: 0,
-					priorityMax: 0,
-					startTime: 0,
-					endTime: 0,
-					limit: 50,
-				} as MemorySearchFilter
+				const filter = buildMemorySearchFilter(this.searchQuery)
 				this.memoryList = searchCoreMemoryAdvanced(this.agentId, personId, this.conversationId, filter)
 			},
 
@@ -444,24 +419,13 @@
 					title: '清空短缓存',
 					content: '确认清空 64 字短缓存？',
 					success: (res: any) => {
-						const raw = JSON.stringify(res)
-						if (raw == null || raw == '') { return }
-						const parsed = JSON.parse(raw) as UTSJSONObject
-						if (parsed['confirm'] == true) {
+						if (readUniModalConfirm(res) == true) {
 							clearMemoryBuffer(this.agentId, this.personId, this.conversationId)
 							this.bufferContent = ''
 							uni.showToast({ position: 'bottom',  title: '已清空', icon: 'none' })
 						}
 					}
 				})
-			},
-
-			parsePriority(): number {
-				const parsed = parseInt(this.newPriority)
-				if (isNaN(parsed)) return 3
-				if (parsed < 1) return 1
-				if (parsed > 5) return 5
-				return parsed
 			},
 
 			saveNewMemory() {
@@ -473,13 +437,7 @@
 				if (this.newScope == 'person_only' || this.newScope == 'manual_only') {
 					targetPersonId = this.buildNewTargetPersonId()
 				}
-				const input: MemoryCoreInput = {
-					scope: this.newScope,
-					category: this.newCategory,
-					content: this.newContent,
-					priority: this.parsePriority(),
-					pinned: this.newPinned,
-				} as MemoryCoreInput
+				const input = buildMemoryCoreInput(this.newScope, this.newCategory, this.newContent, this.newPriority, this.newPinned)
 				const id = saveCoreMemory(this.agentId, targetPersonId, this.conversationId, input)
 				if (id == '') {
 					uni.showToast({ position: 'bottom',  title: '保存失败', icon: 'none' })
@@ -499,25 +457,18 @@
 			},
 
 			forgetMemoryByItem(item: UTSJSONObject) {
-				const id = item['id'] as string | null
-				if (id == null || id == '') {
+				const id = readMemoryItemId(item)
+				if (id == '') {
 					uni.showToast({ position: 'bottom',  title: '记忆 id 异常', icon: 'none' })
 					return
 				}
 				const memoryId = id
-				const rawContent = item['content'] as string | null
-				let preview = rawContent != null ? rawContent : ''
-				if (preview.length > 36) {
-					preview = preview.substring(0, 36) + '...'
-				}
+				const preview = buildMemoryForgetPreview(item)
 				uni.showModal({
 					title: '遗忘记忆',
 					content: '确认遗忘这条重要记忆？\n' + preview,
 					success: (res: any) => {
-						const raw = JSON.stringify(res)
-						if (raw == null || raw == '') { return }
-						const parsed = JSON.parse(raw) as UTSJSONObject
-						if (parsed['confirm'] == true) {
+						if (readUniModalConfirm(res) == true) {
 							this.forgetMemory(memoryId)
 						}
 					}
@@ -529,10 +480,7 @@
 					title: '清空记忆',
 					content: '确认清空当前联系人面向当前查看对象的可见重要记忆？',
 					success: (res: any) => {
-						const raw = JSON.stringify(res)
-						if (raw == null || raw == '') { return }
-						const parsed = JSON.parse(raw) as UTSJSONObject
-						if (parsed['confirm'] == true) {
+						if (readUniModalConfirm(res) == true) {
 							clearCoreMemoryForTarget(this.agentId, this.buildViewTargetPersonId(), this.conversationId)
 							this.loadMemory()
 							uni.showToast({ position: 'bottom',  title: '已清空', icon: 'none' })
@@ -548,40 +496,22 @@
 			},
 
 			formatLogTime(log: UTSJSONObject): string {
-				const ts = parseLogNumber(log, 'executed_at')
-				if (ts == 0) return ''
-				const d = new Date(ts)
-				const m = (d.getMonth() + 1).toString().padStart(2, '0')
-				const day = d.getDate().toString().padStart(2, '0')
-				const h = d.getHours().toString().padStart(2, '0')
-				const min = d.getMinutes().toString().padStart(2, '0')
-				return m + '-' + day + ' ' + h + ':' + min
+				return formatMemoryLogTime(log)
 			},
 
 			/** 从 UTSJSONObject 安全读取数字 */
 			parseLogNumber(obj: UTSJSONObject, key: string): number {
-				const val = obj[key]
-				if (val == null) return 0
-				if (typeof val == 'number') return val as number
-				const num = parseFloat(val as string)
-				return isNaN(num) ? 0 : num
+				return parseMemoryLogNumber(obj, key)
 			},
 
 			/** 从 UTSJSONObject 安全读取字符串 */
 			parseLogString(obj: UTSJSONObject, key: string): string {
-				const val = obj[key]
-				return val != null ? (val as string) : ''
+				return parseMemoryLogString(obj, key)
 			},
 
 			/** 解析操作明细 JSON 数组 */
 			parseLogOps(log: UTSJSONObject): UTSJSONObject[] {
-				try {
-					const raw = parseLogString(log, 'details')
-					if (raw == '') return [] as UTSJSONObject[]
-					return JSON.parse(raw) as UTSJSONObject[]
-				} catch (_e: any) {
-					return [] as UTSJSONObject[]
-				}
+				return parseMemoryLogOps(log)
 			},
 
 			toggleLogDetail(_log: UTSJSONObject, idx: number) {
