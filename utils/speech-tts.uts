@@ -1,0 +1,171 @@
+/**
+ * 语音合成 Provider 实现。
+ *
+ * 当前支持 OpenAI-compatible Audio API 与火山引擎 TTS；公共入口在 speech-service.uts。
+ */
+
+import { TTS_ADAPTER_VOLCENGINE } from '@/uni_modules/agent-core/utssdk/provider.uts'
+import {
+	type SpeechAudioResult,
+	type SpeechConfig,
+	buildAudioApiUrl,
+	buildJsonErrorPreview,
+	buildOpenAITTSBody,
+	buildSpeechErrorPreview,
+	buildSpeechWriteErrorMessage,
+	failAudio,
+	getTTSOutputExtension,
+	okAudio,
+	parseJSONObject,
+	parseNumberSetting,
+	readFirstParam,
+	resolveModelParams,
+	resolveVolcenginePitch,
+	resolveVolcengineTTSUrl,
+	resolveVolcengineVoice,
+	resolveVolcengineVolume,
+	writeArrayBufferToFile,
+	writeBase64ToFile,
+} from '@/utils/speech-runtime.uts'
+
+function synthesizeVolcengineSpeech(content: string, config: SpeechConfig, dir: string): Promise<SpeechAudioResult> {
+	return new Promise<SpeechAudioResult>((resolve) => {
+		const modelParams = resolveModelParams(config.providerId, config.model)
+		const extraParams = parseJSONObject(config.ttsExtraParams)
+		let appId = readFirstParam(extraParams, ['appid', 'app_id', 'volcengine_appid'])
+		if (appId == '') {
+			appId = readFirstParam(modelParams, ['appid', 'app_id', 'volcengine_appid'])
+		}
+		let clusterRaw = readFirstParam(extraParams, ['volcengine_cluster', 'cluster'])
+		if (clusterRaw == '') {
+			clusterRaw = readFirstParam(modelParams, ['volcengine_cluster', 'cluster'])
+		}
+		const cluster = clusterRaw != '' ? clusterRaw : 'volcano_tts'
+		const voiceType = resolveVolcengineVoice(config, modelParams, extraParams)
+		if (appId == '') {
+			resolve(failAudio('火山引擎 TTS 缺少 appid，请在 TTS 高级参数 JSON 填 {"appid":"..."}'))
+			return
+		}
+		if (voiceType == '') {
+			resolve(failAudio('火山引擎 TTS 缺少音色 voice_type，请在音色里填写'))
+			return
+		}
+		const speedRaw = config.ttsSpeed.trim() != '' ? config.ttsSpeed.trim() : readFirstParam(extraParams, ['volcengine_speed_ratio', 'speed_ratio', 'speed'])
+		const volumeRaw = resolveVolcengineVolume(config, modelParams, extraParams)
+		const pitchRaw = resolveVolcenginePitch(config, modelParams, extraParams)
+		const speedRatio = parseNumberSetting(speedRaw, 1.0, 0.2, 3.0)
+		const volumeRatio = parseNumberSetting(volumeRaw, 1.0, 0.1, 3.0)
+		const pitchRatio = parseNumberSetting(pitchRaw, 1.0, 0.1, 3.0)
+		const outputPath = dir + '/tts_' + Date.now() + '.mp3'
+		const body: UTSJSONObject = {
+			app: {
+				appid: appId,
+				token: config.apiKey,
+				cluster: cluster,
+			} as UTSJSONObject,
+			user: {
+				uid: 'nyx_' + Date.now(),
+			} as UTSJSONObject,
+			audio: {
+				voice_type: voiceType,
+				encoding: 'mp3',
+				speed_ratio: speedRatio,
+				volume_ratio: volumeRatio,
+				pitch_ratio: pitchRatio,
+			} as UTSJSONObject,
+			request: {
+				reqid: 'nyx_' + Date.now(),
+				text: content,
+				text_type: 'plain',
+				operation: 'query',
+				with_frontend: 1,
+				frontend_type: 'unitTson',
+			} as UTSJSONObject,
+		} as UTSJSONObject
+		uni.request({
+			url: resolveVolcengineTTSUrl(config.baseUrl),
+			method: 'POST',
+			header: {
+				Authorization: 'Bearer;' + config.apiKey,
+				'Content-Type': 'application/json',
+			} as UTSJSONObject,
+			data: body,
+			success: (res) => {
+				const statusCode = res.statusCode as number
+				if (statusCode < 200 || statusCode >= 300) {
+					const preview = buildJsonErrorPreview(res.data)
+					resolve(failAudio('语音合成失败：HTTP ' + statusCode + (preview != '' ? ' ' + preview : '')))
+					return
+				}
+				const data = typeof res.data == 'string' ? parseJSONObject(res.data as string) : (res.data as UTSJSONObject)
+				if (data == null) {
+					resolve(failAudio('语音合成响应为空'))
+					return
+				}
+				const audioBase64 = data['data'] as string | null
+				if (audioBase64 == null || audioBase64 == '') {
+					const message = data['message'] as string | null
+					resolve(failAudio(message != null && message != '' ? message : '语音合成结果为空'))
+					return
+				}
+				if (writeBase64ToFile(outputPath, audioBase64) == false) {
+					resolve(failAudio(buildSpeechWriteErrorMessage()))
+					return
+				}
+				resolve(okAudio(outputPath))
+			},
+			fail: (err: any) => {
+				resolve(failAudio('语音合成网络失败：' + err))
+			},
+		})
+	})
+}
+
+function synthesizeOpenAICompatibleSpeech(content: string, config: SpeechConfig, dir: string): Promise<SpeechAudioResult> {
+	return new Promise<SpeechAudioResult>((resolve) => {
+		const body = buildOpenAITTSBody(content, config)
+		const responseFormat = body['response_format'] as string | null
+		const outputFormat = responseFormat != null && responseFormat != '' ? responseFormat : 'mp3'
+		const outputPath = dir + '/tts_' + Date.now() + '.' + getTTSOutputExtension(outputFormat)
+		const url = buildAudioApiUrl(config.baseUrl, '/audio/speech')
+		// PROVIDER_AUDIO_API: OpenAI-compatible TTS。voice/response_format/speed 来自默认模型页、Agent 覆盖和模型自定义参数。
+		uni.request({
+			url: url,
+			method: 'POST',
+			header: {
+				Authorization: 'Bearer ' + config.apiKey,
+				'Content-Type': 'application/json',
+			} as UTSJSONObject,
+			responseType: 'arraybuffer',
+			data: body,
+			success: (res) => {
+				const statusCode = res.statusCode as number
+				if (statusCode < 200 || statusCode >= 300) {
+					const preview = buildSpeechErrorPreview(res.data)
+					resolve(failAudio('语音合成失败：HTTP ' + statusCode + (preview != '' ? ' ' + preview : '')))
+					return
+				}
+				const data = res.data as ArrayBuffer | null
+				if (data == null || data.byteLength == 0) {
+					resolve(failAudio('语音合成结果为空'))
+					return
+				}
+				if (writeArrayBufferToFile(outputPath, data) == false) {
+					resolve(failAudio(buildSpeechWriteErrorMessage()))
+					return
+				}
+				resolve(okAudio(outputPath))
+			},
+			fail: (err: any) => {
+				resolve(failAudio('语音合成网络失败：' + err))
+			},
+		})
+	})
+}
+
+export function synthesizeSpeechWithConfig(content: string, config: SpeechConfig, dir: string): Promise<SpeechAudioResult> {
+	if (config.ttsAdapter == TTS_ADAPTER_VOLCENGINE) {
+		return synthesizeVolcengineSpeech(content, config, dir)
+	}
+	return synthesizeOpenAICompatibleSpeech(content, config, dir)
+}
