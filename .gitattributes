@@ -1,0 +1,27 @@
+# Keep source files stable across Windows / WSL / HBuilderX.
+# uni-app x / UTS compiler is sensitive enough; don't let CRLF noise pollute diffs.
+* text=auto
+
+*.uts text eol=lf
+*.uvue text eol=lf
+*.vue text eol=lf
+*.ts text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.scss text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+*.wxs text eol=lf
+*.py text eol=lf
+*.html text eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.apk binary
+*.db binary
+*.sqlite binary
+*.zip binary
