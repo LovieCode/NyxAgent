@@ -7,6 +7,7 @@
 import { getAgentById } from '@/utils/agent.uts'
 import { CHAT_ROLE_ASSISTANT, createPlainPart, getMessageParts } from '@/utils/chat-models.uts'
 import { AgentEvent } from '@/utils/event.uts'
+import { formatJsonObjectOrText } from '@/utils/llm-json-helpers.uts'
 import {
 	GROUP_MESSAGE_SENDER_AGENT,
 	GROUP_MESSAGE_SENDER_REVIEWER,
@@ -236,18 +237,7 @@ function appendDispatchMessage(lines: string[], msg: UTSJSONObject): void {
 	lines.push('=== ' + formatDispatchTime(msg) + ' [' + kind + '/' + level + '] ' + (reason != null ? reason : '') + ' ===')
 	const content = msg['content'] as string | null
 	const text = content != null ? content : ''
-	const first = text.indexOf('{')
-	const last = text.lastIndexOf('}')
-	if (first >= 0 && last > first) {
-		try {
-			const parsed = JSON.parse(text.substring(first, last + 1)) as UTSJSONObject
-			lines.push(JSON.stringify(parsed, null, 2))
-		} catch (_e: any) {
-			lines.push(text)
-		}
-	} else {
-		lines.push(text)
-	}
+	lines.push(formatJsonObjectOrText(text))
 	lines.push('')
 }
 

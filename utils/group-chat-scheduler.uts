@@ -23,6 +23,7 @@ import {
 	getMessageParts,
 } from '@/utils/chat-models.uts'
 import { buildRuntimeMessages as buildRuntimeChatMessages } from '@/utils/chat-message-reducer.uts'
+import { parseJsonObjectFromText } from '@/utils/llm-json-helpers.uts'
 import {
 	getAppSetting,
 	getGroupAgentMetricRows,
@@ -289,14 +290,8 @@ export function buildFallbackSchedulerDecision(groupId: string): UTSJSONObject {
 }
 
 export function parseSchedulerDecision(raw: string, groupId: string): UTSJSONObject {
-	let jsonText = raw.trim()
-	const first = jsonText.indexOf('{')
-	const last = jsonText.lastIndexOf('}')
-	if (first >= 0 && last > first) {
-		jsonText = jsonText.substring(first, last + 1)
-	}
-	try {
-		const parsed = JSON.parse(jsonText) as UTSJSONObject
+	const parsed = parseJsonObjectFromText(raw)
+	if (parsed != null) {
 		const actions = parsed['actions'] as UTSJSONObject[] | null
 		if (actions != null) {
 			actions.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
@@ -311,7 +306,6 @@ export function parseSchedulerDecision(raw: string, groupId: string): UTSJSONObj
 			parsed['actions'] = actions
 			return parsed
 		}
-	} catch (_e: any) {
 	}
 	return buildFallbackSchedulerDecision(groupId)
 }
@@ -333,14 +327,8 @@ export function buildSchedulerReviewMessages(group: GroupChat, session: GroupCha
 }
 
 export function parseSchedulerReviewDecision(raw: string): UTSJSONObject {
-	let jsonText = raw.trim()
-	const first = jsonText.indexOf('{')
-	const last = jsonText.lastIndexOf('}')
-	if (first >= 0 && last > first) {
-		jsonText = jsonText.substring(first, last + 1)
-	}
-	try {
-		const parsed = JSON.parse(jsonText) as UTSJSONObject
+	const parsed = parseJsonObjectFromText(raw)
+	if (parsed != null) {
 		const decisionRaw = parsed['decision'] as string | null
 		let decision = decisionRaw != null ? decisionRaw.trim() : ''
 		if (decision != 'allow' && decision != 'revise' && decision != 'revoke') {
@@ -353,7 +341,6 @@ export function parseSchedulerReviewDecision(raw: string): UTSJSONObject {
 			reason: reasonRaw != null ? reasonRaw : '',
 			revisionInstruction: instructionRaw != null ? instructionRaw : '',
 		} as UTSJSONObject
-	} catch (_e: any) {
 	}
 	return {
 		decision: 'revise',
@@ -404,14 +391,8 @@ export function buildGroupReviewMessages(group: GroupChat, session: GroupChatSes
 }
 
 export function parseGroupReviewDecision(raw: string): UTSJSONObject {
-	let jsonText = raw.trim()
-	const first = jsonText.indexOf('{')
-	const last = jsonText.lastIndexOf('}')
-	if (first >= 0 && last > first) {
-		jsonText = jsonText.substring(first, last + 1)
-	}
-	try {
-		const parsed = JSON.parse(jsonText) as UTSJSONObject
+	const parsed = parseJsonObjectFromText(raw)
+	if (parsed != null) {
 		const adviceRaw = parsed['continueAdvice'] as string | null
 		let advice = adviceRaw != null ? adviceRaw.trim() : 'neutral'
 		if (advice != 'continue' && advice != 'stop' && advice != 'neutral') {
@@ -419,7 +400,6 @@ export function parseGroupReviewDecision(raw: string): UTSJSONObject {
 		}
 		parsed['continueAdvice'] = advice
 		return parsed
-	} catch (_e: any) {
 	}
 	return {
 		roundSummary: '复盘结果解析失败',

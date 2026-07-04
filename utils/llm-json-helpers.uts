@@ -1,0 +1,33 @@
+/**
+ * LLM JSON 输出容错解析。
+ *
+ * 很多模型会在 JSON 前后夹解释文本；统一在这里剥离首尾对象，避免各业务 parser 重复造轮子。
+ */
+
+export function extractJsonObjectText(raw: string): string {
+	let jsonText = raw.trim()
+	const first = jsonText.indexOf('{')
+	const last = jsonText.lastIndexOf('}')
+	if (first >= 0 && last > first) {
+		jsonText = jsonText.substring(first, last + 1)
+	}
+	return jsonText
+}
+
+export function parseJsonObjectFromText(raw: string): UTSJSONObject | null {
+	const jsonText = extractJsonObjectText(raw)
+	if (jsonText == '') { return null }
+	try {
+		const parsed = JSON.parse(jsonText)
+		if (parsed == null || typeof parsed != 'object') { return null }
+		return parsed as UTSJSONObject
+	} catch (_e: any) {
+		return null
+	}
+}
+
+export function formatJsonObjectOrText(raw: string): string {
+	const parsed = parseJsonObjectFromText(raw)
+	if (parsed == null) { return raw }
+	return JSON.stringify(parsed, null, 2)
+}
