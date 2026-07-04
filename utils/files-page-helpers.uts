@@ -1,4 +1,19 @@
-import { getExtension, getInternalFilesDir, isImageFile, joinPath, type FileItem } from '@/utils/file-manager.uts'
+import { deleteRuntimeState, getConversationsByAgent, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+import { getAgents } from '@/utils/agent.uts'
+import { displaySessionTitle, getGroupChats, getGroupSessions } from '@/utils/group-chat-service.uts'
+import {
+	basename,
+	getAgentsRoot,
+	getExtension,
+	getInternalFilesDir,
+	getUserDir,
+	isImageFile,
+	joinPath,
+	normalizePath,
+	parentPath,
+	type FileItem,
+	type PathSegment,
+} from '@/utils/file-manager.uts'
 
 export function getManagedFileIconName(item: FileItem): string {
 	if (item.isDirectory == true) {
@@ -74,4 +89,181 @@ export function buildGroupWorkspacesRootPath(): string {
 	const filesDir = getInternalFilesDir()
 	if (filesDir == '') { return '' }
 	return joinPath(filesDir, 'group-workspaces')
+}
+
+export function clearManagedEditorRuntimeState(): void {
+	deleteRuntimeState('editor_mode')
+	deleteRuntimeState('editor_title')
+	deleteRuntimeState('editor_content')
+	deleteRuntimeState('editor_result')
+	deleteRuntimeState('editor_result_ready')
+	deleteRuntimeState('editor_target')
+	deleteRuntimeState('editor_file_path')
+	deleteRuntimeState('editor_saved')
+	deleteRuntimeState('editor_saved_path')
+	deleteRuntimeState('editor_readonly')
+	deleteRuntimeState('editor_placeholder')
+	deleteRuntimeState('editor_draft')
+}
+
+export function consumeManagedEditorSavedState(): boolean {
+	const saved = getRuntimeState('editor_saved')
+	if (saved != 'true') { return false }
+	deleteRuntimeState('editor_saved')
+	deleteRuntimeState('editor_saved_path')
+	deleteRuntimeState('editor_mode')
+	deleteRuntimeState('editor_file_path')
+	deleteRuntimeState('editor_title')
+	deleteRuntimeState('editor_target')
+	deleteRuntimeState('editor_placeholder')
+	return true
+}
+
+export function prepareManagedTextEditorRuntimeState(item: FileItem): void {
+	clearManagedEditorRuntimeState()
+	setRuntimeState('editor_mode', 'file')
+	setRuntimeState('editor_file_path', item.path)
+	setRuntimeState('editor_title', item.name)
+	setRuntimeState('editor_target', 'file-manager')
+	setRuntimeState('editor_placeholder', '文件内容为空')
+}
+
+export function lookupManagedAgentName(agentId: string): string {
+	const list = getAgents()
+	for (let i = 0; i < list.length; i++) {
+		const item = list[i]
+		if ((item['id'] as string) == agentId) {
+			const name = item['name'] as string | null
+			if (name != null && name != '') {
+				return name
+			}
+			break
+		}
+	}
+	return ''
+}
+
+export function lookupManagedAgentConversationName(agentId: string, conversationId: string): string {
+	if (agentId == '' || conversationId == '') { return '' }
+	try {
+		const conversations = getConversationsByAgent(agentId)
+		for (let i = 0; i < conversations.length; i++) {
+			const item = conversations[i]
+			const rawId = item['id'] as string | null
+			if (rawId == conversationId) {
+				const rawTitle = item['title'] as string | null
+				if (rawTitle != null && rawTitle != '') { return rawTitle }
+				return '未命名会话'
+			}
+		}
+	} catch (_e: any) {
+		// 数据库不可用时显示原 ID。
+	}
+	return ''
+}
+
+export function lookupManagedGroupName(groupId: string): string {
+	if (groupId == '') { return '' }
+	const groups = getGroupChats()
+	for (let i = 0; i < groups.length; i++) {
+		if (groups[i].id == groupId) {
+			const name = groups[i].name
+			if (name != '') { return name }
+			return ''
+		}
+	}
+	return ''
+}
+
+export function lookupManagedGroupSessionName(groupId: string, sessionId: string): string {
+	if (groupId == '' || sessionId == '') { return '' }
+	const sessions = getGroupSessions(groupId)
+	for (let i = 0; i < sessions.length; i++) {
+		if (sessions[i].id == sessionId) {
+			return displaySessionTitle(sessions[i])
+		}
+	}
+	return ''
+}
+
+export function buildManagedFilePathSegments(currentPath: string, virtualRoot: string): PathSegment[] {
+	if (currentPath == '' || currentPath == virtualRoot) {
+		return []
+	}
+	let p = currentPath
+	while (p.length > 1 && p.endsWith('/')) {
+		p = p.substring(0, p.length - 1)
+	}
+	const stack: PathSegment[] = []
+	const userDir = getUserDir()
+	while (p != '') {
+		const name = basename(p)
+		if (name == '') { break }
+		stack.push({ name: name, path: p })
+		const parent = parentPath(p)
+		if (parent == '' || parent == p) { break }
+		p = parent
+	}
+	let startIndex = stack.length
+	for (let j = stack.length - 1; j >= 0; j--) {
+		const segName = stack[j].name
+		if (segName == 'files' || segName == 'usr') {
+			startIndex = j
+			break
+		}
+	}
+	const parts: PathSegment[] = []
+	for (let i = startIndex - 1; i >= 0; i--) {
+		let displayName = stack[i].name
+		if (displayName == 'agents' || displayName == 'group-workspaces') {
+			continue
+		}
+		if (userDir != '' && stack[i].path == userDir) {
+			displayName = '用户目录'
+		}
+		if (i + 1 < stack.length && stack[i + 1].name == 'agents') {
+			const agentName = lookupManagedAgentName(displayName)
+			if (agentName != '') { displayName = agentName }
+		}
+		if (i + 2 < stack.length && stack[i + 2].name == 'agents') {
+			const agentId = stack[i + 1].name
+			const conversationName = lookupManagedAgentConversationName(agentId, displayName)
+			if (conversationName != '') { displayName = conversationName }
+		}
+		if (i + 1 < stack.length && stack[i + 1].name == 'group-workspaces') {
+			const groupName = lookupManagedGroupName(displayName)
+			if (groupName != '') { displayName = groupName }
+		}
+		if (i + 2 < stack.length && stack[i + 2].name == 'group-workspaces') {
+			const groupId = stack[i + 1].name
+			const sessionName = lookupManagedGroupSessionName(groupId, displayName)
+			if (sessionName != '') { displayName = sessionName }
+		}
+		parts.push({ name: displayName, path: stack[i].path })
+	}
+	return parts
+}
+
+export function getManagedFileDisplayName(item: FileItem): string {
+	const prefixedName = stripManagedFileDisplayPrefix(item.name)
+	if (prefixedName != item.name) { return prefixedName }
+	if (item.isDirectory != true) { return item.name }
+	const parent = parentPath(item.path)
+	const groupRoot = buildGroupWorkspacesRootPath()
+	if (normalizePath(parentPath(parent)) == normalizePath(getAgentsRoot())) {
+		const agentId = basename(parent)
+		const conversationName = lookupManagedAgentConversationName(agentId, item.name)
+		if (conversationName != '') { return conversationName }
+	}
+	if (groupRoot != '' && normalizePath(parent) == normalizePath(groupRoot)) {
+		const groupName = lookupManagedGroupName(item.name)
+		if (groupName != '') { return groupName }
+	}
+	const groupParent = parentPath(parent)
+	if (groupRoot != '' && normalizePath(groupParent) == normalizePath(groupRoot)) {
+		const groupId = basename(parent)
+		const sessionName = lookupManagedGroupSessionName(groupId, item.name)
+		if (sessionName != '') { return sessionName }
+	}
+	return item.name
 }

@@ -99,18 +99,18 @@
 </template>
 
 <script lang="uts">
-	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, parentPath, basename, joinPath, normalizePath, getUserDir, getInternalFilesDir, getExternalFilesDir, getAgentsRoot, formatFileSize, formatTime, isTextFile, isImageFile, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
-	import { deleteRuntimeState, getConversationsByAgent, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
-	import { displaySessionTitle, getGroupChats, getGroupSessions } from '@/utils/group-chat-service.uts'
+	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, parentPath, joinPath, getUserDir, getInternalFilesDir, getExternalFilesDir, getAgentsRoot, formatFileSize, formatTime, isTextFile, isImageFile, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
 	import { consumeFilesInitialPath } from '@/utils/runtime-state.uts'
-	import { getAgents } from '@/utils/agent.uts'
 	import {
+		buildManagedFilePathSegments,
 		buildGroupWorkspacesRootPath,
+		consumeManagedEditorSavedState,
+		getManagedFileDisplayName,
 		getManagedFileIconColor,
 		getManagedFileIconName,
 		getManagedFileItemGroup,
 		getManagedFileSectionLabel,
-		stripManagedFileDisplayPrefix,
+		prepareManagedTextEditorRuntimeState,
 	} from '@/utils/files-page-helpers.uts'
 
 	/** 虚拟根路径标记（合并视图用） */
@@ -143,83 +143,7 @@
 		computed: {
 			/** 面包屑路径分段：从叶子向上收集，跳过系统技术前缀 */
 			pathSegments() : PathSegment[] {
-				if (this.currentPath == '' || this.currentPath == VIRTUAL_ROOT) {
-					return []
-				}
-				let p = this.currentPath
-				// 去除末尾斜杠，统一处理
-				while (p.length > 1 && p.endsWith('/')) {
-					p = p.substring(0, p.length - 1)
-				}
-				const stack: PathSegment[] = []
-				const userDir = getUserDir()
-				// 从叶子向上收集所有层级
-				while (p != '') {
-					const name = basename(p)
-					if (name == '') {
-						break
-					}
-					stack.push({ name: name, path: p })
-					const parent = parentPath(p)
-					if (parent == '' || parent == p) {
-						break
-					}
-					p = parent
-				}
-				// 找到 files/usr 作为技术前缀边界
-				let startIndex = stack.length // 默认全部裁剪
-				for (let j = stack.length - 1; j >= 0; j--) {
-					const segName = stack[j].name
-					if (segName == 'files' || segName == 'usr') {
-						startIndex = j
-						break
-					}
-				}
-				// 从叶子向根收集时本身是根→叶子顺序，无需反转
-				const parts: PathSegment[] = []
-				for (let i = startIndex - 1; i >= 0; i--) {
-					let displayName = stack[i].name
-					// 跳过技术容器目录本身
-					if (displayName == 'agents' || displayName == 'group-workspaces') {
-						continue
-					}
-					// 用户目录固定显示中文名
-					if (userDir != '' && stack[i].path == userDir) {
-						displayName = '用户目录'
-					}
-					// 父级是 agents → 当前段是 agent ID，替换为显示名
-					if (i + 1 < stack.length && stack[i + 1].name == 'agents') {
-						const agentName = this.lookupAgentName(displayName)
-						if (agentName != '') {
-							displayName = agentName
-						}
-					}
-					// 祖父级是 agents → 当前段是 conversation ID，替换为会话标题
-					if (i + 2 < stack.length && stack[i + 2].name == 'agents') {
-						const agentId = stack[i + 1].name
-						const conversationName = this.lookupAgentConversationName(agentId, displayName)
-						if (conversationName != '') {
-							displayName = conversationName
-						}
-					}
-					// 父级是 group-workspaces → 当前段是 group ID，替换为群聊名
-					if (i + 1 < stack.length && stack[i + 1].name == 'group-workspaces') {
-						const groupName = this.lookupGroupName(displayName)
-						if (groupName != '') {
-							displayName = groupName
-						}
-					}
-					// 祖父级是 group-workspaces → 当前段是 session ID，替换为会话名
-					if (i + 2 < stack.length && stack[i + 2].name == 'group-workspaces') {
-						const groupId = stack[i + 1].name
-						const sessionName = this.lookupGroupSessionName(groupId, displayName)
-						if (sessionName != '') {
-							displayName = sessionName
-						}
-					}
-					parts.push({ name: displayName, path: stack[i].path })
-				}
-				return parts
+				return buildManagedFilePathSegments(this.currentPath, VIRTUAL_ROOT)
 			}
 		},
 		onLoad() {
@@ -241,7 +165,7 @@
 				parent == getInternalFilesDir() ||
 				parent == getExternalFilesDir() ||
 				parent == getAgentsRoot() ||
-				parent == this.getGroupWorkspacesRootPath() ||
+				parent == buildGroupWorkspacesRootPath() ||
 				parent == getUserDir()
 			)
 			if (isRootLevel) {
@@ -254,16 +178,7 @@
 		},
 		onShow() {
 			// 编辑器通过 SQLite runtime_state 回传保存结果。
-			const saved = getRuntimeState('editor_saved')
-			if (saved == 'true') {
-				deleteRuntimeState('editor_saved')
-				deleteRuntimeState('editor_saved_path')
-				deleteRuntimeState('editor_mode')
-				deleteRuntimeState('editor_file_path')
-				deleteRuntimeState('editor_title')
-				deleteRuntimeState('editor_target')
-				deleteRuntimeState('editor_placeholder')
-			}
+			consumeManagedEditorSavedState()
 			if (this.currentPath != '') {
 				this.refreshList()
 			}
@@ -356,31 +271,9 @@
 				})
 			},
 
-			clearEditorStorage() {
-				// 清理编辑器 runtime_state，避免跨页面残留。
-				deleteRuntimeState('editor_mode')
-				deleteRuntimeState('editor_title')
-				deleteRuntimeState('editor_content')
-				deleteRuntimeState('editor_result')
-				deleteRuntimeState('editor_result_ready')
-				deleteRuntimeState('editor_target')
-				deleteRuntimeState('editor_file_path')
-				deleteRuntimeState('editor_saved')
-				deleteRuntimeState('editor_saved_path')
-				deleteRuntimeState('editor_readonly')
-				deleteRuntimeState('editor_placeholder')
-				deleteRuntimeState('editor_draft')
-			},
-
 			/** 打开文本编辑器 */
 			openTextEditor(item : FileItem) {
-				this.clearEditorStorage()
-				// 编辑器参数走 SQLite runtime_state。
-				setRuntimeState('editor_mode', 'file')
-				setRuntimeState('editor_file_path', item.path)
-				setRuntimeState('editor_title', item.name)
-				setRuntimeState('editor_target', 'file-manager')
-				setRuntimeState('editor_placeholder', '文件内容为空')
+				prepareManagedTextEditorRuntimeState(item)
 				uni.navigateTo({
 					url: '/pages/common/editor/editor'
 				})
@@ -569,92 +462,8 @@
 				return getManagedFileSectionLabel(item)
 			},
 
-			getGroupWorkspacesRootPath(): string {
-				return buildGroupWorkspacesRootPath()
-			},
-
 			getDisplayItemName(item : FileItem) : string {
-				const prefixedName = stripManagedFileDisplayPrefix(item.name)
-				if (prefixedName != item.name) {
-					return prefixedName
-				}
-				if (item.isDirectory == true) {
-					const parent = parentPath(item.path)
-					const groupRoot = this.getGroupWorkspacesRootPath()
-					if (normalizePath(parentPath(parent)) == normalizePath(getAgentsRoot())) {
-						const agentId = basename(parent)
-						const conversationName = this.lookupAgentConversationName(agentId, item.name)
-						if (conversationName != '') { return conversationName }
-					}
-					if (groupRoot != '' && normalizePath(parent) == normalizePath(groupRoot)) {
-						const groupName = this.lookupGroupName(item.name)
-						if (groupName != '') { return groupName }
-					}
-					const groupParent = parentPath(parent)
-					if (groupRoot != '' && normalizePath(groupParent) == normalizePath(groupRoot)) {
-						const groupId = basename(parent)
-						const sessionName = this.lookupGroupSessionName(groupId, item.name)
-						if (sessionName != '') { return sessionName }
-					}
-				}
-				return item.name
-			},
-
-			/** 查智能体显示名（agentId → name），无匹配返回空 */
-			lookupAgentName(agentId : string) : string {
-				const list = getAgents()
-				for (let i = 0; i < list.length; i++) {
-					const item = list[i]
-					if ((item['id'] as string) == agentId) {
-						const name = item['name'] as string | null
-						if (name != null && name != '') {
-							return name
-						}
-						break
-					}
-				}
-				return ''
-			},
-
-			lookupAgentConversationName(agentId : string, conversationId : string) : string {
-				if (agentId == '' || conversationId == '') { return '' }
-				try {
-					const conversations = getConversationsByAgent(agentId)
-					for (let i = 0; i < conversations.length; i++) {
-						const item = conversations[i]
-						const rawId = item['id'] as string | null
-						if (rawId == conversationId) {
-							const rawTitle = item['title'] as string | null
-							if (rawTitle != null && rawTitle != '') { return rawTitle }
-							return '未命名会话'
-						}
-					}
-				} catch (_e: any) { /* 数据库不可用时显示原 ID */ }
-				return ''
-			},
-
-			lookupGroupName(groupId : string) : string {
-				if (groupId == '') { return '' }
-				const groups = getGroupChats()
-				for (let i = 0; i < groups.length; i++) {
-					if (groups[i].id == groupId) {
-						const name = groups[i].name
-						if (name != '') { return name }
-						return ''
-					}
-				}
-				return ''
-			},
-
-			lookupGroupSessionName(groupId : string, sessionId : string) : string {
-				if (groupId == '' || sessionId == '') { return '' }
-				const sessions = getGroupSessions(groupId)
-				for (let i = 0; i < sessions.length; i++) {
-					if (sessions[i].id == sessionId) {
-						return displaySessionTitle(sessions[i])
-					}
-				}
-				return ''
+				return getManagedFileDisplayName(item)
 			},
 
 			/** 格式化文件大小（模板调用包装） */
