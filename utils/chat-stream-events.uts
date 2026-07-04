@@ -9,6 +9,23 @@ import { appendResponseToSnapshot } from '@/uni_modules/agent-core/utssdk/llm-cl
 import { CHAT_ROLE_ASSISTANT, getMessageContent, getMessageThinking } from '@/utils/chat-models.uts'
 import { reduceAgentEvent } from '@/utils/chat-message-reducer.uts'
 
+export const CHAT_STREAM_FLUSH_DELAY_MS = 48
+export const CHAT_STREAM_SCROLL_DELAY_MS = 96
+export const CHAT_STREAM_SCROLL_BASE_TOP = 100000
+export const CHAT_IDLE_SCROLL_BOTTOM_TOP = 99999
+
+export type ChatStreamFlushResult = {
+	messageChanged: boolean
+	nextQueue: AgentEvent[]
+}
+
+function emptyFlushResult(queue: AgentEvent[]): ChatStreamFlushResult {
+	return {
+		messageChanged: false,
+		nextQueue: queue,
+	} as ChatStreamFlushResult
+}
+
 export function isBufferedChatAgentEvent(event: AgentEvent): boolean {
 	return event.type == 'text_delta' || event.type == 'thinking_delta'
 }
@@ -43,6 +60,23 @@ export function reduceBufferedChatAgentEvents(messages: UTSJSONObject[], pending
 		}
 	}
 	return messageChanged
+}
+
+export function flushBufferedChatStreamEvents(messages: UTSJSONObject[], queue: AgentEvent[]): ChatStreamFlushResult {
+	if (queue.length == 0) { return emptyFlushResult(queue) }
+	const messageChanged = reduceBufferedChatAgentEvents(messages, queue)
+	return {
+		messageChanged: messageChanged,
+		nextQueue: [] as AgentEvent[],
+	} as ChatStreamFlushResult
+}
+
+export function nextChatStreamScrollTick(currentTick: number): number {
+	return currentTick + 1
+}
+
+export function buildChatStreamScrollTop(tick: number): number {
+	return CHAT_STREAM_SCROLL_BASE_TOP + tick
 }
 
 function findLatestAssistantMessage(messages: UTSJSONObject[]): UTSJSONObject | null {

@@ -179,17 +179,20 @@
 		stringifyChatContextPreview,
 	} from '@/utils/chat-page-helpers.uts'
 	import {
+		buildChatStreamScrollTop,
+		CHAT_IDLE_SCROLL_BOTTOM_TOP,
+		CHAT_STREAM_FLUSH_DELAY_MS,
+		CHAT_STREAM_SCROLL_DELAY_MS,
 		appendBufferedChatAgentEvent,
 		appendLatestChatResponseSnapshot,
+		flushBufferedChatStreamEvents,
 		isBufferedChatAgentEvent,
-		reduceBufferedChatAgentEvents,
+		nextChatStreamScrollTick,
 	} from '@/utils/chat-stream-events.uts'
 	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, type PickedLocalFile } from '@/utils/attachment-reader.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { NYX_FLOAT_CONTEXT_CHAT, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
 
-	const STREAM_FLUSH_DELAY_MS = 48
-	const STREAM_SCROLL_DELAY_MS = 96
 	let chatNyxFloatVoiceCallback: (() => void) | null = null
 
 	export default {
@@ -993,16 +996,14 @@
 				this.streamFlushTimer = setTimeout(() => {
 					self.streamFlushTimer = -1
 					self.flushStreamEvents()
-				}, STREAM_FLUSH_DELAY_MS)
+				}, CHAT_STREAM_FLUSH_DELAY_MS)
 			},
 
 			flushStreamEvents() {
 				this.clearStreamFlushTimer()
-				if (this.streamEventQueue.length == 0) { return }
-				const pending = this.streamEventQueue
-				this.streamEventQueue = [] as AgentEvent[]
-				const messageChanged = reduceBufferedChatAgentEvents(this.messages, pending)
-				if (messageChanged == true) {
+				const result = flushBufferedChatStreamEvents(this.messages, this.streamEventQueue)
+				this.streamEventQueue = result.nextQueue
+				if (result.messageChanged == true) {
 					this.scrollToBottom()
 				}
 			},
@@ -1099,8 +1100,8 @@
 			},
 
 			performStreamScrollToBottom() {
-				this._streamScrollTick++
-				this.scrollTop = 100000 + this._streamScrollTick
+				this._streamScrollTick = nextChatStreamScrollTick(this._streamScrollTick)
+				this.scrollTop = buildChatStreamScrollTop(this._streamScrollTick)
 			},
 
 			scheduleStreamScroll() {
@@ -1113,7 +1114,7 @@
 					} else {
 						self.scrollToBottom()
 					}
-				}, STREAM_SCROLL_DELAY_MS)
+				}, CHAT_STREAM_SCROLL_DELAY_MS)
 			},
 
 			scrollToBottom() {
@@ -1126,7 +1127,7 @@
 				this.scrollTop = 0
 				const self = this
 				setTimeout(() => {
-					self.scrollTop = 99999
+					self.scrollTop = CHAT_IDLE_SCROLL_BOTTOM_TOP
 				}, 50)
 			},
 
