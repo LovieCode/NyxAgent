@@ -1,0 +1,92 @@
+/**
+ * 私聊设置页工具能力配置辅助。
+ *
+ * 借 AstrBot tools/registry 的分层思路：页面只渲染，工具注册、展示文本和选中状态放这里。
+ */
+
+import {
+	AGENT_TOOL_APP_GUIDE,
+	AGENT_TOOL_ASTRBOT_TASK,
+	AGENT_TOOL_MEMORY_BUFFER_WRITE,
+	AGENT_TOOL_MEMORY_SEARCH,
+	AGENT_TOOL_WEB_SEARCH,
+	AGENT_TOOL_WORKSPACE_FILE,
+	NYX_ADMIN_AGENT_ID,
+	agentToolIdListContains,
+} from '@/utils/agent.uts'
+import { isAstrBotEnabled } from '@/utils/astrbot-service.uts'
+
+export function buildAgentSettingsToolOption(id: string, name: string, desc: string): UTSJSONObject {
+	return {
+		id: id,
+		name: name,
+		desc: desc,
+	} as UTSJSONObject
+}
+
+export function buildAgentSettingsToolOptions(agentId: string): UTSJSONObject[] {
+	const list: UTSJSONObject[] = []
+	if (agentId == NYX_ADMIN_AGENT_ID) {
+		list.push(buildAgentSettingsToolOption(AGENT_TOOL_APP_GUIDE, 'App 教学', '眠汐专属：查询功能地图、设置路径、能力边界和插件状态'))
+	}
+	list.push(buildAgentSettingsToolOption(AGENT_TOOL_WORKSPACE_FILE, '工作区文件', '读写当前私聊或群聊会话工作区文件'))
+	list.push(buildAgentSettingsToolOption(AGENT_TOOL_MEMORY_SEARCH, '记忆搜索', '查询当前联系人可见记忆和历史记录'))
+	list.push(buildAgentSettingsToolOption(AGENT_TOOL_MEMORY_BUFFER_WRITE, '短记忆缓存', '记录当前任务/临时要求/下一步，方便下轮接上'))
+	list.push(buildAgentSettingsToolOption(AGENT_TOOL_WEB_SEARCH, '网络搜索', '联网搜索实时事实、资料和网页信息'))
+	if (isAstrBotEnabled() == true) {
+		list.push(buildAgentSettingsToolOption(AGENT_TOOL_ASTRBOT_TASK, '调 AstrBot', '把复杂任务交给 AstrBot 后端执行，回来后由当前联系人验收再回复'))
+	}
+	return list
+}
+
+export function readAgentSettingsToolField(tool: UTSJSONObject, key: string): string {
+	const raw = tool[key] as string | null
+	return raw != null ? raw : ''
+}
+
+export function readAgentSettingsToolId(tool: UTSJSONObject): string {
+	return readAgentSettingsToolField(tool, 'id')
+}
+
+export function readAgentSettingsToolName(tool: UTSJSONObject): string {
+	return readAgentSettingsToolField(tool, 'name')
+}
+
+export function readAgentSettingsToolDesc(tool: UTSJSONObject): string {
+	return readAgentSettingsToolField(tool, 'desc')
+}
+
+export function isAgentSettingsToolSelected(selectedToolIds: string[], tool: UTSJSONObject): boolean {
+	return agentToolIdListContains(selectedToolIds, readAgentSettingsToolId(tool))
+}
+
+export function getAgentSettingsToolCardClass(selectedToolIds: string[], tool: UTSJSONObject, index: number): string {
+	let cls = ''
+	if (index > 0) {
+		cls = 'tool-card-spaced'
+	}
+	if (isAgentSettingsToolSelected(selectedToolIds, tool) == true) {
+		cls = cls == '' ? 'tool-card-active' : cls + ' tool-card-active'
+	}
+	return cls
+}
+
+export function isLockedNyxTeachingTool(agentId: string, toolId: string): boolean {
+	return agentId == NYX_ADMIN_AGENT_ID && toolId == AGENT_TOOL_APP_GUIDE
+}
+
+export function toggleAgentSettingsToolSelection(selectedToolIds: string[], toolId: string): string[] {
+	const next: string[] = []
+	let removed = false
+	for (let i = 0; i < selectedToolIds.length; i++) {
+		if (selectedToolIds[i] == toolId) {
+			removed = true
+		} else {
+			next.push(selectedToolIds[i])
+		}
+	}
+	if (removed == false) {
+		next.push(toolId)
+	}
+	return next
+}

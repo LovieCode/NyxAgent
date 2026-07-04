@@ -294,13 +294,23 @@
 	/**
 	 * 私聊设置页面 - 编辑昵称/备注/头像/删除私聊
 	 */
-	import { getAgentById, updateAgent, deleteAgent, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentTTSSettings, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, agentToolIdListContains, AGENT_TOOL_APP_GUIDE, AGENT_TOOL_WORKSPACE_FILE, AGENT_TOOL_MEMORY_SEARCH, AGENT_TOOL_MEMORY_BUFFER_WRITE, AGENT_TOOL_WEB_SEARCH, AGENT_TOOL_ASTRBOT_TASK, NYX_ADMIN_AGENT_ID } from '@/utils/agent.uts'
+	import { getAgentById, updateAgent, deleteAgent, updateAgentModel, updateAgentGenerationSettings, updateAgentTruncation, updateAgentCache, updateAgentHideThinking, updateAgentInjectDatetime, updateAgentMsgSegmentation, updateAgentTTSSettings, updateAgentSkills, updateAgentTools, getAgentEnabledToolIds, NYX_ADMIN_AGENT_ID } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { deleteRuntimeState, getAppSetting, getRuntimeState, setRuntimeState, updateSystemPromptForAgent } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
 	import { clearActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
 	import { getSkills, getAgentSkillIds, filterExistingSkillIds, skillIdListContains, readSkillId, readSkillName, readSkillDescription, readSkillEnabled, getSkillDocumentCount } from '@/utils/skills.uts'
-	import { isAstrBotEnabled } from '@/utils/astrbot-service.uts'
+	import {
+		buildAgentSettingsToolOptions,
+		getAgentSettingsToolCardClass,
+		isAgentSettingsToolSelected,
+		isLockedNyxTeachingTool,
+		readAgentSettingsToolDesc,
+		readAgentSettingsToolField,
+		readAgentSettingsToolId,
+		readAgentSettingsToolName,
+		toggleAgentSettingsToolSelection,
+	} from '@/utils/agent-settings-tools.uts'
 
 	export default {
 		data() {
@@ -468,7 +478,7 @@
 			loadAgent() {
 				const id = getRuntimeState('active_agent_id')
 				if (id == null || id == '') {
-					uni.showToast({ position: 'bottom', 
+					uni.showToast({ position: 'bottom',
 						title: '未选择联系人',
 						icon: 'none'
 					})
@@ -635,59 +645,32 @@
 				this.hasUnsaved = true
 			},
 
-			buildToolOption(id: string, name: string, desc: string): UTSJSONObject {
-				return {
-					id: id,
-					name: name,
-					desc: desc,
-				} as UTSJSONObject
-			},
-
 			buildToolOptions(): UTSJSONObject[] {
-				const list: UTSJSONObject[] = []
-				if (this.agentId == NYX_ADMIN_AGENT_ID) {
-					list.push(this.buildToolOption(AGENT_TOOL_APP_GUIDE, 'App 教学', '眠汐专属：查询功能地图、设置路径、能力边界和插件状态'))
-				}
-				list.push(this.buildToolOption(AGENT_TOOL_WORKSPACE_FILE, '工作区文件', '读写当前私聊或群聊会话工作区文件'))
-				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_SEARCH, '记忆搜索', '查询当前联系人可见记忆和历史记录'))
-				list.push(this.buildToolOption(AGENT_TOOL_MEMORY_BUFFER_WRITE, '短记忆缓存', '记录当前任务/临时要求/下一步，方便下轮接上'))
-				list.push(this.buildToolOption(AGENT_TOOL_WEB_SEARCH, '网络搜索', '联网搜索实时事实、资料和网页信息'))
-				if (isAstrBotEnabled() == true) {
-					list.push(this.buildToolOption(AGENT_TOOL_ASTRBOT_TASK, '调 AstrBot', '把复杂任务交给 AstrBot 后端执行，回来后由当前联系人验收再回复'))
-				}
-				return list
+				return buildAgentSettingsToolOptions(this.agentId)
 			},
 
 			readToolField(tool: UTSJSONObject, key: string): string {
-				const raw = tool[key] as string | null
-				return raw != null ? raw : ''
+				return readAgentSettingsToolField(tool, key)
 			},
 
 			getToolId(tool: UTSJSONObject): string {
-				return this.readToolField(tool, 'id')
+				return readAgentSettingsToolId(tool)
 			},
 
 			getToolName(tool: UTSJSONObject): string {
-				return this.readToolField(tool, 'name')
+				return readAgentSettingsToolName(tool)
 			},
 
 			getToolDesc(tool: UTSJSONObject): string {
-				return this.readToolField(tool, 'desc')
+				return readAgentSettingsToolDesc(tool)
 			},
 
 			isAgentToolSelected(tool: UTSJSONObject): boolean {
-				return agentToolIdListContains(this.selectedToolIds, this.getToolId(tool))
+				return isAgentSettingsToolSelected(this.selectedToolIds, tool)
 			},
 
 			getToolCardClass(tool: UTSJSONObject, index: number): string {
-				let cls = ''
-				if (index > 0) {
-					cls = 'tool-card-spaced'
-				}
-				if (this.isAgentToolSelected(tool) == true) {
-					cls = cls == '' ? 'tool-card-active' : cls + ' tool-card-active'
-				}
-				return cls
+				return getAgentSettingsToolCardClass(this.selectedToolIds, tool, index)
 			},
 
 			toggleAgentTool(tool: UTSJSONObject) {
@@ -695,23 +678,11 @@
 				if (toolId == '') {
 					return
 				}
-				if (this.agentId == NYX_ADMIN_AGENT_ID && toolId == AGENT_TOOL_APP_GUIDE) {
+				if (isLockedNyxTeachingTool(this.agentId, toolId) == true) {
 					uni.showToast({ position: 'bottom', title: '眠汐内置教学不能关闭', icon: 'none' })
 					return
 				}
-				const next: string[] = []
-				let removed = false
-				for (let i = 0; i < this.selectedToolIds.length; i++) {
-					if (this.selectedToolIds[i] == toolId) {
-						removed = true
-					} else {
-						next.push(this.selectedToolIds[i])
-					}
-				}
-				if (removed == false) {
-					next.push(toolId)
-				}
-				this.selectedToolIds = next
+				this.selectedToolIds = toggleAgentSettingsToolSelection(this.selectedToolIds, toolId)
 				this.hasUnsaved = true
 			},
 
@@ -793,7 +764,7 @@
 				const name = this.agentName.trim()
 				const desc = this.agentDesc.trim()
 				if (name == '') {
-					uni.showToast({ position: 'bottom', 
+					uni.showToast({ position: 'bottom',
 						title: '昵称不能为空',
 						icon: 'none'
 					})
@@ -833,7 +804,7 @@
 				// 同步更新所有历史对话的 system_prompt
 				updateSystemPromptForAgent(this.agentId, this.agentSystemPrompt)
 				this.hasUnsaved = false
-				uni.showToast({ position: 'bottom', 
+				uni.showToast({ position: 'bottom',
 					title: '已保存',
 					icon: 'success'
 				})
@@ -863,7 +834,7 @@
 							if (activeId == this.agentId) {
 								clearActiveAgentRuntimeId()
 							}
-							uni.showToast({ position: 'bottom', 
+							uni.showToast({ position: 'bottom',
 								title: '已删除',
 								icon: 'success'
 							})
