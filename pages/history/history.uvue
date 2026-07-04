@@ -173,7 +173,6 @@
 				this.loadGroupHistory()
 			},
 
-
 			loadGroupHistory(): void {
 				this.groupHistoryList = buildGroupHistoryContextItems(this.activeAgentId)
 			},
@@ -303,7 +302,6 @@
 				})
 			},
 
-
 			showHistoryPreview(item: UTSJSONObject): void {
 				const titleRaw = item['title'] as string | null
 				const title = titleRaw != null && titleRaw != '' ? titleRaw : '历史对话'
@@ -356,11 +354,9 @@
 			},
 
 
-
 			deleteGroupHistoryById(id: string): void {
 				deleteGroupHistoryContextById(this.activeAgentId, id)
 			},
-
 
 			/** 导出对话为 Markdown，并复制到剪贴板 */
 			exportConversation(item: UTSJSONObject) {

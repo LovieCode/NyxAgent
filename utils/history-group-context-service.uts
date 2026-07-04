@@ -227,12 +227,16 @@ function buildLegacySchedulerPreviewPayload(internalLabel: string, schedulerMsg:
 	const runtimeMessages = schedulerMsg['runtimeMessages'] as UTSJSONObject[] | null
 	const contentRaw = schedulerMsg['content'] as string | null
 	const triggerRaw = schedulerMsg['triggerReason'] as string | null
+	let safeRuntimeMessages: UTSJSONObject[] = []
+	if (runtimeMessages != null) {
+		safeRuntimeMessages = runtimeMessages
+	}
 	return {
 		previewJson: JSON.stringify({
 			type: 'scheduler_context',
 			note: '旧' + internalLabel + '记录没有保存真实 request body 快照；以下为可恢复的调度上下文和输出。',
 			triggerReason: triggerRaw != null ? triggerRaw : '',
-			runtimeMessages: runtimeMessages != null ? runtimeMessages : [],
+			runtimeMessages: safeRuntimeMessages,
 			response: contentRaw != null ? contentRaw : '',
 		} as UTSJSONObject, null, 2),
 		subtitle: internalLabel + '记录：没有真实请求快照',
