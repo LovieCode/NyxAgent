@@ -61,6 +61,17 @@ import { addConversationTokenUsage, getAppSetting, getConversationTokenUsageStat
 const LAST_TOKEN_USAGE_KEY = 'last_token_usage'
 const LAST_LLM_CALL_KEY = 'last_llm_call'
 const LAST_LLM_REQUEST_SNAPSHOT_KEY = 'last_llm_request_snapshot'
+const LLM_DEBUG_LOG_SETTING_KEY = 'llm_debug_log_enabled'
+
+function isLLMDebugLogEnabled(): boolean {
+	return getAppSetting(LLM_DEBUG_LOG_SETTING_KEY) == 'true'
+}
+
+function logLLMDebug(message: string): void {
+	if (isLLMDebugLogEnabled() == true) {
+		console.log(message)
+	}
+}
 
 function pad2(value: number): string {
 	if (value < 10) return '0' + value.toString()
@@ -1135,7 +1146,7 @@ function saveLastTokenUsage(usage: UTSJSONObject): UTSJSONObject {
 	const obj = normalizeTokenUsage(usage)
 	const json = JSON.stringify(obj)
 	setAppSetting(LAST_TOKEN_USAGE_KEY, json)
-	console.log('[LLM] Token 用量已保存: ' + json)
+	logLLMDebug('[LLM] Token 用量已保存: ' + json)
 	return obj
 }
 
@@ -1375,11 +1386,13 @@ function callImageCaptionAPI(
 		stream: false,
 	} as UTSJSONObject
 
-	console.log('[LLM] ====== IMAGE CAPTION REQUEST ======')
-	console.log('[LLM] URL: ' + url)
-	console.log('[LLM] Model: ' + model + ' | Messages: ' + apiMessages.length)
-	console.log('[LLM] Body: ' + formatBodyForLog(body))
-	console.log('[LLM] ===================================')
+	if (isLLMDebugLogEnabled() == true) {
+		console.log('[LLM] ====== IMAGE CAPTION REQUEST ======')
+		console.log('[LLM] URL: ' + url)
+		console.log('[LLM] Model: ' + model + ' | Messages: ' + apiMessages.length)
+		console.log('[LLM] Body: ' + formatBodyForLog(body))
+		console.log('[LLM] ===================================')
+	}
 
 	const bodyStr = JSON.stringify(body)
 	const finalBody = JSON.parse(bodyStr)
@@ -1424,9 +1437,11 @@ function callImageCaptionAPI(
 					return
 				}
 				const preview = text != '' ? text.substring(0, text.length < 200 ? text.length : 200) : ''
-				console.log('[LLM] ====== IMAGE CAPTION RESPONSE ======')
-				console.log('[LLM] Status: 200 | ' + preview)
-				console.log('[LLM] ====================================')
+				if (isLLMDebugLogEnabled() == true) {
+					console.log('[LLM] ====== IMAGE CAPTION RESPONSE ======')
+					console.log('[LLM] Status: 200 | ' + preview)
+					console.log('[LLM] ====================================')
+				}
 				saveLastLLMCall(true, false, model, baseUrl, statusCode, '', normalizedUsage, apiMessages.length, 0, text.length, false)
 				done(text)
 			} catch (_e2: any) {
@@ -1498,11 +1513,13 @@ function callChatAPI(
 	}
 	saveLastLLMRequestSnapshot(baseUrl, url, model, body, apiMessages.length, tools.length, false, '', agentId, conversationId, workspaceRoot)
 
-	console.log('[LLM] ====== REQUEST ======')
-	console.log('[LLM] URL: ' + url)
-	console.log('[LLM] Model: ' + model + ' | Messages: ' + apiMessages.length + ' | Tools: ' + tools.length)
-	console.log('[LLM] Body: ' + formatBodyForLog(body))
-	console.log('[LLM] =======================')
+	if (isLLMDebugLogEnabled() == true) {
+		console.log('[LLM] ====== REQUEST ======')
+		console.log('[LLM] URL: ' + url)
+		console.log('[LLM] Model: ' + model + ' | Messages: ' + apiMessages.length + ' | Tools: ' + tools.length)
+		console.log('[LLM] Body: ' + formatBodyForLog(body))
+		console.log('[LLM] =======================')
+	}
 
 	// 序列化再反序列化，确保 UTSJSONObject 内嵌套数组能被正确识别
 	const bodyStr = JSON.stringify(body)
@@ -1527,10 +1544,10 @@ function callChatAPI(
 						}
 					}
 				} catch (_) {}
-			console.log('[LLM] ====== RESPONSE ERROR ======')
-				console.log('[LLM] Status: ' + statusCode + errDetail)
-				console.log('[LLM] Request body: ' + formatBodyForLog(body))
-				console.log('[LLM] =============================')
+				console.log('[LLM] API 请求失败 Status: ' + statusCode + errDetail)
+				if (isLLMDebugLogEnabled() == true) {
+					console.log('[LLM] Request body: ' + formatBodyForLog(body))
+				}
 				saveLastLLMCall(false, false, model, baseUrl, statusCode, 'API 请求失败' + errDetail, null, apiMessages.length, tools.length, 0, false)
 				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null)
 				return
@@ -1544,7 +1561,9 @@ function callChatAPI(
 				}
 				// 保存 Token 用量
 				const usage = responseData['usage'] as UTSJSONObject | null
-				console.log('[LLM] 非流式响应 usage: ' + (usage != null ? JSON.stringify(usage) : 'null'))
+				if (isLLMDebugLogEnabled() == true) {
+					console.log('[LLM] 非流式响应 usage: ' + (usage != null ? JSON.stringify(usage) : 'null'))
+				}
 				let normalizedUsage: UTSJSONObject | null = null
 				if (usage != null) { normalizedUsage = saveLastTokenUsage(usage) }
 				const choices = responseData['choices'] as UTSJSONObject[] | null
@@ -1576,9 +1595,11 @@ function callChatAPI(
 				}
 				const preview = text != '' ? text.substring(0, text.length < 200 ? text.length : 200) : ''
 				const tag = tcNames != '' ? ' tools:' + tcNames : ''
-				console.log('[LLM] ====== RESPONSE ======')
-				console.log('[LLM] Status: 200' + tag + ' | ' + preview)
-				console.log('[LLM] =======================')
+				if (isLLMDebugLogEnabled() == true) {
+					console.log('[LLM] ====== RESPONSE ======')
+					console.log('[LLM] Status: 200' + tag + ' | ' + preview)
+					console.log('[LLM] =======================')
+				}
 				saveLastLLMCall(true, false, model, baseUrl, statusCode, '', normalizedUsage, apiMessages.length, tools.length, text.length, rawToolCalls != null && rawToolCalls.length > 0)
 
 				if (rawToolCalls != null && rawToolCalls.length > 0) {
@@ -1649,7 +1670,9 @@ function processSSELine(
 			// 提取 usage（OpenAI 流式最后一个 chunk 中 usage 和 choices 同时存在）
 			const usage = json['usage'] as UTSJSONObject | null
 			if (usage != null) {
-				console.log('[LLM] 流式 usage: ' + JSON.stringify(usage))
+				if (isLLMDebugLogEnabled() == true) {
+					console.log('[LLM] 流式 usage: ' + JSON.stringify(usage))
+				}
 				saveLastTokenUsage(usage)
 			}
 			const choices = json['choices'] as UTSJSONObject[]
@@ -1818,11 +1841,13 @@ function callChatAPIStream(
 	}
 	saveLastLLMRequestSnapshot(baseUrl, url, model, body, apiMessages.length, tools.length, true, cacheKey, agentId, conversationId, workspaceRoot)
 
-	console.log('[LLM] ====== STREAM REQUEST ======')
-	console.log('[LLM] URL: ' + url)
-	console.log('[LLM] Model: ' + model + ' | Messages: ' + apiMessages.length + ' | Tools: ' + tools.length + (cacheKey != '' ? ' | Cache: ' + cacheKey : ''))
-	console.log('[LLM] Body: ' + formatBodyForLog(body))
-	console.log('[LLM] =============================')
+	if (isLLMDebugLogEnabled() == true) {
+		console.log('[LLM] ====== STREAM REQUEST ======')
+		console.log('[LLM] URL: ' + url)
+		console.log('[LLM] Model: ' + model + ' | Messages: ' + apiMessages.length + ' | Tools: ' + tools.length + (cacheKey != '' ? ' | Cache: ' + cacheKey : ''))
+		console.log('[LLM] Body: ' + formatBodyForLog(body))
+		console.log('[LLM] =============================')
+	}
 
 	// 序列化再反序列化，避免 UTSJSONObject 内嵌数组序列化问题
 	const bodyStr = JSON.stringify(body)
@@ -1865,10 +1890,10 @@ function callChatAPIStream(
 						} catch (_d) {}
 					}
 				} catch (_) {}
-				console.log('[LLM] ====== STREAM ERROR ======')
-				console.log('[LLM] Status: ' + statusCode + errDetail)
-				console.log('[LLM] Request body: ' + formatBodyForLog(body))
-				console.log('[LLM] ===========================')
+				console.log('[LLM] STREAM 请求失败 Status: ' + statusCode + errDetail)
+				if (isLLMDebugLogEnabled() == true) {
+					console.log('[LLM] Request body: ' + formatBodyForLog(body))
+				}
 				saveLastLLMCall(false, true, model, baseUrl, statusCode, 'API 请求失败' + errDetail, null, apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
 				done('API 请求失败 (状态码: ' + statusCode + errDetail + ')', null, null)
 				return
@@ -1902,16 +1927,20 @@ function callChatAPIStream(
 					} as ToolCallInfo)
 				}
 				const preview = fullTextRef[0] != '' ? fullTextRef[0].substring(0, fullTextRef[0].length < 200 ? fullTextRef[0].length : 200) : ''
-				console.log('[LLM] ====== STREAM RESPONSE ======')
-				console.log('[LLM] Status: 200 tools:' + tcNames + ' | ' + preview)
-				console.log('[LLM] ==============================')
+				if (isLLMDebugLogEnabled() == true) {
+					console.log('[LLM] ====== STREAM RESPONSE ======')
+					console.log('[LLM] Status: 200 tools:' + tcNames + ' | ' + preview)
+					console.log('[LLM] ==============================')
+				}
 				saveLastLLMCall(true, true, model, baseUrl, statusCode, '', readLastTokenUsageForCall(), apiMessages.length, tools.length, fullTextRef[0].length, true, conversationId)
 				done(fullTextRef[0], tcList, fullThinkingRef[0])
 			} else {
 				const preview = fullTextRef[0] != '' ? fullTextRef[0].substring(0, fullTextRef[0].length < 200 ? fullTextRef[0].length : 200) : ''
-				console.log('[LLM] ====== STREAM RESPONSE ======')
-				console.log('[LLM] Status: 200 | ' + preview)
-				console.log('[LLM] ==============================')
+				if (isLLMDebugLogEnabled() == true) {
+					console.log('[LLM] ====== STREAM RESPONSE ======')
+					console.log('[LLM] Status: 200 | ' + preview)
+					console.log('[LLM] ==============================')
+				}
 				saveLastLLMCall(true, true, model, baseUrl, statusCode, '', readLastTokenUsageForCall(), apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
 				done(fullTextRef[0], null, fullThinkingRef[0])
 			}
