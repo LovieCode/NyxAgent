@@ -1,0 +1,239 @@
+/**
+ * 文件管理纯模型与路径工具。
+ *
+ * 这里不触碰平台文件 IO，只放 type、路径拼接、展示格式化和文件类型判断，方便其它模块复用。
+ */
+
+/** 文件项信息 */
+export type FileItem = {
+	/** 文件/文件夹名 */
+	name: string
+	/** 完整路径 */
+	path: string
+	/** 是否为目录 */
+	isDirectory: boolean
+	/** 文件大小（字节），目录固定为 0 */
+	size: number
+	/** 最后修改时间戳（毫秒） */
+	lastModified: number
+}
+
+/** 路径分段（面包屑导航用） */
+export type PathSegment = {
+	name: string
+	path: string
+}
+
+/** 文件操作结果 */
+export type FileOpResult = {
+	/** 是否成功 */
+	ok: boolean
+	/** 错误信息，失败时填充 */
+	error: string
+}
+
+/** 根目录选项（带中文标签） */
+export type RootDirOption = {
+	name: string
+	path: string
+}
+
+/** 路径分隔符（跨平台统一用 /） */
+export const SEP = '/'
+
+/** 构造成功结果 */
+export function okResult(): FileOpResult {
+	const r: FileOpResult = { ok: true, error: '' }
+	return r
+}
+
+/** 构造失败结果 */
+export function failResult(msg: string): FileOpResult {
+	const r: FileOpResult = { ok: false, error: msg }
+	return r
+}
+
+/** 构造文件项 */
+export function makeFileItem(name: string, path: string, isDir: boolean, size: number, mtime: number): FileItem {
+	const item: FileItem = {
+		name: name,
+		path: path,
+		isDirectory: isDir,
+		size: size,
+		lastModified: mtime,
+	}
+	return item
+}
+
+/**
+ * 规范化路径：统一分隔符，合并多余斜杠，去除末尾斜杠。
+ * 支持 unifile://、file:// 协议路径和绝对路径。
+ */
+export function normalizePath(path: string): string {
+	let result = path.trim().replace(/\\/g, SEP)
+	let protocol = ''
+	if (result.startsWith('unifile://')) {
+		protocol = 'unifile://'
+		result = result.substring(10)
+	} else if (result.startsWith('file://')) {
+		protocol = 'file://'
+		result = result.substring(7)
+	}
+	while (result.indexOf(SEP + SEP) >= 0) {
+		result = result.replace(/\/\/+/g, SEP)
+	}
+	if (result.length > 1 && result.endsWith(SEP)) {
+		result = result.substring(0, result.length - 1)
+	}
+	return protocol + result
+}
+
+/**
+ * 拼接路径，自动处理分隔符。
+ */
+export function joinPath(base: string, name: string): string {
+	let n = name.trim()
+	if (n == '') {
+		return normalizePath(base)
+	}
+	let b = normalizePath(base)
+	let protocol = ''
+	if (b.startsWith('unifile://')) {
+		protocol = 'unifile://'
+		b = b.substring(10)
+	} else if (b.startsWith('file://')) {
+		protocol = 'file://'
+		b = b.substring(7)
+	}
+	while (b.length > 0 && b.endsWith(SEP)) {
+		b = b.substring(0, b.length - 1)
+	}
+	while (n.startsWith(SEP)) {
+		n = n.substring(1)
+	}
+	return protocol + b + SEP + n
+}
+
+/**
+ * 获取父目录路径。根目录返回空字符串。
+ */
+export function parentPath(path: string): string {
+	let p = normalizePath(path)
+	let protocol = ''
+	if (p.startsWith('unifile://')) {
+		protocol = 'unifile://'
+		p = p.substring(10)
+	} else if (p.startsWith('file://')) {
+		protocol = 'file://'
+		p = p.substring(7)
+	}
+	const lastSep = p.lastIndexOf(SEP)
+	if (lastSep <= 0) {
+		return ''
+	}
+	return protocol + p.substring(0, lastSep)
+}
+
+/**
+ * 获取路径末尾的文件/文件夹名。
+ */
+export function basename(path: string): string {
+	let p = normalizePath(path)
+	if (p.startsWith('unifile://')) {
+		p = p.substring(10)
+	} else if (p.startsWith('file://')) {
+		p = p.substring(7)
+	}
+	const lastSep = p.lastIndexOf(SEP)
+	if (lastSep < 0) {
+		return p
+	}
+	return p.substring(lastSep + 1)
+}
+
+/**
+ * 格式化文件大小为可读字符串。
+ *
+ * @param bytes 字节数
+ * @returns 如 "1.2 KB"、"3.4 MB"
+ */
+export function formatFileSize(bytes: number): string {
+	if (bytes <= 0) {
+		return '0 B'
+	}
+	const units = ['B', 'KB', 'MB', 'GB', 'TB']
+	let value = bytes
+	let unitIndex = 0
+	while (value >= 1024 && unitIndex < units.length - 1) {
+		value = value / 1024
+		unitIndex++
+	}
+	const rounded = Math.round(value * 10) / 10
+	const str = rounded % 1 == 0 ? ('' + Math.floor(rounded)) : ('' + rounded)
+	return str + ' ' + units[unitIndex]
+}
+
+function padZero(n: number): string {
+	if (n < 10) {
+		return '0' + n
+	}
+	return '' + n
+}
+
+/**
+ * 格式化时间戳为可读日期字符串。
+ *
+ * @param timestamp 毫秒时间戳
+ * @returns 如 "2025-06-20 14:30"
+ */
+export function formatTime(timestamp: number): string {
+	if (timestamp <= 0) {
+		return '-'
+	}
+	const date = new Date(timestamp)
+	const year = date.getFullYear()
+	const month = date.getMonth() + 1
+	const day = date.getDate()
+	const hour = date.getHours()
+	const minute = date.getMinutes()
+	return year + '-' + padZero(month) + '-' + padZero(day) + ' ' + padZero(hour) + ':' + padZero(minute)
+}
+
+/**
+ * 获取文件扩展名（不含点，小写）。无扩展名返回空字符串。
+ */
+export function getExtension(fileName: string): string {
+	const lastDot = fileName.lastIndexOf('.')
+	if (lastDot < 0 || lastDot == fileName.length - 1) {
+		return ''
+	}
+	return fileName.substring(lastDot + 1).toLowerCase()
+}
+
+/**
+ * 判断文件是否为常见文本文件（根据扩展名）。
+ */
+export function isTextFile(fileName: string): boolean {
+	const ext = getExtension(fileName)
+	const textExtensions = ['txt', 'md', 'json', 'jsonl', 'log', 'csv', 'xml', 'yaml', 'yml', 'ini', 'conf', 'properties', 'html', 'css', 'js', 'ts', 'uts', 'uvue', 'vue', 'java', 'kt', 'swift', 'py', 'go', 'rs', 'c', 'cpp', 'h', 'sh']
+	for (let i = 0; i < textExtensions.length; i++) {
+		if (ext == textExtensions[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+/**
+ * 判断文件是否为图片文件（根据扩展名）。
+ */
+export function isImageFile(fileName: string): boolean {
+	const ext = getExtension(fileName)
+	const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg']
+	for (let i = 0; i < imageExtensions.length; i++) {
+		if (ext == imageExtensions[i]) {
+			return true
+		}
+	}
+	return false
+}
