@@ -912,13 +912,18 @@
 				const player = this.speechPlayer
 				if (player != null) {
 					this.isStoppingSpeechPlayback = true
+					this.speechPlayer = null
+					this.playingSpeechPath = ''
 					try {
-						player.pause()
-						player.src = ''
+						player.stop()
 					} catch (_e: any) {
 					}
+					try {
+						player.destroy()
+					} catch (_e2: any) {
+					}
+					return
 				}
-				this.speechPlayer = null
 				this.playingSpeechPath = ''
 			},
 
@@ -966,7 +971,6 @@
 				})
 				audio.onError((err: any) => {
 					if (this.isStoppingSpeechPlayback == true || this.speechPlayer != audio || this.playingSpeechPath != path) {
-						console.log('[Speech] 忽略已停止播放器错误: ' + err)
 						return
 					}
 					console.log('[Speech] 播放失败: ' + err)
@@ -986,8 +990,9 @@
 				const text = getMessageContent(msg).trim()
 				if (text == '') { return }
 				const conversationId = this.conversationId
+				const agentId = this.currentAgentId
 				this.isSynthesizingSpeech = true
-				synthesizeSpeech(text, this.agentId).then((result) => {
+				synthesizeSpeech(text, agentId).then((result) => {
 					this.isSynthesizingSpeech = false
 					if (this.conversationId != conversationId) { return }
 					if (this.hasMessageRef(msg) == false) { return }
