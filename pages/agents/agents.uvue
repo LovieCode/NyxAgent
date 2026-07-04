@@ -122,8 +122,8 @@
 
 					<view class="dialog-section">
 						<text class="dialog-label">基础信息</text>
-						<input class="dialog-input" v-model="createData.name" placeholder="昵称，比如：小夜 / 零 / 千夏" placeholder-style="color:var(--rice-text-color-3)" />
-						<input class="dialog-input dialog-input-gap" v-model="createData.desc" placeholder="一句话备注它擅长什么" placeholder-style="color:var(--rice-text-color-3)" />
+						<input class="dialog-input" v-model="createName" placeholder="昵称，比如：小夜 / 零 / 千夏" placeholder-style="color:var(--rice-text-color-3)" />
+						<input class="dialog-input dialog-input-gap" v-model="createDesc" placeholder="一句话备注它擅长什么" placeholder-style="color:var(--rice-text-color-3)" />
 					</view>
 
 					<view class="dialog-section">
@@ -135,10 +135,10 @@
 							<view
 								v-for="(icon, i) in iconList"
 								:key="i"
-								:class="['icon-item', createData.icon == icon ? 'icon-item-active' : '']"
-								@click="createData.icon = icon"
+								:class="createIconItemClass(icon)"
+								@click="selectCreateIcon(icon)"
 							>
-								<oui-icon-unix :name="icon" size="22px" :color="createData.icon == icon ? '#FFFFFF' : 'var(--rice-text-color-2)'" />
+								<oui-icon-unix :name="icon" size="22px" :color="createIconColor(icon)" />
 							</view>
 						</view>
 						<text v-if="createAvatar() != ''" class="field-tip" @click="clearCreateAvatar">已选择自定义头像，点这里移除</text>
@@ -149,7 +149,7 @@
 							<text class="dialog-label dialog-label-inline">系统提示词</text>
 							<text class="section-action" @click="resetPromptByTemplate">重置模板</text>
 						</view>
-						<textarea class="prompt-input" v-model="createData.systemPrompt" placeholder="定义说话风格、能力边界和输出习惯。" placeholder-style="color:var(--rice-text-color-3)" />
+						<textarea class="prompt-input" v-model="createSystemPrompt" placeholder="定义说话风格、能力边界和输出习惯。" placeholder-style="color:var(--rice-text-color-3)" />
 						<text class="field-tip">创建后还能在聊天设置里继续修改。</text>
 					</view>
 				</scroll-view>
@@ -303,8 +303,13 @@
 				showCreateDialog: false as boolean,
 				showFirstRunGuide: false as boolean,
 				firstRunProviderIndex: 0 as number,
-				/** 创建表单数据 */
-				createData: buildDefaultAgentCreateData() as AgentCreateForm,
+				/** 创建表单数据：模板只绑定标量，避免 UTS 把对象字段 v-model 编成下标访问。 */
+				createTemplateKeyValue: '' as string,
+				createIconValue: '' as string,
+				createName: '' as string,
+				createDesc: '' as string,
+				createAvatarPath: '' as string,
+				createSystemPrompt: '' as string,
 			}
 		},
 		computed: {
@@ -321,11 +326,11 @@
 			},
 
 			createPreviewName(): string {
-				return readAgentCreatePreviewName(this.createData)
+				return readAgentCreatePreviewName(this.currentCreateData())
 			},
 
 			createPreviewDesc(): string {
-				return readAgentCreatePreviewDesc(this.createData)
+				return readAgentCreatePreviewDesc(this.currentCreateData())
 			}
 		},
 		onLoad() {
@@ -354,16 +359,48 @@
 				return readCreateTemplateDesc(tpl)
 			},
 
+			currentCreateData(): AgentCreateForm {
+				return {
+					templateKey: this.createTemplateKeyValue,
+					icon: this.createIconValue,
+					name: this.createName,
+					desc: this.createDesc,
+					avatar: this.createAvatarPath,
+					systemPrompt: this.createSystemPrompt,
+				} as AgentCreateForm
+			},
+
+			applyCreateData(data: AgentCreateForm): void {
+				this.createTemplateKeyValue = data.templateKey
+				this.createIconValue = data.icon
+				this.createName = data.name
+				this.createDesc = data.desc
+				this.createAvatarPath = data.avatar
+				this.createSystemPrompt = data.systemPrompt
+			},
+
 			createTemplateKey(): string {
-				return readAgentCreateTemplateKey(this.createData)
+				return readAgentCreateTemplateKey(this.currentCreateData())
 			},
 
 			createIcon(): string {
-				return readAgentCreateIcon(this.createData)
+				return readAgentCreateIcon(this.currentCreateData())
 			},
 
 			createAvatar(): string {
-				return readAgentCreateAvatar(this.createData)
+				return readAgentCreateAvatar(this.currentCreateData())
+			},
+
+			createIconItemClass(icon: string): string {
+				return this.createIcon() == icon ? 'icon-item icon-item-active' : 'icon-item'
+			},
+
+			createIconColor(icon: string): string {
+				return this.createIcon() == icon ? '#FFFFFF' : 'var(--rice-text-color-2)'
+			},
+
+			selectCreateIcon(icon: string): void {
+				this.createIconValue = icon
 			},
 
 			firstRunProviderName(item: UTSJSONObject): string {
@@ -440,7 +477,7 @@
 				}
 				const cropResult = getRuntimeState('crop_result')
 				if (cropResult != null && cropResult != '') {
-					this.createData.avatar = cropResult
+					this.createAvatarPath = cropResult
 				}
 				deleteRuntimeState('crop_result')
 				deleteRuntimeState('crop_target')
@@ -452,7 +489,7 @@
 			},
 
 			resetCreateData(): void {
-				this.createData = buildDefaultAgentCreateData()
+				this.applyCreateData(buildDefaultAgentCreateData())
 			},
 
 			openCreateDialog(): void {
@@ -570,15 +607,15 @@
 			},
 
 			selectCreateTemplate(tpl: UTSJSONObject): void {
-				this.createData = buildAgentCreateDataFromTemplate(tpl, this.createAvatar())
+				this.applyCreateData(buildAgentCreateDataFromTemplate(tpl, this.createAvatar()))
 			},
 
 			resetPromptByTemplate(): void {
-				this.createData.systemPrompt = resolveCreatePromptByTemplate(this.createTemplateKey())
+				this.createSystemPrompt = resolveCreatePromptByTemplate(this.createTemplateKey())
 			},
 
 			clearCreateAvatar(): void {
-				this.createData.avatar = ''
+				this.createAvatarPath = ''
 			},
 
 			/** 为新建私聊选择头像 */
@@ -609,7 +646,8 @@
 
 			/** 执行创建私聊 */
 			doCreateAgent() {
-				const name = readAgentCreateName(this.createData)
+				const data = this.currentCreateData()
+				const name = readAgentCreateName(data)
 				if (name == '') {
 					uni.showToast({ position: 'bottom',
 						title: '请输入名称',
@@ -620,7 +658,7 @@
 
 				// 默认模型从 SQLite app_settings 读取，缺省时回退内置模型。
 				const defaultModel = getAppSetting('settings_model')
-				const id = createAgentFromCreateData(this.createData, defaultModel)
+				const id = createAgentFromCreateData(data, defaultModel)
 
 				this.showCreateDialog = false
 				// 重置表单
