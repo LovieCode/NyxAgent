@@ -46,6 +46,8 @@
 				floatLongPressHandled: false as boolean,
 				recordStartTimer: 0 as number,
 				recordStartDelay: 360 as number,
+				isOpeningChat: false as boolean,
+				lastOpenChatAt: 0 as number,
 			}
 		},
 		computed: {
@@ -61,6 +63,21 @@
 			this.clearPendingVoiceStart()
 		},
 		methods: {
+			navigateToChatOnce(): void {
+				const now = Date.now()
+				if (this.isOpeningChat == true || now - this.lastOpenChatAt < 1200) {
+					return
+				}
+				this.isOpeningChat = true
+				this.lastOpenChatAt = now
+				uni.navigateTo({
+					url: '/pages/chat/chat'
+				})
+				setTimeout(() => {
+					this.isOpeningChat = false
+				}, 1200)
+			},
+
 			handleFloatTap(): void {
 				if (this.isTranscribing == true) {
 					uni.showToast({ position: 'bottom', title: '正在识别，稍等', icon: 'none' })
@@ -69,9 +86,7 @@
 				ensureNyxAdminAgent()
 				setActiveAgentRuntimeId(NYX_ADMIN_AGENT_ID)
 				clearActiveConversationRuntimeId()
-				uni.navigateTo({
-					url: '/pages/chat/chat'
-				})
+				this.navigateToChatOnce()
 			},
 
 			clearPendingVoiceStart(): void {
@@ -276,9 +291,7 @@
 				}
 				publishNyxFloatVoiceText(content)
 				uni.showToast({ position: 'bottom', title: '已发给当前私聊', icon: 'success' })
-				uni.navigateTo({
-					url: '/pages/chat/chat'
-				})
+				this.navigateToChatOnce()
 			}
 		}
 	}

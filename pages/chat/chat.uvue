@@ -1,6 +1,6 @@
 <template>
 	<view class="page-shell rice-theme-light" ref="shellRef">
-		<NavBar :title="headerTitle" showBack @back="goBack">
+		<NavBar :title="headerTitle" showBack :showNyxFloat="false" @back="goBack">
 			<template #right>
 				<view style="flex-direction:row;align-items:center;">
 					<view class="nav-icon-btn" @click="startNewConversation">
