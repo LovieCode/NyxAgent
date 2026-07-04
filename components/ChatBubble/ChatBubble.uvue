@@ -30,7 +30,7 @@
 		</view>
 
 		<view v-else-if="role == 'assistant' && msgSegmentation == true && renderContentParts.length > 1" class="assistant-segment-list">
-			<view v-for="(part, pi) in renderContentParts" :key="'assistant-segment-' + pi" class="ai-row">
+			<view v-for="(part, pi) in renderContentParts" :key="'assistant-segment-' + pi" class="ai-row assistant-segment-row">
 				<image v-if="agentAvatar != ''" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" @click.stop="onAvatarClick" />
 				<view v-else class="chat-avatar ai-avatar" @click.stop="onAvatarClick">
 					<text class="chat-avatar-text">AI</text>
@@ -703,7 +703,6 @@
 		background-color: var(--rice-background-2);
 		border-radius: 16px;
 		padding: 10px;
-		margin-bottom: 10px;
 	}
 	.ai-content:active {
 		background-color: #E5E7EB;
@@ -762,6 +761,9 @@
 		flex-direction: column;
 		align-items: flex-start;
 		width: 100%;
+	}
+	.assistant-segment-row {
+		margin-bottom: 8px;
 	}
 	.bubble-assistant {
 		flex-direction: column;

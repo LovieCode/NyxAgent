@@ -1265,12 +1265,13 @@
 	.message-list {
 		flex: 1;
 		flex-direction: column;
+		padding-top: 6px;
 	}
 
 	/* NavBar 右侧图标按钮 */
 	.nav-icon-btn {
-		width: 40px;
-		height: 40px;
+		width: 36px;
+		height: 36px;
 		justify-content: center;
 		align-items: center;
 	}
