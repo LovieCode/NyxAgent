@@ -963,7 +963,6 @@
 	.agent-scroll {
 		flex: 1;
 		background-color: #FAF7F5;
-		margin-bottom: 78px;
 	}
 
 	.home-content {
@@ -985,7 +984,7 @@
 	}
 
 	.home-scroll-bottom-spacer {
-		height: 24px;
+		height: 104px;
 		flex-shrink: 0;
 	}
 
