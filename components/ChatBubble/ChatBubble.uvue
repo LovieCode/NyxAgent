@@ -7,7 +7,7 @@
 					@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
 					@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
 					@touchend="onBubbleTouchEnd">
-					<view v-for="(part, pi) in contentParts" :key="'user-part-' + pi" class="part-wrap" :class="isLastContentPart(pi) == true ? '' : 'part-wrap-spaced'">
+					<view v-for="(part, pi) in renderContentParts" :key="'user-part-' + pi" class="part-wrap" :class="isLastContentPart(pi) == true ? '' : 'part-wrap-spaced'">
 						<view v-if="part.type == 'image' && part.url != ''" class="image-part">
 							<image :src="part.url" class="bubble-image" mode="widthFix" />
 							<view v-if="part.caption != ''" class="caption-card user-caption-card">
@@ -20,7 +20,7 @@
 							<text class="media-chip-text user-media-text">{{getPartLabel(part)}}</text>
 						</view>
 					</view>
-					<text v-if="contentParts.length == 0 && content != ''" class="text-user">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
+					<text v-if="renderContentParts.length == 0 && content != ''" class="text-user">{{content}}<text v-if="isStreaming" class="cursor">|</text></text>
 				</view>
 			</view>
 			<image v-if="userAvatar != ''" :src="userAvatar" class="chat-avatar user-avatar-image" mode="aspectFill" @click.stop="onAvatarClick" />
@@ -322,7 +322,7 @@
 				return buildChatContentParts(this.messageParts)
 			},
 			renderContentParts(): ChatContentPartView[] {
-				return buildChatRenderContentParts(this.contentParts, this.role, this.msgSegmentation)
+				return buildChatRenderContentParts(this.contentParts, this.role, this.msgSegmentation, this.isStreaming == true)
 			},
 			isErrorBool(): boolean {
 				return this.isError == true
@@ -364,10 +364,7 @@
 				this.$emit('avatarClick')
 			},
 			isLastContentPart(index: number): boolean {
-				if (this.role == 'assistant') {
-					return index == this.renderContentParts.length - 1
-				}
-				return index == this.contentParts.length - 1
+				return index == this.renderContentParts.length - 1
 			},
 			syncToolTimer() {
 				const hasRunning = hasRunningChatToolBlock(this.displayBlocks)

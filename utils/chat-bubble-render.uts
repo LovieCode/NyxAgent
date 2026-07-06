@@ -26,6 +26,9 @@ export type ChatDisplayBlock = {
 	result: string
 }
 
+const CHAT_STREAM_TEXT_TAIL_LIMIT = 5000
+const CHAT_LONG_TEXT_CHUNK_SIZE = 1600
+
 function readStringField(obj: UTSJSONObject, key: string): string {
 	const raw = obj[key] as string | null
 	return raw != null ? raw : ''
@@ -174,15 +177,38 @@ function copyContentPart(part: ChatContentPartView, text: string): ChatContentPa
 	} as ChatContentPartView
 }
 
-export function buildChatRenderContentParts(source: ChatContentPartView[], role: string, msgSegmentation: boolean): ChatContentPartView[] {
+function buildStreamingDisplayText(text: string, isStreaming: boolean): string {
+	if (isStreaming == false) { return text }
+	if (text.length <= CHAT_STREAM_TEXT_TAIL_LIMIT) { return text }
+	return '…\n' + text.substring(text.length - CHAT_STREAM_TEXT_TAIL_LIMIT)
+}
+
+function pushChunkedContentPart(result: ChatContentPartView[], part: ChatContentPartView, text: string): void {
+	if (text == '') {
+		result.push(copyContentPart(part, text))
+		return
+	}
+	let start = 0
+	while (start < text.length) {
+		let end = start + CHAT_LONG_TEXT_CHUNK_SIZE
+		if (end > text.length) { end = text.length }
+		result.push(copyContentPart(part, text.substring(start, end)))
+		start = end
+	}
+}
+
+export function buildChatRenderContentParts(source: ChatContentPartView[], role: string, msgSegmentation: boolean, isStreaming: boolean): ChatContentPartView[] {
 	const result: ChatContentPartView[] = []
 	for (let i = 0; i < source.length; i++) {
 		const part = source[i]
+		const displayText = buildStreamingDisplayText(part.text, isStreaming == true && part.type == 'plain')
 		if (role == 'assistant' && msgSegmentation == true && part.type == 'plain') {
-			const segments = splitChatTextSegments(part.text)
+			const segments = splitChatTextSegments(displayText)
 			for (let j = 0; j < segments.length; j++) {
-				result.push(copyContentPart(part, segments[j]))
+				pushChunkedContentPart(result, part, segments[j])
 			}
+		} else if (part.type == 'plain' || part.type == 'location') {
+			pushChunkedContentPart(result, part, displayText)
 		} else {
 			result.push(copyContentPart(part, part.text))
 		}

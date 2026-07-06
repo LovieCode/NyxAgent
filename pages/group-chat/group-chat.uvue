@@ -15,7 +15,10 @@
 
 		<view class="message-scroll-wrap">
 			<scroll-view id="group-message-scroll" class="message-list" :scroll-y="true" :scroll-with-animation="false" :show-scrollbar="false" :scroll-top="scrollTop" @scroll="onMsgScroll" @touchmove="onMsgTouchMove">
-				<view v-for="(msg, index) in visibleMessages" :key="msg.id != null ? msg.id : index">
+				<view v-if="canLoadOlderMessages == true" class="load-older-wrap" @click="loadOlderMessages">
+					<text class="load-older-text">加载更早 {{olderMessageCount}} 段消息</text>
+				</view>
+				<view v-for="(msg, index) in visibleMessages" :key="msg.id != null ? msg.id : messageWindowStart + index">
 					<ChatBubble
 						:role="msg.role"
 						:content="msg.content != null ? msg.content : ''"
@@ -35,7 +38,7 @@
 						@avatarClick="openAgentPrivateChat(msg)"
 					/>
 				</view>
-				<view v-if="visibleMessages.length == 0" class="empty-state">
+				<view v-if="allVisibleMessageCount == 0" class="empty-state">
 					<text class="empty-text">{{emptyTitle}}</text>
 					<text class="empty-hint">发一句话，本群调度会安排成员接招。</text>
 				</view>
@@ -179,6 +182,12 @@
 		resolveChatScrollbarDragTarget,
 		resolveChatScrollbarTrackTarget,
 	} from '@/utils/chat-scroll-helpers.uts'
+	import {
+		CHAT_MESSAGE_WINDOW_BASE_SIZE,
+		buildChatMessageWindowFromStart,
+		countChatMessageRenderUnits,
+		resolveNextChatMessageWindowCount,
+	} from '@/utils/chat-message-window.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { NYX_FLOAT_CONTEXT_GROUP, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
 	import {
@@ -257,6 +266,7 @@
 				toolbarSwipeMoved: false as boolean,
 				toolbarSwipeLockedUntil: 0 as number,
 				scrollTop: 0 as number,
+				messageWindowCount: CHAT_MESSAGE_WINDOW_BASE_SIZE as number,
 				scrollViewHeight: 0 as number,
 				scrollContentHeight: 0 as number,
 				scrollOffset: 0 as number,
@@ -283,8 +293,26 @@
 				const group = this.group
 				return group != null ? group.name : '群聊'
 			},
-			visibleMessages(): UTSJSONObject[] {
+			allVisibleMessages(): UTSJSONObject[] {
 				return getVisibleGroupMessages(this.messages)
+			},
+			visibleMessages(): UTSJSONObject[] {
+				return buildChatMessageWindowFromStart(this.allVisibleMessages, this.messageWindowStart)
+			},
+			allVisibleMessageCount(): number {
+				return this.allVisibleMessages.length
+			},
+			totalMessageUnitCount(): number {
+				return this.countGroupMessageRenderUnitsBefore(this.allVisibleMessages, this.allVisibleMessages.length)
+			},
+			messageWindowStart(): number {
+				return this.resolveGroupMessageWindowStart(this.allVisibleMessages, this.messageWindowCount)
+			},
+			canLoadOlderMessages(): boolean {
+				return this.messageWindowStart > 0
+			},
+			olderMessageCount(): number {
+				return this.countGroupMessageRenderUnitsBefore(this.allVisibleMessages, this.messageWindowStart)
 			},
 			toolbarTrackStyle(): string {
 				return buildGroupToolbarTrackStyle(this.toolbarPageIndex, this.toolbarViewportWidth, this.toolbarDragOffset)
@@ -358,6 +386,7 @@
 				setActiveGroupSessionId(session.id)
 				this.messages = getGroupMessages(group.id, session.id)
 				this.normalizeUserSenderNames()
+				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
 			},
 			goBack(): void { uni.navigateBack() },
@@ -556,6 +585,45 @@
 			scrollToBottomFromButton(): void {
 				this.scrollToBottom()
 			},
+			countGroupMessageRenderUnits(msg: UTSJSONObject): number {
+				return countChatMessageRenderUnits(msg, readGroupMessageMsgSegmentation(msg))
+			},
+			countGroupMessageRenderUnitsBefore(source: UTSJSONObject[], endIndex: number): number {
+				let limit = endIndex
+				if (limit < 0) { limit = 0 }
+				if (limit > source.length) { limit = source.length }
+				let count = 0
+				for (let i = 0; i < limit; i++) {
+					count = count + this.countGroupMessageRenderUnits(source[i])
+				}
+				return count
+			},
+			resolveGroupMessageWindowStart(source: UTSJSONObject[], windowUnits: number): number {
+				if (source.length == 0) { return 0 }
+				if (windowUnits <= 0) { return source.length }
+				let remaining = windowUnits
+				let start = source.length
+				for (let i = source.length - 1; i >= 0; i--) {
+					const units = this.countGroupMessageRenderUnits(source[i])
+					if (start < source.length && remaining - units < 0) {
+						break
+					}
+					remaining = remaining - units
+					start = i
+					if (remaining <= 0) {
+						break
+					}
+				}
+				return start
+			},
+			loadOlderMessages(): void {
+				this.messageWindowCount = resolveNextChatMessageWindowCount(this.messageWindowCount, this.totalMessageUnitCount)
+				this.scheduleMeasureMessageScroll()
+			},
+			resetMessageWindowToRecent(): void {
+				this.messageWindowCount = CHAT_MESSAGE_WINDOW_BASE_SIZE
+				this.scheduleMeasureMessageScroll()
+			},
 			onInputLineChange(e: UniTextareaLineChangeEvent): void {
 				this.inputHeight = calcGroupInputHeight(e.detail.lineCount)
 				this.scheduleMeasureMessageScroll()
@@ -626,6 +694,7 @@
 				const msg = createGroupUserMessage(this.groupId, this.sessionId, text, profile.nickname)
 				this.messages.push(msg)
 				this.saveMessages()
+				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
 				this.loopTurns = 0
 				this.runScheduler('用户发送消息')
@@ -670,6 +739,7 @@
 				const msg = createGroupUserImageMessage(this.groupId, this.sessionId, imagePath, profile.nickname)
 				this.messages.push(msg)
 				this.saveMessages()
+				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
 				return this.messages.length - 1
 			},
@@ -817,6 +887,7 @@
 				this.userAvatar = profile.avatar
 				this.messages.push(createGroupUserFileMessage(this.groupId, this.sessionId, file.name, file.path, profile.nickname, fileText))
 				this.saveMessages()
+				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
 				this.startGroupGenerationForMedia('用户发送了一个文件：' + file.name)
 			},
@@ -1266,6 +1337,28 @@
 	.scroll-anchor {
 		height: 2px;
 		flex-shrink: 0;
+	}
+
+	.load-older-wrap {
+		margin-left: 52px;
+		margin-right: 52px;
+		margin-top: 4px;
+		margin-bottom: 8px;
+		height: 34px;
+		border-radius: 17px;
+		background-color: rgba(255, 255, 255, 0.78);
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(241, 229, 234, 0.92);
+		align-items: center;
+		justify-content: center;
+	}
+
+	.load-older-text {
+		font-size: 12px;
+		line-height: 16px;
+		color: #DB6F92;
+		font-weight: bold;
 	}
 
 	.chat-custom-scrollbar {

@@ -1,0 +1,164 @@
+import {
+	CHAT_ROLE_ASSISTANT,
+	getMessageParts,
+} from '@/utils/chat-models.uts'
+
+export const CHAT_MESSAGE_WINDOW_BASE_SIZE = 80
+export const CHAT_MESSAGE_WINDOW_STEP_SIZE = 80
+const CHAT_MESSAGE_WINDOW_TEXT_CHUNK_SIZE = 1600
+
+function readWindowStringField(obj: UTSJSONObject, key: string): string {
+	const raw = obj[key] as string | null
+	return raw != null ? raw : ''
+}
+
+function countTextChunkUnits(textLength: number): number {
+	if (textLength <= 0) { return 0 }
+	let units = 0
+	let remain = textLength
+	while (remain > 0) {
+		units = units + 1
+		remain = remain - CHAT_MESSAGE_WINDOW_TEXT_CHUNK_SIZE
+	}
+	return units
+}
+
+function countTextParagraphSegments(text: string): number {
+	if (text == '') { return 0 }
+	let count = 0
+	let paragraphActive = false
+	let lineHasText = false
+	let paragraphLength = 0
+	let lineLength = 0
+	for (let i = 0; i <= text.length; i++) {
+		const isEnd = i == text.length
+		const ch = isEnd == true ? '\n' : text.charAt(i)
+		if (ch == '\r') {
+			continue
+		}
+		if (ch == '\n') {
+			if (lineHasText == true) {
+				if (paragraphActive == true) {
+					paragraphLength = paragraphLength + 1
+				}
+				paragraphLength = paragraphLength + lineLength
+				paragraphActive = true
+			} else if (paragraphActive == true) {
+				count = count + countTextChunkUnits(paragraphLength)
+				paragraphActive = false
+				paragraphLength = 0
+			}
+			lineHasText = false
+			lineLength = 0
+		} else if (ch != ' ' && ch != '\t') {
+			lineHasText = true
+			lineLength = lineLength + 1
+		} else {
+			lineLength = lineLength + 1
+		}
+	}
+	if (paragraphActive == true) {
+		count = count + countTextChunkUnits(paragraphLength)
+	}
+	if (count == 0 && text.trim() != '') {
+		return 1
+	}
+	return count
+}
+
+export function countChatMessageRenderUnits(msg: UTSJSONObject, msgSegmentation: boolean): number {
+	const role = readWindowStringField(msg, 'role')
+	const parts = getMessageParts(msg)
+	let count = 0
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		const partType = readWindowStringField(part, 'type')
+		if (partType == 'think' || partType == 'thinking' || partType == 'tool_call' || partType == 'toolCall') {
+			continue
+		}
+		if (role == CHAT_ROLE_ASSISTANT && msgSegmentation == true && (partType == 'plain' || partType == 'text')) {
+			const textCount = countTextParagraphSegments(readWindowStringField(part, 'text'))
+			count = count + (textCount > 0 ? textCount : 1)
+		} else {
+			count = count + 1
+		}
+	}
+	if (count <= 0) { return 1 }
+	return count
+}
+
+export function countChatMessageRenderUnitsForList(source: UTSJSONObject[], msgSegmentation: boolean): number {
+	let count = 0
+	for (let i = 0; i < source.length; i++) {
+		count = count + countChatMessageRenderUnits(source[i], msgSegmentation)
+	}
+	return count
+}
+
+export function countChatMessageRenderUnitsBefore(source: UTSJSONObject[], endIndex: number, msgSegmentation: boolean): number {
+	let limit = endIndex
+	if (limit < 0) { limit = 0 }
+	if (limit > source.length) { limit = source.length }
+	let count = 0
+	for (let i = 0; i < limit; i++) {
+		count = count + countChatMessageRenderUnits(source[i], msgSegmentation)
+	}
+	return count
+}
+
+export function resolveChatMessageWindowStartByUnits(source: UTSJSONObject[], windowUnits: number, msgSegmentation: boolean): number {
+	if (source.length == 0) { return 0 }
+	if (windowUnits <= 0) { return source.length }
+	let remaining = windowUnits
+	let start = source.length
+	for (let i = source.length - 1; i >= 0; i--) {
+		const units = countChatMessageRenderUnits(source[i], msgSegmentation)
+		if (start < source.length && remaining - units < 0) {
+			break
+		}
+		remaining = remaining - units
+		start = i
+		if (remaining <= 0) {
+			break
+		}
+	}
+	return start
+}
+
+export function resolveChatMessageWindowStart(total: number, windowCount: number): number {
+	if (total <= 0) { return 0 }
+	if (windowCount <= 0) { return total }
+	if (total <= windowCount) { return 0 }
+	return total - windowCount
+}
+
+export function buildChatMessageWindow(source: UTSJSONObject[], windowCount: number): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	const start = resolveChatMessageWindowStart(source.length, windowCount)
+	for (let i = start; i < source.length; i++) {
+		result.push(source[i])
+	}
+	return result
+}
+
+export function buildChatMessageWindowFromStart(source: UTSJSONObject[], startIndex: number): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	let start = startIndex
+	if (start < 0) { start = 0 }
+	if (start > source.length) { start = source.length }
+	for (let i = start; i < source.length; i++) {
+		result.push(source[i])
+	}
+	return result
+}
+
+export function resolveNextChatMessageWindowCount(currentCount: number, total: number): number {
+	let nextCount = currentCount + CHAT_MESSAGE_WINDOW_STEP_SIZE
+	if (nextCount < CHAT_MESSAGE_WINDOW_BASE_SIZE) {
+		nextCount = CHAT_MESSAGE_WINDOW_BASE_SIZE
+	}
+	if (nextCount > total) {
+		nextCount = total
+	}
+	return nextCount
+}

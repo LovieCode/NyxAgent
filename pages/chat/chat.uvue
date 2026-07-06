@@ -19,8 +19,11 @@
 		<!-- 消息列表 -->
 		<view class="message-scroll-wrap">
 			<scroll-view id="chat-message-scroll" class="message-list" :scroll-y="true" :scroll-with-animation="false" :show-scrollbar="false" :scroll-top="scrollTop" @scroll="onMsgScroll" @touchmove="onMsgTouchMove">
-				<view v-for="(msg, index) in messages" :key="index">
-					<view v-if="editingIndex == index" class="inline-edit-wrap" :class="msg.role == 'user' ? 'inline-edit-user' : 'inline-edit-ai'">
+				<view v-if="canLoadOlderMessages == true" class="load-older-wrap" @click="loadOlderMessages">
+					<text class="load-older-text">加载更早 {{olderMessageCount}} 段消息</text>
+				</view>
+				<view v-for="(msg, index) in visibleMessages" :key="messageWindowStart + index">
+					<view v-if="editingIndex == messageWindowStart + index" class="inline-edit-wrap" :class="msg.role == 'user' ? 'inline-edit-user' : 'inline-edit-ai'">
 						<textarea class="inline-edit-input" v-model="editBuffer" auto-height />
 						<view class="inline-edit-actions">
 							<text class="inline-edit-cancel" @click="cancelEdit">取消</text>
@@ -42,7 +45,7 @@
 						:isError="msg.isError == true"
 						:isStreaming="msg.isStreaming == true"
 						:cancelToken="longpressCancelToken"
-						@bubbleLongpress="onMessageLongpress(index)"
+						@bubbleLongpress="onMessageLongpress(messageWindowStart + index)"
 					/>
 				</view>
 				<view v-if="messages.length == 0" class="empty-state">
@@ -209,6 +212,14 @@
 		resolveChatScrollbarDragTarget,
 		resolveChatScrollbarTrackTarget,
 	} from '@/utils/chat-scroll-helpers.uts'
+	import {
+		CHAT_MESSAGE_WINDOW_BASE_SIZE,
+		buildChatMessageWindowFromStart,
+		countChatMessageRenderUnitsBefore,
+		countChatMessageRenderUnitsForList,
+		resolveChatMessageWindowStartByUnits,
+		resolveNextChatMessageWindowCount,
+	} from '@/utils/chat-message-window.uts'
 	import { isChooseCancelError, parsePickedImagePath, readPickedFileSelection, readPickedImageSelection } from '@/utils/attachment-reader.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { NYX_FLOAT_CONTEXT_CHAT, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
@@ -272,6 +283,8 @@
 				_streamScrollTick: 0 as number,
 				/** 滚动位置 */
 				scrollTop: 0 as number,
+				/** 当前 UI 渲染的消息窗口大小，完整上下文不受影响 */
+				messageWindowCount: CHAT_MESSAGE_WINDOW_BASE_SIZE as number,
 				/** 消息滚动容器高度 */
 				scrollViewHeight: 0 as number,
 				/** 消息内容总高度 */
@@ -308,6 +321,21 @@
 			/** 头部标题 */
 			headerTitle(): string {
 				return this.currentAgentName != '' ? this.currentAgentName : 'AI 助手'
+			},
+			visibleMessages(): UTSJSONObject[] {
+				return buildChatMessageWindowFromStart(this.messages, this.messageWindowStart)
+			},
+			messageWindowStart(): number {
+				return resolveChatMessageWindowStartByUnits(this.messages, this.messageWindowCount, this.msgSegmentation)
+			},
+			canLoadOlderMessages(): boolean {
+				return this.messageWindowStart > 0
+			},
+			olderMessageCount(): number {
+				return countChatMessageRenderUnitsBefore(this.messages, this.messageWindowStart, this.msgSegmentation)
+			},
+			totalMessageUnitCount(): number {
+				return countChatMessageRenderUnitsForList(this.messages, this.msgSegmentation)
 			},
 			scrollbarThumbStyle(): string {
 				return buildChatScrollbarThumbStyle(this.scrollContentHeight, this.scrollViewHeight, this.scrollOffset)
@@ -546,6 +574,16 @@
 				this.scrollToBottom()
 			},
 
+			loadOlderMessages(): void {
+				this.messageWindowCount = resolveNextChatMessageWindowCount(this.messageWindowCount, this.totalMessageUnitCount)
+				this.scheduleMeasureMessageScroll()
+			},
+
+			resetMessageWindowToRecent(): void {
+				this.messageWindowCount = CHAT_MESSAGE_WINDOW_BASE_SIZE
+				this.scheduleMeasureMessageScroll()
+			},
+
 			sendUserPlainText(content: string): void {
 				const text = content.trim()
 				if (text == '' || this.isGenerating == true) {
@@ -558,6 +596,7 @@
 				this.savedFlag = false
 				this.addTextMessage('user', text)
 				this.inputText = ''
+				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
 				this.simulateAIResponse(text)
 			},
@@ -678,6 +717,7 @@
 			addImageMessage(imagePath: string): number {
 				const index = appendChatImageMessage(this.messages, imagePath)
 				if (index < 0) { return -1 }
+				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
 				return index
 			},
@@ -725,6 +765,7 @@
 					return
 				}
 				appendChatFileMessage(this.messages, picked.file.name, picked.file.path, picked.contextText)
+				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
 				this.startGenerationForMedia('用户发送了一个文件：' + picked.file.name)
 			},
@@ -733,6 +774,7 @@
 			addLocationMessage(location: UTSJSONObject) {
 				const content = buildChatLocationContent(location)
 				appendChatLocationMessage(this.messages, content)
+				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
 				this.startGenerationForMedia(content)
 			},
@@ -740,6 +782,7 @@
 			/** 添加语音消息 */
 			addVoiceMessage(tempPath: string) {
 				if (appendChatVoiceMessage(this.messages, tempPath) == false) { return }
+				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
 				this.savedFlag = false
 				this.saveCurrentConversation()
@@ -1223,7 +1266,7 @@
 				this.scrollOffset = 0
 				this.scrollContentHeight = 0
 				this.isAtBottom = true
-				this.scheduleMeasureMessageScroll()
+				this.resetMessageWindowToRecent()
 			},
 
 			saveCurrentConversation() {
@@ -1370,6 +1413,28 @@
 	.scroll-anchor {
 		height: 2px;
 		flex-shrink: 0;
+	}
+
+	.load-older-wrap {
+		margin-left: 52px;
+		margin-right: 52px;
+		margin-top: 4px;
+		margin-bottom: 8px;
+		height: 34px;
+		border-radius: 17px;
+		background-color: rgba(255, 255, 255, 0.78);
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(241, 229, 234, 0.92);
+		align-items: center;
+		justify-content: center;
+	}
+
+	.load-older-text {
+		font-size: 12px;
+		line-height: 16px;
+		color: #DB6F92;
+		font-weight: bold;
 	}
 
 	.chat-custom-scrollbar {
