@@ -4,10 +4,25 @@ node_modules/
 # Build output
 unpackage/
 dist/
+.tmp/
+logs/
 *.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
 *.tmp
 *.temp
 *.bak
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+*.p12
+*.mobileprovision
+local.properties
 
 # IDE / local project config
 .idea/
@@ -20,15 +35,26 @@ AstrBot/
 Agentopia/
 .omo/
 .codex/
+.codex-screenshots/
 .agents/
 .trae/
 .claude/
+.opencode/
 CLAUDE.md
 AGENTS1.md
 AGENTS.backup-*.md
+
+# Generated design previews (keep markdown specs, skip raster drafts)
+design/**/*.png
+design/**/*.jpg
+design/**/*.jpeg
+design/**/*.webp
+design/**/*.gif
 
 # OS
 .DS_Store
 Thumbs.db
 
 *.apk
+*.aab
+*.ipa
