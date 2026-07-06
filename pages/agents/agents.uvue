@@ -41,26 +41,26 @@
 			<share-element share-key="agent-list">
 				<view class="home-content">
 					<view class="filter-row">
-						<view class="filter-chip filter-chip-active">
-							<text class="filter-chip-text filter-chip-text-active">全部</text>
+						<view :class="filterChipClass('all')" @click="selectFilter('all')">
+							<text :class="filterTextClass('all')">全部</text>
 						</view>
-						<view class="filter-chip">
-							<text class="filter-chip-text">私聊</text>
+						<view :class="filterChipClass('private')" @click="selectFilter('private')">
+							<text :class="filterTextClass('private')">私聊</text>
 						</view>
-						<view class="filter-chip">
-							<text class="filter-chip-text">群聊</text>
+						<view :class="filterChipClass('group')" @click="selectFilter('group')">
+							<text :class="filterTextClass('group')">群聊</text>
 						</view>
-						<view class="filter-chip">
-							<text class="filter-chip-text">收藏</text>
+						<view :class="filterChipClass('favorite')" @click="selectFilter('favorite')">
+							<text :class="filterTextClass('favorite')">收藏</text>
 						</view>
 					</view>
 
-					<view class="list-section-head">
-						<text class="list-section-title">我的联系人</text>
-						<text class="list-section-more">查看全部 ›</text>
+					<view v-if="showPrivateSection()" class="list-section-head">
+						<text class="list-section-title">{{privateSectionTitle}}</text>
+						<text v-if="activeFilter != 'all'" class="list-section-more" @click="selectFilter('all')">查看全部 ›</text>
 					</view>
 
-					<view class="list-content">
+					<view v-if="showPrivateSection()" class="list-content">
 						<view
 							v-for="(item, index) in privateChatList"
 							:key="getChatKey(item)"
@@ -90,17 +90,13 @@
 								<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 							</view>
 						</view>
-						<view v-if="chatList.length == 0" class="empty-state">
-							<text class="empty-title">还没有会话</text>
-							<text class="empty-desc">点右上角 +，新建私聊或群聊。</text>
-						</view>
 					</view>
 
-					<view v-if="groupChatList.length > 0" class="list-section-head group-section-head">
-						<text class="list-section-title">群组聊天</text>
+					<view v-if="showGroupSection()" class="list-section-head group-section-head">
+						<text class="list-section-title">{{groupSectionTitle}}</text>
 					</view>
 
-					<view v-if="groupChatList.length > 0" class="list-content">
+					<view v-if="showGroupSection()" class="list-content">
 						<view
 							v-for="(item, index) in groupChatList"
 							:key="getChatKey(item)"
@@ -128,6 +124,11 @@
 								<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 							</view>
 						</view>
+					</view>
+
+					<view v-if="hasVisibleChats == false" class="empty-state">
+						<text class="empty-title">{{emptyTitle}}</text>
+						<text class="empty-desc">{{emptyDesc}}</text>
 					</view>
 
 					<view class="home-scroll-bottom-spacer"></view>
@@ -366,6 +367,7 @@
 				agentList: [] as UTSJSONObject[],
 				groupList: [] as GroupChat[],
 				chatList: [] as UTSJSONObject[],
+				activeFilter: 'all' as string,
 				statusBarHeight: 0 as number,
 				showCreateMenu: false as boolean,
 				showCreateDialog: false as boolean,
@@ -399,10 +401,13 @@
 
 			privateChatList(): UTSJSONObject[] {
 				const list = [] as UTSJSONObject[]
+				if (this.activeFilter == 'group') { return list }
 				for (let i = 0; i < this.chatList.length; i++) {
 					const item = this.chatList[i]
 					if (isAgentGroupChatItem(item) == false) {
-						list.push(item)
+						if (this.activeFilter != 'favorite' || this.isFavoriteChatItem(item) == true) {
+							list.push(item)
+						}
 					}
 				}
 				return list
@@ -410,13 +415,45 @@
 
 			groupChatList(): UTSJSONObject[] {
 				const list = [] as UTSJSONObject[]
+				if (this.activeFilter == 'private') { return list }
 				for (let i = 0; i < this.chatList.length; i++) {
 					const item = this.chatList[i]
 					if (isAgentGroupChatItem(item) == true) {
-						list.push(item)
+						if (this.activeFilter != 'favorite' || this.isFavoriteChatItem(item) == true) {
+							list.push(item)
+						}
 					}
 				}
 				return list
+			},
+
+			hasVisibleChats(): boolean {
+				return this.privateChatList.length > 0 || this.groupChatList.length > 0
+			},
+
+			privateSectionTitle(): string {
+				if (this.activeFilter == 'favorite') { return '收藏私聊' }
+				if (this.activeFilter == 'private') { return '私聊联系人' }
+				return '我的联系人'
+			},
+
+			groupSectionTitle(): string {
+				if (this.activeFilter == 'favorite') { return '收藏群聊' }
+				return '群组聊天'
+			},
+
+			emptyTitle(): string {
+				if (this.activeFilter == 'favorite') { return '还没有收藏会话' }
+				if (this.activeFilter == 'private') { return '还没有私聊' }
+				if (this.activeFilter == 'group') { return '还没有群聊' }
+				return '还没有会话'
+			},
+
+			emptyDesc(): string {
+				if (this.activeFilter == 'favorite') { return '收藏过的会话会出现在这里。' }
+				if (this.activeFilter == 'private') { return '点右上角 +，新建一个私聊联系人。' }
+				if (this.activeFilter == 'group') { return '点右上角 +，新建一个群聊。' }
+				return '点右上角 +，新建私聊或群聊。'
 			}
 		},
 		onLoad() {
@@ -618,6 +655,41 @@
 
 			getChatKey(item: UTSJSONObject): string {
 				return readAgentChatKey(item)
+			},
+
+			selectFilter(filter: string): void {
+				this.activeFilter = filter
+				this.closeCreateMenu()
+			},
+
+			filterChipClass(filter: string): string {
+				return this.activeFilter == filter ? 'filter-chip filter-chip-active' : 'filter-chip'
+			},
+
+			filterTextClass(filter: string): string {
+				return this.activeFilter == filter ? 'filter-chip-text filter-chip-text-active' : 'filter-chip-text'
+			},
+
+			isFavoriteChatItem(item: UTSJSONObject): boolean {
+				const favoriteBool = item['favorite'] as boolean | null
+				if (favoriteBool == true) { return true }
+				const starredBool = item['starred'] as boolean | null
+				if (starredBool == true) { return true }
+				const pinnedNumber = item['pinned'] as number | null
+				if (pinnedNumber != null && pinnedNumber > 0) { return true }
+				const favoriteText = item['favorite'] as string | null
+				if (favoriteText == 'true' || favoriteText == '1') { return true }
+				const starredText = item['starred'] as string | null
+				if (starredText == 'true' || starredText == '1') { return true }
+				return false
+			},
+
+			showPrivateSection(): boolean {
+				return this.privateChatList.length > 0
+			},
+
+			showGroupSection(): boolean {
+				return this.groupChatList.length > 0
 			},
 
 			getChatName(item: UTSJSONObject): string {
@@ -903,7 +975,7 @@
 
 	.home-content {
 		flex-direction: column;
-		padding: 6px 24px 16px;
+		padding: 6px 18px 16px;
 	}
 
 	.home-tabbar-area {
@@ -928,6 +1000,8 @@
 		flex-direction: row;
 		align-items: center;
 		margin-top: 6px;
+		margin-left: 6px;
+		margin-right: 6px;
 	}
 
 	.filter-chip {
@@ -967,6 +1041,8 @@
 		justify-content: space-between;
 		margin-top: 22px;
 		margin-bottom: 6px;
+		margin-left: 6px;
+		margin-right: 6px;
 	}
 
 	.group-section-head {
@@ -990,6 +1066,8 @@
 
 	/* 点击热区：透明 padding 也归属当前会话，避免卡片间隔点不动 */
 	.agent-item-hit {
+		padding-left: 6px;
+		padding-right: 6px;
 		padding-top: 5px;
 		padding-bottom: 5px;
 	}
@@ -1108,6 +1186,8 @@
 	}
 
 	.empty-state {
+		margin-left: 6px;
+		margin-right: 6px;
 		padding: 38px 16px;
 		align-items: center;
 		justify-content: center;

@@ -22,6 +22,16 @@ function readNumberField(obj: UTSJSONObject, key: string): number {
 	return value != null ? value : 0
 }
 
+function readBooleanishField(obj: UTSJSONObject, boolKey: string, numberKey: string): boolean {
+	const boolValue = obj[boolKey] as boolean | null
+	if (boolValue == true) { return true }
+	const numberValue = obj[numberKey] as number | null
+	if (numberValue != null && numberValue > 0) { return true }
+	const textValue = obj[boolKey] as string | null
+	if (textValue == 'true' || textValue == '1') { return true }
+	return false
+}
+
 /** 安全获取私聊头像路径 */
 export function readAgentListAvatar(agent: UTSJSONObject): string {
 	return readStringField(agent, 'avatar')
@@ -80,6 +90,7 @@ function pushAgentChatItems(result: UTSJSONObject[], agents: UTSJSONObject[]): v
 			icon: readStringField(agent, 'icon'),
 			avatar: readAgentListAvatar(agent),
 			updatedAt: readAgentListUpdatedAt(id),
+			favorite: readBooleanishField(agent, 'favorite', 'pinned') || readBooleanishField(agent, 'starred', 'pinned'),
 		} as UTSJSONObject)
 	}
 }
@@ -95,6 +106,7 @@ function pushGroupChatItems(result: UTSJSONObject[], groups: GroupChat[]): void 
 			icon: 'robot',
 			avatar: '',
 			updatedAt: group.updatedAt,
+			favorite: false,
 		} as UTSJSONObject)
 	}
 }

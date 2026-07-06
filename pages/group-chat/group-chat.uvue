@@ -43,7 +43,7 @@
 		<view class="chat-bottom">
 			<view class="input-bar">
 				<view class="toolbar-toggle" @click="toggleToolPanel">
-					<oui-icon-unix name="plus" size="18px" color="#FFFFFF" />
+					<oui-icon-unix name="plus" size="18px" color="#DB6F92" />
 				</view>
 				<view class="input-wrap">
 					<textarea class="text-input" v-model="inputText" :style="{ height: inputHeight + 'px' }" placeholder="给群里发消息..." placeholder-style="color:var(--rice-text-color-3)" @linechange="onInputLineChange" :disabled="isGenerating == true" />
@@ -1152,7 +1152,7 @@
 		border-width: 1px;
 		border-style: solid;
 		border-color: rgba(241, 229, 234, 0.92);
-		box-shadow: 0 -10px 26px rgba(216, 140, 165, 0.06);
+		box-shadow: 0 -4px 14px rgba(216, 140, 165, 0.035);
 	}
 
 	.input-bar {
@@ -1160,18 +1160,21 @@
 		align-items: center;
 		padding-left: 14px;
 		padding-right: 14px;
-		padding-top: 10px;
-		padding-bottom: 10px;
+		padding-top: 8px;
+		padding-bottom: 8px;
 	}
 
 	.toolbar-toggle {
-		width: 34px;
-		height: 34px;
-		border-radius: 17px;
+		width: 32px;
+		height: 32px;
+		border-radius: 16px;
 		justify-content: center;
 		align-items: center;
-		background-color: var(--rice-primary-color);
-		box-shadow: 0 8px 16px rgba(251, 143, 171, 0.18);
+		background-color: #FFF0F5;
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(251, 143, 171, 0.32);
+		box-shadow: 0 2px 8px rgba(216, 140, 165, 0.055);
 	}
 
 	.input-wrap {
@@ -1182,8 +1185,8 @@
 		border-radius: 18px;
 		padding-left: 10px;
 		padding-right: 10px;
-		margin-left: 8px;
-		margin-right: 8px;
+		margin-left: 7px;
+		margin-right: 7px;
 		border-width: 1px;
 		border-style: solid;
 		border-color: #F0E5EA;
@@ -1204,15 +1207,16 @@
 	}
 
 	.send-chip {
-		height: 34px;
-		min-width: 50px;
-		border-radius: 17px;
-		padding-left: 14px;
-		padding-right: 14px;
+		height: 32px;
+		min-width: 44px;
+		border-radius: 16px;
+		padding-left: 12px;
+		padding-right: 12px;
+		margin-left: 2px;
 		background-color: var(--rice-primary-color);
 		align-items: center;
 		justify-content: center;
-		box-shadow: 0 8px 18px rgba(251, 143, 171, 0.18);
+		box-shadow: 0 3px 10px rgba(251, 143, 171, 0.10);
 	}
 
 	.send-chip-stop {

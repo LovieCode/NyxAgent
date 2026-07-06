@@ -41,21 +41,25 @@
 <style>
 	/* 语音按钮 - 浅灰背景 */
 	.voice-btn {
-		width: 36px;
-		height: 36px;
-		border-radius: 18px;
-		background-color: #F3F4F6;
+		width: 32px;
+		height: 32px;
+		border-radius: 16px;
+		background-color: #FFF7FA;
 		justify-content: center;
 		align-items: center;
-		margin-left: 8px;
+		margin-left: 5px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #F1E5EA;
 	}
 
 	/* 监听中 - 淡粉强调 */
 	.voice-btn-active {
 		background-color: #FB8FAB;
-		width: 42px;
-		height: 42px;
-		border-radius: 21px;
+		width: 34px;
+		height: 34px;
+		border-radius: 17px;
+		border-color: rgba(251, 143, 171, 0.42);
 	}
 
 	/* 图标由 oui-icon-unix 渲染 */
