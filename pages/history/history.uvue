@@ -590,7 +590,7 @@
 	}
 
 	.history-tab-active {
-		background-color: var(--rice-primary-color);
+		background-color: #FFF0F5;
 	}
 
 	.history-tab-text {
@@ -600,7 +600,7 @@
 	}
 
 	.history-tab-text-active {
-		color: #FFFFFF;
+		color: #DB6F92;
 	}
 
 	/* 列表滚动区 */

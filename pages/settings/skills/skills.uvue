@@ -749,7 +749,8 @@
 	}
 
 	.doc-tab-active {
-		background-color: #111827;
+		background-color: #FFF0F5;
+		border-color: rgba(251, 143, 171, 0.56);
 	}
 
 	.doc-tab-text {
@@ -758,7 +759,7 @@
 	}
 
 	.doc-tab-text-active {
-		color: #FFFFFF;
+		color: #DB6F92;
 		font-weight: bold;
 	}
 

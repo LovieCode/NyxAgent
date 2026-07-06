@@ -76,7 +76,7 @@
 								:class="selectedProviderId == (p['id'] as string) ? 'chip-active' : ''"
 								@click="selectProvider(p['id'] as string)"
 							>
-								<text class="chip-text">{{p['name']}}</text>
+								<text class="chip-text" :class="selectedProviderId == (p['id'] as string) ? 'chip-text-active' : ''">{{p['name']}}</text>
 							</view>
 						</view>
 					</scroll-view>

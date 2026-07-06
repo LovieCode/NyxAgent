@@ -18,7 +18,7 @@
 							:class="selectedProvider == (p['id'] as string) ? 'chip-active' : ''"
 							@click="selectProvider(p['id'] as string)"
 						>
-							<text class="chip-text">{{p['name']}}</text>
+							<text class="chip-text" :class="selectedProvider == (p['id'] as string) ? 'chip-text-active' : ''">{{p['name']}}</text>
 							<text v-if="(p['enabled'] as number) == 1" class="chip-badge">已启用</text>
 						</view>
 					</view>
