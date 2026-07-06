@@ -5,9 +5,9 @@
 			"style": {
 				"navigationStyle": "custom",
 				"navigationBarTextStyle": "white",
-				"backgroundColor": "transparent",
-				"backgroundColorTop": "transparent",
-				"backgroundColorBottom": "transparent"
+				"backgroundColor": "#FAF7F5",
+				"backgroundColorTop": "#FAF7F5",
+				"backgroundColorBottom": "#FAF7F5"
 			}
 		},
 		{
