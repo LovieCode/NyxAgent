@@ -34,35 +34,77 @@
 		<!-- 会话列表：私聊 + 群聊混排 -->
 		<scroll-view class="agent-scroll" :scroll-y="true">
 			<share-element share-key="agent-list">
-				<view class="list-content">
-					<view
-						v-for="(item, index) in chatList"
-						:key="getChatKey(item)"
-						class="agent-item"
-						@click="openChatItem(item)"
-					>
-						<!-- 左侧头像：私聊可显示自定义头像，群聊使用模板图标 -->
-						<image v-if="getChatAvatar(item) != ''" :src="getChatAvatar(item)" class="agent-avatar-img" mode="aspectFill" />
-						<view v-else :class="'agent-avatar avatar-' + ((index % 5) + 1)">
-							<oui-icon-unix :name="getChatIcon(item)" size="24px" color="var(--rice-background-2)" />
+				<view class="home-content">
+					<view class="home-hero">
+						<view class="home-hero-copy">
+							<text class="home-kicker">NyxAgent</text>
+							<text class="home-title">今天和谁聊聊？</text>
+							<text class="home-subtitle">私聊、群聊和你的日常工作区都在这里。</text>
 						</view>
-						<!-- 中间文字 -->
-						<view class="agent-info">
-							<view class="agent-top">
-								<view class="agent-title-row">
-									<text class="agent-name">{{ getChatName(item) }}</text>
-									<text v-if="isGroupItem(item)" class="chat-type-badge">群聊</text>
-								</view>
-								<text class="agent-time">{{ formatChatTime(item) }}</text>
-							</view>
-							<text class="agent-desc">{{ getChatDesc(item) }}</text>
+						<view class="home-hero-mark">
+							<oui-icon-unix name="robot" size="28px" color="#FFFFFF" />
 						</view>
-						<!-- 右侧箭头 -->
-						<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 					</view>
-					<view v-if="chatList.length == 0" class="empty-state">
-						<text class="empty-title">还没有会话</text>
-						<text class="empty-desc">点右上角 +，新建私聊或群聊。</text>
+
+					<view class="search-card">
+						<oui-icon-unix name="search" size="16px" color="var(--rice-text-color-3)" />
+						<text class="search-placeholder">搜索联系人、群聊或最近消息</text>
+					</view>
+
+					<view class="filter-row">
+						<view class="filter-chip filter-chip-active">
+							<text class="filter-chip-text filter-chip-text-active">全部</text>
+						</view>
+						<view class="filter-chip">
+							<text class="filter-chip-text">私聊</text>
+						</view>
+						<view class="filter-chip">
+							<text class="filter-chip-text">群聊</text>
+						</view>
+						<view class="filter-chip">
+							<text class="filter-chip-text">收藏</text>
+						</view>
+					</view>
+
+					<view class="list-section-head">
+						<text class="list-section-title">最近会话</text>
+						<text class="list-section-count">{{ chatList.length }} 个</text>
+					</view>
+
+					<view class="list-content">
+						<view
+							v-for="(item, index) in chatList"
+							:key="getChatKey(item)"
+							class="agent-item"
+							@click="openChatItem(item)"
+						>
+							<!-- 左侧头像：私聊可显示自定义头像，群聊使用模板图标 -->
+							<view class="agent-avatar-wrap">
+								<image v-if="getChatAvatar(item) != ''" :src="getChatAvatar(item)" class="agent-avatar-img" mode="aspectFill" />
+								<view v-else :class="'agent-avatar avatar-' + ((index % 5) + 1)">
+									<oui-icon-unix :name="getChatIcon(item)" size="24px" color="var(--rice-background-2)" />
+								</view>
+								<view class="agent-status-dot"></view>
+							</view>
+							<!-- 中间文字 -->
+							<view class="agent-info">
+								<view class="agent-top">
+									<view class="agent-title-row">
+										<text class="agent-name">{{ getChatName(item) }}</text>
+										<text v-if="isGroupItem(item)" class="chat-type-badge">群聊</text>
+										<text v-else class="chat-type-badge chat-type-badge-ai">AI</text>
+									</view>
+									<text class="agent-time">{{ formatChatTime(item) }}</text>
+								</view>
+								<text class="agent-desc">{{ getChatDesc(item) }}</text>
+							</view>
+							<!-- 右侧箭头 -->
+							<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
+						</view>
+						<view v-if="chatList.length == 0" class="empty-state">
+							<text class="empty-title">还没有会话</text>
+							<text class="empty-desc">点右上角 +，新建私聊或群聊。</text>
+						</view>
 					</view>
 				</view>
 			</share-element>
@@ -670,8 +712,10 @@
 	.add-btn {
 		width: 40px;
 		height: 40px;
+		border-radius: 20px;
 		justify-content: center;
 		align-items: center;
+		background-color: rgba(255, 255, 255, 0.18);
 	}
 
 	.create-menu-mask {
@@ -742,43 +786,186 @@
 	/* 列表滚动区 */
 	.agent-scroll {
 		flex: 1;
+		background-color: #FAF7F8;
+	}
+
+	.home-content {
+		flex-direction: column;
+		padding: 12px 14px 18px;
+	}
+
+	.home-hero {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		background-color: #FFF7FA;
+		border-radius: 22px;
+		padding: 16px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(251, 143, 171, 0.18);
+	}
+
+	.home-hero-copy {
+		flex: 1;
+		flex-direction: column;
+		padding-right: 12px;
+	}
+
+	.home-kicker {
+		font-size: 12px;
+		font-weight: bold;
+		color: var(--rice-primary-color);
+		margin-bottom: 5px;
+	}
+
+	.home-title {
+		font-size: 23px;
+		font-weight: bold;
+		color: #2A2529;
+		margin-bottom: 6px;
+	}
+
+	.home-subtitle {
+		font-size: 13px;
+		line-height: 18px;
+		color: #8A7B84;
+	}
+
+	.home-hero-mark {
+		width: 54px;
+		height: 54px;
+		border-radius: 18px;
+		background-color: #FB8FAB;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.search-card {
+		height: 42px;
+		flex-direction: row;
+		align-items: center;
+		background-color: #FFFFFF;
+		border-radius: 500px;
+		padding-left: 15px;
+		padding-right: 15px;
+		margin-top: 12px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #F1E5EA;
+	}
+
+	.search-placeholder {
+		font-size: 13px;
+		color: var(--rice-text-color-3);
+		margin-left: 8px;
+	}
+
+	.filter-row {
+		flex-direction: row;
+		align-items: center;
+		margin-top: 12px;
+	}
+
+	.filter-chip {
+		height: 34px;
+		border-radius: 500px;
+		background-color: #FFFFFF;
+		padding-left: 17px;
+		padding-right: 17px;
+		justify-content: center;
+		align-items: center;
+		margin-right: 9px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #F1E5EA;
+	}
+
+	.filter-chip-active {
+		background-color: #FB8FAB;
+		border-color: #FB8FAB;
+	}
+
+	.filter-chip-text {
+		font-size: 13px;
+		color: #7D7480;
+	}
+
+	.filter-chip-text-active {
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+
+	.list-section-head {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-top: 18px;
+		margin-bottom: 10px;
+	}
+
+	.list-section-title {
+		font-size: 16px;
+		font-weight: bold;
+		color: #2A2529;
+	}
+
+	.list-section-count {
+		font-size: 12px;
+		color: var(--rice-text-color-3);
 	}
 
 	.list-content {
 		flex-direction: column;
-		background-color: var(--rice-background-2);
-		margin-top: 8px;
-		border-radius: 18px;
-		margin-left: 12px;
-		margin-right: 12px;
 	}
 
 	/* 单个会话行 */
 	.agent-item {
 		flex-direction: row;
 		align-items: center;
-		padding: 14px 16px;
-		border-bottom-width: 1px;
-		border-bottom-color: var(--rice-border-color);
-		border-bottom-style: solid;
+		padding: 13px 14px;
+		margin-bottom: 10px;
+		background-color: #FFFFFF;
+		border-radius: 18px;
+		border-width: 1px;
+		border-color: #F1E5EA;
+		border-style: solid;
+	}
+
+	.agent-avatar-wrap {
+		width: 52px;
+		height: 52px;
+		margin-right: 13px;
+		position: relative;
 	}
 
 	/* 左侧头像 - 纯色背景 */
 	.agent-avatar {
 		width: 48px;
 		height: 48px;
-		border-radius: 14px;
+		border-radius: 17px;
 		justify-content: center;
 		align-items: center;
-		margin-right: 14px;
 	}
 
 	/* 自定义头像图片 */
 	.agent-avatar-img {
 		width: 48px;
 		height: 48px;
-		border-radius: 14px;
-		margin-right: 14px;
+		border-radius: 17px;
+	}
+
+	.agent-status-dot {
+		position: absolute;
+		right: 2px;
+		bottom: 2px;
+		width: 10px;
+		height: 10px;
+		border-radius: 5px;
+		background-color: #34D399;
+		border-width: 2px;
+		border-style: solid;
+		border-color: #FFFFFF;
 	}
 
 	.avatar-1 { background-color: var(--rice-primary-color); }
@@ -803,7 +990,7 @@
 	.agent-name {
 		font-size: 16px;
 		font-weight: bold;
-		color: var(--rice-text-color);
+		color: #2A2529;
 	}
 
 	.agent-title-row {
@@ -831,9 +1018,14 @@
 		font-weight: bold;
 	}
 
+	.chat-type-badge-ai {
+		background-color: #FDECEF;
+		color: #D98BA5;
+	}
+
 	.agent-desc {
 		font-size: 13px;
-		color: var(--rice-text-color-3);
+		color: #8A7B84;
 		lines: 1;
 		text-overflow: ellipsis;
 	}
@@ -846,10 +1038,15 @@
 	}
 
 	.empty-state {
-		padding: 40px 16px;
+		padding: 38px 16px;
 		align-items: center;
 		justify-content: center;
 		flex-direction: column;
+		background-color: #FFFFFF;
+		border-radius: 18px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #F1E5EA;
 	}
 
 	.empty-title {
