@@ -91,12 +91,28 @@ export function prepareAgentSettingsTextEditor(content: string, title: string, t
 }
 
 export function readChooseImageFirstPath(res: any): string {
-	const raw = JSON.stringify(res)
-	if (raw == null || raw == '') { return '' }
-	const parsed = JSON.parse(raw) as UTSJSONObject
-	const paths = parsed['tempFilePaths'] as string[] | null
-	if (paths != null && paths.length > 0) {
-		return paths[0]
+	try {
+		const raw = JSON.stringify(res)
+		if (raw == null || raw == '') { return '' }
+		const parsed = JSON.parse(raw) as UTSJSONObject
+		const paths = parsed['tempFilePaths'] as string[] | null
+		if (paths != null && paths.length > 0) {
+			return paths[0]
+		}
+		const files = parsed['tempFiles'] as UTSJSONObject[] | null
+		if (files != null && files.length > 0) {
+			const first = files[0]
+			const path = first['path'] as string | null
+			if (path != null && path != '') { return path }
+			const tempFilePath = first['tempFilePath'] as string | null
+			if (tempFilePath != null && tempFilePath != '') { return tempFilePath }
+			const url = first['url'] as string | null
+			if (url != null && url != '') { return url }
+		}
+		const tempFilePath = parsed['tempFilePath'] as string | null
+		if (tempFilePath != null && tempFilePath != '') { return tempFilePath }
+	} catch (_e: any) {
+		return ''
 	}
 	return ''
 }

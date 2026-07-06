@@ -11,8 +11,8 @@ import { reduceAgentEvent } from '@/utils/chat-message-reducer.uts'
 
 export const CHAT_STREAM_FLUSH_DELAY_MS = 48
 export const CHAT_STREAM_SCROLL_DELAY_MS = 96
-export const CHAT_STREAM_SCROLL_BASE_TOP = 100000
-export const CHAT_IDLE_SCROLL_BOTTOM_TOP = 99999
+export const CHAT_STREAM_SCROLL_BASE_TOP = 100000000
+export const CHAT_IDLE_SCROLL_BOTTOM_TOP = 100000000
 
 export type ChatStreamFlushResult = {
 	messageChanged: boolean

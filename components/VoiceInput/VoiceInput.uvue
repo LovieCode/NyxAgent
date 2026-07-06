@@ -41,24 +41,24 @@
 <style>
 	/* 语音按钮 - 浅灰背景 */
 	.voice-btn {
-		width: 32px;
-		height: 32px;
-		border-radius: 16px;
-		background-color: #FFF7FA;
+		width: 28px;
+		height: 28px;
+		border-radius: 14px;
+		background-color: transparent;
 		justify-content: center;
 		align-items: center;
-		margin-left: 5px;
-		border-width: 1px;
+		margin-left: 3px;
+		border-width: 0;
 		border-style: solid;
-		border-color: #F1E5EA;
+		border-color: transparent;
 	}
 
 	/* 监听中 - 淡粉强调 */
 	.voice-btn-active {
 		background-color: #FB8FAB;
-		width: 34px;
-		height: 34px;
-		border-radius: 17px;
+		width: 30px;
+		height: 30px;
+		border-radius: 15px;
 		border-color: rgba(251, 143, 171, 0.42);
 	}
 

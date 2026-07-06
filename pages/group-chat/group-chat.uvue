@@ -4,10 +4,10 @@
 			<template #right>
 				<view style="flex-direction:row;align-items:center;">
 					<view class="nav-icon-btn" @click="goSessions">
-						<oui-icon-unix name="time-circle" size="20px" color="#25242A" />
+						<oui-icon-unix name="time-circle" size="18px" color="#25242A" />
 					</view>
 					<view class="nav-icon-btn" @click="goSettings" style="margin-left:4px;">
-						<oui-icon-unix name="setting" size="20px" color="#25242A" />
+						<oui-icon-unix name="setting" size="18px" color="#25242A" />
 					</view>
 				</view>
 			</template>
@@ -18,7 +18,7 @@
 				<view v-if="canLoadOlderMessages == true" class="load-older-wrap" @click="loadOlderMessages">
 					<text class="load-older-text">加载更早 {{olderMessageCount}} 段消息</text>
 				</view>
-				<view v-for="(msg, index) in visibleMessages" :key="msg.id != null ? msg.id : messageWindowStart + index">
+				<view v-for="(msg, index) in visibleMessages" :key="messageViewKey(msg, messageWindowStart + index)">
 					<ChatBubble
 						:role="msg.role"
 						:content="msg.content != null ? msg.content : ''"
@@ -55,7 +55,7 @@
 		<view class="chat-bottom">
 			<view class="input-bar">
 				<view class="toolbar-toggle" @click="toggleToolPanel">
-					<oui-icon-unix name="plus" size="18px" color="#DB6F92" />
+					<oui-icon-unix name="plus" size="18px" color="#FFFFFF" />
 				</view>
 				<view class="input-wrap">
 					<textarea class="text-input" v-model="inputText" :style="{ height: inputHeight + 'px' }" placeholder="给群里发消息..." placeholder-style="color:var(--rice-text-color-3)" @linechange="onInputLineChange" :disabled="isGenerating == true" />
@@ -68,70 +68,73 @@
 				</view>
 			</view>
 			<view v-if="showToolPanel" class="toolbar-panel">
-				<view id="toolbar-slider-viewport" class="toolbar-slider-viewport" @touchstart="onToolbarTouchStart" @touchmove="onToolbarTouchMove" @touchend="onToolbarTouchEnd" @touchcancel="onToolbarTouchCancel">
-					<view class="toolbar-slider-track" :class="toolbarDragging == true ? '' : 'toolbar-slider-track-anim'" :style="toolbarTrackStyle">
-						<view class="toolbar-slide-page">
-							<view class="toolbar-grid">
-								<view class="toolbar-grid-item" @click="pickImage">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="image" size="26px" color="var(--rice-primary-color)" /></view>
-									<text class="toolbar-grid-label">图片</text>
-								</view>
-								<view class="toolbar-grid-item" @click="takePhoto">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="camera" size="26px" color="var(--rice-primary-color)" /></view>
-									<text class="toolbar-grid-label">拍照</text>
-								</view>
-								<view class="toolbar-grid-item" @click="pickFile">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="file" size="26px" color="var(--rice-primary-color)" /></view>
-									<text class="toolbar-grid-label">文件</text>
-								</view>
-								<view class="toolbar-grid-item" @click="chooseAgentForMemory">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="26px" color="var(--rice-primary-color)" /></view>
-									<text class="toolbar-grid-label">记忆</text>
-								</view>
-								<view class="toolbar-grid-item" @click="chooseAgentForContext">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="eye" size="26px" color="var(--rice-primary-color)" /></view>
-									<text class="toolbar-grid-label">上下文</text>
-								</view>
-								<view class="toolbar-grid-item" @click="openGroupWorkspace">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="folder" size="26px" color="var(--rice-primary-color)" /></view>
-									<text class="toolbar-grid-label">工作区</text>
-								</view>
-								<view class="toolbar-grid-item" @click="stopDiscussion">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="stop" size="26px" color="#EF4444" /></view>
-									<text class="toolbar-grid-label">停止</text>
-								</view>
-								<view class="toolbar-grid-item" @click="continueDiscussion">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="plus-circle" size="26px" color="var(--rice-primary-color)" /></view>
-									<text class="toolbar-grid-label">继续</text>
+				<view class="toolbar-panel-card">
+					<view class="toolbar-panel-handle"></view>
+					<view id="toolbar-slider-viewport" class="toolbar-slider-viewport" @touchstart="onToolbarTouchStart" @touchmove="onToolbarTouchMove" @touchend="onToolbarTouchEnd" @touchcancel="onToolbarTouchCancel">
+						<view class="toolbar-slider-track" :class="toolbarDragging == true ? '' : 'toolbar-slider-track-anim'" :style="toolbarTrackStyle">
+							<view class="toolbar-slide-page">
+								<view class="toolbar-grid">
+									<view class="toolbar-grid-item" @click="pickImage">
+										<view class="toolbar-grid-icon"><oui-icon-unix name="image" size="26px" color="var(--rice-primary-color)" /></view>
+										<text class="toolbar-grid-label">图片</text>
+									</view>
+									<view class="toolbar-grid-item" @click="takePhoto">
+										<view class="toolbar-grid-icon"><oui-icon-unix name="camera" size="26px" color="var(--rice-primary-color)" /></view>
+										<text class="toolbar-grid-label">拍照</text>
+									</view>
+									<view class="toolbar-grid-item" @click="pickFile">
+										<view class="toolbar-grid-icon"><oui-icon-unix name="file" size="26px" color="var(--rice-primary-color)" /></view>
+										<text class="toolbar-grid-label">文件</text>
+									</view>
+									<view class="toolbar-grid-item" @click="chooseAgentForMemory">
+										<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="26px" color="var(--rice-primary-color)" /></view>
+										<text class="toolbar-grid-label">记忆</text>
+									</view>
+									<view class="toolbar-grid-item" @click="chooseAgentForContext">
+										<view class="toolbar-grid-icon"><oui-icon-unix name="eye" size="26px" color="var(--rice-primary-color)" /></view>
+										<text class="toolbar-grid-label">上下文</text>
+									</view>
+									<view class="toolbar-grid-item" @click="openGroupWorkspace">
+										<view class="toolbar-grid-icon"><oui-icon-unix name="folder" size="26px" color="var(--rice-primary-color)" /></view>
+										<text class="toolbar-grid-label">工作区</text>
+									</view>
+									<view class="toolbar-grid-item" @click="stopDiscussion">
+										<view class="toolbar-grid-icon"><oui-icon-unix name="stop" size="26px" color="#EF4444" /></view>
+										<text class="toolbar-grid-label">停止</text>
+									</view>
+									<view class="toolbar-grid-item" @click="continueDiscussion">
+										<view class="toolbar-grid-icon"><oui-icon-unix name="plus-circle" size="26px" color="var(--rice-primary-color)" /></view>
+										<text class="toolbar-grid-label">继续</text>
+									</view>
 								</view>
 							</view>
-						</view>
-						<view class="toolbar-slide-page">
-							<view class="toolbar-grid">
-								<view class="toolbar-grid-item" @click="goSessions">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="time-circle" size="26px" color="var(--rice-primary-color)" /></view>
-									<text class="toolbar-grid-label">会话分支</text>
-								</view>
-								<view class="toolbar-grid-item" @click="goSettings">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="setting" size="26px" color="var(--rice-primary-color)" /></view>
-									<text class="toolbar-grid-label">群聊设置</text>
-								</view>
-								<view class="toolbar-grid-item" @click="showDispatchHistory">
-									<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="26px" color="var(--rice-primary-color)" /></view>
-									<text class="toolbar-grid-label">调度记录</text>
+							<view class="toolbar-slide-page">
+								<view class="toolbar-grid">
+									<view class="toolbar-grid-item" @click="goSessions">
+										<view class="toolbar-grid-icon"><oui-icon-unix name="time-circle" size="26px" color="var(--rice-primary-color)" /></view>
+										<text class="toolbar-grid-label">会话分支</text>
+									</view>
+									<view class="toolbar-grid-item" @click="goSettings">
+										<view class="toolbar-grid-icon"><oui-icon-unix name="setting" size="26px" color="var(--rice-primary-color)" /></view>
+										<text class="toolbar-grid-label">群聊设置</text>
+									</view>
+									<view class="toolbar-grid-item" @click="showDispatchHistory">
+										<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="26px" color="var(--rice-primary-color)" /></view>
+										<text class="toolbar-grid-label">调度记录</text>
+									</view>
 								</view>
 							</view>
 						</view>
 					</view>
-				</view>
-				<view class="toolbar-pager">
-					<view class="toolbar-page-arrow" :class="toolbarPageIndex == 0 ? 'toolbar-page-arrow-disabled' : ''" @click="prevToolbarPage">
-						<text class="toolbar-page-arrow-text">‹</text>
-					</view>
-					<view class="toolbar-page-dot" :class="toolbarPageIndex == 0 ? 'toolbar-page-dot-active' : ''" @click="setToolbarPage(0)" />
-					<view class="toolbar-page-dot" :class="toolbarPageIndex == 1 ? 'toolbar-page-dot-active' : ''" @click="setToolbarPage(1)" />
-					<view class="toolbar-page-arrow" :class="toolbarPageIndex == 1 ? 'toolbar-page-arrow-disabled' : ''" @click="nextToolbarPage">
-						<text class="toolbar-page-arrow-text">›</text>
+					<view class="toolbar-pager">
+						<view class="toolbar-page-arrow" :class="toolbarPageIndex == 0 ? 'toolbar-page-arrow-disabled' : ''" @click="prevToolbarPage">
+							<text class="toolbar-page-arrow-text">‹</text>
+						</view>
+						<view class="toolbar-page-dot" :class="toolbarPageIndex == 0 ? 'toolbar-page-dot-active' : ''" @click="setToolbarPage(0)" />
+						<view class="toolbar-page-dot" :class="toolbarPageIndex == 1 ? 'toolbar-page-dot-active' : ''" @click="setToolbarPage(1)" />
+						<view class="toolbar-page-arrow" :class="toolbarPageIndex == 1 ? 'toolbar-page-arrow-disabled' : ''" @click="nextToolbarPage">
+							<text class="toolbar-page-arrow-text">›</text>
+						</view>
 					</view>
 				</view>
 			</view>
@@ -184,7 +187,8 @@
 	} from '@/utils/chat-scroll-helpers.uts'
 	import {
 		CHAT_MESSAGE_WINDOW_BASE_SIZE,
-		buildChatMessageWindowFromStart,
+		buildChatMessageWindowByUnits,
+		countRemainingChatMessageWindowUnits,
 		countChatMessageRenderUnits,
 		resolveNextChatMessageWindowCount,
 	} from '@/utils/chat-message-window.uts'
@@ -297,7 +301,7 @@
 				return getVisibleGroupMessages(this.messages)
 			},
 			visibleMessages(): UTSJSONObject[] {
-				return buildChatMessageWindowFromStart(this.allVisibleMessages, this.messageWindowStart)
+				return buildChatMessageWindowByUnits(this.allVisibleMessages, this.messageWindowCount, true)
 			},
 			allVisibleMessageCount(): number {
 				return this.allVisibleMessages.length
@@ -309,10 +313,10 @@
 				return this.resolveGroupMessageWindowStart(this.allVisibleMessages, this.messageWindowCount)
 			},
 			canLoadOlderMessages(): boolean {
-				return this.messageWindowStart > 0
+				return countRemainingChatMessageWindowUnits(this.totalMessageUnitCount, this.messageWindowCount) > 0
 			},
 			olderMessageCount(): number {
-				return this.countGroupMessageRenderUnitsBefore(this.allVisibleMessages, this.messageWindowStart)
+				return countRemainingChatMessageWindowUnits(this.totalMessageUnitCount, this.messageWindowCount)
 			},
 			toolbarTrackStyle(): string {
 				return buildGroupToolbarTrackStyle(this.toolbarPageIndex, this.toolbarViewportWidth, this.toolbarDragOffset)
@@ -399,11 +403,17 @@
 				uni.navigateTo({ url: '/pages/group-chat-sessions/group-chat-sessions' })
 			},
 			toggleToolPanel(): void {
+				const keepBottom = this.isAtBottom == true
 				this.showToolPanel = !this.showToolPanel
 				if (this.showToolPanel == true) {
 					this.toolbarPageIndex = 0
 					this.toolbarDragOffset = 0
 					this.measureToolbarViewport()
+				}
+				if (keepBottom == true) {
+					this.scrollToBottom()
+				} else {
+					this.scheduleMeasureMessageScroll()
 				}
 			},
 			setToolbarPage(index: number): void {
@@ -585,6 +595,27 @@
 			scrollToBottomFromButton(): void {
 				this.scrollToBottom()
 			},
+
+			messageViewKey(msg: UTSJSONObject, index: number): string {
+				const id = msg['id'] as string | null
+				const timestamp = msg['timestamp'] as number | null
+				const content = msg['content'] as string | null
+				const parts = msg['message'] as UTSJSONObject[] | null
+				const streaming = (msg['isStreaming'] as boolean | null) == true ? 's' : 'f'
+				const windowed = (msg['windowed'] as boolean | null) == true ? 'w' : 'n'
+				const textLength = content != null ? content.length : 0
+				const partCount = parts != null ? parts.length : 0
+				return (id != null && id != '' ? id : (index + '')) + '-' + (timestamp != null ? timestamp : 0) + '-' + textLength + '-' + partCount + '-' + streaming + '-' + windowed
+			},
+
+			refreshMessagesView(): void {
+				const next: UTSJSONObject[] = []
+				for (let i = 0; i < this.messages.length; i++) {
+					next.push(this.messages[i])
+				}
+				this.messages = next
+			},
+
 			countGroupMessageRenderUnits(msg: UTSJSONObject): number {
 				return countChatMessageRenderUnits(msg, readGroupMessageMsgSegmentation(msg))
 			},
@@ -654,13 +685,15 @@
 			},
 			scrollToBottom(): void {
 				this.isAtBottom = true
+				this.scrollTop = 0
 				setTimeout(() => {
-					this.scrollTop = this.scrollTop + 999999
+					this.scrollTop = 100000000 + this.messageWindowCount
 					this.isAtBottom = true
 					this.scheduleMeasureMessageScroll()
 				}, 80)
 			},
 			scrollToBottomIfPinned(): void {
+				this.refreshMessagesView()
 				this.scheduleMeasureMessageScroll()
 				if (this.isAtBottom == true) {
 					this.scrollToBottom()
@@ -1308,15 +1341,15 @@
 	}
 
 	.nav-icon-btn {
-		width: 34px;
+		width: 30px;
 		height: 34px;
 		border-radius: 17px;
-		background-color: rgba(255, 255, 255, 0.72);
+		background-color: transparent;
 		justify-content: center;
 		align-items: center;
-		border-width: 1px;
+		border-width: 0;
 		border-style: solid;
-		border-color: #F1E5EA;
+		border-color: transparent;
 	}
 
 	.message-list {
@@ -1363,12 +1396,12 @@
 
 	.chat-custom-scrollbar {
 		position: absolute;
-		right: 2px;
+		right: 3px;
 		top: 6px;
 		bottom: 6px;
-		width: 18px;
-		border-radius: 9px;
-		background-color: rgba(251, 143, 171, 0.06);
+		width: 14px;
+		border-radius: 7px;
+		background-color: transparent;
 	}
 
 	.chat-scrollbar-thumb {
@@ -1376,7 +1409,7 @@
 		left: 6px;
 		right: 6px;
 		border-radius: 999px;
-		background-color: rgba(219, 111, 146, 0.38);
+		background-color: rgba(219, 111, 146, 0.28);
 	}
 
 	.back-bottom-btn {
@@ -1425,60 +1458,68 @@
 
 	.chat-bottom {
 		flex-shrink: 0;
-		background-color: #FFFDFD;
-		border-top-left-radius: 24px;
-		border-top-right-radius: 24px;
-		border-width: 1px;
+		background-color: transparent;
+		border-top-left-radius: 0;
+		border-top-right-radius: 0;
+		border-width: 0;
 		border-style: solid;
-		border-color: rgba(241, 229, 234, 0.92);
-		box-shadow: 0 -4px 14px rgba(216, 140, 165, 0.035);
+		border-color: transparent;
+		box-shadow: none;
 	}
 
 	.input-bar {
 		flex-direction: row;
 		align-items: center;
-		padding-left: 14px;
-		padding-right: 14px;
-		padding-top: 8px;
-		padding-bottom: 8px;
+		background-color: #FFFDFD;
+		border-radius: 24px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(241, 229, 234, 0.92);
+		margin-left: 8px;
+		margin-right: 8px;
+		margin-bottom: 8px;
+		padding-left: 12px;
+		padding-right: 12px;
+		padding-top: 5px;
+		padding-bottom: 5px;
+		box-shadow: 0 4px 12px rgba(216, 140, 165, 0.045);
 	}
 
 	.toolbar-toggle {
-		width: 32px;
-		height: 32px;
-		border-radius: 16px;
+		width: 30px;
+		height: 30px;
+		border-radius: 15px;
 		justify-content: center;
 		align-items: center;
-		background-color: #FFF0F5;
-		border-width: 1px;
-		border-style: solid;
-		border-color: rgba(251, 143, 171, 0.32);
-		box-shadow: 0 2px 8px rgba(216, 140, 165, 0.055);
+		background-color: #F86F9D;
+		border-width: 0;
+		box-shadow: 0 2px 7px rgba(248, 111, 157, 0.10);
 	}
 
 	.input-wrap {
 		flex: 1;
 		flex-direction: row;
-		align-items: flex-end;
+		align-items: center;
 		background-color: #F8F2F4;
-		border-radius: 18px;
+		border-radius: 17px;
 		padding-left: 10px;
-		padding-right: 10px;
+		padding-right: 5px;
 		margin-left: 7px;
-		margin-right: 7px;
+		margin-right: 8px;
 		border-width: 1px;
 		border-style: solid;
 		border-color: #F0E5EA;
 	}
 
 	.text-input {
-		width: 100%;
-		min-height: 30px;
+		flex: 1;
+		width: 0;
+		min-height: 27px;
 		max-height: 200px;
 		padding-left: 4px;
-		padding-right: 4px;
-		padding-top: 6px;
-		padding-bottom: 3px;
+		padding-right: 2px;
+		padding-top: 4px;
+		padding-bottom: 2px;
 		font-size: 15px;
 		color: var(--rice-text-color);
 		background-color: transparent;
@@ -1486,16 +1527,16 @@
 	}
 
 	.send-chip {
-		height: 32px;
-		min-width: 44px;
-		border-radius: 16px;
-		padding-left: 12px;
-		padding-right: 12px;
-		margin-left: 2px;
+		width: 56px;
+		height: 30px;
+		border-radius: 15px;
+		padding-left: 0;
+		padding-right: 0;
+		margin-left: 0;
 		background-color: var(--rice-primary-color);
 		align-items: center;
 		justify-content: center;
-		box-shadow: 0 3px 10px rgba(251, 143, 171, 0.10);
+		box-shadow: 0 2px 7px rgba(251, 143, 171, 0.10);
 	}
 
 	.send-chip-stop {
@@ -1509,8 +1550,30 @@
 	}
 
 	.toolbar-panel {
-		background-color: #FFFDFD;
-		padding: 8px 16px 10px 16px;
+		background-color: transparent;
+		padding: 6px 10px 8px 10px;
+	}
+
+	.toolbar-panel-card {
+		background-color: rgba(255, 253, 253, 0.96);
+		border-radius: 21px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(241, 229, 234, 0.95);
+		padding-top: 8px;
+		padding-left: 8px;
+		padding-right: 8px;
+		padding-bottom: 0;
+		box-shadow: 0 8px 18px rgba(216, 140, 165, 0.055);
+	}
+
+	.toolbar-panel-handle {
+		width: 34px;
+		height: 4px;
+		border-radius: 999px;
+		background-color: rgba(153, 143, 150, 0.30);
+		align-self: center;
+		margin-bottom: 10px;
 	}
 
 	.toolbar-slider-viewport {
@@ -1543,7 +1606,7 @@
 	.toolbar-grid-item {
 		width: 25%;
 		align-items: center;
-		margin-bottom: 14px;
+		margin-bottom: 11px;
 	}
 
 	.toolbar-grid-icon {
@@ -1560,7 +1623,7 @@
 	}
 
 	.toolbar-grid-label {
-		font-size: 12px;
+		font-size: 11px;
 		color: #8A7B84;
 	}
 

@@ -526,7 +526,10 @@
 <style>
 	.container {
 		flex: 1;
-		padding: 16px;
+		padding-top: 14px;
+		padding-bottom: 28px;
+		padding-left: 0;
+		padding-right: 0;
 	}
 
 	.hero-card,
@@ -535,6 +538,8 @@
 		background-color: #FFFFFF;
 		border-radius: 10px;
 		padding: 16px;
+		margin-left: 16px;
+		margin-right: 16px;
 		margin-bottom: 12px;
 	}
 
@@ -779,6 +784,7 @@
 		background-color: #F3F4F6;
 		border-radius: 7px;
 		padding: 3px 9px;
+		margin-right: 0;
 	}
 
 	.search-input {
@@ -900,8 +906,8 @@
 /* ===== Nyx 子页面视觉重制 ===== */
 	.page-shell { background-color: #FAF7F5; }
 	.container, .settings-scroll, .session-scroll, .history-page { background-color: #FAF7F5; }
-	.container, .settings-scroll, .session-scroll { padding-left: 24px; padding-right: 24px; padding-top: 14px; padding-bottom: 28px; }
-	.card, .form-card, .info-card, .details-card, .guide-card, .model-card, .hint-card, .hero-card, .danger-card, .empty-card, .prompt-box, .unimplemented-notice, .fullscreen-edit-card, .import-panel, .last-call-panel, .summary-card, .response-card, .preview-box { background-color: #FFFFFF; border-radius: 20px; border-width: 1px; border-style: solid; border-color: rgba(241, 229, 234, 0.92); box-shadow: 0 8px 20px rgba(216, 140, 165, 0.045); margin-left: 0; margin-right: 0; margin-top: 0; margin-bottom: 12px; padding: 16px; }
+	.container, .settings-scroll, .session-scroll { padding-top: 14px; padding-bottom: 28px; }
+	.card, .form-card, .info-card, .details-card, .guide-card, .model-card, .hint-card, .hero-card, .danger-card, .empty-card, .prompt-box, .unimplemented-notice, .fullscreen-edit-card, .import-panel, .last-call-panel, .summary-card, .response-card, .preview-box { background-color: #FFFFFF; border-radius: 20px; border-width: 1px; border-style: solid; border-color: rgba(241, 229, 234, 0.92); box-shadow: 0 8px 20px rgba(216, 140, 165, 0.045); margin-top: 0; margin-bottom: 12px; padding: 16px; }
 	.hero-card, .hint-card, .guide-card, .unimplemented-notice { background-color: #FFF7FA; border-color: rgba(251, 143, 171, 0.20); }
 	.card-title, .hero-title, .hint-title, .guide-title, .info-title, .setting-title, .card-label, .provider-name, .model-card-title, .task-type-name, .skill-name, .action-title, .app-name, .form-label { color: #2A2529; }
 	.card-desc, .hero-desc, .hint-text, .guide-desc, .info-desc, .setting-desc, .plugin-desc, .action-desc, .field-tip, .input-hint, .desc, .detail-value, .app-version { color: #8A7B84; }
@@ -917,4 +923,5 @@
 	.danger, .nav-btn-danger, .danger-btn-text, .danger-button-text, .action-delete, .delete-btn-text { color: #EF4444; }
 	.preview-card { border-top-left-radius: 26px; border-top-right-radius: 26px; }
 	.bottom-space { height: 28px; flex-shrink: 0; }
+	.container .card, .container .hero-card, .container .danger-card { margin-left: 16px; margin-right: 16px; }
 </style>

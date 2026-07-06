@@ -52,6 +52,7 @@
 
 <script lang="uts">
 	import { deleteRuntimeState, getAppSetting, getRuntimeState, setAppSetting, setRuntimeState } from '@/utils/database.uts'
+	import { isChooseCancelError, parsePickedImagePath } from '@/utils/attachment-reader.uts'
 
 	/**
 	 * 用户资料页面 - 扁平化粉白主题
@@ -180,18 +181,21 @@
 					sourceType: ['album', 'camera'],
 					sizeType: ['compressed'],
 					success: (res: any) => {
-						const raw = JSON.stringify(res)
-						if (raw == null || raw == '') { return }
-						const parsed = JSON.parse(raw) as UTSJSONObject
-						const paths = parsed['tempFilePaths'] as string[]
-						if (paths != null && paths.length > 0) {
-							deleteRuntimeState('crop_result')
-							setRuntimeState('crop_target', 'profile_avatar')
-							setRuntimeState('crop_image_path', paths[0])
-							uni.navigateTo({
-								url: '/pages/common/crop/crop'
-							})
+						const path = parsePickedImagePath(res)
+						if (path == '') {
+							uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
+							return
 						}
+						deleteRuntimeState('crop_result')
+						setRuntimeState('crop_target', 'profile_avatar')
+						setRuntimeState('crop_image_path', path)
+						uni.navigateTo({
+							url: '/pages/common/crop/crop'
+						})
+					},
+					fail: (err: any) => {
+						if (isChooseCancelError(err) == true) { return }
+						uni.showToast({ position: 'bottom', title: '打开相册失败', icon: 'none' })
 					}
 				})
 			},

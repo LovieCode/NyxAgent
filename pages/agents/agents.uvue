@@ -673,14 +673,6 @@
 			isFavoriteChatItem(item: UTSJSONObject): boolean {
 				const favoriteBool = item['favorite'] as boolean | null
 				if (favoriteBool == true) { return true }
-				const starredBool = item['starred'] as boolean | null
-				if (starredBool == true) { return true }
-				const pinnedNumber = item['pinned'] as number | null
-				if (pinnedNumber != null && pinnedNumber > 0) { return true }
-				const favoriteText = item['favorite'] as string | null
-				if (favoriteText == 'true' || favoriteText == '1') { return true }
-				const starredText = item['starred'] as string | null
-				if (starredText == 'true' || starredText == '1') { return true }
 				return false
 			},
 
@@ -971,6 +963,7 @@
 	.agent-scroll {
 		flex: 1;
 		background-color: #FAF7F5;
+		margin-bottom: 78px;
 	}
 
 	.home-content {
@@ -992,7 +985,7 @@
 	}
 
 	.home-scroll-bottom-spacer {
-		height: 128px;
+		height: 24px;
 		flex-shrink: 0;
 	}
 
@@ -1005,11 +998,11 @@
 	}
 
 	.filter-chip {
-		height: 36px;
+		height: 32px;
 		border-radius: 500px;
 		background-color: #FFFFFF;
-		padding-left: 19px;
-		padding-right: 19px;
+		padding-left: 17px;
+		padding-right: 17px;
 		justify-content: center;
 		align-items: center;
 		margin-right: 9px;
@@ -1026,7 +1019,7 @@
 	}
 
 	.filter-chip-text {
-		font-size: 13px;
+		font-size: 12px;
 		color: #7D7480;
 	}
 

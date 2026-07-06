@@ -9,7 +9,7 @@
 		>
 			<oui-icon-unix
 				:name="current == tab['pagePath'] ? (tab['activeIcon'] as string) : (tab['icon'] as string)"
-				:size="'22px'"
+				:size="'20px'"
 				:color="current == tab['pagePath'] ? 'var(--rice-primary-color)' : '#4B5563'"
 			/>
 			<text
@@ -57,20 +57,20 @@
 </script>
 
 <style>
-	/* 底部导航栏 - 设计图里的白色浮动胶囊 */
+	/* 底部导航栏 - v5 轻量白色浮动胶囊 */
 	.tabbar {
 		flex-direction: row;
-		height: 66px;
+		height: 52px;
 		background-color: #FFFFFF;
-		border-radius: 30px;
-		padding-left: 7px;
-		padding-right: 7px;
+		border-radius: 26px;
+		padding-left: 6px;
+		padding-right: 6px;
 		justify-content: space-around;
 		align-items: center;
 		border-width: 1px;
 		border-style: solid;
 		border-color: rgba(241, 229, 234, 0.92);
-		box-shadow: 0 14px 28px rgba(216, 140, 165, 0.12);
+		box-shadow: 0 10px 22px rgba(216, 140, 165, 0.075);
 	}
 
 	/* 单个标签项 */
@@ -79,19 +79,19 @@
 		justify-content: center;
 		align-items: center;
 		flex: 1;
-		height: 54px;
+		height: 45px;
 		border-radius: 22px;
 	}
 
 	.tab-item-active {
-		background-color: rgba(255, 240, 245, 0.72);
+		background-color: transparent;
 	}
 
 	/* 标签文字 */
 	.tab-label {
-		font-size: 11px;
+		font-size: 10px;
 		color: #8A7B84;
-		margin-top: 4px;
+		margin-top: 2px;
 	}
 
 	/* 选中标签文字 - 粉色 */
