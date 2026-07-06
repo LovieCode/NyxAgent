@@ -1,22 +1,27 @@
 <template>
 	<view class="page-shell rice-theme-light" ref="shellRef">
-		<NavBar title="聊天" variant="light" :showNyxFloat="false">
-			<template #right>
-				<view class="add-btn" @click.stop="toggleCreateMenu">
-					<oui-icon-unix name="plus" size="22px" color="#FB8FAB" />
+		<view class="home-status" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="home-header">
+			<view class="home-brand">
+				<text class="home-brand-title">NyxAgent</text>
+				<text class="home-brand-subtitle">今天想和谁聊？</text>
+			</view>
+			<view class="home-actions">
+				<view class="home-icon-btn" @click.stop="toggleCreateMenu">
+					<oui-icon-unix name="plus" size="22px" color="#25242A" />
 				</view>
-			</template>
-		</NavBar>
+			</view>
+		</view>
 
 		<view v-if="showCreateMenu" class="create-menu-mask" @click="closeCreateMenu"></view>
 		<view v-if="showCreateMenu" class="create-menu-card">
 			<view class="create-menu-item" @click="createAgentFromMenu">
 				<view class="create-menu-icon">
-					<oui-icon-unix name="robot" size="18px" color="var(--rice-primary-color)" />
+					<oui-icon-unix name="user" size="18px" color="var(--rice-primary-color)" />
 				</view>
 				<view class="create-menu-info">
 					<text class="create-menu-title">新建私聊</text>
-					<text class="create-menu-desc">创建一个 AI 联系人</text>
+					<text class="create-menu-desc">创建一个聊天伙伴</text>
 				</view>
 			</view>
 			<view class="create-menu-line"></view>
@@ -26,18 +31,18 @@
 				</view>
 				<view class="create-menu-info">
 					<text class="create-menu-title">新建群聊</text>
-					<text class="create-menu-desc">故事 / 写作交流模板</text>
+					<text class="create-menu-desc">多人聊天与创作</text>
 				</view>
 			</view>
 		</view>
 
-		<!-- 会话列表：私聊 + 群聊混排 -->
+		<!-- 会话列表：联系人 + 群聊 -->
 		<scroll-view class="agent-scroll" :scroll-y="true">
 			<share-element share-key="agent-list">
 				<view class="home-content">
 					<view class="search-card">
 						<oui-icon-unix name="search" size="16px" color="var(--rice-text-color-3)" />
-						<text class="search-placeholder">搜索联系人、群聊或最近消息</text>
+						<text class="search-placeholder">搜索联系人、群聊或消息</text>
 					</view>
 
 					<view class="filter-row">
@@ -56,18 +61,18 @@
 					</view>
 
 					<view class="list-section-head">
-						<text class="list-section-title">最近会话</text>
-						<text class="list-section-count">{{ chatList.length }} 个</text>
+						<text class="list-section-title">我的联系人</text>
+						<text class="list-section-more">查看全部 ›</text>
 					</view>
 
 					<view class="list-content">
 						<view
-							v-for="(item, index) in chatList"
+							v-for="(item, index) in privateChatList"
 							:key="getChatKey(item)"
 							class="agent-item"
 							@click="openChatItem(item)"
 						>
-							<!-- 左侧头像：私聊可显示自定义头像，群聊使用模板图标 -->
+							<!-- 左侧头像：联系人优先显示自定义头像 -->
 							<view class="agent-avatar-wrap">
 								<image v-if="getChatAvatar(item) != ''" :src="getChatAvatar(item)" class="agent-avatar-img" mode="aspectFill" />
 								<view v-else :class="'agent-avatar avatar-' + ((index % 5) + 1)">
@@ -80,8 +85,6 @@
 								<view class="agent-top">
 									<view class="agent-title-row">
 										<text class="agent-name">{{ getChatName(item) }}</text>
-										<text v-if="isGroupItem(item)" class="chat-type-badge">群聊</text>
-										<text v-else class="chat-type-badge chat-type-badge-ai">AI</text>
 									</view>
 									<text class="agent-time">{{ formatChatTime(item) }}</text>
 								</view>
@@ -93,6 +96,38 @@
 						<view v-if="chatList.length == 0" class="empty-state">
 							<text class="empty-title">还没有会话</text>
 							<text class="empty-desc">点右上角 +，新建私聊或群聊。</text>
+						</view>
+					</view>
+
+					<view v-if="groupChatList.length > 0" class="list-section-head group-section-head">
+						<text class="list-section-title">群组聊天</text>
+					</view>
+
+					<view v-if="groupChatList.length > 0" class="list-content">
+						<view
+							v-for="(item, index) in groupChatList"
+							:key="getChatKey(item)"
+							class="agent-item"
+							@click="openChatItem(item)"
+						>
+							<view class="agent-avatar-wrap">
+								<image v-if="getChatAvatar(item) != ''" :src="getChatAvatar(item)" class="agent-avatar-img" mode="aspectFill" />
+								<view v-else :class="'agent-avatar avatar-' + ((index % 5) + 1)">
+									<oui-icon-unix :name="getChatIcon(item)" size="24px" color="var(--rice-background-2)" />
+								</view>
+								<view class="agent-status-dot"></view>
+							</view>
+							<view class="agent-info">
+								<view class="agent-top">
+									<view class="agent-title-row">
+										<text class="agent-name">{{ getChatName(item) }}</text>
+										<text class="chat-type-badge">群聊</text>
+									</view>
+									<text class="agent-time">{{ formatChatTime(item) }}</text>
+								</view>
+								<text class="agent-desc">{{ getChatDesc(item) }}</text>
+							</view>
+							<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 						</view>
 					</view>
 				</view>
@@ -330,6 +365,7 @@
 				agentList: [] as UTSJSONObject[],
 				groupList: [] as GroupChat[],
 				chatList: [] as UTSJSONObject[],
+				statusBarHeight: 0 as number,
 				showCreateMenu: false as boolean,
 				showCreateDialog: false as boolean,
 				showFirstRunGuide: false as boolean,
@@ -358,9 +394,32 @@
 
 			createPreviewDesc(): string {
 				return readAgentCreatePreviewDesc(this.currentCreateData())
+			},
+
+			privateChatList(): UTSJSONObject[] {
+				const list = [] as UTSJSONObject[]
+				for (let i = 0; i < this.chatList.length; i++) {
+					const item = this.chatList[i]
+					if (isAgentGroupChatItem(item) == false) {
+						list.push(item)
+					}
+				}
+				return list
+			},
+
+			groupChatList(): UTSJSONObject[] {
+				const list = [] as UTSJSONObject[]
+				for (let i = 0; i < this.chatList.length; i++) {
+					const item = this.chatList[i]
+					if (isAgentGroupChatItem(item) == true) {
+						list.push(item)
+					}
+				}
+				return list
 			}
 		},
 		onLoad() {
+			this.initStatusBarHeight()
 			this.loadChats()
 			this.checkFirstRunGuide()
 		},
@@ -370,6 +429,24 @@
 			this.checkFirstRunGuide()
 		},
 		methods: {
+			initStatusBarHeight(): void {
+				try {
+					// #ifndef WEB
+					const windowInfo = uni.getWindowInfo()
+					let top = windowInfo.statusBarHeight
+					if (windowInfo.safeAreaInsets.top > top) {
+						top = windowInfo.safeAreaInsets.top
+					}
+					this.statusBarHeight = top > 0 ? top : 0
+					// #endif
+					// #ifdef WEB
+					this.statusBarHeight = 0
+					// #endif
+				} catch (_e: any) {
+					this.statusBarHeight = 0
+				}
+			},
+
 			templateKey(tpl: UTSJSONObject): string {
 				return readCreateTemplateKey(tpl)
 			},
@@ -542,10 +619,6 @@
 				return readAgentChatKey(item)
 			},
 
-			isGroupItem(item: UTSJSONObject): boolean {
-				return isAgentGroupChatItem(item)
-			},
-
 			getChatName(item: UTSJSONObject): string {
 				return readAgentChatName(item)
 			},
@@ -698,13 +771,57 @@
 </script>
 
 <style>
-	.add-btn {
-		width: 36px;
-		height: 36px;
-		border-radius: 18px;
+	.home-status {
+		flex-shrink: 0;
+		background-color: #FAF7F5;
+	}
+
+	.home-header {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding-left: 24px;
+		padding-right: 22px;
+		padding-top: 14px;
+		padding-bottom: 12px;
+		background-color: #FAF7F5;
+	}
+
+	.home-brand {
+		flex: 1;
+		flex-direction: column;
+	}
+
+	.home-brand-title {
+		font-size: 26px;
+		font-weight: bold;
+		color: #171821;
+	}
+
+	.home-brand-subtitle {
+		margin-top: 6px;
+		font-size: 13px;
+		color: #8A7B84;
+	}
+
+	.home-actions {
+		flex-direction: row;
+		align-items: center;
+		margin-left: 12px;
+	}
+
+	.home-icon-btn {
+		width: 42px;
+		height: 42px;
+		border-radius: 21px;
+		background-color: #FFFFFF;
 		justify-content: center;
 		align-items: center;
-		background-color: #FDECEF;
+		margin-left: 10px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #F1E5EA;
+		box-shadow: 0 8px 20px rgba(216, 140, 165, 0.06);
 	}
 
 	.create-menu-mask {
@@ -719,16 +836,17 @@
 
 	.create-menu-card {
 		position: fixed;
-		top: 52px;
-		right: 12px;
+		top: 92px;
+		right: 22px;
 		width: 196px;
 		background-color: #FFFFFF;
-		border-radius: 14px;
+		border-radius: 18px;
 		padding: 6px;
 		z-index: 21;
 		border-width: 1px;
 		border-color: rgba(31, 41, 55, 0.08);
 		border-style: solid;
+		box-shadow: 0 16px 34px rgba(31, 41, 55, 0.12);
 	}
 
 	.create-menu-item {
@@ -775,25 +893,26 @@
 	/* 列表滚动区 */
 	.agent-scroll {
 		flex: 1;
-		background-color: #FAF7F8;
+		background-color: #FAF7F5;
 	}
 
 	.home-content {
 		flex-direction: column;
-		padding: 10px 14px 82px;
+		padding: 6px 24px 82px;
 	}
 
 	.search-card {
-		height: 40px;
+		height: 44px;
 		flex-direction: row;
 		align-items: center;
 		background-color: #FFFFFF;
 		border-radius: 500px;
-		padding-left: 15px;
-		padding-right: 15px;
+		padding-left: 16px;
+		padding-right: 16px;
 		border-width: 1px;
 		border-style: solid;
 		border-color: #F1E5EA;
+		box-shadow: 0 10px 24px rgba(216, 140, 165, 0.06);
 	}
 
 	.search-placeholder {
@@ -805,26 +924,28 @@
 	.filter-row {
 		flex-direction: row;
 		align-items: center;
-		margin-top: 11px;
+		margin-top: 14px;
 	}
 
 	.filter-chip {
-		height: 32px;
+		height: 36px;
 		border-radius: 500px;
 		background-color: #FFFFFF;
-		padding-left: 16px;
-		padding-right: 16px;
+		padding-left: 19px;
+		padding-right: 19px;
 		justify-content: center;
 		align-items: center;
 		margin-right: 9px;
 		border-width: 1px;
 		border-style: solid;
 		border-color: #F1E5EA;
+		box-shadow: 0 6px 14px rgba(216, 140, 165, 0.04);
 	}
 
 	.filter-chip-active {
-		background-color: #FB8FAB;
-		border-color: #FB8FAB;
+		background-color: #F48FB1;
+		border-color: #F48FB1;
+		box-shadow: 0 9px 18px rgba(244, 143, 177, 0.18);
 	}
 
 	.filter-chip-text {
@@ -841,8 +962,12 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
+		margin-top: 22px;
+		margin-bottom: 11px;
+	}
+
+	.group-section-head {
 		margin-top: 16px;
-		margin-bottom: 10px;
 	}
 
 	.list-section-title {
@@ -851,7 +976,7 @@
 		color: #2A2529;
 	}
 
-	.list-section-count {
+	.list-section-more {
 		font-size: 12px;
 		color: var(--rice-text-color-3);
 	}
@@ -864,36 +989,37 @@
 	.agent-item {
 		flex-direction: row;
 		align-items: center;
-		padding: 12px 13px;
-		margin-bottom: 9px;
+		padding: 14px 14px;
+		margin-bottom: 10px;
 		background-color: #FFFFFF;
-		border-radius: 17px;
+		border-radius: 20px;
 		border-width: 1px;
-		border-color: #F1E5EA;
+		border-color: rgba(241, 229, 234, 0.92);
 		border-style: solid;
+		box-shadow: 0 10px 24px rgba(216, 140, 165, 0.055);
 	}
 
 	.agent-avatar-wrap {
-		width: 50px;
-		height: 50px;
-		margin-right: 12px;
+		width: 54px;
+		height: 54px;
+		margin-right: 13px;
 		position: relative;
 	}
 
 	/* 左侧头像 - 纯色背景 */
 	.agent-avatar {
-		width: 46px;
-		height: 46px;
-		border-radius: 16px;
+		width: 50px;
+		height: 50px;
+		border-radius: 18px;
 		justify-content: center;
 		align-items: center;
 	}
 
 	/* 自定义头像图片 */
 	.agent-avatar-img {
-		width: 46px;
-		height: 46px;
-		border-radius: 16px;
+		width: 50px;
+		height: 50px;
+		border-radius: 18px;
 	}
 
 	.agent-status-dot {
@@ -909,11 +1035,11 @@
 		border-color: #FFFFFF;
 	}
 
-	.avatar-1 { background-color: var(--rice-primary-color); }
-	.avatar-2 { background-color: #60A5FA; }
-	.avatar-3 { background-color: #34D399; }
-	.avatar-4 { background-color: #FBBF24; }
-	.avatar-5 { background-color: #A78BFA; }
+	.avatar-1 { background-color: #F59AB7; }
+	.avatar-2 { background-color: #A8C7F7; }
+	.avatar-3 { background-color: #A6DCC9; }
+	.avatar-4 { background-color: #F3C98B; }
+	.avatar-5 { background-color: #BDA8F5; }
 
 	/* 中间信息 */
 	.agent-info {
@@ -957,11 +1083,6 @@
 		color: var(--rice-primary-color);
 		font-size: 10px;
 		font-weight: bold;
-	}
-
-	.chat-type-badge-ai {
-		background-color: #FDECEF;
-		color: #D98BA5;
 	}
 
 	.agent-desc {
