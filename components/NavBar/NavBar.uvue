@@ -1,5 +1,5 @@
 <template>
-	<view class="nb-root">
+	<view :class="variant == 'light' ? 'nb-root nb-root-light' : 'nb-root'">
 		<NyxFloatingVoice v-if="showNyxFloat == true" />
 		<view v-if="!noStatusBar" class="nb-status" :style="{ height: statusBarHeight + 'px' }">
 			<share-element v-if="shareKey != ''" :share-key="shareKey">
@@ -58,6 +58,10 @@
 			showNyxFloat: {
 				type: Boolean,
 				default: true
+			},
+			variant: {
+				type: String,
+				default: 'primary'
 			}
 		},
 		data() {
@@ -105,10 +109,18 @@
 		background-color: var(--rice-primary-color);
 	}
 
+	.nb-root-light {
+		background-color: #FAF7F8;
+	}
+
 	.nb-status {
 		flex-direction: column;
 		flex-shrink: 0;
 		background-color: var(--rice-primary-color);
+	}
+
+	.nb-root-light .nb-status {
+		background-color: #F48FB1;
 	}
 
 	.nb-status-fill {
@@ -116,8 +128,16 @@
 		background-color: var(--rice-primary-color);
 	}
 
+	.nb-root-light .nb-status-fill {
+		background-color: #F48FB1;
+	}
+
 	.nb-wrap {
 		background-color: var(--rice-primary-color);
+	}
+
+	.nb-root-light .nb-wrap {
+		background-color: #FAF7F8;
 	}
 
 	.nb-header {
@@ -132,10 +152,18 @@
 		background-color: var(--rice-primary-color);
 	}
 
+	.nb-root-light .nb-header {
+		background-color: #FAF7F8;
+	}
+
 	/* 阴影线 */
 	.nb-shadow {
 		height: 1px;
 		background-color: rgba(0,0,0,0.06);
+	}
+
+	.nb-root-light .nb-shadow {
+		background-color: rgba(241, 229, 234, 0.85);
 	}
 
 	.nb-left {
@@ -149,6 +177,10 @@
 		font-size: 18px;
 		font-weight: bold;
 		color: var(--rice-text-color-white);
+	}
+
+	.nb-root-light .nb-title {
+		color: #25242A;
 	}
 
 	.nb-title-center {
@@ -175,10 +207,18 @@
 		color: var(--rice-text-color-white);
 	}
 
+	.nb-root-light .back-arrow {
+		color: #25242A;
+	}
+
 	.back-text {
 		font-size: 16px;
 		color: var(--rice-text-color-white);
 		margin-left: 4px;
 		padding-top: 3px;
+	}
+
+	.nb-root-light .back-text {
+		color: #25242A;
 	}
 </style>

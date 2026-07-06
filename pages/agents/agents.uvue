@@ -1,9 +1,9 @@
 <template>
 	<view class="page-shell rice-theme-light" ref="shellRef">
-		<NavBar title="聊天">
+		<NavBar title="聊天" variant="light" :showNyxFloat="false">
 			<template #right>
 				<view class="add-btn" @click.stop="toggleCreateMenu">
-					<oui-icon-unix name="plus" size="22px" color="#FFFFFF" />
+					<oui-icon-unix name="plus" size="22px" color="#FB8FAB" />
 				</view>
 			</template>
 		</NavBar>
@@ -35,17 +35,6 @@
 		<scroll-view class="agent-scroll" :scroll-y="true">
 			<share-element share-key="agent-list">
 				<view class="home-content">
-					<view class="home-hero">
-						<view class="home-hero-copy">
-							<text class="home-kicker">NyxAgent</text>
-							<text class="home-title">今天和谁聊聊？</text>
-							<text class="home-subtitle">私聊、群聊和你的日常工作区都在这里。</text>
-						</view>
-						<view class="home-hero-mark">
-							<oui-icon-unix name="robot" size="28px" color="#FFFFFF" />
-						</view>
-					</view>
-
 					<view class="search-card">
 						<oui-icon-unix name="search" size="16px" color="var(--rice-text-color-3)" />
 						<text class="search-placeholder">搜索联系人、群聊或最近消息</text>
@@ -710,12 +699,12 @@
 
 <style>
 	.add-btn {
-		width: 40px;
-		height: 40px;
-		border-radius: 20px;
+		width: 36px;
+		height: 36px;
+		border-radius: 18px;
 		justify-content: center;
 		align-items: center;
-		background-color: rgba(255, 255, 255, 0.18);
+		background-color: #FDECEF;
 	}
 
 	.create-menu-mask {
@@ -791,65 +780,17 @@
 
 	.home-content {
 		flex-direction: column;
-		padding: 12px 14px 18px;
-	}
-
-	.home-hero {
-		flex-direction: row;
-		align-items: center;
-		justify-content: space-between;
-		background-color: #FFF7FA;
-		border-radius: 22px;
-		padding: 16px;
-		border-width: 1px;
-		border-style: solid;
-		border-color: rgba(251, 143, 171, 0.18);
-	}
-
-	.home-hero-copy {
-		flex: 1;
-		flex-direction: column;
-		padding-right: 12px;
-	}
-
-	.home-kicker {
-		font-size: 12px;
-		font-weight: bold;
-		color: var(--rice-primary-color);
-		margin-bottom: 5px;
-	}
-
-	.home-title {
-		font-size: 23px;
-		font-weight: bold;
-		color: #2A2529;
-		margin-bottom: 6px;
-	}
-
-	.home-subtitle {
-		font-size: 13px;
-		line-height: 18px;
-		color: #8A7B84;
-	}
-
-	.home-hero-mark {
-		width: 54px;
-		height: 54px;
-		border-radius: 18px;
-		background-color: #FB8FAB;
-		justify-content: center;
-		align-items: center;
+		padding: 10px 14px 82px;
 	}
 
 	.search-card {
-		height: 42px;
+		height: 40px;
 		flex-direction: row;
 		align-items: center;
 		background-color: #FFFFFF;
 		border-radius: 500px;
 		padding-left: 15px;
 		padding-right: 15px;
-		margin-top: 12px;
 		border-width: 1px;
 		border-style: solid;
 		border-color: #F1E5EA;
@@ -864,15 +805,15 @@
 	.filter-row {
 		flex-direction: row;
 		align-items: center;
-		margin-top: 12px;
+		margin-top: 11px;
 	}
 
 	.filter-chip {
-		height: 34px;
+		height: 32px;
 		border-radius: 500px;
 		background-color: #FFFFFF;
-		padding-left: 17px;
-		padding-right: 17px;
+		padding-left: 16px;
+		padding-right: 16px;
 		justify-content: center;
 		align-items: center;
 		margin-right: 9px;
@@ -900,7 +841,7 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		margin-top: 18px;
+		margin-top: 16px;
 		margin-bottom: 10px;
 	}
 
@@ -923,36 +864,36 @@
 	.agent-item {
 		flex-direction: row;
 		align-items: center;
-		padding: 13px 14px;
-		margin-bottom: 10px;
+		padding: 12px 13px;
+		margin-bottom: 9px;
 		background-color: #FFFFFF;
-		border-radius: 18px;
+		border-radius: 17px;
 		border-width: 1px;
 		border-color: #F1E5EA;
 		border-style: solid;
 	}
 
 	.agent-avatar-wrap {
-		width: 52px;
-		height: 52px;
-		margin-right: 13px;
+		width: 50px;
+		height: 50px;
+		margin-right: 12px;
 		position: relative;
 	}
 
 	/* 左侧头像 - 纯色背景 */
 	.agent-avatar {
-		width: 48px;
-		height: 48px;
-		border-radius: 17px;
+		width: 46px;
+		height: 46px;
+		border-radius: 16px;
 		justify-content: center;
 		align-items: center;
 	}
 
 	/* 自定义头像图片 */
 	.agent-avatar-img {
-		width: 48px;
-		height: 48px;
-		border-radius: 17px;
+		width: 46px;
+		height: 46px;
+		border-radius: 16px;
 	}
 
 	.agent-status-dot {
