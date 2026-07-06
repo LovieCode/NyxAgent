@@ -4,7 +4,8 @@
 			"path": "pages/agents/agents",
 			"style": {
 				"navigationStyle": "custom",
-				"navigationBarTextStyle": "white"
+				"navigationBarTextStyle": "white",
+				"backgroundColor": "#FAF7F5"
 			}
 		},
 		{

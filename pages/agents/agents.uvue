@@ -1,5 +1,5 @@
 <template>
-	<view class="page-shell rice-theme-light" ref="shellRef">
+	<view class="page-shell rice-theme-light agent-home-shell" ref="shellRef">
 		<view class="home-status" :style="{ height: statusBarHeight + 'px' }"></view>
 		<view class="home-header">
 			<view class="home-brand">
@@ -770,6 +770,10 @@
 </script>
 
 <style>
+	.agent-home-shell {
+		background-color: #FAF7F5;
+	}
+
 	.home-status {
 		flex-shrink: 0;
 		background-color: #FAF7F5;
