@@ -116,7 +116,7 @@
 	.logo-text {
 		font-size: 20px;
 		font-weight: bold;
-		color: #DB2777;
+		color: #DB6F92;
 	}
 
 	.app-name {
@@ -177,7 +177,7 @@
 		font-weight: bold;
 	}
 	.link-value {
-		color: #DB2777;
+		color: #DB6F92;
 		text-decoration-line: underline;
 	}
 

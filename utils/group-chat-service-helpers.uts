@@ -12,6 +12,13 @@ import {
 	type GroupChatSession,
 } from '@/utils/group-chat-models.uts'
 import { displaySessionTitle, readActionText } from '@/utils/group-chat-runtime.uts'
+import { getAppSetting } from '@/utils/database.uts'
+
+function readCurrentUserDisplayName(): string {
+	const raw = getAppSetting('profile_nickname')
+	const name = raw != null ? raw.trim() : ''
+	return name != '' ? name : '我'
+}
 
 export function createGroupAgentContextRecordPayload(group: GroupChat, session: GroupChatSession, agentId: string, agentName: string, action: UTSJSONObject, runtimeMessages: UTSJSONObject[], systemPrompt: string): UTSJSONObject {
 	const privateInstruction = readActionText(action, 'privateInstruction')
@@ -63,7 +70,8 @@ export function decorateGroupMessage(base: UTSJSONObject, groupId: string, sessi
 
 export function normalizeGroupUserDisplayName(userName: string): string {
 	const name = userName.trim()
-	return name != '' ? name : '用户'
+	if (name != '' && name != '用户' && name != '我') { return name }
+	return readCurrentUserDisplayName()
 }
 
 export function resolveGroupHiddenSenderName(group: GroupChat | null, senderType: string): string {

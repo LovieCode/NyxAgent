@@ -76,7 +76,7 @@
 				if (this.nickname != null && this.nickname != '') {
 					return this.nickname.substring(0, 1)
 				}
-				return 'U'
+				return '我'
 			}
 		},
 		onLoad() {
@@ -122,7 +122,7 @@
 		methods: {
 			loadProfile() {
 				const v1 = getAppSetting('profile_nickname')
-				this.nickname = (v1 != null && v1 != '') ? v1 : '用户'
+				this.nickname = (v1 != null) ? v1 : ''
 				const v2 = getAppSetting('profile_bio')
 				this.bio = (v2 != null && v2 != '') ? v2 : ''
 				const v3 = getAppSetting('profile_email')

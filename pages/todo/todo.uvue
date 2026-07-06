@@ -188,6 +188,7 @@
 	import { getAgentDir, getUserDir, migrateLegacyUserDir, readContent, writeContent, listDir, deleteItem, joinPath, type FileItem } from '@/utils/file-manager.uts'
 	import { parseTodoMarkdown, parseNoteMarkdown, buildTodoMarkdown, buildNoteMarkdown, type KnowledgeRenderBlock } from '@/utils/markdown.uts'
 	import { getAgents } from '@/utils/agent.uts'
+	import { getAppSetting } from '@/utils/database.uts'
 	import {
 		applyNoteEditorState,
 		buildFilteredNoteList,
@@ -203,12 +204,6 @@
 		readNoteEditorStateFromNote,
 		type NoteEditorState,
 	} from '@/utils/todo-page-helpers.uts'
-
-	/** 虚拟用户条目，显示在所有 agent 之前 */
-	const USER_AGENT_ENTRY: UTSJSONObject = {
-		id: '__user__',
-		name: '用户',
-	} as UTSJSONObject
 
 	/**
 	 * 待办 + 笔记 合并页面
@@ -258,11 +253,21 @@
 			this.consumeNoteEditorResult()
 		},
 		methods: {
+			getUserDisplayName(): string {
+				const raw = getAppSetting('profile_nickname')
+				const name = raw != null ? raw.trim() : ''
+				return name != '' ? name : '我'
+			},
+
 			/** 加载 agent 列表（预置用户条目在最前） */
 			loadAgents() {
 				migrateLegacyUserDir()
 				const list = getAgents()
-				const result = [USER_AGENT_ENTRY] as UTSJSONObject[]
+				const userEntry = {
+					id: '__user__',
+					name: this.getUserDisplayName(),
+				} as UTSJSONObject
+				const result = [userEntry] as UTSJSONObject[]
 				for (let i = 0; i < list.length; i++) {
 					result.push(list[i])
 				}
@@ -926,7 +931,7 @@
 
 	.note-todo-count {
 		font-size: 11px;
-		color: #DB2777;
+		color: #DB6F92;
 		background-color: #FDE8EF;
 		border-radius: 500px;
 		padding: 2px 6px;

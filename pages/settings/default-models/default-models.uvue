@@ -536,7 +536,7 @@
 	}
 
 	.chip-text-active {
-		color: #DB2777;
+		color: #DB6F92;
 		font-weight: bold;
 	}
 

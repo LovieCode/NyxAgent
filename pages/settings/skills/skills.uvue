@@ -662,7 +662,7 @@
 	}
 
 	.skill-status-on {
-		color: #DB2777;
+		color: #DB6F92;
 	}
 
 	.skill-status-off {

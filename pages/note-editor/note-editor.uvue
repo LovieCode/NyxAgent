@@ -18,12 +18,7 @@
 
 <script lang="uts">
 	import { getAgents } from '@/utils/agent.uts'
-	import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
-
-	const USER_AGENT_ENTRY: UTSJSONObject = {
-		id: '__user__',
-		name: '用户',
-	} as UTSJSONObject
+	import { deleteRuntimeState, getAppSetting, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 
 	export default {
 		data() {
@@ -49,9 +44,19 @@
 			this.loadEditorPayload()
 		},
 		methods: {
+			getUserDisplayName(): string {
+				const raw = getAppSetting('profile_nickname')
+				const name = raw != null ? raw.trim() : ''
+				return name != '' ? name : '我'
+			},
+
 			loadAgents() {
 				const list = getAgents()
-				const result = [USER_AGENT_ENTRY] as UTSJSONObject[]
+				const userEntry = {
+					id: '__user__',
+					name: this.getUserDisplayName(),
+				} as UTSJSONObject
+				const result = [userEntry] as UTSJSONObject[]
 				for (let i = 0; i < list.length; i++) {
 					result.push(list[i])
 				}
@@ -97,7 +102,7 @@
 				if (this.selectedAgentIndex >= 0 && this.selectedAgentIndex < this.agents.length) {
 					return this.agents[this.selectedAgentIndex]['name'] as string
 				}
-				return '用户'
+				return this.getUserDisplayName()
 			},
 
 			onContentChange(value: string) {

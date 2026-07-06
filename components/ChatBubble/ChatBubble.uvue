@@ -332,7 +332,7 @@
 				if (name != null && name != '') {
 					return name.substring(0, 1)
 				}
-				return 'U'
+				return '我'
 			},
 			bubbleClass(): string {
 				if (this.role == 'user') {

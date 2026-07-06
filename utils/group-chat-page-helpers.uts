@@ -105,13 +105,13 @@ export function readGroupMessageSenderName(msg: UTSJSONObject): string {
 export function readGroupUserMessageSenderName(msg: UTSJSONObject, userNickname: string): string {
 	const raw = msg['senderName'] as string | null
 	const name = raw != null ? raw.trim() : ''
-	if (name != '' && name != '用户') { return name }
-	return userNickname != '' ? userNickname : '用户'
+	if (name != '' && name != '用户' && name != '我') { return name }
+	return userNickname != '' ? userNickname : '我'
 }
 
 export function normalizeGroupUserSenderNames(messages: UTSJSONObject[], userNickname: string): boolean {
-	const displayName = userNickname != '' ? userNickname : '用户'
-	if (displayName == '用户') { return false }
+	const displayName = userNickname != '' ? userNickname : '我'
+	if (displayName == '我') { return false }
 	let changed = false
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i]
@@ -119,7 +119,7 @@ export function normalizeGroupUserSenderNames(messages: UTSJSONObject[], userNic
 		if (senderType == GROUP_MESSAGE_SENDER_USER) {
 			const raw = msg['senderName'] as string | null
 			const name = raw != null ? raw.trim() : ''
-			if (name == '' || name == '用户') {
+			if (name == '' || name == '用户' || name == '我') {
 				msg['senderName'] = displayName
 				changed = true
 			}

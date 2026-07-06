@@ -74,11 +74,11 @@ export function renderHistoryMessagePartsMarkdown(msg: UTSJSONObject): string {
 export function resolveHistoryGroupPreviewSenderName(senderName: string | null, senderType: string | null, role: string | null): string {
 	const name = senderName != null ? senderName.trim() : ''
 	if (senderType == 'user' || role == 'user') {
-		if (name != '' && name != '用户') { return name }
+		if (name != '' && name != '用户' && name != '我') { return name }
 		// 用户资料从 SQLite app_settings 读取。
 		const raw = getAppSetting('profile_nickname')
 		const profileName = raw != null ? raw.trim() : ''
-		return profileName != '' ? profileName : '用户'
+		return profileName != '' ? profileName : '我'
 	}
 	return name != '' ? name : '成员'
 }

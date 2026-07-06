@@ -22,7 +22,7 @@ export function loadChatUserProfile(): ChatUserProfile {
 	const nicknameRaw = getAppSetting('profile_nickname')
 	const avatarRaw = getAppSetting('profile_avatar')
 	return {
-		nickname: (nicknameRaw != null && nicknameRaw != '') ? nicknameRaw : '用户',
+		nickname: nicknameRaw != null ? nicknameRaw : '',
 		avatar: avatarRaw != null ? avatarRaw : '',
 	} as ChatUserProfile
 }

@@ -168,11 +168,11 @@
 				return '普通聊天、资料和偏好设置都在这里。'
 			},
 			profileInitial() : string {
-				const name = this.profileDisplayName
+				const name = this.profileNickname
 				if (name != '') {
 					return name.substring(0, 1)
 				}
-				return '眠'
+				return '我'
 			},
 			pIds() : string[] {
 				return [
@@ -579,7 +579,7 @@
 	}
 
 	.pill-text-active {
-		color: #DB2777;
+		color: #DB6F92;
 		font-weight: bold;
 	}
 
