@@ -40,11 +40,6 @@
 		<scroll-view class="agent-scroll" :scroll-y="true">
 			<share-element share-key="agent-list">
 				<view class="home-content">
-					<view class="search-card">
-						<oui-icon-unix name="search" size="16px" color="var(--rice-text-color-3)" />
-						<text class="search-placeholder">搜索联系人、群聊或消息</text>
-					</view>
-
 					<view class="filter-row">
 						<view class="filter-chip filter-chip-active">
 							<text class="filter-chip-text filter-chip-text-active">全部</text>
@@ -901,30 +896,10 @@
 		padding: 6px 24px 82px;
 	}
 
-	.search-card {
-		height: 44px;
-		flex-direction: row;
-		align-items: center;
-		background-color: #FFFFFF;
-		border-radius: 500px;
-		padding-left: 16px;
-		padding-right: 16px;
-		border-width: 1px;
-		border-style: solid;
-		border-color: #F1E5EA;
-		box-shadow: 0 10px 24px rgba(216, 140, 165, 0.06);
-	}
-
-	.search-placeholder {
-		font-size: 13px;
-		color: var(--rice-text-color-3);
-		margin-left: 8px;
-	}
-
 	.filter-row {
 		flex-direction: row;
 		align-items: center;
-		margin-top: 14px;
+		margin-top: 6px;
 	}
 
 	.filter-chip {
