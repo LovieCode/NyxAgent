@@ -4,11 +4,12 @@
 		<scroll-view class="container" :scroll-y="true">
 			<view class="profile-card" @click="goSubPage('profile')">
 				<view class="profile-avatar">
-					<text class="profile-avatar-text">眠</text>
+					<image v-if="profileAvatar != ''" :src="profileAvatar" class="profile-avatar-img" mode="aspectFill" />
+					<text v-else class="profile-avatar-text">{{profileInitial}}</text>
 				</view>
 				<view class="profile-info">
-					<text class="profile-name">眠汐</text>
-					<text class="profile-desc">普通聊天、资料和偏好设置都在这里。</text>
+					<text class="profile-name">{{profileDisplayName}}</text>
+					<text class="profile-desc">{{profileDisplayDesc}}</text>
 				</view>
 				<oui-icon-unix name="right" size="15px" color="#A79DA4" />
 			</view>
@@ -146,10 +147,33 @@
 				expandBasic: true as boolean,
 				expandModel: true as boolean,
 				expandPlugin: true as boolean,
-				expandAbout: true as boolean
+				expandAbout: true as boolean,
+				profileNickname: '' as string,
+				profileBio: '' as string,
+				profileDescription: '' as string,
+				profileAvatar: '' as string
 			}
 		},
 		computed: {
+			profileDisplayName() : string {
+				return this.profileNickname != '' ? this.profileNickname : '未设置昵称'
+			},
+			profileDisplayDesc() : string {
+				if (this.profileBio != '') {
+					return this.profileBio
+				}
+				if (this.profileDescription != '') {
+					return this.profileDescription
+				}
+				return '普通聊天、资料和偏好设置都在这里。'
+			},
+			profileInitial() : string {
+				const name = this.profileDisplayName
+				if (name != '') {
+					return name.substring(0, 1)
+				}
+				return '眠'
+			},
 			pIds() : string[] {
 				return [
 					'anthropic', 'openai', 'deepseek', 'zai',
@@ -211,6 +235,10 @@
 		},
 		onLoad() {
 			this.loadSettings()
+			this.loadProfileSummary()
+		},
+		onShow() {
+			this.loadProfileSummary()
 		},
 		methods: {
 			findProviderIndex(id : string) : number {
@@ -235,6 +263,17 @@
 				this.ghProxyEnabled = (proxyEnabled != null && proxyEnabled == 'true')
 				let proxyDomain = getAppSetting('settings_gh_proxy_domain')
 				this.ghProxyDomain = (proxyDomain != null) ? proxyDomain : ''
+			},
+
+			loadProfileSummary() {
+				const nickname = getAppSetting('profile_nickname')
+				this.profileNickname = (nickname != null) ? nickname : ''
+				const bio = getAppSetting('profile_bio')
+				this.profileBio = (bio != null) ? bio : ''
+				const description = getAppSetting('profile_description')
+				this.profileDescription = (description != null) ? description : ''
+				const avatar = getAppSetting('profile_avatar')
+				this.profileAvatar = (avatar != null) ? avatar : ''
 			},
 
 			saveSettings() {
@@ -317,6 +356,13 @@
 		align-items: center;
 		justify-content: center;
 		margin-right: 13px;
+		overflow: hidden;
+	}
+
+	.profile-avatar-img {
+		width: 54px;
+		height: 54px;
+		border-radius: 18px;
 	}
 
 	.profile-avatar-text {

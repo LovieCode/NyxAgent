@@ -1,6 +1,6 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NavBar title="模型设置" showBack />
+		<NavBar variant="light" title="模型设置" showBack />
 		<scroll-view class="container" :scroll-y="true">
 
 			<!-- 选择提供商 -->
@@ -44,13 +44,12 @@
 						@click="selectModel(m.id)"
 					>
 						<text class="pill-text" :class="selectedModel == m.id ? 'pill-text-active' : ''">{{m.id}}</text>
-						<text v-if="m.context != null && m.context > 0" class="pill-ctx">{{(m.context! / 1000)}}k</text>
+						<text v-if="m.context != null && m.context > 0" class="pill-ctx">{{formatModelContext(m.context)}}</text>
 					</view>
 				</view>
 			</view>
 
 		</scroll-view>
-		<TabBar current="pages/settings/settings" />
 	</view>
 </template>
 
@@ -179,6 +178,13 @@
 			selectModel(id: string) {
 				this.selectedModel = id
 				this.saveSettings()
+			},
+
+			formatModelContext(context: number | null): string {
+				if (context == null || context <= 0) {
+					return ''
+				}
+				return Math.floor(context / 1000).toString() + 'k'
 			},
 
 			saveSettings() {
@@ -326,4 +332,14 @@
 	.save-wrap {
 		padding: 10px 0 30px 0;
 	}
+
+
+/* ===== Nyx 子页面视觉重制 ===== */
+	.page-shell { background-color: #FAF7F5; }
+	.container { background-color: #FAF7F5; padding-left: 24px; padding-right: 24px; padding-top: 14px; padding-bottom: 28px; }
+	.card { background-color: #FFFFFF; border-radius: 20px; border-width: 1px; border-style: solid; border-color: rgba(241, 229, 234, 0.92); box-shadow: 0 8px 20px rgba(216, 140, 165, 0.045); margin-bottom: 12px; padding: 16px; }
+	.section-title { color: #2A2529; }
+	.chip, .model-pill { border-radius: 500px; background-color: #FFFFFF; border-color: #F1E5EA; }
+	.chip-active, .pill-active { background-color: #FFF0F5; border-color: rgba(251, 143, 171, 0.56); }
+	.pill-text-active, .chip-text-active { color: #DB6F92; font-weight: bold; }
 </style>

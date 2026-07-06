@@ -1,6 +1,5 @@
 <template>
 	<view class="nyx-page-header">
-		<NyxFloatingVoice v-if="showNyxFloat == true" />
 		<view v-if="noStatusBar == false" class="nyx-status" :style="{ height: statusBarHeight + 'px' }"></view>
 		<view class="nyx-header-row">
 			<view class="nyx-title-wrap">
@@ -32,7 +31,7 @@
 			},
 			showNyxFloat: {
 				type: Boolean,
-				default: true
+				default: false
 			}
 		},
 		data() {

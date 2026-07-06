@@ -1,6 +1,5 @@
 <template>
 	<view :class="variant == 'light' ? 'nb-root nb-root-light' : 'nb-root'">
-		<NyxFloatingVoice v-if="showNyxFloat == true" />
 		<view v-if="!noStatusBar" class="nb-status" :style="{ height: statusBarHeight + 'px' }">
 			<share-element v-if="shareKey != ''" :share-key="shareKey">
 				<view class="nb-status-fill" :style="{ height: statusBarHeight + 'px' }"></view>
@@ -57,7 +56,7 @@
 			},
 			showNyxFloat: {
 				type: Boolean,
-				default: true
+				default: false
 			},
 			variant: {
 				type: String,

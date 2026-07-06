@@ -292,7 +292,7 @@
 /* ===== Nyx 子页面视觉重制 ===== */
 	.page-shell { background-color: #FAF7F5; }
 	.container, .settings-scroll, .session-scroll, .history-page { background-color: #FAF7F5; }
-	.container, .settings-scroll, .session-scroll { padding-left: 24px; padding-right: 24px; padding-top: 14px; }
+	.container, .settings-scroll, .session-scroll { padding-left: 24px; padding-right: 24px; padding-top: 14px; padding-bottom: 28px; }
 	.card, .form-card, .info-card, .details-card, .guide-card, .model-card, .hint-card, .hero-card, .danger-card, .empty-card, .prompt-box, .unimplemented-notice, .fullscreen-edit-card, .import-panel, .last-call-panel, .summary-card, .response-card, .preview-box { background-color: #FFFFFF; border-radius: 20px; border-width: 1px; border-style: solid; border-color: rgba(241, 229, 234, 0.92); box-shadow: 0 8px 20px rgba(216, 140, 165, 0.045); margin-left: 0; margin-right: 0; margin-top: 0; margin-bottom: 12px; padding: 16px; }
 	.hero-card, .hint-card, .guide-card, .unimplemented-notice { background-color: #FFF7FA; border-color: rgba(251, 143, 171, 0.20); }
 	.card-title, .hero-title, .hint-title, .guide-title, .info-title, .setting-title, .card-label, .provider-name, .model-card-title, .task-type-name, .skill-name, .action-title, .app-name, .form-label { color: #2A2529; }
@@ -302,6 +302,7 @@
 	.member-avatar, .session-icon, .logo-circle, .avatar-circle, .agent-avatar-placeholder, .card-icon, .task-type-icon, .tool-card-check, .skill-card-check { background-color: #FFF0F5; }
 	.chip, .model-pill, .provider-chip, .doc-tab, .filter-chip, .tts-box, .summary-param-pill, .log-badge { border-radius: 500px; background-color: #FFFFFF; border-width: 1px; border-style: solid; border-color: #F1E5EA; }
 	.chip-active, .pill-active, .doc-tab-active, .model-card-active, .skill-item-active, .skill-card-active, .tool-card-active, .session-item-active, .card-selected { background-color: #FFF0F5; border-color: rgba(251, 143, 171, 0.56); }
+	.chip-text-active, .pill-text-active, .doc-tab-text-active, .filter-chip-text-active { color: #DB6F92; font-weight: bold; }
 	.save-btn, .primary-btn, .test-btn, .add-model-btn, .fetch-btn, .member-action, .preview-primary-btn { border-radius: 500px; background-color: #FB8FAB; box-shadow: 0 8px 18px rgba(251, 143, 171, 0.18); }
 	.save-btn-text, .primary-btn-text, .fetch-btn-text, .add-model-text, .test-btn-text, .member-action-text, .preview-primary-text { color: #FFFFFF; font-weight: bold; }
 	.nav-add-text, .done-btn, .nav-btn, .reset-btn, .text-btn, .mini-btn, .session-action, .link-value, .fullscreen-edit-action, .prompt-save-text, .tts-clear-text { color: #DB6F92; font-weight: bold; }

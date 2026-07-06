@@ -1,6 +1,6 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NavBar :title="headerTitle" showBack :showNyxFloat="false" variant="light" @back="goBack">
+		<NavBar :title="headerTitle" showBack variant="light" @back="goBack">
 			<template #right>
 				<view style="flex-direction:row;align-items:center;">
 					<view class="nav-icon-btn" @click="goSessions">
