@@ -125,6 +125,8 @@
 							<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 						</view>
 					</view>
+
+					<view class="home-scroll-bottom-spacer"></view>
 				</view>
 			</share-element>
 		</scroll-view>
@@ -895,15 +897,21 @@
 
 	.home-content {
 		flex-direction: column;
-		padding: 6px 24px 82px;
+		padding: 6px 24px 16px;
 	}
 
 	.home-tabbar-area {
 		background-color: #FAF7F5;
+		flex-shrink: 0;
 		padding-left: 16px;
 		padding-right: 16px;
 		padding-top: 8px;
 		padding-bottom: 14px;
+	}
+
+	.home-scroll-bottom-spacer {
+		height: 128px;
+		flex-shrink: 0;
 	}
 
 	.filter-row {
