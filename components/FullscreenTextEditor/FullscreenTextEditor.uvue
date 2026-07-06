@@ -1,6 +1,6 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NavBar :title="title" showBack @back="handleBack">
+		<NavBar variant="light" :title="title" showBack @back="handleBack">
 			<template #right>
 				<text v-if="readOnly == false" class="done-btn" @click="handleSave">{{ saveText }}</text>
 			</template>
@@ -152,4 +152,12 @@
 		font-weight: bold;
 		padding: 8px 4px;
 	}
+
+
+/* ===== Nyx 子页面视觉重制 ===== */
+	.page-shell { background-color: #FAF7F5; }
+	.editor-wrap { background-color: #FAF7F5; padding: 14px 24px 12px; }
+	.editor-meta { background-color: #FFFFFF; border-radius: 16px; padding: 10px 12px; margin-bottom: 10px; border-width: 1px; border-style: solid; border-color: #F1E5EA; }
+	.editor-input { background-color: #FFFFFF; border-radius: 20px; border-width: 1px; border-style: solid; border-color: rgba(241, 229, 234, 0.92); padding: 14px; box-shadow: 0 8px 20px rgba(216, 140, 165, 0.045); }
+	.done-btn { color: #DB6F92; font-weight: bold; }
 </style>

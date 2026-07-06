@@ -1,6 +1,6 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NavBar title="裁剪头像" showBack @back="goBack">
+		<NavBar variant="light" title="裁剪头像" showBack @back="goBack">
 			<template #right>
 				<text class="done-btn" @click="doCrop">完成</text>
 			</template>
@@ -242,4 +242,10 @@
 		padding: 8px 4px;
 	}
 
+
+/* ===== Nyx 子页面视觉重制 ===== */
+	.page-shell { background-color: #FAF7F5; }
+	.done-btn { color: #DB6F92; font-weight: bold; }
+	.crop-bg { background-color: #19151A; }
+	.crop-area { border-color: rgba(255, 240, 245, 0.82); border-radius: 18px; }
 </style>

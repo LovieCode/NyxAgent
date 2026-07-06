@@ -185,4 +185,8 @@
 		background-color: transparent;
 	}
 
+
+/* ===== Nyx 子页面视觉重制 ===== */
+	.note-title-field { background-color: #FFFFFF; border-radius: 18px; padding: 12px 14px; margin-bottom: 10px; border-width: 1px; border-style: solid; border-color: #F1E5EA; }
+	.title-input { color: #2A2529; }
 </style>
