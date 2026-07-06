@@ -282,7 +282,9 @@
 			</view>
 		</view>
 
-		<TabBar current="pages/agents/agents" />
+		<view class="home-tabbar-area">
+			<TabBar current="pages/agents/agents" />
+		</view>
 	</view>
 </template>
 
@@ -894,6 +896,10 @@
 	.home-content {
 		flex-direction: column;
 		padding: 6px 24px 82px;
+	}
+
+	.home-tabbar-area {
+		background-color: #FAF7F5;
 	}
 
 	.filter-row {
