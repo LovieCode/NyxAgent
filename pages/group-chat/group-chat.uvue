@@ -13,32 +13,41 @@
 			</template>
 		</NavBar>
 
-		<scroll-view class="message-list" :scroll-y="true" :scroll-top="scrollTop" @scroll="onMsgScroll">
-			<view v-for="(msg, index) in visibleMessages" :key="msg.id != null ? msg.id : index">
-				<ChatBubble
-					:role="msg.role"
-					:content="msg.content != null ? msg.content : ''"
-					:parts="getMessagePartsForView(msg)"
-					:agentAvatar="msg.senderAvatar != null ? msg.senderAvatar : ''"
-					:assistantName="isAgentMessage(msg) ? readMessageSenderName(msg) : ''"
-					:userNickname="userNickname"
-					:userDisplayName="isUserMessage(msg) ? readUserMessageSenderName(msg) : ''"
-					:userAvatar="userAvatar"
-					:toolName="msg.toolName != null ? msg.toolName : ''"
-					:hideThinking="readMessageHideThinking(msg)"
-					:msgSegmentation="readMessageMsgSegmentation(msg)"
-					:isError="msg.isError == true"
-					:isStreaming="msg.isStreaming == true"
-					:cancelToken="longpressCancelToken"
-					@bubbleLongpress="onMessageLongpress(msg)"
-					@avatarClick="openAgentPrivateChat(msg)"
-				/>
+		<view class="message-scroll-wrap">
+			<scroll-view id="group-message-scroll" class="message-list" :scroll-y="true" :scroll-with-animation="false" :show-scrollbar="false" :scroll-top="scrollTop" @scroll="onMsgScroll" @touchmove="onMsgTouchMove">
+				<view v-for="(msg, index) in visibleMessages" :key="msg.id != null ? msg.id : index">
+					<ChatBubble
+						:role="msg.role"
+						:content="msg.content != null ? msg.content : ''"
+						:parts="getMessagePartsForView(msg)"
+						:agentAvatar="msg.senderAvatar != null ? msg.senderAvatar : ''"
+						:assistantName="isAgentMessage(msg) ? readMessageSenderName(msg) : ''"
+						:userNickname="userNickname"
+						:userDisplayName="isUserMessage(msg) ? readUserMessageSenderName(msg) : ''"
+						:userAvatar="userAvatar"
+						:toolName="msg.toolName != null ? msg.toolName : ''"
+						:hideThinking="readMessageHideThinking(msg)"
+						:msgSegmentation="readMessageMsgSegmentation(msg)"
+						:isError="msg.isError == true"
+						:isStreaming="msg.isStreaming == true"
+						:cancelToken="longpressCancelToken"
+						@bubbleLongpress="onMessageLongpress(msg)"
+						@avatarClick="openAgentPrivateChat(msg)"
+					/>
+				</view>
+				<view v-if="visibleMessages.length == 0" class="empty-state">
+					<text class="empty-text">{{emptyTitle}}</text>
+					<text class="empty-hint">发一句话，本群调度会安排成员接招。</text>
+				</view>
+				<view id="group-scroll-anchor" class="scroll-anchor"></view>
+			</scroll-view>
+			<view class="chat-custom-scrollbar" v-if="showCustomScrollbar == true" @touchstart="onScrollbarTrackTap" @touchend="onScrollbarTouchEnd" @touchcancel="onScrollbarTouchEnd">
+				<view class="chat-scrollbar-thumb" :style="scrollbarThumbStyle" @touchstart.stop="onScrollbarThumbStart" @touchmove.stop.prevent="onScrollbarThumbMove" />
 			</view>
-			<view v-if="visibleMessages.length == 0" class="empty-state">
-				<text class="empty-text">{{emptyTitle}}</text>
-				<text class="empty-hint">发一句话，本群调度会安排成员接招。</text>
+			<view class="back-bottom-btn" v-if="showBackToBottom == true" @click="scrollToBottomFromButton">
+				<text class="back-bottom-text">↓ 到底部</text>
 			</view>
-		</scroll-view>
+		</view>
 
 		<view class="chat-bottom">
 			<view class="input-bar">
@@ -163,6 +172,13 @@
 		stringifyGroupContextPreview,
 	} from '@/utils/group-chat-page-helpers.uts'
 	import { createGroupHiddenStreamMessage, saveGroupAgentResponseSnapshot } from '@/utils/group-chat-stream-helpers.uts'
+	import {
+		buildChatScrollbarThumbStyle,
+		clampChatScrollTarget,
+		isChatScrollAtBottom,
+		resolveChatScrollbarDragTarget,
+		resolveChatScrollbarTrackTarget,
+	} from '@/utils/chat-scroll-helpers.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { NYX_FLOAT_CONTEXT_GROUP, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
 	import {
@@ -241,6 +257,14 @@
 				toolbarSwipeMoved: false as boolean,
 				toolbarSwipeLockedUntil: 0 as number,
 				scrollTop: 0 as number,
+				scrollViewHeight: 0 as number,
+				scrollContentHeight: 0 as number,
+				scrollOffset: 0 as number,
+				isAtBottom: true as boolean,
+				scrollbarDragging: false as boolean,
+				scrollbarDragStartY: 0 as number,
+				scrollbarDragStartTop: 0 as number,
+				scrollbarTrackTop: 0 as number,
 				longpressCancelToken: 0 as number,
 				currentStream: null as AgentEventStream | null,
 				loopTurns: 0 as number,
@@ -264,6 +288,15 @@
 			},
 			toolbarTrackStyle(): string {
 				return buildGroupToolbarTrackStyle(this.toolbarPageIndex, this.toolbarViewportWidth, this.toolbarDragOffset)
+			},
+			scrollbarThumbStyle(): string {
+				return buildChatScrollbarThumbStyle(this.scrollContentHeight, this.scrollViewHeight, this.scrollOffset)
+			},
+			showCustomScrollbar(): boolean {
+				return this.scrollViewHeight > 0 && this.scrollContentHeight > this.scrollViewHeight + 2
+			},
+			showBackToBottom(): boolean {
+				return this.scrollViewHeight > 0 && this.scrollContentHeight > this.scrollViewHeight + 2 && this.isAtBottom == false
 			}
 		},
 		onLoad() {
@@ -282,6 +315,10 @@
 			this.loadGroup()
 			activateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
 			this.consumeNyxFloatVoiceText()
+		},
+		onReady() {
+			this.scheduleMeasureMessageScroll()
+			this.scrollToBottom()
 		},
 		onHide() {
 			deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
@@ -435,9 +472,93 @@
 				}
 				return false
 			},
-			onMsgScroll(): void { this.longpressCancelToken++ },
+			onMsgScroll(e: UniScrollEvent): void {
+				this.longpressCancelToken++
+				this.scrollOffset = e.detail.scrollTop
+				this.updateBottomState()
+			},
+			onMsgTouchMove(): void {
+				this.longpressCancelToken++
+			},
+			updateBottomState(): void {
+				this.isAtBottom = isChatScrollAtBottom(this.scrollOffset, this.scrollContentHeight, this.scrollViewHeight)
+			},
+			scheduleMeasureMessageScroll(): void {
+				setTimeout(() => { this.measureMessageScrollSize() }, 60)
+				setTimeout(() => { this.measureMessageScrollSize() }, 260)
+			},
+			measureMessageScrollSize(): void {
+				const query = uni.createSelectorQuery().in(this)
+				query.select('#group-message-scroll').boundingClientRect()
+				query.select('#group-scroll-anchor').boundingClientRect()
+				query.exec((res: any) => {
+					const rows = res as UTSArray<any> | null
+					if (rows == null || rows.length < 2) { return }
+					const viewRect = rows[0] as NodeInfo | null
+					const anchorRect = rows[1] as NodeInfo | null
+					if (viewRect != null) {
+						const viewHeight = viewRect.height as number | null
+						if (viewHeight != null && viewHeight > 0) {
+							this.scrollViewHeight = viewHeight
+						}
+						const viewTop = viewRect.top as number | null
+						if (viewTop != null) {
+							this.scrollbarTrackTop = viewTop
+						}
+					}
+					if (viewRect != null && anchorRect != null) {
+						const anchorTop = anchorRect.top as number | null
+						const viewTop = viewRect.top as number | null
+						const anchorHeight = anchorRect.height as number | null
+						if (anchorTop != null && viewTop != null && anchorHeight != null) {
+							const nextHeight = anchorTop - viewTop + anchorHeight + this.scrollOffset
+							if (nextHeight > 0) {
+								this.scrollContentHeight = nextHeight
+							}
+						}
+					}
+					this.updateBottomState()
+				})
+			},
+			getScrollbarTouchY(e: UniTouchEvent): number | null {
+				if (e.touches.length == 0) { return null }
+				if (this.scrollbarTrackTop <= 0) { return null }
+				return e.touches[0].pageY - this.scrollbarTrackTop
+			},
+			commitMessageScrollTop(targetTop: number): void {
+				const safeTop = clampChatScrollTarget(targetTop, this.scrollContentHeight, this.scrollViewHeight)
+				this.scrollTop = safeTop
+				this.scrollOffset = safeTop
+				this.updateBottomState()
+			},
+			onScrollbarTrackTap(e: UniTouchEvent): void {
+				const y = this.getScrollbarTouchY(e)
+				if (y == null) { return }
+				this.commitMessageScrollTop(resolveChatScrollbarTrackTarget(y, this.scrollContentHeight, this.scrollViewHeight))
+			},
+			onScrollbarThumbStart(e: UniTouchEvent): void {
+				const y = this.getScrollbarTouchY(e)
+				if (y == null) { return }
+				this.scrollbarDragging = true
+				this.scrollbarDragStartY = y
+				this.scrollbarDragStartTop = this.scrollOffset
+			},
+			onScrollbarThumbMove(e: UniTouchEvent): void {
+				if (this.scrollbarDragging == false) { return }
+				const y = this.getScrollbarTouchY(e)
+				if (y == null) { return }
+				const target = resolveChatScrollbarDragTarget(this.scrollbarDragStartTop, y - this.scrollbarDragStartY, this.scrollContentHeight, this.scrollViewHeight)
+				this.commitMessageScrollTop(target)
+			},
+			onScrollbarTouchEnd(_e: UniTouchEvent): void {
+				this.scrollbarDragging = false
+			},
+			scrollToBottomFromButton(): void {
+				this.scrollToBottom()
+			},
 			onInputLineChange(e: UniTextareaLineChangeEvent): void {
 				this.inputHeight = calcGroupInputHeight(e.detail.lineCount)
+				this.scheduleMeasureMessageScroll()
 			},
 			getMessagePartsForView(msg: UTSJSONObject): UTSJSONObject[] { return getGroupMessagePartsForView(msg) },
 			readMessageHideThinking(msg: UTSJSONObject): boolean {
@@ -464,7 +585,18 @@
 				}
 			},
 			scrollToBottom(): void {
-				setTimeout(() => { this.scrollTop = this.scrollTop + 999999 }, 80)
+				this.isAtBottom = true
+				setTimeout(() => {
+					this.scrollTop = this.scrollTop + 999999
+					this.isAtBottom = true
+					this.scheduleMeasureMessageScroll()
+				}, 80)
+			},
+			scrollToBottomIfPinned(): void {
+				this.scheduleMeasureMessageScroll()
+				if (this.isAtBottom == true) {
+					this.scrollToBottom()
+				}
 			},
 			findLastAssistantMessage(list: UTSJSONObject[]): UTSJSONObject | null {
 				return findLastGroupAssistantMessage(list)
@@ -997,11 +1129,11 @@
 						this.currentStream = null
 						if (reviewHolding == true) {
 							this.saveMessages()
-							this.scrollToBottom()
+							this.scrollToBottomIfPinned()
 							this.runSchedulerReview(agentId, agentName, streamingMsg, heldText, hitKeyword, action, done)
 						} else {
 							this.saveMessages()
-							this.scrollToBottom()
+							this.scrollToBottomIfPinned()
 							done()
 						}
 						return
@@ -1036,7 +1168,7 @@
 							}
 						}
 					}
-					this.scrollToBottom()
+					this.scrollToBottomIfPinned()
 				})
 			},
 			runSchedulerReview(agentId: string, agentName: string, streamingMsg: UTSJSONObject, candidateText: string, keyword: string, originalAction: UTSJSONObject, done: () => void): void {
@@ -1068,27 +1200,27 @@
 							this.replaceVisiblePlainText(streamingMsg, candidateText)
 							streamingMsg['isStreaming'] = false
 							this.saveMessages()
-							this.scrollToBottom()
+							this.scrollToBottomIfPinned()
 							done()
 							return
 						}
 						if (mode == 'revoke') {
 							markGroupAgentMessageRevoked(streamingMsg)
 							this.saveMessages()
-							this.scrollToBottom()
+							this.scrollToBottomIfPinned()
 							done()
 							return
 						}
 						if ((streamingMsg['revisionAttempt'] as boolean | null) == true) {
 							markGroupAgentMessageRevoked(streamingMsg)
 							this.saveMessages()
-							this.scrollToBottom()
+							this.scrollToBottomIfPinned()
 							done()
 							return
 						}
 						markGroupAgentMessageRevoked(streamingMsg)
 						this.saveMessages()
-						this.scrollToBottom()
+						this.scrollToBottomIfPinned()
 						const instructionRaw = decision['revisionInstruction'] as string | null
 						const revisedAction = buildRevisedGroupSpeakAction(originalAction, instructionRaw, candidateText)
 						this.runMemberSpeakWithReview(agentId, revisedAction, true, done)
@@ -1122,6 +1254,60 @@
 		padding-left: 6px;
 		padding-right: 6px;
 		background-color: #FAF7F5;
+	}
+
+	.message-scroll-wrap {
+		flex: 1;
+		position: relative;
+		overflow: hidden;
+		background-color: #FAF7F5;
+	}
+
+	.scroll-anchor {
+		height: 2px;
+		flex-shrink: 0;
+	}
+
+	.chat-custom-scrollbar {
+		position: absolute;
+		right: 2px;
+		top: 6px;
+		bottom: 6px;
+		width: 18px;
+		border-radius: 9px;
+		background-color: rgba(251, 143, 171, 0.06);
+	}
+
+	.chat-scrollbar-thumb {
+		position: absolute;
+		left: 6px;
+		right: 6px;
+		border-radius: 999px;
+		background-color: rgba(219, 111, 146, 0.38);
+	}
+
+	.back-bottom-btn {
+		position: absolute;
+		right: 18px;
+		bottom: 14px;
+		height: 32px;
+		padding-left: 13px;
+		padding-right: 13px;
+		border-radius: 16px;
+		background-color: rgba(255, 255, 255, 0.96);
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(251, 143, 171, 0.28);
+		box-shadow: 0 6px 14px rgba(216, 140, 165, 0.10);
+		align-items: center;
+		justify-content: center;
+	}
+
+	.back-bottom-text {
+		font-size: 12px;
+		line-height: 16px;
+		color: #DB6F92;
+		font-weight: bold;
 	}
 
 	.empty-state {

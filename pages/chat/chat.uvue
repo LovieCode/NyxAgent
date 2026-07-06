@@ -17,38 +17,47 @@
 		</NavBar>
 
 		<!-- 消息列表 -->
-		<scroll-view class="message-list" :scroll-y="true" :scroll-top="scrollTop" @scroll="onMsgScroll" @touchmove="onMsgTouchMove">
-			<view v-for="(msg, index) in messages" :key="index">
-				<view v-if="editingIndex == index" class="inline-edit-wrap" :class="msg.role == 'user' ? 'inline-edit-user' : 'inline-edit-ai'">
-					<textarea class="inline-edit-input" v-model="editBuffer" auto-height />
-					<view class="inline-edit-actions">
-						<text class="inline-edit-cancel" @click="cancelEdit">取消</text>
-						<text class="inline-edit-save" @click="saveEdit">保存</text>
-						<text class="inline-edit-send" @click="saveAndSend">发送</text>
+		<view class="message-scroll-wrap">
+			<scroll-view id="chat-message-scroll" class="message-list" :scroll-y="true" :scroll-with-animation="false" :show-scrollbar="false" :scroll-top="scrollTop" @scroll="onMsgScroll" @touchmove="onMsgTouchMove">
+				<view v-for="(msg, index) in messages" :key="index">
+					<view v-if="editingIndex == index" class="inline-edit-wrap" :class="msg.role == 'user' ? 'inline-edit-user' : 'inline-edit-ai'">
+						<textarea class="inline-edit-input" v-model="editBuffer" auto-height />
+						<view class="inline-edit-actions">
+							<text class="inline-edit-cancel" @click="cancelEdit">取消</text>
+							<text class="inline-edit-save" @click="saveEdit">保存</text>
+							<text class="inline-edit-send" @click="saveAndSend">发送</text>
+						</view>
 					</view>
+					<ChatBubble v-else
+						:role="msg.role"
+						:content="msg.content != null ? msg.content : ''"
+						:parts="getMessagePartsForView(msg)"
+						:agentAvatar="currentAgentAvatar"
+						:userNickname="userNickname"
+						:userDisplayName="msg.role == 'user' ? userNickname : ''"
+						:userAvatar="userAvatar"
+						:toolName="msg.toolName != null ? msg.toolName : ''"
+						:hideThinking="hideThinking"
+						:msgSegmentation="msgSegmentation"
+						:isError="msg.isError == true"
+						:isStreaming="msg.isStreaming == true"
+						:cancelToken="longpressCancelToken"
+						@bubbleLongpress="onMessageLongpress(index)"
+					/>
 				</view>
-				<ChatBubble v-else
-					:role="msg.role"
-					:content="msg.content != null ? msg.content : ''"
-					:parts="getMessagePartsForView(msg)"
-					:agentAvatar="currentAgentAvatar"
-					:userNickname="userNickname"
-					:userDisplayName="msg.role == 'user' ? userNickname : ''"
-					:userAvatar="userAvatar"
-					:toolName="msg.toolName != null ? msg.toolName : ''"
-					:hideThinking="hideThinking"
-					:msgSegmentation="msgSegmentation"
-					:isError="msg.isError == true"
-					:isStreaming="msg.isStreaming == true"
-					:cancelToken="longpressCancelToken"
-					@bubbleLongpress="onMessageLongpress(index)"
-				/>
+				<view v-if="messages.length == 0" class="empty-state">
+					<text class="empty-text">开始对话</text>
+					<text class="empty-hint">输入文字或长按语音按钮</text>
+				</view>
+				<view id="chat-scroll-anchor" class="scroll-anchor"></view>
+			</scroll-view>
+			<view class="chat-custom-scrollbar" v-if="showCustomScrollbar == true" @touchstart="onScrollbarTrackTap" @touchend="onScrollbarTouchEnd" @touchcancel="onScrollbarTouchEnd">
+				<view class="chat-scrollbar-thumb" :style="scrollbarThumbStyle" @touchstart.stop="onScrollbarThumbStart" @touchmove.stop.prevent="onScrollbarThumbMove" />
 			</view>
-			<view v-if="messages.length == 0" class="empty-state">
-				<text class="empty-text">开始对话</text>
-				<text class="empty-hint">输入文字或长按语音按钮</text>
+			<view class="back-bottom-btn" v-if="showBackToBottom == true" @click="scrollToBottomFromButton">
+				<text class="back-bottom-text">↓ 到底部</text>
 			</view>
-		</scroll-view>
+		</view>
 
 		<!-- 底部区域（输入栏 + 工具栏） -->
 		<view class="chat-bottom">
@@ -193,6 +202,13 @@
 		isBufferedChatAgentEvent,
 		nextChatStreamScrollTick,
 	} from '@/utils/chat-stream-events.uts'
+	import {
+		buildChatScrollbarThumbStyle,
+		clampChatScrollTarget,
+		isChatScrollAtBottom,
+		resolveChatScrollbarDragTarget,
+		resolveChatScrollbarTrackTarget,
+	} from '@/utils/chat-scroll-helpers.uts'
 	import { isChooseCancelError, parsePickedImagePath, readPickedFileSelection, readPickedImageSelection } from '@/utils/attachment-reader.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { NYX_FLOAT_CONTEXT_CHAT, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
@@ -256,6 +272,19 @@
 				_streamScrollTick: 0 as number,
 				/** 滚动位置 */
 				scrollTop: 0 as number,
+				/** 消息滚动容器高度 */
+				scrollViewHeight: 0 as number,
+				/** 消息内容总高度 */
+				scrollContentHeight: 0 as number,
+				/** 当前滚动偏移 */
+				scrollOffset: 0 as number,
+				/** 是否停在底部，离底部后流式更新不再强拉 */
+				isAtBottom: true as boolean,
+				/** 自定义滚动条拖动状态 */
+				scrollbarDragging: false as boolean,
+				scrollbarDragStartY: 0 as number,
+				scrollbarDragStartTop: 0 as number,
+				scrollbarTrackTop: 0 as number,
 				/** 当前对话唯一 ID */
 				conversationId: '' as string,
 				/** 是否已存过当前对话（防止重复存） */
@@ -279,6 +308,15 @@
 			/** 头部标题 */
 			headerTitle(): string {
 				return this.currentAgentName != '' ? this.currentAgentName : 'AI 助手'
+			},
+			scrollbarThumbStyle(): string {
+				return buildChatScrollbarThumbStyle(this.scrollContentHeight, this.scrollViewHeight, this.scrollOffset)
+			},
+			showCustomScrollbar(): boolean {
+				return this.scrollViewHeight > 0 && this.scrollContentHeight > this.scrollViewHeight + 2
+			},
+			showBackToBottom(): boolean {
+				return this.scrollViewHeight > 0 && this.scrollContentHeight > this.scrollViewHeight + 2 && this.isAtBottom == false
 			}
 		},
 		onLoad() {
@@ -322,6 +360,7 @@
 
 		onReady() {
 			// DOM 就绪后滚动到底部
+			this.scheduleMeasureMessageScroll()
 			this.scrollToBottom()
 		},
 
@@ -406,11 +445,105 @@
 			/** 根据行数 JS 动态调整输入框高度 */
 			onInputLineChange(e: UniTextareaLineChangeEvent) {
 				this.inputHeight = calcChatInputHeight(e.detail.lineCount)
+				this.scheduleMeasureMessageScroll()
 			},
 
 			/** 滚动时通知所有 ChatBubble 取消长按 */
-			onMsgScroll() {
+			onMsgScroll(e: UniScrollEvent) {
 				this.longpressCancelToken++
+				this.scrollOffset = e.detail.scrollTop
+				this.updateBottomState()
+				if (this.isAtBottom == false) {
+					this.clearStreamScrollTimer()
+				}
+			},
+
+			updateBottomState(): void {
+				this.isAtBottom = isChatScrollAtBottom(this.scrollOffset, this.scrollContentHeight, this.scrollViewHeight)
+			},
+
+			scheduleMeasureMessageScroll(): void {
+				setTimeout(() => { this.measureMessageScrollSize() }, 60)
+				setTimeout(() => { this.measureMessageScrollSize() }, 260)
+			},
+
+			measureMessageScrollSize(): void {
+				const query = uni.createSelectorQuery().in(this)
+				query.select('#chat-message-scroll').boundingClientRect()
+				query.select('#chat-scroll-anchor').boundingClientRect()
+				query.exec((res: any) => {
+					const rows = res as UTSArray<any> | null
+					if (rows == null || rows.length < 2) { return }
+					const viewRect = rows[0] as NodeInfo | null
+					const anchorRect = rows[1] as NodeInfo | null
+					if (viewRect != null) {
+						const viewHeight = viewRect.height as number | null
+						if (viewHeight != null && viewHeight > 0) {
+							this.scrollViewHeight = viewHeight
+						}
+						const viewTop = viewRect.top as number | null
+						if (viewTop != null) {
+							this.scrollbarTrackTop = viewTop
+						}
+					}
+					if (viewRect != null && anchorRect != null) {
+						const anchorTop = anchorRect.top as number | null
+						const viewTop = viewRect.top as number | null
+						const anchorHeight = anchorRect.height as number | null
+						if (anchorTop != null && viewTop != null && anchorHeight != null) {
+							const nextHeight = anchorTop - viewTop + anchorHeight + this.scrollOffset
+							if (nextHeight > 0) {
+								this.scrollContentHeight = nextHeight
+							}
+						}
+					}
+					this.updateBottomState()
+				})
+			},
+
+			getScrollbarTouchY(e: UniTouchEvent): number | null {
+				if (e.touches.length == 0) { return null }
+				if (this.scrollbarTrackTop <= 0) { return null }
+				return e.touches[0].pageY - this.scrollbarTrackTop
+			},
+
+			commitMessageScrollTop(targetTop: number): void {
+				const safeTop = clampChatScrollTarget(targetTop, this.scrollContentHeight, this.scrollViewHeight)
+				this.scrollTop = safeTop
+				this.scrollOffset = safeTop
+				this.updateBottomState()
+			},
+
+			onScrollbarTrackTap(e: UniTouchEvent): void {
+				const y = this.getScrollbarTouchY(e)
+				if (y == null) { return }
+				this.clearStreamScrollTimer()
+				this.commitMessageScrollTop(resolveChatScrollbarTrackTarget(y, this.scrollContentHeight, this.scrollViewHeight))
+			},
+
+			onScrollbarThumbStart(e: UniTouchEvent): void {
+				const y = this.getScrollbarTouchY(e)
+				if (y == null) { return }
+				this.scrollbarDragging = true
+				this.scrollbarDragStartY = y
+				this.scrollbarDragStartTop = this.scrollOffset
+				this.clearStreamScrollTimer()
+			},
+
+			onScrollbarThumbMove(e: UniTouchEvent): void {
+				if (this.scrollbarDragging == false) { return }
+				const y = this.getScrollbarTouchY(e)
+				if (y == null) { return }
+				const target = resolveChatScrollbarDragTarget(this.scrollbarDragStartTop, y - this.scrollbarDragStartY, this.scrollContentHeight, this.scrollViewHeight)
+				this.commitMessageScrollTop(target)
+			},
+
+			onScrollbarTouchEnd(_e: UniTouchEvent): void {
+				this.scrollbarDragging = false
+			},
+
+			scrollToBottomFromButton(): void {
+				this.scrollToBottom()
 			},
 
 			sendUserPlainText(content: string): void {
@@ -642,6 +775,9 @@
 			/** 滚动时通知 ChatBubble 取消长按 */
 			onMsgTouchMove() {
 				this.longpressCancelToken++
+				if (this.isAtBottom == false) {
+					this.clearStreamScrollTimer()
+				}
 			},
 
 			/** 从相册选择图片 */
@@ -999,7 +1135,7 @@
 				const result = flushBufferedChatStreamEvents(this.messages, this.streamEventQueue)
 				this.streamEventQueue = result.nextQueue
 				if (result.messageChanged == true) {
-					this.scrollToBottom()
+					this.scrollToBottomIfPinned()
 				}
 			},
 
@@ -1027,7 +1163,7 @@
 				this.isGenerating = false
 				this.clearStreamFlushTimer()
 				this.clearStreamScrollTimer()
-				this.scrollToBottom()
+				this.scrollToBottomIfPinned()
 				this.saveCurrentConversation()
 			},
 
@@ -1084,6 +1220,10 @@
 				// 重置输入
 				this.inputText = ''
 				this.showToolPanel = false
+				this.scrollOffset = 0
+				this.scrollContentHeight = 0
+				this.isAtBottom = true
+				this.scheduleMeasureMessageScroll()
 			},
 
 			saveCurrentConversation() {
@@ -1097,13 +1237,17 @@
 			performStreamScrollToBottom() {
 				this._streamScrollTick = nextChatStreamScrollTick(this._streamScrollTick)
 				this.scrollTop = buildChatStreamScrollTop(this._streamScrollTick)
+				this.isAtBottom = true
+				this.scheduleMeasureMessageScroll()
 			},
 
 			scheduleStreamScroll() {
+				if (this.isAtBottom == false) { return }
 				if (this.streamScrollTimer != -1) { return }
 				const self = this
 				this.streamScrollTimer = setTimeout(() => {
 					self.streamScrollTimer = -1
+					if (self.isAtBottom == false) { return }
 					if (self.isGenerating == true) {
 						self.performStreamScrollToBottom()
 					} else {
@@ -1113,6 +1257,7 @@
 			},
 
 			scrollToBottom() {
+				this.isAtBottom = true
 				// 真机流式阶段 scroll-view 高频 scrollTop 会抖；生成中只按帧节流滚动。
 				if (this.isGenerating == true) {
 					this.scheduleStreamScroll()
@@ -1123,7 +1268,16 @@
 				const self = this
 				setTimeout(() => {
 					self.scrollTop = CHAT_IDLE_SCROLL_BOTTOM_TOP
+					self.isAtBottom = true
+					self.scheduleMeasureMessageScroll()
 				}, 50)
+			},
+
+			scrollToBottomIfPinned(): void {
+				this.scheduleMeasureMessageScroll()
+				if (this.isAtBottom == true) {
+					this.scrollToBottom()
+				}
 			},
 
 			/** 获取当前智能体的系统提示词 */
@@ -1138,7 +1292,7 @@
 			handleAgentEvent(event: AgentEvent) {
 				const messageChanged = reduceAgentEvent(this.messages, event)
 				if (messageChanged == true) {
-					this.scrollToBottom()
+					this.scrollToBottomIfPinned()
 					return
 				}
 				if (event.type == 'memory_organize_start') {
@@ -1153,7 +1307,7 @@
 					this.currentStream = null
 					this.clearStreamFlushTimer()
 					this.clearStreamScrollTimer()
-					this.scrollToBottom()
+					this.scrollToBottomIfPinned()
 					this.saveCurrentConversation()
 					this.maybeSynthesizeLatestAssistantSpeech()
 				}
@@ -1197,6 +1351,13 @@
 	}
 
 	/* 消息列表 */
+	.message-scroll-wrap {
+		flex: 1;
+		position: relative;
+		overflow: hidden;
+		background-color: #FAF7F5;
+	}
+
 	.message-list {
 		flex: 1;
 		flex-direction: column;
@@ -1204,6 +1365,53 @@
 		padding-left: 6px;
 		padding-right: 6px;
 		background-color: #FAF7F5;
+	}
+
+	.scroll-anchor {
+		height: 2px;
+		flex-shrink: 0;
+	}
+
+	.chat-custom-scrollbar {
+		position: absolute;
+		right: 2px;
+		top: 6px;
+		bottom: 6px;
+		width: 18px;
+		border-radius: 9px;
+		background-color: rgba(251, 143, 171, 0.06);
+	}
+
+	.chat-scrollbar-thumb {
+		position: absolute;
+		left: 6px;
+		right: 6px;
+		border-radius: 999px;
+		background-color: rgba(219, 111, 146, 0.38);
+	}
+
+	.back-bottom-btn {
+		position: absolute;
+		right: 18px;
+		bottom: 14px;
+		height: 32px;
+		padding-left: 13px;
+		padding-right: 13px;
+		border-radius: 16px;
+		background-color: rgba(255, 255, 255, 0.96);
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(251, 143, 171, 0.28);
+		box-shadow: 0 6px 14px rgba(216, 140, 165, 0.10);
+		align-items: center;
+		justify-content: center;
+	}
+
+	.back-bottom-text {
+		font-size: 12px;
+		line-height: 16px;
+		color: #DB6F92;
+		font-weight: bold;
 	}
 
 	/* NavBar 右侧图标按钮 */

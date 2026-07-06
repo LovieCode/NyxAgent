@@ -1,0 +1,68 @@
+const CHAT_SCROLLBAR_TRACK_PADDING = 4
+const CHAT_SCROLLBAR_MIN_THUMB_HEIGHT = 36
+const CHAT_SCROLL_BOTTOM_THRESHOLD = 48
+
+export function getChatScrollMaxOffset(scrollContentHeight: number, scrollViewHeight: number): number {
+	if (scrollContentHeight <= 0 || scrollViewHeight <= 0 || scrollContentHeight <= scrollViewHeight) {
+		return 0
+	}
+	return scrollContentHeight - scrollViewHeight
+}
+
+export function clampChatScrollTarget(target: number, scrollContentHeight: number, scrollViewHeight: number): number {
+	const maxScroll = getChatScrollMaxOffset(scrollContentHeight, scrollViewHeight)
+	if (target < 0) { return 0 }
+	if (target > maxScroll) { return maxScroll }
+	return target
+}
+
+export function isChatScrollAtBottom(scrollOffset: number, scrollContentHeight: number, scrollViewHeight: number): boolean {
+	const maxScroll = getChatScrollMaxOffset(scrollContentHeight, scrollViewHeight)
+	if (maxScroll <= CHAT_SCROLL_BOTTOM_THRESHOLD) { return true }
+	return scrollOffset >= maxScroll - CHAT_SCROLL_BOTTOM_THRESHOLD
+}
+
+export function buildChatScrollbarThumbStyle(scrollContentHeight: number, scrollViewHeight: number, scrollOffset: number): string {
+	if (scrollContentHeight <= 0 || scrollViewHeight <= 0 || scrollContentHeight <= scrollViewHeight) {
+		return 'top:0px;height:0px;'
+	}
+	const trackH = scrollViewHeight - CHAT_SCROLLBAR_TRACK_PADDING * 2
+	if (trackH <= 0) { return 'top:0px;height:0px;' }
+	const ratio = scrollViewHeight / scrollContentHeight
+	let thumbH = trackH * ratio
+	if (thumbH < CHAT_SCROLLBAR_MIN_THUMB_HEIGHT) { thumbH = CHAT_SCROLLBAR_MIN_THUMB_HEIGHT }
+	if (thumbH > trackH) { thumbH = trackH }
+	const maxTop = trackH - thumbH
+	const maxScroll = getChatScrollMaxOffset(scrollContentHeight, scrollViewHeight)
+	const safeOffset = clampChatScrollTarget(scrollOffset, scrollContentHeight, scrollViewHeight)
+	const rawTop = maxScroll > 0 ? (safeOffset / maxScroll) * maxTop : 0
+	let top = rawTop
+	if (top < 0) { top = 0 }
+	if (top > maxTop) { top = maxTop }
+	return 'top:' + (top + CHAT_SCROLLBAR_TRACK_PADDING) + 'px;height:' + thumbH + 'px;'
+}
+
+export function resolveChatScrollbarTrackTarget(touchY: number, scrollContentHeight: number, scrollViewHeight: number): number {
+	const trackH = scrollViewHeight - CHAT_SCROLLBAR_TRACK_PADDING * 2
+	if (trackH <= 0) { return 0 }
+	const maxScroll = getChatScrollMaxOffset(scrollContentHeight, scrollViewHeight)
+	let y = touchY - CHAT_SCROLLBAR_TRACK_PADDING
+	if (y < 0) { y = 0 }
+	if (y > trackH) { y = trackH }
+	return clampChatScrollTarget((y / trackH) * maxScroll, scrollContentHeight, scrollViewHeight)
+}
+
+export function resolveChatScrollbarDragTarget(scrollStartTop: number, dragDeltaY: number, scrollContentHeight: number, scrollViewHeight: number): number {
+	const trackH = scrollViewHeight - CHAT_SCROLLBAR_TRACK_PADDING * 2
+	if (trackH <= 0 || scrollContentHeight <= 0 || scrollViewHeight <= 0) { return 0 }
+	const maxScroll = getChatScrollMaxOffset(scrollContentHeight, scrollViewHeight)
+	if (maxScroll <= 0) { return 0 }
+	const ratio = scrollViewHeight / scrollContentHeight
+	let thumbH = trackH * ratio
+	if (thumbH < CHAT_SCROLLBAR_MIN_THUMB_HEIGHT) { thumbH = CHAT_SCROLLBAR_MIN_THUMB_HEIGHT }
+	if (thumbH > trackH) { thumbH = trackH }
+	const maxTop = trackH - thumbH
+	if (maxTop <= 0) { return 0 }
+	const scale = maxScroll / maxTop
+	return clampChatScrollTarget(scrollStartTop + dragDeltaY * scale, scrollContentHeight, scrollViewHeight)
+}
