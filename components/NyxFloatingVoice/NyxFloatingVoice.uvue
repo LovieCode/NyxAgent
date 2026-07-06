@@ -1,18 +1,17 @@
 <template>
-	<view>
+	<view class="nyx-float-wrap" :style="floatStyle">
 		<view
 			class="nyx-float"
 			:class="isRecording == true ? 'nyx-float-active' : ''"
-			:style="floatStyle"
 			@touchstart.stop="onFloatTouchStart"
 			@touchmove.stop.prevent="onFloatTouchMove"
 			@touchend.stop="onFloatTouchEnd"
 			@touchcancel.stop="onFloatTouchEnd"
 		>
 			<text class="nyx-face">眠</text>
-			<text v-if="isRecording == true" class="nyx-dot">松开</text>
-			<text v-if="isTranscribing == true" class="nyx-dot">识别中</text>
 		</view>
+		<text v-if="isRecording == true" class="nyx-dot">松开</text>
+		<text v-if="isTranscribing == true" class="nyx-dot">识别中</text>
 	</view>
 </template>
 
@@ -298,15 +297,20 @@
 </script>
 
 <style>
-	.nyx-float {
+	.nyx-float-wrap {
 		position: fixed;
+		width: 54px;
+		height: 54px;
+		z-index: 999;
+	}
+
+	.nyx-float {
 		width: 54px;
 		height: 54px;
 		border-radius: 27px;
 		background-color: #FB8FAB;
 		align-items: center;
 		justify-content: center;
-		z-index: 999;
 		border-width: 2px;
 		border-color: #FFFFFF;
 		border-style: solid;

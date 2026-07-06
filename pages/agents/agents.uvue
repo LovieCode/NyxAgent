@@ -64,29 +64,31 @@
 						<view
 							v-for="(item, index) in privateChatList"
 							:key="getChatKey(item)"
-							class="agent-item"
+							class="agent-item-hit"
 							@click="openChatItem(item)"
 						>
-							<!-- 左侧头像：联系人优先显示自定义头像 -->
-							<view class="agent-avatar-wrap">
-								<image v-if="getChatAvatar(item) != ''" :src="getChatAvatar(item)" class="agent-avatar-img" mode="aspectFill" />
-								<view v-else :class="'agent-avatar avatar-' + ((index % 5) + 1)">
-									<oui-icon-unix :name="getChatIcon(item)" size="24px" color="var(--rice-background-2)" />
-								</view>
-								<view class="agent-status-dot"></view>
-							</view>
-							<!-- 中间文字 -->
-							<view class="agent-info">
-								<view class="agent-top">
-									<view class="agent-title-row">
-										<text class="agent-name">{{ getChatName(item) }}</text>
+							<view class="agent-item">
+								<!-- 左侧头像：联系人优先显示自定义头像 -->
+								<view class="agent-avatar-wrap">
+									<image v-if="getChatAvatar(item) != ''" :src="getChatAvatar(item)" class="agent-avatar-img" mode="aspectFill" />
+									<view v-else :class="'agent-avatar avatar-' + ((index % 5) + 1)">
+										<oui-icon-unix :name="getChatIcon(item)" size="24px" color="var(--rice-background-2)" />
 									</view>
-									<text class="agent-time">{{ formatChatTime(item) }}</text>
+									<view class="agent-status-dot"></view>
 								</view>
-								<text class="agent-desc">{{ getChatDesc(item) }}</text>
+								<!-- 中间文字 -->
+								<view class="agent-info">
+									<view class="agent-top">
+										<view class="agent-title-row">
+											<text class="agent-name">{{ getChatName(item) }}</text>
+										</view>
+										<text class="agent-time">{{ formatChatTime(item) }}</text>
+									</view>
+									<text class="agent-desc">{{ getChatDesc(item) }}</text>
+								</view>
+								<!-- 右侧箭头 -->
+								<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 							</view>
-							<!-- 右侧箭头 -->
-							<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 						</view>
 						<view v-if="chatList.length == 0" class="empty-state">
 							<text class="empty-title">还没有会话</text>
@@ -102,27 +104,29 @@
 						<view
 							v-for="(item, index) in groupChatList"
 							:key="getChatKey(item)"
-							class="agent-item"
+							class="agent-item-hit"
 							@click="openChatItem(item)"
 						>
-							<view class="agent-avatar-wrap">
-								<image v-if="getChatAvatar(item) != ''" :src="getChatAvatar(item)" class="agent-avatar-img" mode="aspectFill" />
-								<view v-else :class="'agent-avatar avatar-' + ((index % 5) + 1)">
-									<oui-icon-unix :name="getChatIcon(item)" size="24px" color="var(--rice-background-2)" />
-								</view>
-								<view class="agent-status-dot"></view>
-							</view>
-							<view class="agent-info">
-								<view class="agent-top">
-									<view class="agent-title-row">
-										<text class="agent-name">{{ getChatName(item) }}</text>
-										<text class="chat-type-badge">群聊</text>
+							<view class="agent-item">
+								<view class="agent-avatar-wrap">
+									<image v-if="getChatAvatar(item) != ''" :src="getChatAvatar(item)" class="agent-avatar-img" mode="aspectFill" />
+									<view v-else :class="'agent-avatar avatar-' + ((index % 5) + 1)">
+										<oui-icon-unix :name="getChatIcon(item)" size="24px" color="var(--rice-background-2)" />
 									</view>
-									<text class="agent-time">{{ formatChatTime(item) }}</text>
+									<view class="agent-status-dot"></view>
 								</view>
-								<text class="agent-desc">{{ getChatDesc(item) }}</text>
+								<view class="agent-info">
+									<view class="agent-top">
+										<view class="agent-title-row">
+											<text class="agent-name">{{ getChatName(item) }}</text>
+											<text class="chat-type-badge">群聊</text>
+										</view>
+										<text class="agent-time">{{ formatChatTime(item) }}</text>
+									</view>
+									<text class="agent-desc">{{ getChatDesc(item) }}</text>
+								</view>
+								<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 							</view>
-							<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 						</view>
 					</view>
 
@@ -906,14 +910,10 @@
 
 	.home-tabbar-area {
 		position: fixed;
-		left: 0;
-		right: 0;
-		bottom: 0;
+		left: 16px;
+		right: 16px;
+		bottom: 14px;
 		background-color: transparent;
-		padding-left: 16px;
-		padding-right: 16px;
-		padding-top: 8px;
-		padding-bottom: 14px;
 		z-index: 12;
 	}
 
@@ -964,11 +964,11 @@
 		align-items: center;
 		justify-content: space-between;
 		margin-top: 22px;
-		margin-bottom: 11px;
+		margin-bottom: 6px;
 	}
 
 	.group-section-head {
-		margin-top: 16px;
+		margin-top: 21px;
 	}
 
 	.list-section-title {
@@ -986,12 +986,17 @@
 		flex-direction: column;
 	}
 
+	/* 点击热区：透明 padding 也归属当前会话，避免卡片间隔点不动 */
+	.agent-item-hit {
+		padding-top: 5px;
+		padding-bottom: 5px;
+	}
+
 	/* 单个会话行 */
 	.agent-item {
 		flex-direction: row;
 		align-items: center;
 		padding: 14px 14px;
-		margin-bottom: 10px;
 		background-color: #FFFFFF;
 		border-radius: 20px;
 		border-width: 1px;
