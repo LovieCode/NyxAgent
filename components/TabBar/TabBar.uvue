@@ -1,24 +1,20 @@
 <template>
-	<!-- 自定义底部导航栏 - 淡粉胶囊风格 -->
-	<view class="tabbar-shell">
-		<view class="tabbar">
-			<view
-				v-for="(tab, index) in tabs"
-				:key="index"
-				:class="'tab-item' + (current == tab['pagePath'] ? ' tab-item-active' : '')"
-				@click="switchTab(tab['pagePath'] as string)"
-			>
-				<view :class="'tab-icon-shell' + (current == tab['pagePath'] ? ' tab-icon-shell-active' : '')">
-					<oui-icon-unix
-						:name="tab['icon'] as string"
-						:size="'21px'"
-						:color="current == tab['pagePath'] ? '#FFFFFF' : 'var(--rice-text-color-3)'"
-					/>
-				</view>
-				<text
-					:class="'tab-label' + (current == tab['pagePath'] ? ' tab-label-active' : '')"
-				>{{ tab['text'] }}</text>
-			</view>
+	<!-- 自定义底部导航栏 - 设计图同款白色浮层 -->
+	<view class="tabbar">
+		<view
+			v-for="(tab, index) in tabs"
+			:key="index"
+			class="tab-item"
+			@click="switchTab(tab['pagePath'] as string)"
+		>
+			<oui-icon-unix
+				:name="current == tab['pagePath'] ? (tab['activeIcon'] as string) : (tab['icon'] as string)"
+				:size="'22px'"
+				:color="current == tab['pagePath'] ? 'var(--rice-primary-color)' : '#4B5563'"
+			/>
+			<text
+				:class="'tab-label' + (current == tab['pagePath'] ? ' tab-label-active' : '')"
+			>{{ tab['text'] }}</text>
 		</view>
 	</view>
 </template>
@@ -40,10 +36,10 @@
 		data() {
 			return {
 				tabs: [
-					{ pagePath: 'pages/agents/agents', text: '聊天', icon: 'message' },
-					{ pagePath: 'pages/todo/todo', text: '待办', icon: 'check-circle' },
-					{ pagePath: 'pages/files/files', text: '文件', icon: 'folder' },
-					{ pagePath: 'pages/settings/settings', text: '设置', icon: 'setting' },
+					{ pagePath: 'pages/agents/agents', text: '聊天', icon: 'message', activeIcon: 'message-fill' },
+					{ pagePath: 'pages/todo/todo', text: '待办', icon: 'check-circle', activeIcon: 'check-circle-fill' },
+					{ pagePath: 'pages/files/files', text: '文件', icon: 'folder', activeIcon: 'folder-fill' },
+					{ pagePath: 'pages/settings/settings', text: '设置', icon: 'setting', activeIcon: 'setting-fill' },
 				],
 			};
 		},
@@ -61,28 +57,24 @@
 </script>
 
 <style>
-	.tabbar-shell {
-		background-color: #FAF7F5;
-		padding-left: 18px;
-		padding-right: 18px;
-		padding-top: 6px;
-		padding-bottom: 12px;
-	}
-
-	/* 底部导航栏 - 白色胶囊 */
+	/* 底部导航栏 - 设计图里的白色浮动胶囊 */
 	.tabbar {
 		flex-direction: row;
-		height: 64px;
+		height: 68px;
 		background-color: var(--rice-background-2);
-		border-radius: 26px;
-		padding-left: 7px;
-		padding-right: 7px;
+		border-radius: 28px;
+		margin-left: 16px;
+		margin-right: 16px;
+		margin-top: 8px;
+		margin-bottom: 14px;
+		padding-left: 6px;
+		padding-right: 6px;
 		justify-content: space-around;
 		align-items: center;
 		border-width: 1px;
 		border-style: solid;
-		border-color: rgba(241, 229, 234, 0.96);
-		box-shadow: 0 12px 28px rgba(216, 140, 165, 0.10);
+		border-color: rgba(229, 231, 235, 0.92);
+		box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06);
 	}
 
 	/* 单个标签项 */
@@ -91,34 +83,14 @@
 		justify-content: center;
 		align-items: center;
 		flex: 1;
-		height: 52px;
-		border-radius: 20px;
-		margin-left: 2px;
-		margin-right: 2px;
-	}
-
-	.tab-item-active {
-		background-color: #FFF3F7;
-	}
-
-	.tab-icon-shell {
-		width: 30px;
-		height: 30px;
-		border-radius: 15px;
-		justify-content: center;
-		align-items: center;
-	}
-
-	.tab-icon-shell-active {
-		background-color: #F48FB1;
-		box-shadow: 0 8px 16px rgba(244, 143, 177, 0.24);
+		height: 100%;
 	}
 
 	/* 标签文字 */
 	.tab-label {
 		font-size: 11px;
 		color: var(--rice-text-color-3);
-		margin-top: 2px;
+		margin-top: 4px;
 	}
 
 	/* 选中标签文字 - 粉色 */
