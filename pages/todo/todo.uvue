@@ -1,6 +1,6 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NavBar :title="activeView == 'todo' ? '待办' : '笔记'" />
+		<NyxPageHeader :title="activeView == 'todo' ? '待办' : '笔记'" subtitle="把聊天里的灵感和要做的事收好。" />
 		<view class="container">
 			<!-- 顶部 Segment 切换 -->
 			<view class="segment-bar">
@@ -70,10 +70,11 @@
 							</view>
 						</view>
 					</view>
+					<view class="tabbar-list-spacer"></view>
 				</scroll-view>
 
 				<!-- FAB 悬浮按钮 -->
-				<rice-float-fab icon="plus" :gap-bottom="80" @click="showAddTodoDialog" />
+				<rice-float-fab icon="plus" bg-color="#FB8FAB" :gap-bottom="102" @click="showAddTodoDialog" />
 
 				<!-- 添加待办弹窗 -->
 				<rice-dialog
@@ -172,13 +173,14 @@
 							</view>
 						</view>
 					</view>
+					<view class="tabbar-list-spacer"></view>
 				</scroll-view>
 
 				<!-- 添加笔记 FAB -->
-				<rice-float-fab icon="plus" bg-color="#FB8FAB" :gap-bottom="80" @click="createNote" />
+				<rice-float-fab icon="plus" bg-color="#FB8FAB" :gap-bottom="102" @click="createNote" />
 			</view>
 		</view>
-		<TabBar current="pages/todo/todo" />
+		<NyxTabDock current="pages/todo/todo" />
 	</view>
 </template>
 
@@ -578,38 +580,50 @@
 </script>
 
 <style>
+	.page-shell {
+		background-color: #FAF7F5;
+	}
+
 	.container {
 		flex: 1;
+		background-color: #FAF7F5;
 	}
 
 	/* Segment 切换栏 */
 	.segment-bar {
 		flex-direction: row;
-		padding: 8px 15px;
+		margin-left: 24px;
+		margin-right: 24px;
+		margin-top: 6px;
+		margin-bottom: 10px;
+		padding: 4px;
 		background-color: #FFFFFF;
-		border-bottom-width: 1px;
-		border-bottom-color: #F3F4F6;
-		border-bottom-style: solid;
+		border-radius: 18px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #F1E5EA;
 	}
 
 	.segment-tab {
-		padding: 6px 16px;
-		margin-right: 6px;
-		border-radius: 5px;
-		background-color: #F3F4F6;
+		flex: 1;
+		padding-top: 9px;
+		padding-bottom: 9px;
+		border-radius: 14px;
+		align-items: center;
+		justify-content: center;
 	}
 
 	.segment-active {
-		background-color: #FDE8EF;
+		background-color: #FFF0F5;
 	}
 
 	.segment-text {
 		font-size: 14px;
-		color: #6B7280;
+		color: #8A7B84;
 	}
 
 	.segment-text-active {
-		color: #DB2777;
+		color: #DB6F92;
 		font-weight: bold;
 	}
 
@@ -621,51 +635,63 @@
 	/* ===== 待办视图样式 ===== */
 	.todo-list {
 		flex: 1;
-		padding: 0 15px;
+		padding-left: 24px;
+		padding-right: 24px;
 	}
 
 	.filter-bar {
 		flex-direction: row;
-		padding: 8px 15px;
-		background-color: #FFFFFF;
-		border-bottom-width: 1px;
-		border-bottom-color: #F3F4F6;
-		border-bottom-style: solid;
+		padding-left: 24px;
+		padding-right: 24px;
+		padding-top: 2px;
+		padding-bottom: 8px;
+		background-color: #FAF7F5;
 	}
 
 	.filter-tab {
-		padding: 6px 12px;
-		margin-right: 6px;
-		border-radius: 5px;
-		background-color: #F3F4F6;
+		padding-top: 8px;
+		padding-bottom: 8px;
+		padding-left: 16px;
+		padding-right: 16px;
+		margin-right: 8px;
+		border-radius: 500px;
+		background-color: #FFFFFF;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #F1E5EA;
 	}
 
 	.filter-active {
-		background-color: #FDE8EF;
+		background-color: #F48FB1;
+		border-color: #F48FB1;
 	}
 
 	.filter-text {
 		font-size: 13px;
-		color: #6B7280;
+		color: #8A7B84;
 	}
 
 	.filter-text-active {
-		color: #DB2777;
+		color: #FFFFFF;
 		font-weight: bold;
 	}
 
 	.todo-item {
 		flex-direction: row;
-		align-items: flex-start;
-		padding: 8px 0;
-		border-bottom-width: 1px;
-		border-bottom-color: #F3F4F6;
-		border-bottom-style: solid;
+		align-items: center;
+		padding: 13px 14px;
+		margin-bottom: 10px;
+		background-color: #FFFFFF;
+		border-radius: 18px;
+		border-width: 1px;
+		border-color: rgba(241, 229, 234, 0.92);
+		border-style: solid;
+		box-shadow: 0 8px 20px rgba(216, 140, 165, 0.045);
 	}
 
 	.todo-left {
-		padding-right: 8px;
-		padding-top: 2px;
+		padding-right: 10px;
+		padding-top: 1px;
 	}
 
 	.todo-content {
@@ -673,35 +699,40 @@
 	}
 
 	.todo-right {
-		padding-left: 6px;
+		width: 34px;
+		height: 34px;
+		border-radius: 17px;
+		align-items: center;
 		justify-content: center;
+		background-color: #FFF7FA;
 	}
 
 	.todo-title {
 		font-size: 14px;
-		color: #111827;
+		color: #2A2529;
+		line-height: 20px;
 	}
 
 	.todo-title-done {
-		color: #9CA3AF;
+		color: #A79DA4;
 	}
 
 	.todo-meta {
 		flex-direction: row;
 		align-items: center;
-		margin-top: 4px;
+		margin-top: 5px;
 	}
 
 	.priority-urgent {
 		flex-direction: row;
 		align-items: center;
-		padding: 3px 6px;
+		padding: 3px 7px;
 		border-radius: 500px;
 		background-color: #FFF1F2;
 		border-width: 1px;
 		border-style: solid;
 		border-color: #FFE4E6;
-		margin-right: 6px;
+		margin-right: 7px;
 	}
 
 	.priority-urgent-icon {
@@ -725,7 +756,7 @@
 
 	.todo-time {
 		font-size: 11px;
-		color: #9CA3AF;
+		color: #A79DA4;
 	}
 
 	.dialog-content {
@@ -780,13 +811,16 @@
 
 	/* ===== 笔记视图样式 ===== */
 	.search-bar {
-		padding: 0 6px 3px;
-		background-color: #FFFFFF;
+		padding-left: 20px;
+		padding-right: 20px;
+		padding-bottom: 10px;
+		background-color: #FAF7F5;
 	}
 
 	.notes-list {
 		flex: 1;
-		padding: 8px 15px;
+		padding-left: 24px;
+		padding-right: 24px;
 	}
 
 	.empty-state {
@@ -798,28 +832,29 @@
 
 	.empty-text {
 		font-size: 14px;
-		color: #9CA3AF;
+		color: #A79DA4;
 	}
 
 	.note-card {
 		background-color: #FFFFFF;
-		border-radius: 8px;
-		padding: 12px;
-		margin-bottom: 8px;
+		border-radius: 18px;
+		padding: 15px;
+		margin-bottom: 10px;
 		border-width: 1px;
-		border-color: #E5E7EB;
+		border-color: rgba(241, 229, 234, 0.92);
 		border-style: solid;
+		box-shadow: 0 8px 20px rgba(216, 140, 165, 0.045);
 	}
 
 	.note-title {
 		font-size: 15px;
 		font-weight: bold;
-		color: #111827;
-		margin-bottom: 5px;
+		color: #2A2529;
+		margin-bottom: 6px;
 	}
 
 	.note-render-preview {
-		margin-bottom: 4px;
+		margin-bottom: 5px;
 	}
 
 	.note-render-line {
@@ -834,7 +869,7 @@
 
 	.note-render-text {
 		font-size: 13px;
-		color: #6B7280;
+		color: #8A7B84;
 		line-height: 19px;
 		lines: 1;
 		text-overflow: ellipsis;
@@ -846,7 +881,7 @@
 	}
 
 	.note-render-text-done {
-		color: #9CA3AF;
+		color: #A79DA4;
 	}
 
 	.note-checkbox {
@@ -881,7 +916,7 @@
 
 	.note-time {
 		font-size: 11px;
-		color: #9CA3AF;
+		color: #A79DA4;
 	}
 
 	.note-meta-row {
@@ -898,18 +933,18 @@
 		margin-left: 6px;
 	}
 
-
 	/* ===== Agent 分组头 ===== */
 	.agent-section-header {
 		flex-direction: row;
 		align-items: center;
-		padding: 10px 0 5px 0;
+		padding-top: 12px;
+		padding-bottom: 7px;
 	}
 
 	.agent-section-name {
 		font-size: 13px;
 		font-weight: bold;
-		color: #DB2777;
+		color: #DB6F92;
 	}
 
 	/* ===== Agent 选择器 ===== */
@@ -925,8 +960,8 @@
 
 	.agent-option {
 		padding: 5px 12px;
-		border-radius: 6px;
-		background-color: #F3F4F6;
+		border-radius: 500px;
+		background-color: #F9FAFB;
 		margin-right: 6px;
 		margin-bottom: 4px;
 		border-width: 1px;
@@ -935,12 +970,17 @@
 	}
 
 	.agent-option-active {
-		border-color: #DB2777;
+		border-color: #FB8FAB;
 		background-color: #FDE8EF;
 	}
 
 	.agent-option-text {
 		font-size: 13px;
 		color: #111827;
+	}
+
+	.tabbar-list-spacer {
+		height: 126px;
+		flex-shrink: 0;
 	}
 </style>

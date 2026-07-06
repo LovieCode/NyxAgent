@@ -1,16 +1,16 @@
 <template>
 	<view class="page-shell rice-theme-light" ref="shellRef">
-		<NavBar :title="headerTitle" showBack :showNyxFloat="false" @back="goBack">
+		<NavBar :title="headerTitle" showBack :showNyxFloat="false" variant="light" @back="goBack">
 			<template #right>
 				<view style="flex-direction:row;align-items:center;">
 					<view class="nav-icon-btn" @click="startNewConversation">
-						<oui-icon-unix name="plus-circle" size="20px" color="#FFFFFF" />
+						<oui-icon-unix name="plus-circle" size="20px" color="#25242A" />
 					</view>
 					<view class="nav-icon-btn" @click="goAgentSettings" style="margin-left:4px;">
-						<oui-icon-unix name="setting" size="20px" color="#FFFFFF" />
+						<oui-icon-unix name="setting" size="20px" color="#25242A" />
 					</view>
 					<view class="nav-icon-btn" @click="goHistory" style="margin-left:4px;">
-						<oui-icon-unix name="time-circle" size="22px" color="#FFFFFF" />
+						<oui-icon-unix name="time-circle" size="22px" color="#25242A" />
 					</view>
 				</view>
 			</template>
@@ -54,8 +54,8 @@
 		<view class="chat-bottom">
 			<!-- 输入栏 -->
 			<view class="input-bar">
-					<view class="toolbar-toggle" @click="toggleToolPanel">
-					<oui-icon-unix name="plus" size="18px" color="#374151" />
+				<view class="toolbar-toggle" @click="toggleToolPanel">
+					<oui-icon-unix name="plus" size="18px" color="#FFFFFF" />
 				</view>
 				<view class="input-wrap">
 					<textarea
@@ -69,8 +69,12 @@
 					/>
 				</view>
 				<VoiceInput :isListening="isListening ? true : false" @startListening="startVoice" @stopListening="stopVoice" />
-				<rice-button v-if="isGenerating == false" type="primary" text="发送" size="small" shape="round" @click="sendMessage" style="margin-left:6px" />
-				<rice-button v-else type="primary" text="停止" size="small" shape="round" @click="stopGenerating" style="margin-left:6px" />
+				<view v-if="isGenerating == false" class="send-chip" @click="sendMessage">
+					<text class="send-chip-text">发送</text>
+				</view>
+				<view v-else class="send-chip send-chip-stop" @click="stopGenerating">
+					<text class="send-chip-text">停止</text>
+				</view>
 			</view>
 			<!-- 工具栏面板（输入栏下方展开） -->
 			<view v-if="showToolPanel" class="toolbar-panel">
@@ -93,19 +97,19 @@
 					</view>
 					<view class="toolbar-grid-item" @click="goMemoryManager">
 						<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="26px" color="var(--rice-primary-color)" /></view>
-						<text class="toolbar-grid-label">记忆管理</text>
+						<text class="toolbar-grid-label">记忆</text>
 					</view>
 					<view class="toolbar-grid-item" @click="organizeMemoryFromToolbar">
 						<view class="toolbar-grid-icon"><oui-icon-unix name="robot" size="26px" color="var(--rice-primary-color)" /></view>
-						<text class="toolbar-grid-label">记忆整理</text>
+						<text class="toolbar-grid-label">整理</text>
 					</view>
 					<view class="toolbar-grid-item" @click="openContextPreview">
 						<view class="toolbar-grid-icon"><oui-icon-unix name="eye" size="26px" color="var(--rice-primary-color)" /></view>
-						<text class="toolbar-grid-label">原始上下文</text>
+						<text class="toolbar-grid-label">上下文</text>
 					</view>
 					<view class="toolbar-grid-item" @click="stopTaskFromToolbar">
 						<view class="toolbar-grid-icon"><oui-icon-unix name="stop" size="26px" color="#EF4444" /></view>
-						<text class="toolbar-grid-label">终止任务</text>
+						<text class="toolbar-grid-label">停止</text>
 					</view>
 				</view>
 			</view>
@@ -1182,6 +1186,10 @@
 </script>
 
 <style>
+	.page-shell {
+		background-color: #FAF7F5;
+	}
+
 	/* 页面内容区域 */
 	.chat-page {
 		flex: 1;
@@ -1192,15 +1200,23 @@
 	.message-list {
 		flex: 1;
 		flex-direction: column;
-		padding-top: 6px;
+		padding-top: 12px;
+		padding-left: 6px;
+		padding-right: 6px;
+		background-color: #FAF7F5;
 	}
 
 	/* NavBar 右侧图标按钮 */
 	.nav-icon-btn {
-		width: 36px;
-		height: 36px;
-		justify-content: center;
+		width: 34px;
+		height: 34px;
+		border-radius: 17px;
+		background-color: rgba(255, 255, 255, 0.72);
 		align-items: center;
+		justify-content: center;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #F1E5EA;
 	}
 
 	/* 空状态 */
@@ -1226,16 +1242,19 @@
 	/* 底部区域（工具栏面板 + 输入栏） */
 	.chat-bottom {
 		flex-shrink: 0;
-		background-color: var(--rice-background-2);
-		border-top-width: 1px;
-		border-top-color: var(--rice-border-color);
-		border-top-style: solid;
+		background-color: #FFFDFD;
+		border-top-left-radius: 24px;
+		border-top-right-radius: 24px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(241, 229, 234, 0.92);
+		box-shadow: 0 -10px 26px rgba(216, 140, 165, 0.06);
 	}
 
 	/* 工具栏面板（输入栏上方展开） */
 	.toolbar-panel {
-		background-color: var(--rice-background);
-		padding: 12px 8px 8px 8px;
+		background-color: #FFFDFD;
+		padding: 8px 16px 10px 16px;
 	}
 	.toolbar-grid {
 		flex-direction: row;
@@ -1245,30 +1264,33 @@
 	.toolbar-grid-item {
 		width: 25%;
 		align-items: center;
-		margin-bottom: 12px;
+		margin-bottom: 14px;
 	}
 	.toolbar-grid-icon {
-		width: 52px;
-		height: 52px;
-		border-radius: 14px;
-		background-color: var(--rice-background-2);
+		width: 48px;
+		height: 48px;
+		border-radius: 18px;
+		background-color: #FFF4F7;
 		justify-content: center;
 		align-items: center;
-		margin-bottom: 4px;
+		margin-bottom: 6px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(251, 143, 171, 0.15);
 	}
 	.toolbar-grid-label {
 		font-size: 12px;
-		color: var(--rice-text-color-2);
+		color: #8A7B84;
 	}
 
 	/* 输入栏 */
 	.input-bar {
 		flex-direction: row;
 		align-items: center;
-		padding-left: 6px;
-		padding-right: 8px;
-		padding-top: 6px;
-		padding-bottom: 6px;
+		padding-left: 14px;
+		padding-right: 14px;
+		padding-top: 10px;
+		padding-bottom: 10px;
 	}
 
 	/* 输入框容器 */
@@ -1276,24 +1298,49 @@
 		flex: 1;
 		flex-direction: row;
 		align-items: flex-end;
-		background-color: var(--rice-background);
-		border-radius: 16px;
-		padding-left: 8px;
-		padding-right: 8px;
-		margin-left: 6px;
-		margin-right: 6px;
+		background-color: #F8F2F4;
+		border-radius: 18px;
+		padding-left: 10px;
+		padding-right: 10px;
+		margin-left: 8px;
+		margin-right: 8px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #F0E5EA;
 	}
 
 	/* 工具栏切换按钮 */
 	.toolbar-toggle {
-		width: 32px;
-		height: 32px;
-		border-radius: 16px;
+		width: 34px;
+		height: 34px;
+		border-radius: 17px;
 		justify-content: center;
 		align-items: center;
+		background-color: var(--rice-primary-color);
+		box-shadow: 0 8px 16px rgba(251, 143, 171, 0.18);
 	}
 
+	.send-chip {
+		height: 34px;
+		min-width: 50px;
+		border-radius: 17px;
+		padding-left: 14px;
+		padding-right: 14px;
+		background-color: var(--rice-primary-color);
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 8px 18px rgba(251, 143, 171, 0.18);
+	}
 
+	.send-chip-stop {
+		background-color: #F87171;
+	}
+
+	.send-chip-text {
+		font-size: 13px;
+		color: #FFFFFF;
+		font-weight: bold;
+	}
 
 	/* 文本输入框 */
 	.text-input {
@@ -1318,13 +1365,13 @@
 	}
 
 	.inline-edit-user {
-		background-color: #FFF0F3;
+		background-color: #FFF4F7;
 		margin-left: 50px;
 		margin-right: 10px;
 	}
 
 	.inline-edit-ai {
-		background-color: var(--rice-background-2);
+		background-color: #FFFFFF;
 		margin-left: 10px;
 		margin-right: 50px;
 	}

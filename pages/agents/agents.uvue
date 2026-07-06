@@ -288,9 +288,7 @@
 			</view>
 		</view>
 
-		<view class="home-tabbar-area">
-			<TabBar current="pages/agents/agents" />
-		</view>
+		<NyxTabDock current="pages/agents/agents" />
 	</view>
 </template>
 

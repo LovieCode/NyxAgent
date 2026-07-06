@@ -1,0 +1,32 @@
+<template>
+	<view class="nyx-tab-dock">
+		<TabBar :current="current" />
+	</view>
+</template>
+
+<script lang="uts">
+	export default {
+		name: 'NyxTabDock',
+		props: {
+			current: {
+				type: String,
+				default: 'pages/agents/agents'
+			}
+		}
+	}
+</script>
+
+<style>
+	.nyx-tab-dock {
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: -24px;
+		background-color: transparent;
+		padding-left: 16px;
+		padding-right: 16px;
+		padding-top: 16px;
+		padding-bottom: 38px;
+		z-index: 12;
+	}
+</style>

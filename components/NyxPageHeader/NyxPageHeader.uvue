@@ -1,0 +1,109 @@
+<template>
+	<view class="nyx-page-header">
+		<NyxFloatingVoice v-if="showNyxFloat == true" />
+		<view v-if="noStatusBar == false" class="nyx-status" :style="{ height: statusBarHeight + 'px' }"></view>
+		<view class="nyx-header-row">
+			<view class="nyx-title-wrap">
+				<text class="nyx-title">{{title}}</text>
+				<text v-if="subtitle != ''" class="nyx-subtitle">{{subtitle}}</text>
+			</view>
+			<view class="nyx-header-right">
+				<slot name="right"></slot>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	export default {
+		name: 'NyxPageHeader',
+		props: {
+			title: {
+				type: String,
+				default: ''
+			},
+			subtitle: {
+				type: String,
+				default: ''
+			},
+			noStatusBar: {
+				type: Boolean,
+				default: false
+			},
+			showNyxFloat: {
+				type: Boolean,
+				default: true
+			}
+		},
+		data() {
+			return {
+				statusBarHeight: 0
+			}
+		},
+		created() {
+			try {
+				// #ifndef WEB
+				const windowInfo = uni.getWindowInfo()
+				let top = windowInfo.statusBarHeight
+				if (windowInfo.safeAreaInsets.top > top) {
+					top = windowInfo.safeAreaInsets.top
+				}
+				this.statusBarHeight = top > 0 ? top : 0
+				// #endif
+				// #ifdef WEB
+				this.statusBarHeight = 0
+				// #endif
+			} catch (_e: any) {
+				this.statusBarHeight = 0
+			}
+		}
+	}
+</script>
+
+<style>
+	.nyx-page-header {
+		flex-shrink: 0;
+		background-color: #FAF7F5;
+	}
+
+	.nyx-status {
+		flex-shrink: 0;
+		background-color: #FAF7F5;
+	}
+
+	.nyx-header-row {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding-left: 24px;
+		padding-right: 22px;
+		padding-top: 14px;
+		padding-bottom: 12px;
+		background-color: #FAF7F5;
+	}
+
+	.nyx-title-wrap {
+		flex: 1;
+		flex-direction: column;
+	}
+
+	.nyx-title {
+		font-size: 25px;
+		font-weight: bold;
+		color: #242129;
+		line-height: 30px;
+	}
+
+	.nyx-subtitle {
+		margin-top: 6px;
+		font-size: 13px;
+		color: #8A7B84;
+		line-height: 18px;
+	}
+
+	.nyx-header-right {
+		flex-direction: row;
+		align-items: center;
+		margin-left: 12px;
+	}
+</style>

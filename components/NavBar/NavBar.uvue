@@ -120,7 +120,7 @@
 	}
 
 	.nb-root-light .nb-status {
-		background-color: #F48FB1;
+		background-color: #FAF7F5;
 	}
 
 	.nb-status-fill {
@@ -129,7 +129,7 @@
 	}
 
 	.nb-root-light .nb-status-fill {
-		background-color: #F48FB1;
+		background-color: #FAF7F5;
 	}
 
 	.nb-wrap {

@@ -1,6 +1,6 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NavBar title="文件管理" />
+		<NyxPageHeader title="文件管理" subtitle="聊天文件、工作区和本地资料都在这。" />
 		<view class="container">
 			<!-- 面包屑导航 -->
 			<scroll-view class="breadcrumb-bar" :scroll-x="true" :show-scrollbar="false">
@@ -58,10 +58,11 @@
 						</view>
 					</template>
 				</view>
+				<view class="tabbar-list-spacer"></view>
 			</scroll-view>
 
 			<!-- FAB 新建按钮 -->
-			<rice-float-fab icon="plus" bg-color="#FB8FAB" :gap-bottom="80" @click="showCreateMenu" />
+			<rice-float-fab icon="plus" bg-color="#FB8FAB" :gap-bottom="102" @click="showCreateMenu" />
 
 			<!-- 新建弹窗 -->
 			<rice-dialog
@@ -94,7 +95,7 @@
 			</rice-dialog>
 
 		</view>
-		<TabBar current="pages/files/files" />
+		<NyxTabDock current="pages/files/files" />
 	</view>
 </template>
 
@@ -480,38 +481,48 @@
 </script>
 
 <style>
+	.page-shell {
+		background-color: #FAF7F5;
+	}
+
 	.container {
 		flex: 1;
+		background-color: #FAF7F5;
 	}
 
 	/* 面包屑导航 */
 	.breadcrumb-bar {
+		margin-left: 24px;
+		margin-right: 24px;
+		margin-top: 4px;
+		margin-bottom: 10px;
 		background-color: #FFFFFF;
-		border-bottom-width: 1px;
-		border-bottom-color: #F3F4F6;
-		border-bottom-style: solid;
+		border-radius: 18px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #F1E5EA;
 	}
 
 	.breadcrumb-row {
 		flex-direction: row;
 		align-items: center;
-		padding: 8px 15px;
+		padding: 10px 12px;
 	}
 
 	.breadcrumb-item {
 		flex-direction: row;
 		align-items: center;
-		padding: 2px 4px;
+		padding: 3px 5px;
 	}
 
 	.breadcrumb-text {
 		font-size: 13px;
-		color: #6B7280;
+		color: #8A7B84;
 		margin-left: 3px;
 	}
 
 	.breadcrumb-text-active {
-		color: #DB2777;
+		color: #DB6F92;
 		font-weight: bold;
 	}
 
@@ -522,14 +533,15 @@
 
 	.breadcrumb-separator {
 		font-size: 13px;
-		color: #D1D5DB;
+		color: #D8CAD1;
 		margin: 0 2px;
 	}
 
 	/* 文件列表 */
 	.file-list {
 		flex: 1;
-		padding: 4px 15px;
+		padding-left: 24px;
+		padding-right: 24px;
 	}
 
 	.empty-state {
@@ -541,31 +553,32 @@
 
 	.empty-text {
 		font-size: 16px;
-		color: #9CA3AF;
+		color: #8A7B84;
 		margin-bottom: 6px;
+		font-weight: bold;
 	}
 
 	.empty-hint {
 		font-size: 12px;
-		color: #D1D5DB;
+		color: #A79DA4;
 	}
 
 	/* 分组标题 */
 	.section-header {
 		flex-direction: row;
 		align-items: center;
-		padding: 10px 0 4px 0;
+		padding: 12px 0 6px 0;
 	}
 
 	.section-divider {
 		flex: 1;
 		height: 1px;
-		background-color: #E5E7EB;
+		background-color: #F1E5EA;
 	}
 
 	.section-label {
 		font-size: 11px;
-		color: #9CA3AF;
+		color: #A79DA4;
 		margin: 0 8px;
 		flex-shrink: 0;
 	}
@@ -574,18 +587,24 @@
 	.file-item {
 		flex-direction: row;
 		align-items: center;
-		padding: 10px 0;
-		border-bottom-width: 1px;
-		border-bottom-color: #F3F4F6;
-		border-bottom-style: solid;
+		padding: 13px 14px;
+		margin-bottom: 10px;
+		background-color: #FFFFFF;
+		border-radius: 18px;
+		border-width: 1px;
+		border-color: rgba(241, 229, 234, 0.92);
+		border-style: solid;
+		box-shadow: 0 8px 20px rgba(216, 140, 165, 0.045);
 	}
 
 	.file-icon {
-		width: 32px;
-		height: 32px;
+		width: 42px;
+		height: 42px;
+		border-radius: 14px;
 		justify-content: center;
 		align-items: center;
-		margin-right: 8px;
+		margin-right: 12px;
+		background-color: #FFF4F7;
 	}
 
 	.file-info {
@@ -594,8 +613,11 @@
 
 	.file-name {
 		font-size: 14px;
-		color: #111827;
-		margin-bottom: 2px;
+		font-weight: bold;
+		color: #2A2529;
+		margin-bottom: 4px;
+		lines: 1;
+		text-overflow: ellipsis;
 	}
 
 	.file-meta {
@@ -605,18 +627,22 @@
 
 	.file-meta-text {
 		font-size: 11px;
-		color: #9CA3AF;
+		color: #8A7B84;
 	}
 
 	.file-meta-time {
 		font-size: 11px;
-		color: #D1D5DB;
+		color: #A79DA4;
 		margin-left: 8px;
 	}
 
 	.file-arrow {
-		padding-left: 6px;
+		width: 30px;
+		height: 30px;
+		border-radius: 15px;
 		justify-content: center;
+		align-items: center;
+		background-color: #FFF7FA;
 	}
 
 	/* 弹窗内容 */
@@ -624,4 +650,8 @@
 		width: 100%;
 	}
 
+	.tabbar-list-spacer {
+		height: 126px;
+		flex-shrink: 0;
+	}
 </style>
