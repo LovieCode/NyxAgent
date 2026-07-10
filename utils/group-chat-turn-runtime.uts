@@ -1,0 +1,525 @@
+/**
+ * 群聊后台回合运行时。
+ *
+ * 按 sessionId 持有流、消息和回合状态。页面只订阅更新，退出页面不会终止当前流。
+ */
+
+import { agentChat } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+import { getAgentById } from '@/utils/agent.uts'
+import { finalizeAssistantTurn, reduceAgentEvent } from '@/utils/chat-message-reducer.uts'
+import { getMessageContent, getMessageThinking } from '@/utils/chat-models.uts'
+import { buildChatDatetimePrefix } from '@/utils/datetime-context.uts'
+import { eventBus } from '@/utils/event-bus.uts'
+import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
+import { detectSchedulerLeakCandidate, getSchedulerLeakHoldSize } from '@/utils/group-chat-moderation.uts'
+import {
+	appendGroupVisiblePlainText,
+	buildRevisedGroupSpeakAction,
+	createGroupTextStreamState,
+	findLastGroupAssistantMessageFrom,
+	reduceGroupTextStreamState,
+	replaceGroupVisiblePlainText,
+	resolveGroupReviewShouldContinue,
+	type GroupTextStreamState,
+} from '@/utils/group-chat-page-helpers.uts'
+import {
+	GROUP_MESSAGE_SENDER_REVIEWER,
+	GROUP_MESSAGE_SENDER_SCHEDULER,
+	createId,
+	type GroupChat,
+	type GroupChatSession,
+} from '@/utils/group-chat-models.uts'
+import {
+	buildDeterministicSchedulerDecision,
+	buildFallbackSchedulerDecision,
+	buildGroupReviewMessages,
+	buildGroupReviewSystemPrompt,
+	buildMemberRuntimeMessages,
+	buildMemberSystemPrompt,
+	buildSchedulerReviewMessages,
+	buildSchedulerReviewSystemPrompt,
+	buildSchedulerRuntimeMessages,
+	buildSchedulerSystemPrompt,
+	parseGroupReviewDecision,
+	parseSchedulerDecision,
+	parseSchedulerReviewDecision,
+	persistGroupReviewEffects,
+	recordGroupAgentSpeak,
+} from '@/utils/group-chat-scheduler.uts'
+import {
+	applyGroupSessionTitleSuggestion,
+	createGroupAgentContextRecord,
+	createGroupAgentStreamingMessage,
+	createGroupHiddenMessage,
+	getActiveGroupMembers,
+	getGroupChatById,
+	getGroupMessages,
+	getGroupSessionById,
+	getGroupSessionWorkspaceDir,
+	isAgentInGroup,
+	markGroupAgentMessageRevoked,
+	readAgentInjectDatetime,
+	readAgentModel,
+	readAgentMsgSegmentation,
+	readAgentName,
+	resolveGroupReviewerAgentId,
+	resolveGroupSchedulerAgentId,
+	saveGroupAgentContextRecord,
+	saveGroupMessages,
+	syncGroupStreamingMessage,
+} from '@/utils/group-chat-service.uts'
+import { createGroupHiddenStreamMessage, saveGroupAgentResponseSnapshot } from '@/utils/group-chat-stream-helpers.uts'
+
+const GROUP_CHAT_RUNTIME_EVENT_PREFIX = 'group-chat-runtime-update:'
+const GROUP_CHAT_MAX_AUTO_ROUNDS = 2
+
+export function getGroupChatRuntimeEventName(sessionId: string): string {
+	return GROUP_CHAT_RUNTIME_EVENT_PREFIX + sessionId
+}
+
+class GroupChatTurnRuntime {
+	groupId: string
+	sessionId: string
+	messages: UTSJSONObject[]
+	running: boolean
+	stopped: boolean
+	phase: string
+	loopTurns: number
+	runId: string
+	currentStream: AgentEventStream | null
+
+	constructor(groupId: string, sessionId: string) {
+		this.groupId = groupId
+		this.sessionId = sessionId
+		this.messages = [] as UTSJSONObject[]
+		this.running = false
+		this.stopped = false
+		this.phase = 'idle'
+		this.loopTurns = 0
+		this.runId = ''
+		this.currentStream = null
+	}
+
+	notify(): void {
+		eventBus.emit(getGroupChatRuntimeEventName(this.sessionId))
+	}
+
+	saveMessages(): void {
+		saveGroupMessages(this.groupId, this.sessionId, this.messages)
+	}
+
+	isRunActive(runId: string): boolean {
+		return this.running == true && this.stopped == false && this.runId == runId
+	}
+
+	finalizeStreamingMessagesOnStop(): void {
+		for (let i = 0; i < this.messages.length; i++) {
+			const message = this.messages[i]
+			if ((message['isStreaming'] as boolean | null) != true) { continue }
+			message['isStreaming'] = false
+			const content = getMessageContent(message).trim()
+			if (content == '' || content == '正在整理发言...') {
+				message['visible'] = false
+			}
+		}
+	}
+
+	start(reason: string, resetLoop: boolean): boolean {
+		if (this.running == true) { return false }
+		const group = getGroupChatById(this.groupId)
+		const session = getGroupSessionById(this.groupId, this.sessionId)
+		if (group == null || session == null) { return false }
+		if (getActiveGroupMembers(this.groupId).length == 0) { return false }
+		this.messages = getGroupMessages(this.groupId, this.sessionId)
+		if (resetLoop == true) { this.loopTurns = 0 }
+		this.running = true
+		this.stopped = false
+		this.phase = 'routing'
+		this.runId = createId('grun')
+		this.currentStream = null
+		this.notify()
+		this.runScheduler(group, session, reason, this.runId)
+		return true
+	}
+
+	stop(): void {
+		if (this.running == false) { return }
+		this.stopped = true
+		this.running = false
+		this.phase = 'stopped'
+		this.finalizeStreamingMessagesOnStop()
+		const note = createGroupHiddenMessage(this.groupId, this.sessionId, 'system', '用户请求暂停本轮讨论。当前队列不再继续发言。')
+		this.messages.push(note)
+		this.saveMessages()
+		const stream = this.currentStream
+		this.currentStream = null
+		this.notify()
+		if (stream != null) {
+			stream.abort()
+		}
+	}
+
+	finish(): void {
+		this.running = false
+		this.stopped = false
+		this.phase = 'completed'
+		this.currentStream = null
+		this.saveMessages()
+		this.notify()
+	}
+
+	runScheduler(group: GroupChat, session: GroupChatSession, reason: string, runId: string): void {
+		if (this.isRunActive(runId) == false) { return }
+		this.phase = 'routing'
+		this.notify()
+		const directDecision = buildDeterministicSchedulerDecision(group.id, this.messages)
+		if (directDecision != null) {
+			const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, JSON.stringify(directDecision))
+			hidden['triggerReason'] = reason
+			hidden['decision'] = directDecision
+			this.messages.push(hidden)
+			this.saveMessages()
+			this.notify()
+			this.runDecisionActions(group, session, directDecision, runId)
+			return
+		}
+		const schedulerMessages = buildSchedulerRuntimeMessages(group, session, this.messages, reason, this.loopTurns)
+		const schedulerAgentId = resolveGroupSchedulerAgentId(group)
+		const schedulerState = createGroupTextStreamState()
+		let schedulerFailed = false
+		const schedulerStream = agentChat(schedulerMessages, buildSchedulerSystemPrompt(), '', '', schedulerAgentId, 1, session.id, '')
+		this.currentStream = schedulerStream
+		schedulerStream.on((event: AgentEvent) => {
+			if (this.isRunActive(runId) == false) { return }
+			if (event.type == 'error') { schedulerFailed = true }
+			if (reduceGroupTextStreamState(schedulerState, event) == true) { return }
+			if (event.type != 'agent_end') { return }
+			const decision = schedulerFailed == true
+				? buildFallbackSchedulerDecision(group.id)
+				: parseSchedulerDecision(schedulerState.text, group.id)
+			const title = decision['titleSuggestion'] as string | null
+			if (title != null && title.trim() != '') {
+				applyGroupSessionTitleSuggestion(group.id, session.id, title)
+			}
+			const hidden = createGroupHiddenStreamMessage(
+				group.id,
+				session.id,
+				GROUP_MESSAGE_SENDER_SCHEDULER,
+				schedulerAgentId,
+				schedulerState.text,
+				schedulerState.thinking,
+				schedulerState.startedAt,
+				schedulerMessages,
+				reason
+			)
+			hidden['decision'] = decision
+			hidden['failed'] = schedulerFailed
+			this.messages.push(hidden)
+			this.saveMessages()
+			this.currentStream = null
+			this.notify()
+			this.runDecisionActions(group, session, decision, runId)
+		})
+	}
+
+	runDecisionActions(group: GroupChat, session: GroupChatSession, decision: UTSJSONObject, runId: string): void {
+		const actions = decision['actions'] as UTSJSONObject[] | null
+		if (actions == null || actions.length == 0) {
+			this.finish()
+			return
+		}
+		const shouldContinue = (decision['shouldContinue'] as boolean | null) == true
+		this.runActionAt(group, session, actions, 0, shouldContinue, runId)
+	}
+
+	runActionAt(group: GroupChat, session: GroupChatSession, actions: UTSJSONObject[], index: number, shouldContinue: boolean, runId: string): void {
+		if (this.isRunActive(runId) == false) { return }
+		if (index >= actions.length) {
+			this.finishDecisionRound(group, session, shouldContinue, runId)
+			return
+		}
+		const action = actions[index]
+		const actionType = action['type'] as string | null
+		const agentId = action['agentId'] as string | null
+		if (actionType != 'speak' || agentId == null || agentId == '' || getAgentById(agentId) == null || isAgentInGroup(group.id, agentId) == false) {
+			this.runActionAt(group, session, actions, index + 1, shouldContinue, runId)
+			return
+		}
+		this.runMemberSpeakWithReview(group, session, agentId, action, false, runId, () => {
+			this.runActionAt(group, session, actions, index + 1, shouldContinue, runId)
+		})
+	}
+
+	finishDecisionRound(group: GroupChat, session: GroupChatSession, shouldContinue: boolean, runId: string): void {
+		if (this.isRunActive(runId) == false) { return }
+		this.loopTurns++
+		this.saveMessages()
+		this.runGroupReview(group, session, '成员发言结束，进入回合复盘', shouldContinue, runId)
+	}
+
+	runGroupReview(group: GroupChat, session: GroupChatSession, reason: string, schedulerShouldContinue: boolean, runId: string): void {
+		if (this.isRunActive(runId) == false) { return }
+		this.phase = 'reviewing'
+		this.notify()
+		const reviewMessages = buildGroupReviewMessages(group, session, this.messages, reason, this.loopTurns)
+		const reviewerAgentId = resolveGroupReviewerAgentId(group)
+		const reviewState = createGroupTextStreamState()
+		let reviewFailed = false
+		const reviewStream = agentChat(reviewMessages, buildGroupReviewSystemPrompt(), '', '', reviewerAgentId, 1, session.id, '')
+		this.currentStream = reviewStream
+		reviewStream.on((event: AgentEvent) => {
+			if (this.isRunActive(runId) == false) { return }
+			if (event.type == 'error') { reviewFailed = true }
+			if (reduceGroupTextStreamState(reviewState, event) == true) { return }
+			if (event.type != 'agent_end') { return }
+			const review = parseGroupReviewDecision(reviewState.text)
+			const hidden = createGroupHiddenStreamMessage(
+				group.id,
+				session.id,
+				GROUP_MESSAGE_SENDER_REVIEWER,
+				reviewerAgentId,
+				reviewState.text,
+				reviewState.thinking,
+				reviewState.startedAt,
+				reviewMessages,
+				reason
+			)
+			hidden['review'] = review
+			hidden['failed'] = reviewFailed
+			this.messages.push(hidden)
+			if (reviewFailed == false) {
+				const hiddenId = hidden['id'] as string | null
+				persistGroupReviewEffects(group, session, review, hiddenId != null ? hiddenId : '')
+			}
+			this.saveMessages()
+			this.currentStream = null
+			this.notify()
+			if (reviewFailed == true) {
+				this.finish()
+				return
+			}
+			const advice = review['continueAdvice'] as string | null
+			const nextShouldContinue = resolveGroupReviewShouldContinue(advice, schedulerShouldContinue)
+			if (nextShouldContinue == true && this.loopTurns < GROUP_CHAT_MAX_AUTO_ROUNDS) {
+				this.runScheduler(group, session, '复盘建议继续讨论', runId)
+			} else {
+				this.finish()
+			}
+		})
+	}
+
+	runMemberSpeakWithReview(group: GroupChat, session: GroupChatSession, agentId: string, action: UTSJSONObject, isRevision: boolean, runId: string, done: () => void): void {
+		if (this.isRunActive(runId) == false) { return }
+		const agent = getAgentById(agentId)
+		if (agent == null) {
+			done()
+			return
+		}
+		this.phase = 'speaking'
+		const streamingMsg = createGroupAgentStreamingMessage(group.id, session.id, agentId)
+		streamingMsg['revisionAttempt'] = isRevision
+		this.messages.push(streamingMsg)
+		const agentName = readAgentName(agent)
+		const injectDatetime = readAgentInjectDatetime(agent)
+		const msgSegmentation = readAgentMsgSegmentation(agent)
+		const systemPrompt = buildMemberSystemPrompt(agent, group.sharedPrompt, group.id, session.id)
+		const tempMessages = buildMemberRuntimeMessages(group, session, this.messages, action, agentName, injectDatetime, buildChatDatetimePrefix())
+		const contextRecord = createGroupAgentContextRecord(group, session, agentId, agentName, action, tempMessages, systemPrompt)
+		saveGroupAgentContextRecord(contextRecord)
+		streamingMsg['contextRecordId'] = contextRecord['id'] as string | null
+		const workspaceRoot = getGroupSessionWorkspaceDir(group.id, session.id)
+		const newMsgStartIndex = tempMessages.length
+		const stream = agentChat(tempMessages, systemPrompt, '', readAgentModel(agent), agentId, 0, session.id, workspaceRoot)
+		this.currentStream = stream
+		const holdSize = getSchedulerLeakHoldSize()
+		let renderTail = ''
+		let heldText = ''
+		let candidateText = ''
+		let reviewHolding = false
+		let hitKeyword = ''
+		let memberFailed = false
+		this.notify()
+		stream.on((event: AgentEvent) => {
+			if (this.isRunActive(runId) == false) { return }
+			if (event.type == 'error') { memberFailed = true }
+			if (event.type == 'agent_end') {
+				finalizeAssistantTurn(tempMessages, msgSegmentation)
+				const lastAssistant = findLastGroupAssistantMessageFrom(tempMessages, newMsgStartIndex)
+				if (lastAssistant != null) {
+					const finalText = getMessageContent(lastAssistant)
+					if (reviewHolding == true && memberFailed == false) {
+						heldText = finalText
+						const visibleNow = streamingMsg['content'] as string | null
+						if (visibleNow == null || visibleNow == '') {
+							replaceGroupVisiblePlainText(streamingMsg, '正在整理发言...')
+						}
+					} else {
+						if (renderTail != '') {
+							appendGroupVisiblePlainText(streamingMsg, renderTail)
+							renderTail = ''
+						}
+						syncGroupStreamingMessage(streamingMsg, lastAssistant)
+					}
+					const responseText = reviewHolding == true && memberFailed == false
+						? finalText
+						: (streamingMsg['content'] as string | null)
+					saveGroupAgentResponseSnapshot(
+						contextRecord,
+						agentId,
+						session.id,
+						responseText != null ? responseText : '',
+						getMessageThinking(lastAssistant)
+					)
+				} else {
+					streamingMsg['visible'] = false
+				}
+				if (memberFailed == true) {
+					streamingMsg['isError'] = true
+				} else {
+					recordGroupAgentSpeak(group.id, session.id, agentId)
+				}
+				streamingMsg['isStreaming'] = false
+				this.currentStream = null
+				this.saveMessages()
+				this.notify()
+				if (reviewHolding == true && memberFailed == false) {
+					this.runSchedulerReview(group, session, agentId, agentName, streamingMsg, heldText, hitKeyword, action, runId, done)
+				} else {
+					done()
+				}
+				return
+			}
+			reduceAgentEvent(tempMessages, event)
+			const lastAssistant = findLastGroupAssistantMessageFrom(tempMessages, newMsgStartIndex)
+			if (lastAssistant != null) {
+				if ((event.type == 'text_delta' && event.text != null) || (event.type == 'text_end' && event.fullText != null && candidateText == '')) {
+					const delta = event.type == 'text_delta' ? (event.text as string) : (event.fullText as string)
+					candidateText += delta
+					if (reviewHolding == false) {
+						const detection = detectSchedulerLeakCandidate(renderTail + delta)
+						if (detection.hit == true) {
+							reviewHolding = true
+							hitKeyword = detection.keyword
+							heldText = candidateText
+							const visibleNow = streamingMsg['content'] as string | null
+							if (visibleNow == null || visibleNow == '') {
+								replaceGroupVisiblePlainText(streamingMsg, '正在整理发言...')
+							}
+						} else {
+							const merged = renderTail + delta
+							if (merged.length > holdSize) {
+								const safeLen = merged.length - holdSize
+								appendGroupVisiblePlainText(streamingMsg, merged.substring(0, safeLen))
+								renderTail = merged.substring(safeLen)
+							} else {
+								renderTail = merged
+							}
+						}
+					}
+				}
+			}
+			this.notify()
+		})
+	}
+
+	runSchedulerReview(group: GroupChat, session: GroupChatSession, agentId: string, agentName: string, streamingMsg: UTSJSONObject, candidateText: string, keyword: string, originalAction: UTSJSONObject, runId: string, done: () => void): void {
+		if (this.isRunActive(runId) == false) { return }
+		const schedulerState: GroupTextStreamState = createGroupTextStreamState()
+		const reviewMessages = buildSchedulerReviewMessages(group, session, this.messages, agentId, agentName, keyword, candidateText)
+		const schedulerAgentId = resolveGroupSchedulerAgentId(group)
+		let reviewFailed = false
+		const reviewStream = agentChat(reviewMessages, buildSchedulerReviewSystemPrompt(), '', '', schedulerAgentId, 1, session.id, '')
+		this.currentStream = reviewStream
+		reviewStream.on((event: AgentEvent) => {
+			if (this.isRunActive(runId) == false) { return }
+			if (event.type == 'error') { reviewFailed = true }
+			if (reduceGroupTextStreamState(schedulerState, event) == true) { return }
+			if (event.type != 'agent_end') { return }
+			this.currentStream = null
+			const hidden = createGroupHiddenStreamMessage(
+				group.id,
+				session.id,
+				GROUP_MESSAGE_SENDER_SCHEDULER,
+				schedulerAgentId,
+				schedulerState.text,
+				schedulerState.thinking,
+				schedulerState.startedAt,
+				reviewMessages,
+				'敏感流式发言审核：' + keyword
+			)
+			this.messages.push(hidden)
+			if (reviewFailed == true) {
+				markGroupAgentMessageRevoked(streamingMsg)
+				this.saveMessages()
+				this.notify()
+				done()
+				return
+			}
+			const decision = parseSchedulerReviewDecision(schedulerState.text)
+			const mode = decision['decision'] as string | null
+			if (mode == 'allow') {
+				replaceGroupVisiblePlainText(streamingMsg, candidateText)
+				streamingMsg['isStreaming'] = false
+				this.saveMessages()
+				this.notify()
+				done()
+				return
+			}
+			if (mode == 'revoke' || (streamingMsg['revisionAttempt'] as boolean | null) == true) {
+				markGroupAgentMessageRevoked(streamingMsg)
+				this.saveMessages()
+				this.notify()
+				done()
+				return
+			}
+			markGroupAgentMessageRevoked(streamingMsg)
+			this.saveMessages()
+			this.notify()
+			const instructionRaw = decision['revisionInstruction'] as string | null
+			const revisedAction = buildRevisedGroupSpeakAction(originalAction, instructionRaw, candidateText)
+			this.runMemberSpeakWithReview(group, session, agentId, revisedAction, true, runId, done)
+		})
+	}
+}
+
+const groupTurnRuntimes: GroupChatTurnRuntime[] = [] as GroupChatTurnRuntime[]
+
+function getRuntime(sessionId: string): GroupChatTurnRuntime | null {
+	if (sessionId == '') { return null }
+	for (let i = 0; i < groupTurnRuntimes.length; i++) {
+		if (groupTurnRuntimes[i].sessionId == sessionId) {
+			return groupTurnRuntimes[i]
+		}
+	}
+	return null
+}
+
+export function isGroupChatTurnRunning(sessionId: string): boolean {
+	const runtime = getRuntime(sessionId)
+	return runtime != null && runtime.running == true
+}
+
+export function getGroupChatTurnMessages(groupId: string, sessionId: string): UTSJSONObject[] {
+	const runtime = getRuntime(sessionId)
+	if (runtime != null && runtime.running == true) {
+		return runtime.messages
+	}
+	return getGroupMessages(groupId, sessionId)
+}
+
+export function startGroupChatTurn(groupId: string, sessionId: string, reason: string, resetLoop: boolean = true): boolean {
+	if (groupId == '' || sessionId == '') { return false }
+	let runtime = getRuntime(sessionId)
+	if (runtime == null) {
+		runtime = new GroupChatTurnRuntime(groupId, sessionId)
+		groupTurnRuntimes.push(runtime)
+	}
+	return runtime.start(reason, resetLoop)
+}
+
+export function stopGroupChatTurn(sessionId: string): void {
+	const runtime = getRuntime(sessionId)
+	if (runtime != null) {
+		runtime.stop()
+	}
+}

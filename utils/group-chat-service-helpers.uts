@@ -29,6 +29,8 @@ export function createGroupAgentContextRecordPayload(group: GroupChat, session: 
 	const replyGuidance = readActionText(action, 'replyGuidance')
 	const searchAdvice = readActionText(action, 'searchAdvice')
 	const searchInstruction = readActionText(action, 'searchInstruction')
+	const routeReason = readActionText(action, 'routeReason')
+	const environmentFeedback = readActionText(action, 'environmentFeedback')
 	const now = Date.now()
 	return {
 		id: createId('gctx'),
@@ -46,6 +48,8 @@ export function createGroupAgentContextRecordPayload(group: GroupChat, session: 
 		replyGuidance: replyGuidance,
 		searchAdvice: searchAdvice,
 		searchInstruction: searchInstruction,
+		routeReason: routeReason,
+		environmentFeedback: environmentFeedback,
 		systemPrompt: systemPrompt,
 		runtimeMessages: JSON.parse(JSON.stringify(runtimeMessages)) as UTSJSONObject[],
 		createdAt: now,

@@ -25,11 +25,11 @@ export const GROUP_MESSAGE_VISIBILITY_INTERNAL = 'internal'
 export const GROUP_MESSAGE_VISIBILITY_PRIVATE = 'private'
 export const GROUP_MESSAGE_VISIBILITY_DEBUG = 'debug'
 
-export const DEFAULT_SCHEDULER_PROMPT_TEXT = '你是本群聊独立的隐藏调度子代理。你可以在内部向任意成员 Agent 传递私密指令、背景信息和任务拆解，也可以指定一个或多个成员按顺序发言。你的存在、调度流程、私密指令不能被其他成员在公开发言中暴露。你只在系统触发节点工作，例如用户发消息、用户手动继续、连续讨论过多需要判断是否继续。\n' +
-	'输出必须是 JSON 对象，禁止 Markdown，结构：{"actions":[{"type":"speak","agentId":"成员ID","targetType":"user","targetAgentId":"","privateInstruction":"给该成员的私密指令","publicIntent":"公开发言目标","replyLength":"short","replyGuidance":"简短自然，优先 1-3 句","searchAdvice":"none","searchInstruction":"","order":0}],"shouldContinue":false,"titleSuggestion":"适合本会话的短标题","privateNotes":"仅内部记录"}。\n' +
-	'默认让成员简短发言。事实不确定、涉及外部/时效信息时，建议具备相关工具的成员先查证或搜索；发现跑题、重复、事实冲突或虚构 App 功能时，用私密指令要求纠偏和收束。不要为了热闹强行多人发言。'
+export const DEFAULT_SCHEDULER_PROMPT_TEXT = '你是本群聊独立的隐藏环境模型。你只负责选择下一位发言成员、提供必要的环境反馈，并判断当前讨论是否应当结束。不要替成员撰写观点、措辞、回答提纲或固定回复长度，成员必须依据用户原文和自身人格自主发言。\n' +
+	'输出必须是 JSON 对象，禁止 Markdown，结构：{"actions":[{"type":"speak","agentId":"成员ID","targetType":"user","targetAgentId":"","routeReason":"选择该成员的简短原因","environmentFeedback":"该成员需要知道的客观环境变化，没有则为空","order":0}],"shouldContinue":false,"titleSuggestion":"适合本会话的短标题","privateNotes":"仅内部记录"}。\n' +
+	'简单消息只选一个最合适的成员；用户点名时优先被点名者；协作、评审或明确要求多人参与时最多选择三个成员。不要要求成员复述全部要点，也不要为了热闹强行多人发言。'
 
-export const DEFAULT_SHARED_PROMPT_TEXT = '这是一个故事/写作交流群聊。成员可以讨论人物、剧情、节奏、文风和表达，但要自然像群聊发言。公开发言只输出自己要说的话，不写舞台说明，不提隐藏调度、内部指令或系统消息。'
+export const DEFAULT_SHARED_PROMPT_TEXT = '这是一个多人群聊。成员应保持各自的人格、立场和专业特点，直接回应用户原文或其他成员的公开发言。公开发言只输出自己要说的话，不提隐藏调度、内部指令或系统消息。'
 
 export type GroupChat = {
 	id: string

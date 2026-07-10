@@ -143,27 +143,18 @@
 </template>
 
 <script lang="uts">
-	import { agentChat, readLastLLMRequestSnapshot, captionImage } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
-	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
+	import { readLastLLMRequestSnapshot, captionImage } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
 	import { getAgentById } from '@/utils/agent.uts'
 	import { loadChatUserProfile } from '@/utils/chat-conversation-service.uts'
-	import { buildChatDatetimePrefix } from '@/utils/datetime-context.uts'
-	import { getMessageContent, getMessageThinking, setImageMessageCaption } from '@/utils/chat-models.uts'
-	import { reduceAgentEvent, finalizeAssistantTurn } from '@/utils/chat-message-reducer.uts'
-	import { detectSchedulerLeakCandidate, getSchedulerLeakHoldSize } from '@/utils/group-chat-moderation.uts'
+	import { setImageMessageCaption } from '@/utils/chat-models.uts'
 	import { setActiveAgentRuntimeId, setContextPreviewPayload, setFilesInitialPath, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, type PickedLocalFile } from '@/utils/attachment-reader.uts'
 	import {
-		appendGroupVisiblePlainText,
 		buildGroupDispatchHistoryText,
 		buildGroupMemberAgentItems as buildGroupMemberAgentItemsForPage,
 		buildGroupMemberAgentNames,
 		buildGroupToolbarTrackStyle,
-		buildRevisedGroupSpeakAction,
 		calcGroupInputHeight,
-		createGroupTextStreamState,
-		findLastGroupAssistantMessage,
-		findLastGroupAssistantMessageFrom,
 		getGroupMessagePartsForView,
 		isGroupAgentMessage,
 		isGroupUserMessage,
@@ -172,12 +163,8 @@
 		readGroupMessageMsgSegmentation,
 		readGroupMessageSenderName,
 		readGroupUserMessageSenderName,
-		reduceGroupTextStreamState,
-		replaceGroupVisiblePlainText,
-		resolveGroupReviewShouldContinue,
 		stringifyGroupContextPreview,
 	} from '@/utils/group-chat-page-helpers.uts'
-	import { createGroupHiddenStreamMessage, saveGroupAgentResponseSnapshot } from '@/utils/group-chat-stream-helpers.uts'
 	import {
 		buildChatScrollbarThumbStyle,
 		clampChatScrollTarget,
@@ -195,58 +182,39 @@
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { NYX_FLOAT_CONTEXT_GROUP, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
 	import {
+		getGroupChatRuntimeEventName,
+		getGroupChatTurnMessages,
+		isGroupChatTurnRunning,
+		startGroupChatTurn,
+		stopGroupChatTurn,
+	} from '@/utils/group-chat-turn-runtime.uts'
+	import {
 		GROUP_MESSAGE_SENDER_AGENT,
-		GROUP_MESSAGE_SENDER_REVIEWER,
-		GROUP_MESSAGE_SENDER_SCHEDULER,
 		type GroupChat,
 		type GroupChatSession,
-		applyGroupSessionTitleSuggestion,
-		buildGroupReviewMessages,
-		buildGroupReviewSystemPrompt,
-		buildMemberRuntimeMessages,
-		buildMemberSystemPrompt,
-		buildSchedulerRuntimeMessages,
-		buildSchedulerReviewMessages,
-		buildSchedulerReviewSystemPrompt,
-		createGroupAgentContextRecord,
-		buildSchedulerSystemPrompt,
 		createDefaultWritingGroupChat,
-		createGroupAgentStreamingMessage,
-		createGroupHiddenMessage,
 		createGroupUserFileMessage,
 		createGroupUserImageMessage,
 		createGroupUserMessage,
 		displaySessionTitle,
 		ensureGroupActiveSession,
-		getActiveGroupMembers,
 		getActiveGroupChatId,
 		getGroupChatById,
 		getGroupMessages,
 		getGroupSessionById,
 		getGroupSessionWorkspaceDir,
 		getVisibleGroupMessages,
-		parseGroupReviewDecision,
-		parseSchedulerDecision,
-		parseSchedulerReviewDecision,
-		persistGroupReviewEffects,
-		recordGroupAgentSpeak,
-		isAgentInGroup,
-		markGroupAgentMessageRevoked,
-		readAgentModel,
-		readAgentName,
-		readAgentInjectDatetime,
-		readAgentMsgSegmentation,
 		resolveGroupReviewerAgentId,
 		resolveGroupSchedulerAgentId,
 		revokeGroupAgentMessage,
-		saveGroupAgentContextRecord,
 		saveGroupMessages,
 		setActiveGroupChat,
 		setActiveGroupSessionId,
-		syncGroupStreamingMessage,
 	} from '@/utils/group-chat-service.uts'
 
 	let groupNyxFloatVoiceCallback: (() => void) | null = null
+	let groupTurnRuntimeCallback: (() => void) | null = null
+	let groupTurnRuntimeEventName: string = ''
 
 	export default {
 		data() {
@@ -280,9 +248,6 @@
 				scrollbarDragStartTop: 0 as number,
 				scrollbarTrackTop: 0 as number,
 				longpressCancelToken: 0 as number,
-				currentStream: null as AgentEventStream | null,
-				loopTurns: 0 as number,
-				discussionStopped: false as boolean,
 				userNickname: '' as string,
 				userAvatar: '' as string,
 				imageCaptionTaskId: 0 as number,
@@ -361,6 +326,12 @@
 				eventBus.off(NYX_FLOAT_VOICE_EVENT, callback)
 			}
 			groupNyxFloatVoiceCallback = null
+			const runtimeCallback = groupTurnRuntimeCallback
+			if (runtimeCallback != null && groupTurnRuntimeEventName != '') {
+				eventBus.off(groupTurnRuntimeEventName, runtimeCallback)
+			}
+			groupTurnRuntimeCallback = null
+			groupTurnRuntimeEventName = ''
 			deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
 		},
 		methods: {
@@ -388,12 +359,37 @@
 				this.group = group
 				this.session = session
 				setActiveGroupSessionId(session.id)
-				this.messages = getGroupMessages(group.id, session.id)
+				this.messages = getGroupChatTurnMessages(group.id, session.id)
+				this.isGenerating = isGroupChatTurnRunning(session.id)
+				this.bindGroupTurnRuntime()
 				this.normalizeUserSenderNames()
 				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
 			},
 			goBack(): void { uni.navigateBack() },
+			bindGroupTurnRuntime(): void {
+				const oldCallback = groupTurnRuntimeCallback
+				if (oldCallback != null && groupTurnRuntimeEventName != '') {
+					eventBus.off(groupTurnRuntimeEventName, oldCallback)
+				}
+				groupTurnRuntimeEventName = getGroupChatRuntimeEventName(this.sessionId)
+				groupTurnRuntimeCallback = () => {
+					this.syncGroupTurnRuntime()
+				}
+				const callback = groupTurnRuntimeCallback
+				if (callback != null && groupTurnRuntimeEventName != '') {
+					eventBus.on(groupTurnRuntimeEventName, callback)
+				}
+			},
+			syncGroupTurnRuntime(): void {
+				if (this.groupId == '' || this.sessionId == '') { return }
+				this.messages = getGroupChatTurnMessages(this.groupId, this.sessionId)
+				this.isGenerating = isGroupChatTurnRunning(this.sessionId)
+				const freshSession = getGroupSessionById(this.groupId, this.sessionId)
+				if (freshSession != null) { this.session = freshSession }
+				this.resetMessageWindowToRecent()
+				this.scrollToBottomIfPinned()
+			},
 			goSettings(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
 				uni.navigateTo({ url: '/pages/group-chat-settings/group-chat-settings' })
@@ -699,18 +695,6 @@
 					this.scrollToBottom()
 				}
 			},
-			findLastAssistantMessage(list: UTSJSONObject[]): UTSJSONObject | null {
-				return findLastGroupAssistantMessage(list)
-			},
-			findLastAssistantMessageFrom(list: UTSJSONObject[], startIndex: number): UTSJSONObject | null {
-				return findLastGroupAssistantMessageFrom(list, startIndex)
-			},
-			appendVisiblePlainText(msg: UTSJSONObject, text: string): void {
-				appendGroupVisiblePlainText(msg, text)
-			},
-			replaceVisiblePlainText(msg: UTSJSONObject, text: string): void {
-				replaceGroupVisiblePlainText(msg, text)
-			},
 			saveMessages(): void {
 				if (this.groupId == '' || this.sessionId == '') { return }
 				saveGroupMessages(this.groupId, this.sessionId, this.messages)
@@ -729,8 +713,11 @@
 				this.saveMessages()
 				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
-				this.loopTurns = 0
-				this.runScheduler('用户发送消息')
+				const started = startGroupChatTurn(this.groupId, this.sessionId, '用户发送消息', true)
+				if (started == false) {
+					uni.showToast({ position: 'bottom', title: '群里还没有可发言成员', icon: 'none' })
+				}
+				this.isGenerating = isGroupChatTurnRunning(this.sessionId)
 			},
 			consumeNyxFloatVoiceText(): void {
 				if (readNyxFloatVoiceContext() != NYX_FLOAT_CONTEXT_GROUP) { return }
@@ -748,20 +735,16 @@
 				if (this.consumeToolbarSwipeClick() == true) { return }
 				if (this.isGenerating == true) { return }
 				this.showToolPanel = false
-				this.runScheduler('用户要求继续讨论')
+				const started = startGroupChatTurn(this.groupId, this.sessionId, '用户要求继续讨论', true)
+				if (started == false) {
+					uni.showToast({ position: 'bottom', title: '群里还没有可发言成员', icon: 'none' })
+				}
+				this.isGenerating = isGroupChatTurnRunning(this.sessionId)
 			},
 			stopDiscussion(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
-				this.discussionStopped = true
-				const stream = this.currentStream
-				if (stream != null) {
-					stream.abort()
-				}
-				this.currentStream = null
-				this.isGenerating = false
-				const note = createGroupHiddenMessage(this.groupId, this.sessionId, 'system', '用户请求暂停本轮讨论。仍在 loop 的成员不要继续发言。')
-				this.messages.push(note)
-				this.saveMessages()
+				stopGroupChatTurn(this.sessionId)
+				this.syncGroupTurnRuntime()
 				uni.showToast({ position: 'bottom', title: '已停止讨论', icon: 'none' })
 			},
 			addGroupImageMessage(imagePath: string): number {
@@ -786,7 +769,11 @@
 			},
 			startGroupGenerationForMedia(reason: string): void {
 				if (this.isGenerating == true) { return }
-				this.runScheduler(reason)
+				const started = startGroupChatTurn(this.groupId, this.sessionId, reason, true)
+				if (started == false) {
+					uni.showToast({ position: 'bottom', title: '群里还没有可发言成员', icon: 'none' })
+				}
+				this.isGenerating = isGroupChatTurnRunning(this.sessionId)
 			},
 			startGenerationForImage(imagePath: string, fallbackReason: string, messageIndex: number): void {
 				if (this.isGenerating == true) { return }
@@ -1001,6 +988,10 @@
 				uni.navigateTo({ url: '/pages/files/files' })
 			},
 			onMessageLongpress(msg: UTSJSONObject): void {
+				if (this.isGenerating == true) {
+					uni.showToast({ position: 'bottom', title: '本轮结束后再操作消息', icon: 'none' })
+					return
+				}
 				const senderType = msg['senderType'] as string | null
 				if (senderType != GROUP_MESSAGE_SENDER_AGENT) { return }
 				const id = msg['id'] as string | null
@@ -1038,299 +1029,6 @@
 				setContextPreviewPayload(previewText)
 				uni.navigateTo({ url: '/pages/context-preview/context-preview' })
 			},
-			runScheduler(reason: string): void {
-				const group = this.group
-				const session = this.session
-				if (group == null || session == null) { return }
-				const members = getActiveGroupMembers(group.id)
-				if (members.length == 0) {
-					uni.showToast({ position: 'bottom', title: '群里还没有成员', icon: 'none' })
-					return
-				}
-				this.discussionStopped = false
-				this.isGenerating = true
-				const schedulerMessages = buildSchedulerRuntimeMessages(group, session, this.messages, reason, this.loopTurns)
-				const schedulerAgentId = resolveGroupSchedulerAgentId(group)
-				const schedulerState = createGroupTextStreamState()
-				const schedulerStream = agentChat(schedulerMessages, buildSchedulerSystemPrompt(), '', '', schedulerAgentId, 1, session.id, '')
-				this.currentStream = schedulerStream
-				schedulerStream.on((event: AgentEvent) => {
-					if (reduceGroupTextStreamState(schedulerState, event) == true) { return }
-					if (event.type == 'agent_end') {
-						if (this.discussionStopped == true) {
-							this.isGenerating = false
-							this.currentStream = null
-							return
-						}
-						const decision = parseSchedulerDecision(schedulerState.text, group.id)
-						const title = decision['titleSuggestion'] as string | null
-						if (title != null && title.trim() != '') {
-							applyGroupSessionTitleSuggestion(group.id, session.id, title)
-							const freshSession = getGroupSessionById(group.id, session.id)
-							this.session = freshSession != null ? freshSession : session
-						}
-						const hidden = createGroupHiddenStreamMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerAgentId, schedulerState.text, schedulerState.thinking, schedulerState.startedAt, schedulerMessages, reason)
-						this.messages.push(hidden)
-						this.saveMessages()
-						this.currentStream = null
-						this.runDecisionActions(decision)
-					}
-				})
-			},
-			runDecisionActions(decision: UTSJSONObject): void {
-				const actions = decision['actions'] as UTSJSONObject[] | null
-				if (actions == null || actions.length == 0) {
-					this.isGenerating = false
-					return
-				}
-				const shouldContinue = (decision['shouldContinue'] as boolean | null) == true
-				this.runActionAt(actions, 0, shouldContinue)
-			},
-			runActionAt(actions: UTSJSONObject[], index: number, shouldContinue: boolean): void {
-				if (this.discussionStopped == true) {
-					this.isGenerating = false
-					this.currentStream = null
-					this.saveMessages()
-					return
-				}
-				if (index >= actions.length) {
-					this.finishDecisionRound(shouldContinue)
-					return
-				}
-				const action = actions[index]
-				const actionType = action['type'] as string | null
-				const agentId = action['agentId'] as string | null
-				if (actionType != 'speak' || agentId == null || agentId == '' || getAgentById(agentId) == null || isAgentInGroup(this.groupId, agentId) == false) {
-					this.runActionAt(actions, index + 1, shouldContinue)
-					return
-				}
-				this.runMemberSpeak(agentId, action, () => { this.runActionAt(actions, index + 1, shouldContinue) })
-			},
-			finishDecisionRound(shouldContinue: boolean): void {
-				this.loopTurns++
-				this.saveMessages()
-				this.runGroupReview('成员发言结束，进入回合复盘', shouldContinue)
-			},
-			runGroupReview(reason: string, schedulerShouldContinue: boolean): void {
-				const group = this.group
-				const session = this.session
-				if (group == null || session == null) {
-					this.isGenerating = false
-					this.currentStream = null
-					return
-				}
-				const reviewMessages = buildGroupReviewMessages(group, session, this.messages, reason, this.loopTurns)
-				const reviewerAgentId = resolveGroupReviewerAgentId(group)
-				const reviewState = createGroupTextStreamState()
-				const reviewStream = agentChat(reviewMessages, buildGroupReviewSystemPrompt(), '', '', reviewerAgentId, 1, session.id, '')
-				this.currentStream = reviewStream
-				reviewStream.on((event: AgentEvent) => {
-					if (reduceGroupTextStreamState(reviewState, event) == true) { return }
-					if (event.type == 'agent_end') {
-						if (this.discussionStopped == true) {
-							this.isGenerating = false
-							this.currentStream = null
-							this.saveMessages()
-							return
-						}
-						const review = parseGroupReviewDecision(reviewState.text)
-						const hidden = createGroupHiddenStreamMessage(group.id, session.id, GROUP_MESSAGE_SENDER_REVIEWER, reviewerAgentId, reviewState.text, reviewState.thinking, reviewState.startedAt, reviewMessages, reason)
-						hidden['review'] = review
-						this.messages.push(hidden)
-						const hiddenId = hidden['id'] as string | null
-						persistGroupReviewEffects(group, session, review, hiddenId != null ? hiddenId : '')
-						this.saveMessages()
-						this.currentStream = null
-						const advice = review['continueAdvice'] as string | null
-						const nextShouldContinue = resolveGroupReviewShouldContinue(advice, schedulerShouldContinue)
-						if (this.loopTurns >= 10) {
-							this.loopTurns = 0
-							this.runScheduler('连续讨论轮数过多，判断是否继续')
-						} else if (nextShouldContinue == true) {
-							this.runScheduler('复盘建议继续讨论')
-						} else {
-							this.isGenerating = false
-						}
-					}
-				})
-			},
-			runMemberSpeak(agentId: string, action: UTSJSONObject, done: () => void): void {
-				this.runMemberSpeakWithReview(agentId, action, false, done)
-			},
-			runMemberSpeakWithReview(agentId: string, action: UTSJSONObject, isRevision: boolean, done: () => void): void {
-				const group = this.group
-				const session = this.session
-				if (group == null || session == null) {
-					done()
-					return
-				}
-				const agent = getAgentById(agentId)
-				if (agent == null) {
-					done()
-					return
-				}
-				const streamingMsg = createGroupAgentStreamingMessage(group.id, session.id, agentId)
-				streamingMsg['revisionAttempt'] = isRevision
-				this.messages.push(streamingMsg)
-				const agentName = readAgentName(agent)
-				const injectDatetime = readAgentInjectDatetime(agent)
-				const msgSegmentation = readAgentMsgSegmentation(agent)
-				const systemPrompt = buildMemberSystemPrompt(agent, group.sharedPrompt)
-				const tempMessages = buildMemberRuntimeMessages(group, session, this.messages, action, agentName, injectDatetime, buildChatDatetimePrefix())
-				const contextRecord = createGroupAgentContextRecord(group, session, agentId, agentName, action, tempMessages, systemPrompt)
-				saveGroupAgentContextRecord(contextRecord)
-				streamingMsg['contextRecordId'] = contextRecord['id'] as string | null
-				const workspaceRoot = getGroupSessionWorkspaceDir(group.id, session.id)
-				const newMsgStartIndex = tempMessages.length
-				const stream = agentChat(tempMessages, systemPrompt, '', readAgentModel(agent), agentId, 0, session.id, workspaceRoot)
-				this.currentStream = stream
-				const holdSize = getSchedulerLeakHoldSize()
-				let renderTail = ''
-				let heldText = ''
-				let candidateText = ''
-				let reviewHolding = false
-				let hitKeyword = ''
-				stream.on((event: AgentEvent) => {
-					if (event.type == 'agent_end') {
-						if (this.discussionStopped == true) {
-							if (reviewHolding == true) {
-								markGroupAgentMessageRevoked(streamingMsg)
-							} else if (renderTail != '') {
-								this.appendVisiblePlainText(streamingMsg, renderTail)
-								renderTail = ''
-							}
-							streamingMsg['isStreaming'] = false
-							this.currentStream = null
-							this.saveMessages()
-							done()
-							return
-						}
-						finalizeAssistantTurn(tempMessages, msgSegmentation)
-						const lastAssistant = this.findLastAssistantMessageFrom(tempMessages, newMsgStartIndex)
-						if (lastAssistant != null) {
-							const finalText = getMessageContent(lastAssistant)
-							if (reviewHolding == true) {
-								heldText = finalText
-								const visibleNow = streamingMsg['content'] as string | null
-								if (visibleNow == null || visibleNow == '') {
-									this.replaceVisiblePlainText(streamingMsg, '正在整理发言...')
-								}
-							} else {
-								if (renderTail != '') {
-									this.appendVisiblePlainText(streamingMsg, renderTail)
-									renderTail = ''
-								}
-								syncGroupStreamingMessage(streamingMsg, lastAssistant)
-							}
-							const responseText = reviewHolding == true ? finalText : (streamingMsg['content'] as string | null)
-							const thinkingText = getMessageThinking(lastAssistant)
-							saveGroupAgentResponseSnapshot(contextRecord, agentId, session.id, responseText != null ? responseText : '', thinkingText)
-						} else {
-							streamingMsg['visible'] = false
-						}
-						recordGroupAgentSpeak(group.id, session.id, agentId)
-						streamingMsg['isStreaming'] = false
-						this.currentStream = null
-						if (reviewHolding == true) {
-							this.saveMessages()
-							this.scrollToBottomIfPinned()
-							this.runSchedulerReview(agentId, agentName, streamingMsg, heldText, hitKeyword, action, done)
-						} else {
-							this.saveMessages()
-							this.scrollToBottomIfPinned()
-							done()
-						}
-						return
-					}
-					reduceAgentEvent(tempMessages, event)
-					const lastAssistant = this.findLastAssistantMessageFrom(tempMessages, newMsgStartIndex)
-					if (lastAssistant != null) {
-						if ((event.type == 'text_delta' && event.text != null) || (event.type == 'text_end' && event.fullText != null && candidateText == '')) {
-							const delta = event.type == 'text_delta' ? (event.text as string) : (event.fullText as string)
-							candidateText += delta
-							if (reviewHolding == false) {
-								const detection = detectSchedulerLeakCandidate(renderTail + delta)
-								if (detection.hit == true) {
-									reviewHolding = true
-									hitKeyword = detection.keyword
-									heldText = candidateText
-									const visibleNow = streamingMsg['content'] as string | null
-									if (visibleNow == null || visibleNow == '') {
-										this.replaceVisiblePlainText(streamingMsg, '正在整理发言...')
-									}
-								} else {
-									let merged = renderTail + delta
-									if (merged.length > holdSize) {
-										const safeLen = merged.length - holdSize
-										const safeText = merged.substring(0, safeLen)
-										renderTail = merged.substring(safeLen)
-										this.appendVisiblePlainText(streamingMsg, safeText)
-									} else {
-										renderTail = merged
-									}
-								}
-							}
-						}
-					}
-					this.scrollToBottomIfPinned()
-				})
-			},
-			runSchedulerReview(agentId: string, agentName: string, streamingMsg: UTSJSONObject, candidateText: string, keyword: string, originalAction: UTSJSONObject, done: () => void): void {
-				const group = this.group
-				const session = this.session
-				if (group == null || session == null) {
-					done()
-					return
-				}
-				const schedulerState = createGroupTextStreamState()
-				const reviewMessages = buildSchedulerReviewMessages(group, session, this.messages, agentId, agentName, keyword, candidateText)
-				const schedulerAgentId = resolveGroupSchedulerAgentId(group)
-				const reviewStream = agentChat(reviewMessages, buildSchedulerReviewSystemPrompt(), '', '', schedulerAgentId, 1, session.id, '')
-				this.currentStream = reviewStream
-				reviewStream.on((event: AgentEvent) => {
-					if (reduceGroupTextStreamState(schedulerState, event) == true) { return }
-					if (event.type == 'agent_end') {
-						if (this.discussionStopped == true) {
-							this.currentStream = null
-							done()
-							return
-						}
-						this.currentStream = null
-						const hidden = createGroupHiddenStreamMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, schedulerAgentId, schedulerState.text, schedulerState.thinking, schedulerState.startedAt, reviewMessages, '敏感流式发言审核：' + keyword)
-						this.messages.push(hidden)
-						const decision = parseSchedulerReviewDecision(schedulerState.text)
-						const mode = decision['decision'] as string | null
-						if (mode == 'allow') {
-							this.replaceVisiblePlainText(streamingMsg, candidateText)
-							streamingMsg['isStreaming'] = false
-							this.saveMessages()
-							this.scrollToBottomIfPinned()
-							done()
-							return
-						}
-						if (mode == 'revoke') {
-							markGroupAgentMessageRevoked(streamingMsg)
-							this.saveMessages()
-							this.scrollToBottomIfPinned()
-							done()
-							return
-						}
-						if ((streamingMsg['revisionAttempt'] as boolean | null) == true) {
-							markGroupAgentMessageRevoked(streamingMsg)
-							this.saveMessages()
-							this.scrollToBottomIfPinned()
-							done()
-							return
-						}
-						markGroupAgentMessageRevoked(streamingMsg)
-						this.saveMessages()
-						this.scrollToBottomIfPinned()
-						const instructionRaw = decision['revisionInstruction'] as string | null
-						const revisedAction = buildRevisedGroupSpeakAction(originalAction, instructionRaw, candidateText)
-						this.runMemberSpeakWithReview(agentId, revisedAction, true, done)
-					}
-				})
-			}
 		}
 	}
 </script>

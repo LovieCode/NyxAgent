@@ -356,6 +356,17 @@ export function getGroupTaskRows(groupId: string, sessionId: string): UTSJSONObj
 	return rowsToObjects(result)
 }
 
+export function getGroupAgentMemoryRows(groupId: string, sessionId: string, agentId: string): UTSJSONObject[] {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query(
+		'SELECT * FROM group_agent_memories WHERE group_id = ? AND session_id = ? AND (agent_id = ? OR agent_id = ?) ORDER BY updated_at DESC LIMIT 12',
+		[groupId, sessionId, agentId, '']
+	)
+	db.close()
+	return rowsToObjects(result)
+}
+
 export function setGroupChatState(key: string, value: string): void {
 	const db = getDb()
 	ensureGroupChatTables(db)

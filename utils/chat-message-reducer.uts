@@ -402,8 +402,12 @@ export function buildRuntimeMessages(messages: UTSJSONObject[], options: ChatRun
 	}
 	if (options.injectDatetime == true && lastUserIndex >= 0 && lastUserIndex < runtimeMessages.length) {
 		const target = runtimeMessages[lastUserIndex]
-		target['agent_context_before'] = options.datetimePrefix
-		target['agent_context_before_label'] = '当前时间'
+		const oldContext = target['agent_context_before'] as string | null
+		const oldLabel = target['agent_context_before_label'] as string | null
+		const suffix = oldContext != null && oldContext.trim() != '' ? '\n\n' + oldContext.trim() : ''
+		const labelSuffix = oldLabel != null && oldLabel.trim() != '' ? ' / ' + oldLabel.trim() : ''
+		target['agent_context_before'] = options.datetimePrefix + suffix
+		target['agent_context_before_label'] = '当前时间' + labelSuffix
 		runtimeMessages.splice(lastUserIndex, 1, target)
 	}
 	return runtimeMessages

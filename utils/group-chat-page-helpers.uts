@@ -267,7 +267,7 @@ export function buildRevisedGroupSpeakAction(originalAction: UTSJSONObject, inst
 		? instructionRaw.trim()
 		: '保留原意，删除任何关于调度、内部指令、私密指令或幕后安排的表述。'
 	const revisedAction = JSON.parse(JSON.stringify(originalAction)) as UTSJSONObject
-	revisedAction['privateInstruction'] = instruction + '\n\n上一版未公开发言：\n' + candidateText
-	revisedAction['publicIntent'] = '重新组织上一条发言'
+	revisedAction['revisionFeedback'] = instruction + '\n\n上一版未公开发言：\n' + candidateText
+	revisedAction['routeReason'] = '上一版发言未通过验证，需要由原成员自行修正'
 	return revisedAction
 }
