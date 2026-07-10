@@ -216,9 +216,12 @@
 				fetchedModelIds: [] as string[],
 				selectedModelIndexes: [] as boolean[],
 				pickerSearchText: '' as string,
+				pageActive: false as boolean,
+				navigationTimer: -1 as number,
 			}
 		},
 		onLoad() {
+			this.pageActive = true
 			// 预加载模型能力元数据缓存，保证后续模型构造直接命中
 			ensureMetadataCache()
 			const source = consumeRuntimeState(PROVIDER_EDIT_SOURCE_KEY)
@@ -230,6 +233,13 @@
 			}
 			if (preset != '') {
 				this.applyProviderPreset(preset, editId == '')
+			}
+		},
+		onUnload() {
+			this.pageActive = false
+			if (this.navigationTimer != -1) {
+				clearTimeout(this.navigationTimer)
+				this.navigationTimer = -1
 			}
 		},
 		computed: {
@@ -324,6 +334,7 @@
 			},
 
 			async fetchModels() {
+				if (this.fetchingModels == true) { return }
 				if (this.editApiBase == '') {
 					this.editApiBase = getDefaultProviderApiBase(this.editId)
 					if (this.editApiBase == '') {
@@ -337,9 +348,11 @@
 				}
 				this.fetchingModels = true
 				const ids = await fetchProviderModels(this.editApiBase, this.editApiKey)
+				if (this.pageActive == false) { return }
 				// 过期才刷新元数据缓存，避免每次拉取 130KB
 				if (isMetadataCacheStale()) {
 					await refreshMetadataCache()
+					if (this.pageActive == false) { return }
 				}
 				this.fetchingModels = false
 				if (ids.length == 0) {
@@ -449,7 +462,11 @@
 						return false
 					}
 					uni.showToast({ position: 'bottom',  title: '已接入，可以开始聊天', icon: 'success' })
-					setTimeout(() => {
+					if (this.navigationTimer != -1) {
+						clearTimeout(this.navigationTimer)
+					}
+					this.navigationTimer = setTimeout(() => {
+						this.navigationTimer = -1
 						uni.navigateBack()
 					}, 500)
 					return true
@@ -459,7 +476,11 @@
 				// 检查是否已设置默认聊天模型，没有则引导
 				const defaultChat = getDefaultTaskModel('chat')
 				if (defaultChat == null && validModels.length > 0) {
-					setTimeout(() => {
+					if (this.navigationTimer != -1) {
+						clearTimeout(this.navigationTimer)
+					}
+					this.navigationTimer = setTimeout(() => {
+						this.navigationTimer = -1
 						uni.showModal({
 							title: '设置默认模型',
 							content: '还没有设置默认聊天模型，是否现在去设置？',
@@ -473,7 +494,11 @@
 						})
 					}, 600)
 				} else {
-					setTimeout(() => {
+					if (this.navigationTimer != -1) {
+						clearTimeout(this.navigationTimer)
+					}
+					this.navigationTimer = setTimeout(() => {
+						this.navigationTimer = -1
 						uni.navigateBack()
 					}, 500)
 				}

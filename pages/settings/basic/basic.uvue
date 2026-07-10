@@ -54,7 +54,7 @@
 
 <script lang="uts">
 	import { getAllProviders, deleteProvider, setProviderEnabled, parseModels, getDefaultProviderApiBase } from '@/uni_modules/agent-core/utssdk/provider.uts'
-	import { setRuntimeState } from '@/utils/database.uts'
+	import { deleteRuntimeState, setRuntimeState } from '@/utils/database.uts'
 
 	const PROVIDER_EDIT_RUNTIME_ID_KEY = 'provider_edit_id'
 
@@ -136,9 +136,16 @@
 			},
 
 			addProvider() {
-				setRuntimeState(PROVIDER_EDIT_RUNTIME_ID_KEY, '')
+				if (setRuntimeState(PROVIDER_EDIT_RUNTIME_ID_KEY, '') == false) {
+					uni.showToast({ title: '打开提供商编辑页失败，请重试', icon: 'none' })
+					return
+				}
 				uni.navigateTo({
-					url: '/pages/settings/basic/provider-edit'
+					url: '/pages/settings/basic/provider-edit',
+					fail: () => {
+						deleteRuntimeState(PROVIDER_EDIT_RUNTIME_ID_KEY)
+						uni.showToast({ title: '打开提供商编辑页失败，请重试', icon: 'none' })
+					}
 				})
 			},
 
@@ -149,9 +156,16 @@
 				}
 				const id = item['id'] as string | null
 				if (id == null || id == '') { return }
-				setRuntimeState(PROVIDER_EDIT_RUNTIME_ID_KEY, id)
+				if (setRuntimeState(PROVIDER_EDIT_RUNTIME_ID_KEY, id) == false) {
+					uni.showToast({ title: '打开提供商编辑页失败，请重试', icon: 'none' })
+					return
+				}
 				uni.navigateTo({
-					url: '/pages/settings/basic/provider-edit'
+					url: '/pages/settings/basic/provider-edit',
+					fail: () => {
+						deleteRuntimeState(PROVIDER_EDIT_RUNTIME_ID_KEY)
+						uni.showToast({ title: '打开提供商编辑页失败，请重试', icon: 'none' })
+					}
 				})
 			},
 

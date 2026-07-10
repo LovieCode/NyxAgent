@@ -122,11 +122,14 @@ export function consumeManagedEditorSavedState(): boolean {
 
 export function prepareManagedTextEditorRuntimeState(item: FileItem): void {
 	clearManagedEditorRuntimeState()
-	setRuntimeState('editor_mode', 'file')
-	setRuntimeState('editor_file_path', item.path)
-	setRuntimeState('editor_title', item.name)
-	setRuntimeState('editor_target', 'file-manager')
-	setRuntimeState('editor_placeholder', '文件内容为空')
+	const modeSaved = setRuntimeState('editor_mode', 'file')
+	const pathSaved = setRuntimeState('editor_file_path', item.path)
+	const titleSaved = setRuntimeState('editor_title', item.name)
+	const targetSaved = setRuntimeState('editor_target', 'file-manager')
+	const placeholderSaved = setRuntimeState('editor_placeholder', '文件内容为空')
+	if (modeSaved == false || pathSaved == false || titleSaved == false || targetSaved == false || placeholderSaved == false) {
+		clearManagedEditorRuntimeState()
+	}
 }
 
 export function lookupManagedAgentName(agentId: string): string {

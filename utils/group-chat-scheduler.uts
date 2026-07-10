@@ -108,16 +108,16 @@ function resolveReviewWorkspace(group: GroupChat, session: GroupChatSession): st
 	return buildFallbackWorkspacePath(group.id, session.id)
 }
 
-function appendGroupSystemJsonl(group: GroupChat, session: GroupChatSession, fileName: string, record: UTSJSONObject): void {
+function appendGroupSystemJsonl(group: GroupChat, session: GroupChatSession, fileName: string, record: UTSJSONObject): boolean {
 	const root = resolveReviewWorkspace(group, session)
-	if (root == '') { return }
+	if (root == '') { return false }
 	ensureSchedulerDirectory(root)
 	const dir = joinPath(root, '_system')
 	ensureSchedulerDirectory(dir)
 	const filePath = joinPath(dir, fileName)
 	const old = readContent(filePath)
 	const prefix = old != null && old != '' ? old + '\n' : ''
-	writeContent(filePath, prefix + JSON.stringify(record))
+	return writeContent(filePath, prefix + JSON.stringify(record)).ok
 }
 
 export function buildSchedulerSystemPrompt(): string {
@@ -578,6 +578,7 @@ function isActiveGroupMemberId(groupId: string, agentId: string): boolean {
 }
 
 export function persistGroupReviewEffects(group: GroupChat, session: GroupChatSession, review: UTSJSONObject, messageId: string): void {
+	let saved = true
 	const reviewId = createId('greview')
 	const now = Date.now()
 	const summary = readReviewText(review, 'roundSummary')
@@ -593,15 +594,18 @@ export function persistGroupReviewEffects(group: GroupChat, session: GroupChatSe
 		payload: review,
 		createdAt: now,
 	} as UTSJSONObject
-	saveGroupReviewRow(reviewRecord)
-	appendGroupSystemJsonl(group, session, 'reviews.jsonl', reviewRecord)
+	if (saveGroupReviewRow(reviewRecord) == false) {
+		saved = false
+	} else if (appendGroupSystemJsonl(group, session, 'reviews.jsonl', reviewRecord) == false) {
+		saved = false
+	}
 
 	const usefulAgents = review['usefulAgents'] as UTSJSONObject[] | null
 	if (usefulAgents != null) {
 		for (let i = 0; i < usefulAgents.length; i++) {
 			const agentId = readReviewAgentId(usefulAgents[i])
 			if (isActiveGroupMemberId(group.id, agentId) == true) {
-				incrementGroupAgentMetric(group.id, session.id, agentId, 0, 1, 0, 0)
+				if (incrementGroupAgentMetric(group.id, session.id, agentId, 0, 1, 0, 0) == false) { saved = false }
 			}
 		}
 	}
@@ -611,7 +615,7 @@ export function persistGroupReviewEffects(group: GroupChat, session: GroupChatSe
 		for (let j = 0; j < issueAgents.length; j++) {
 			const agentId = readReviewAgentId(issueAgents[j])
 			if (isActiveGroupMemberId(group.id, agentId) == true && countedIssueAgents.indexOf(agentId) < 0) {
-				incrementGroupAgentMetric(group.id, session.id, agentId, 0, 0, 1, 0)
+				if (incrementGroupAgentMetric(group.id, session.id, agentId, 0, 0, 1, 0) == false) { saved = false }
 				countedIssueAgents.push(agentId)
 			}
 		}
@@ -653,8 +657,11 @@ export function persistGroupReviewEffects(group: GroupChat, session: GroupChatSe
 				summary: readReviewText(taskCards[t], 'summary'),
 				createdAt: taskCreatedAt,
 			} as UTSJSONObject
-			saveGroupTaskRow(taskRecord)
-			appendGroupSystemJsonl(group, session, 'tasks.jsonl', taskRecord)
+			if (saveGroupTaskRow(taskRecord) == false) {
+				saved = false
+			} else if (appendGroupSystemJsonl(group, session, 'tasks.jsonl', taskRecord) == false) {
+				saved = false
+			}
 		}
 	}
 	const memoryCandidates = review['memoryCandidates'] as UTSJSONObject[] | null
@@ -684,12 +691,18 @@ export function persistGroupReviewEffects(group: GroupChat, session: GroupChatSe
 				sourceReviewId: reviewId,
 				createdAt: now,
 			} as UTSJSONObject
-			saveGroupMemoryRow(memoryRecord)
-			appendGroupSystemJsonl(group, session, 'memory.jsonl', memoryRecord)
+			if (saveGroupMemoryRow(memoryRecord) == false) {
+				saved = false
+			} else if (appendGroupSystemJsonl(group, session, 'memory.jsonl', memoryRecord) == false) {
+				saved = false
+			}
 			if (isActiveGroupMemberId(group.id, agentId) == true) {
-				incrementGroupAgentMetric(group.id, session.id, agentId, 0, 0, 0, 1)
+				if (incrementGroupAgentMetric(group.id, session.id, agentId, 0, 0, 0, 1) == false) { saved = false }
 			}
 		}
+	}
+	if (saved == false) {
+		throw new Error('群聊复盘副作用保存不完整')
 	}
 }
 

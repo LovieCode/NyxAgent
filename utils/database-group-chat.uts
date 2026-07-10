@@ -518,3 +518,28 @@ export function deleteGroupSessionDbRows(groupId: string, sessionId: string): vo
 	}
 	db.close()
 }
+
+/** 回滚尚未完成创建的群聊，避免多步保存失败后留下半成品记录。 */
+export function deleteGroupChatCreationRows(groupId: string): void {
+	if (groupId == '') { return }
+	const db = getDb()
+	ensureGroupChatTables(db)
+	try {
+		assertSqlSuccess(db.beginTransaction(), '无法开始群聊创建回滚事务')
+		runSqlOrThrow(db, 'DELETE FROM group_chat_messages WHERE group_id = ?', [groupId])
+		runSqlOrThrow(db, 'DELETE FROM group_agent_context_records WHERE group_id = ?', [groupId])
+		runSqlOrThrow(db, 'DELETE FROM group_chat_reviews WHERE group_id = ?', [groupId])
+		runSqlOrThrow(db, 'DELETE FROM group_chat_tasks WHERE group_id = ?', [groupId])
+		runSqlOrThrow(db, 'DELETE FROM group_agent_memories WHERE group_id = ?', [groupId])
+		runSqlOrThrow(db, 'DELETE FROM group_agent_metrics WHERE group_id = ?', [groupId])
+		runSqlOrThrow(db, 'DELETE FROM group_chat_sessions WHERE group_id = ?', [groupId])
+		runSqlOrThrow(db, 'DELETE FROM group_chat_members WHERE group_id = ?', [groupId])
+		runSqlOrThrow(db, 'DELETE FROM group_chats WHERE id = ?', [groupId])
+		assertSqlSuccess(db.commit(), '无法提交群聊创建回滚事务')
+	} catch (e: any) {
+		db.rollback()
+		db.close()
+		throw e
+	}
+	db.close()
+}

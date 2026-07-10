@@ -300,14 +300,14 @@
 	 */
 	import { getAgents } from '@/utils/agent.uts'
 	import { deleteRuntimeState, getAppSetting, getRuntimeState, setAppSetting, setRuntimeState } from '@/utils/database.uts'
+	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 	import { getAllProviders } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import {
 		type GroupChat,
 		createDefaultWritingGroupChat,
 		ensureGroupActiveSession,
 		getGroupChats,
-		setActiveGroupChat,
-		setActiveGroupSessionId,
+		setActiveGroupSession,
 	} from '@/utils/group-chat-service.uts'
 	import {
 		AGENT_CREATE_ICONS,
@@ -359,7 +359,7 @@
 		readAgentChatName,
 	} from '@/utils/agent-chat-list.uts'
 	import { chooseAvatarImage, consumeAvatarCropResult, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
-	import { setActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
+	import { RUNTIME_ACTIVE_AGENT_ID_KEY } from '@/utils/runtime-state.uts'
 
 	export default {
 		data() {
@@ -467,6 +467,18 @@
 			this.checkFirstRunGuide()
 		},
 		methods: {
+			showAgentPageFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+				const error = reportAppErrorFromCause(
+					code,
+					APP_ERROR_CATEGORY_RUNTIME,
+					operation,
+					userMessage,
+					cause,
+					true,
+				)
+				uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+			},
+
 			initStatusBarHeight(): void {
 				try {
 					// #ifndef WEB
@@ -588,7 +600,10 @@
 			},
 
 			dismissFirstRunGuide(): void {
-				setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true')
+				if (setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true') == false) {
+					this.showAgentPageFailure('AGENT_GUIDE_DISMISS_FAILED', 'agent_guide_dismiss', '首启引导状态保存失败', 'setAppSetting 返回 false')
+					return
+				}
 				this.showFirstRunGuide = false
 			},
 
@@ -600,15 +615,32 @@
 				const option = this.getFirstRunProviderOption()
 				const providerId = readFirstRunProviderId(option)
 				const preset = buildFirstRunProviderPreset(option)
-				setRuntimeState(FIRST_RUN_PROVIDER_EDIT_SOURCE_KEY, FIRST_RUN_PROVIDER_EDIT_SOURCE_VALUE)
-				setRuntimeState(FIRST_RUN_PROVIDER_EDIT_PRESET_KEY, JSON.stringify(preset))
+				const sourceSaved = setRuntimeState(FIRST_RUN_PROVIDER_EDIT_SOURCE_KEY, FIRST_RUN_PROVIDER_EDIT_SOURCE_VALUE)
+				const presetSaved = setRuntimeState(FIRST_RUN_PROVIDER_EDIT_PRESET_KEY, JSON.stringify(preset))
+				let idSaved = false
 				if (this.firstRunProviderExists(providerId) == true) {
-					setRuntimeState(FIRST_RUN_PROVIDER_EDIT_ID_KEY, providerId)
+					idSaved = setRuntimeState(FIRST_RUN_PROVIDER_EDIT_ID_KEY, providerId)
 				} else {
-					setRuntimeState(FIRST_RUN_PROVIDER_EDIT_ID_KEY, '')
+					idSaved = setRuntimeState(FIRST_RUN_PROVIDER_EDIT_ID_KEY, '')
+				}
+				if (sourceSaved == false || presetSaved == false || idSaved == false) {
+					deleteRuntimeState(FIRST_RUN_PROVIDER_EDIT_SOURCE_KEY)
+					deleteRuntimeState(FIRST_RUN_PROVIDER_EDIT_PRESET_KEY)
+					deleteRuntimeState(FIRST_RUN_PROVIDER_EDIT_ID_KEY)
+					this.showAgentPageFailure('AGENT_PROVIDER_ROUTE_STATE_FAILED', 'agent_provider_route_prepare', '无法准备提供商配置页面', '页面临时状态保存失败')
+					return
 				}
 				this.showFirstRunGuide = false
-				uni.navigateTo({ url: '/pages/settings/basic/provider-edit' })
+				uni.navigateTo({
+					url: '/pages/settings/basic/provider-edit',
+					fail: (err: any) => {
+						deleteRuntimeState(FIRST_RUN_PROVIDER_EDIT_SOURCE_KEY)
+						deleteRuntimeState(FIRST_RUN_PROVIDER_EDIT_PRESET_KEY)
+						deleteRuntimeState(FIRST_RUN_PROVIDER_EDIT_ID_KEY)
+						this.showFirstRunGuide = true
+						this.showAgentPageFailure('AGENT_PROVIDER_ROUTE_FAILED', 'agent_provider_navigate', '无法打开提供商配置页面', err)
+					}
+				})
 			},
 
 			consumeCreateAvatarCropResult(): void {
@@ -636,9 +668,16 @@
 			},
 
 			loadChats(): void {
-				this.loadAgents()
-				this.loadGroups()
-				this.rebuildChatList()
+				try {
+					this.loadAgents()
+					this.loadGroups()
+					this.rebuildChatList()
+				} catch (e: any) {
+					this.agentList = []
+					this.groupList = []
+					this.chatList = []
+					this.showAgentPageFailure('AGENT_LIST_LOAD_FAILED', 'agent_list_load', '会话列表加载失败', e)
+				}
 			},
 
 			rebuildChatList(): void {
@@ -697,23 +736,48 @@
 			},
 
 			openAgent(agent: UTSJSONObject) {
-				setActiveAgentRuntimeId(agent['id'] as string)
+				const agentId = agent['id'] as string | null
+				if (agentId == null || agentId == '') {
+					this.showAgentPageFailure('AGENT_CHAT_ID_MISSING', 'agent_chat_open', '无法打开私聊', '智能体 ID 为空')
+					return
+				}
+				if (setRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY, agentId) == false) {
+					this.showAgentPageFailure('AGENT_CHAT_STATE_FAILED', 'agent_chat_prepare', '无法准备私聊页面', 'active_agent_id 保存失败')
+					return
+				}
 				uni.navigateTo({
-					url: '/pages/chat/chat'
+					url: '/pages/chat/chat',
+					fail: (err: any) => {
+						this.showAgentPageFailure('AGENT_CHAT_ROUTE_FAILED', 'agent_chat_navigate', '无法打开私聊页面', err)
+					}
 				})
 			},
 
 			openGroup(group: GroupChat): void {
-				const session = ensureGroupActiveSession(group)
-				setActiveGroupChat(group.id)
-				setActiveGroupSessionId(session.id)
-				uni.navigateTo({ url: '/pages/group-chat/group-chat' })
+				try {
+					const session = ensureGroupActiveSession(group)
+					if (setActiveGroupSession(group.id, session.id) == false) {
+						this.showAgentPageFailure('GROUP_CHAT_STATE_FAILED', 'group_chat_prepare', '无法准备群聊页面', '群聊状态保存失败')
+						return
+					}
+					uni.navigateTo({
+						url: '/pages/group-chat/group-chat',
+						fail: (err: any) => {
+							this.showAgentPageFailure('GROUP_CHAT_ROUTE_FAILED', 'group_chat_navigate', '无法打开群聊页面', err)
+						}
+					})
+				} catch (e: any) {
+					this.showAgentPageFailure('GROUP_CHAT_PREPARE_FAILED', 'group_chat_prepare', '群聊准备失败', e)
+				}
 			},
 
 			openChatItem(item: UTSJSONObject): void {
 				this.closeCreateMenu()
 				const chatId = readAgentChatId(item)
-				if (chatId == '') { return }
+				if (chatId == '') {
+					this.showAgentPageFailure('AGENT_CHAT_ITEM_INVALID', 'agent_chat_item_open', '无法打开会话', '会话 ID 为空')
+					return
+				}
 				if (isAgentGroupChatItem(item) == true) {
 					const group = findGroupSourceByChatId(this.groupList, chatId)
 					if (group != null) { this.openGroup(group) }
@@ -724,8 +788,16 @@
 					this.openAgent(agent)
 					return
 				}
-				setActiveAgentRuntimeId(chatId)
-				uni.navigateTo({ url: '/pages/chat/chat' })
+				if (setRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY, chatId) == false) {
+					this.showAgentPageFailure('AGENT_CHAT_STATE_FAILED', 'agent_chat_prepare', '无法准备私聊页面', 'active_agent_id 保存失败')
+					return
+				}
+				uni.navigateTo({
+					url: '/pages/chat/chat',
+					fail: (err: any) => {
+						this.showAgentPageFailure('AGENT_CHAT_ROUTE_FAILED', 'agent_chat_navigate', '无法打开私聊页面', err)
+					}
+				})
 			},
 
 			toggleCreateMenu(): void {
@@ -787,6 +859,10 @@
 				// 默认模型从 SQLite app_settings 读取，缺省时回退内置模型。
 				const defaultModel = getAppSetting('settings_model')
 				const id = createAgentFromCreateData(data, defaultModel)
+				if (id == '') {
+					this.showAgentPageFailure('AGENT_CREATE_SAVE_FAILED', 'agent_create_save', '创建私聊失败', '智能体列表保存失败')
+					return
+				}
 
 				this.showCreateDialog = false
 				// 重置表单
@@ -799,9 +875,15 @@
 					title: '创建成功',
 					icon: 'success'
 				})
-				setActiveAgentRuntimeId(id)
+				if (setRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY, id) == false) {
+					this.showAgentPageFailure('AGENT_CHAT_STATE_FAILED', 'agent_chat_prepare_after_create', '私聊已创建，但无法打开', 'active_agent_id 保存失败')
+					return
+				}
 				uni.navigateTo({
-					url: '/pages/chat/chat'
+					url: '/pages/chat/chat',
+					fail: (err: any) => {
+						this.showAgentPageFailure('AGENT_CHAT_ROUTE_FAILED', 'agent_chat_navigate_after_create', '私聊已创建，但页面打开失败', err)
+					}
 				})
 			}
 		}

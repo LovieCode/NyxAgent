@@ -36,6 +36,8 @@ export function saveGroupAgentResponseSnapshot(contextRecord: UTSJSONObject, age
 	const snapshot = readLastLLMRequestSnapshot(agentId, sessionId)
 	if (snapshot != null) {
 		contextRecord['requestSnapshot'] = snapshot
-		saveGroupAgentContextRecord(contextRecord)
+		if (saveGroupAgentContextRecord(contextRecord) == false) {
+			throw new Error('群聊响应快照保存失败')
+		}
 	}
 }

@@ -222,6 +222,21 @@
 				deleteRuntimeState('editor_draft')
 			},
 
+			prepareTextEditorState(content: string, title: string, target: string, placeholder: string): boolean {
+				this.clearEditorStorage()
+				const modeSaved = setRuntimeState('editor_mode', 'text')
+				const contentSaved = setRuntimeState('editor_content', content)
+				const titleSaved = setRuntimeState('editor_title', title)
+				const targetSaved = setRuntimeState('editor_target', target)
+				const placeholderSaved = setRuntimeState('editor_placeholder', placeholder)
+				if (modeSaved == true && contentSaved == true && titleSaved == true && targetSaved == true && placeholderSaved == true) {
+					return true
+				}
+				this.clearEditorStorage()
+				uni.showToast({ position: 'bottom', title: '打开编辑器失败，请重试', icon: 'none' })
+				return false
+			},
+
 			getDocContentPreview(): string {
 				return buildSkillTextPreview(this.docContent, '点击打开全屏编辑器，写入纯文本指令...')
 			},
@@ -232,26 +247,28 @@
 
 			openDocContentEditor() {
 				this.syncDocumentFields()
-				this.clearEditorStorage()
-				setRuntimeState('editor_mode', 'text')
-				setRuntimeState('editor_content', this.docContent)
-				setRuntimeState('editor_title', '编辑 Skill 文档')
-				setRuntimeState('editor_target', 'skill-doc-content')
-				setRuntimeState('editor_placeholder', '写入纯文本指令...')
+				if (this.prepareTextEditorState(this.docContent, '编辑 Skill 文档', 'skill-doc-content', '写入纯文本指令...') == false) {
+					return
+				}
 				uni.navigateTo({
-					url: '/pages/common/editor/editor'
+					url: '/pages/common/editor/editor',
+					fail: () => {
+						this.clearEditorStorage()
+						uni.showToast({ position: 'bottom', title: '打开编辑器失败，请重试', icon: 'none' })
+					}
 				})
 			},
 
 			openImportMarkdownEditor() {
-				this.clearEditorStorage()
-				setRuntimeState('editor_mode', 'text')
-				setRuntimeState('editor_content', this.importMarkdown)
-				setRuntimeState('editor_title', '导入 SKILL.md')
-				setRuntimeState('editor_target', 'skill-import-markdown')
-				setRuntimeState('editor_placeholder', '粘贴 SKILL.md 内容...')
+				if (this.prepareTextEditorState(this.importMarkdown, '导入 SKILL.md', 'skill-import-markdown', '粘贴 SKILL.md 内容...') == false) {
+					return
+				}
 				uni.navigateTo({
-					url: '/pages/common/editor/editor'
+					url: '/pages/common/editor/editor',
+					fail: () => {
+						this.clearEditorStorage()
+						uni.showToast({ position: 'bottom', title: '打开编辑器失败，请重试', icon: 'none' })
+					}
 				})
 			},
 

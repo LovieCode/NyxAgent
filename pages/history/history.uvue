@@ -99,13 +99,14 @@
 	/**
 	 * 历史记录页面 - 展示过往对话列表，支持批量管理
 	 */
-	import { getConversations, getMessages, deleteConversation } from '@/utils/database.uts'
+	import { getConversations, getMessages, deleteConversation, setRuntimeState } from '@/utils/database.uts'
+	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 	import {
 		buildGroupHistoryContextItems,
 		buildGroupHistoryPreviewPayload,
 		deleteGroupHistoryContextById,
 	} from '@/utils/history-group-context-service.uts'
-	import { getActiveAgentRuntimeId, setActiveAgentRuntimeId, setActiveConversationRuntimeId } from '@/utils/runtime-state.uts'
+	import { RUNTIME_ACTIVE_AGENT_ID_KEY, RUNTIME_ACTIVE_CONVERSATION_ID_KEY, getActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
 	import {
 		buildAllHistoryIds,
 		buildHistoryDialogJson,
@@ -149,6 +150,18 @@
 			this.loadHistory()
 		},
 		methods: {
+			showHistoryFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+				const error = reportAppErrorFromCause(
+					code,
+					APP_ERROR_CATEGORY_RUNTIME,
+					operation,
+					userMessage,
+					cause,
+					true,
+				)
+				uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+			},
+
 			renderMessagePartsMarkdown(msg: UTSJSONObject): string {
 				return renderHistoryMessagePartsMarkdown(msg)
 			},
@@ -167,8 +180,8 @@
 						}
 						this.historyList = filtered
 					}
-				} catch (_e: any) {
-					uni.showToast({ position: 'bottom', title: '历史记录加载失败，请重试', icon: 'none' })
+				} catch (e: any) {
+					this.showHistoryFailure('HISTORY_LOAD_FAILED', 'history_load', '历史记录加载失败', e)
 					return
 				}
 				this.loadGroupHistory()
@@ -177,8 +190,8 @@
 			loadGroupHistory(): void {
 				try {
 					this.groupHistoryList = buildGroupHistoryContextItems(this.activeAgentId)
-				} catch (_e: any) {
-					uni.showToast({ position: 'bottom', title: '群聊上下文加载失败，请重试', icon: 'none' })
+				} catch (e: any) {
+					this.showHistoryFailure('GROUP_HISTORY_LOAD_FAILED', 'group_history_load', '群聊上下文加载失败', e)
 				}
 			},
 
@@ -203,7 +216,11 @@
 					this.exitEditMode()
 					return
 				}
-				uni.navigateBack()
+				uni.navigateBack({
+					fail: (err: any) => {
+						this.showHistoryFailure('HISTORY_BACK_FAILED', 'history_navigate_back', '无法返回上一页', err)
+					}
+				})
 			},
 
 			enterEditMode() {
@@ -266,10 +283,13 @@
 							uni.showToast({ position: 'bottom',
 								title: failedCount > 0 ? '部分记录删除失败' : '已删除',
 								icon: failedCount > 0 ? 'none' : 'success'
-							})
+								})
+							}
+						},
+						fail: (err: any) => {
+							this.showHistoryFailure('HISTORY_DELETE_CONFIRM_FAILED', 'history_delete_confirm', '无法打开删除确认框', err)
 						}
-					}
-				})
+					})
 			},
 
 			// ===== 卡片交互 =====
@@ -368,10 +388,15 @@
 					uni.showToast({ position: 'bottom', title: '对话归属信息缺失', icon: 'none' })
 					return
 				}
-				setActiveAgentRuntimeId(agentId)
-				setActiveConversationRuntimeId(conversationId)
+				if (setRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY, agentId) == false || setRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY, conversationId) == false) {
+					this.showHistoryFailure('HISTORY_ROUTE_STATE_FAILED', 'history_route_prepare', '无法准备历史对话页面', '对话运行状态保存失败')
+					return
+				}
 				uni.redirectTo({
-					url: '/pages/chat/chat'
+					url: '/pages/chat/chat',
+					fail: (err: any) => {
+						this.showHistoryFailure('HISTORY_ROUTE_FAILED', 'history_redirect_chat', '无法打开历史对话', err)
+					}
 				})
 			},
 
@@ -456,10 +481,13 @@
 							uni.showToast({ position: 'bottom',
 								title: failedCount > 0 ? '部分记录删除失败' : '已清空',
 								icon: failedCount > 0 ? 'none' : 'success'
-							})
+								})
+							}
+						},
+						fail: (err: any) => {
+							this.showHistoryFailure('HISTORY_CLEAR_CONFIRM_FAILED', 'history_clear_confirm', '无法打开清空确认框', err)
 						}
-					}
-				})
+					})
 			}
 		}
 	}

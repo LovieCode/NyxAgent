@@ -15,6 +15,7 @@ import {
 } from '@/utils/agent-create-presets.uts'
 import { DEFAULT_AGENT_INTERACTION_RULES, getAgents, saveAgents } from '@/utils/agent.uts'
 import { getAgentDir } from '@/utils/file-manager.uts'
+import { getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
 
 export type AgentCreateForm = {
 	templateKey: string
@@ -137,7 +138,15 @@ function buildCreatedAgentPayload(id: string, data: AgentCreateForm, defaultMode
 	const avatar = readAgentCreateAvatar(data)
 	const finalDesc = desc != '' ? desc : '自定义联系人'
 	const finalPrompt = systemPrompt != '' ? systemPrompt : readCreateTemplatePrompt(AGENT_CREATE_TEMPLATES[0])
-	const model = defaultModel != null && defaultModel != '' ? defaultModel : 'deepseek-v4-flash'
+	let model = defaultModel != null && defaultModel != '' ? defaultModel : 'deepseek-v4-flash'
+	const defaultChat = getDefaultTaskModel('chat')
+	if (defaultChat != null) {
+		const providerId = defaultChat['providerId'] as string | null
+		const modelId = defaultChat['model'] as string | null
+		if (modelId != null && modelId != '') {
+			model = providerId != null && providerId != '' ? providerId + '||' + modelId : modelId
+		}
+	}
 	const agent: UTSJSONObject = {
 		id: id,
 		icon: icon,
@@ -160,6 +169,6 @@ export function createAgentFromCreateData(data: AgentCreateForm, defaultModel: s
 	getAgentDir(id)
 	const agents = getAgents()
 	agents.push(agent)
-	saveAgents(agents)
+	if (saveAgents(agents) == false) { return '' }
 	return id
 }

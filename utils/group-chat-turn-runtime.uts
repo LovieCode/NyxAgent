@@ -346,7 +346,11 @@ class GroupChatTurnRuntime {
 			this.messages.push(hidden)
 			if (reviewFailed == false) {
 				const hiddenId = hidden['id'] as string | null
-				persistGroupReviewEffects(group, session, review, hiddenId != null ? hiddenId : '')
+				try {
+					persistGroupReviewEffects(group, session, review, hiddenId != null ? hiddenId : '')
+				} catch (e: any) {
+					this.reportError('群聊复盘结果保存不完整，请稍后重试')
+				}
 			}
 			this.saveMessages()
 			this.currentStream = null
@@ -385,7 +389,9 @@ class GroupChatTurnRuntime {
 		const systemPrompt = buildMemberSystemPrompt(agent, group.sharedPrompt)
 		const tempMessages = buildMemberRuntimeMessages(group, session, this.messages, action, agentName, injectDatetime, buildChatDatetimePrefix(), interactionRules)
 		const contextRecord = createGroupAgentContextRecord(group, session, agentId, agentName, action, tempMessages, systemPrompt)
-		saveGroupAgentContextRecord(contextRecord)
+		if (saveGroupAgentContextRecord(contextRecord) == false) {
+			this.reportError(agentName + ' 的群聊上下文保存失败，本轮回复仍会继续')
+		}
 		streamingMsg['contextRecordId'] = contextRecord['id'] as string | null
 		// 私发不能在群共享工作区留下其他成员可见的文件侧信道。
 		const workspaceRoot = isPrivateDelivery == true ? '' : getGroupSessionWorkspaceDir(group.id, session.id)
@@ -434,13 +440,17 @@ class GroupChatTurnRuntime {
 						? finalText
 						: (streamingMsg['content'] as string | null)
 					if (memberFailed == false && reviewHolding == false) {
-						saveGroupAgentResponseSnapshot(
-							contextRecord,
-							agentId,
-							session.id,
-							responseText != null ? responseText : '',
-							finalThinking
-						)
+						try {
+							saveGroupAgentResponseSnapshot(
+								contextRecord,
+								agentId,
+								session.id,
+								responseText != null ? responseText : '',
+								finalThinking
+							)
+						} catch (e: any) {
+							this.reportError(agentName + ' 的群聊响应快照保存失败')
+						}
 						if (isPrivateDelivery == false) {
 							this.roundPublicSpeakCount++
 							recordGroupAgentSpeak(group.id, session.id, agentId)
@@ -561,7 +571,11 @@ class GroupChatTurnRuntime {
 			if (mode == 'allow') {
 				replaceGroupVisiblePlainText(streamingMsg, candidateText)
 				streamingMsg['isStreaming'] = false
-				saveGroupAgentResponseSnapshot(contextRecord, agentId, session.id, candidateText, candidateThinking)
+				try {
+					saveGroupAgentResponseSnapshot(contextRecord, agentId, session.id, candidateText, candidateThinking)
+				} catch (e: any) {
+					this.reportError(agentName + ' 的群聊响应快照保存失败')
+				}
 				this.roundPublicSpeakCount++
 				recordGroupAgentSpeak(group.id, session.id, agentId)
 				this.saveMessages()

@@ -16,8 +16,9 @@
 					<image
 						:src="imagePath"
 						class="crop-image"
-						mode="aspectFill"
-						@load="onImageLoad"
+							mode="aspectFill"
+							@load="onImageLoad"
+							@error="onImageError"
 					/>
 				</view>
 			</view>
@@ -59,6 +60,7 @@
 
 	let loaded = false as boolean
 	let cropping = false as boolean
+	let imageErrorReported = false as boolean
 
 	function showCropFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
 		const error = reportAppErrorFromCause(
@@ -72,11 +74,26 @@
 		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
 	}
 
+	function navigateCropBack(operation: string): void {
+		uni.navigateBack({
+			fail: (err: any) => {
+				cropping = false
+				showCropFailure('CROP_BACK_FAILED', operation, '无法返回上一页', err)
+			}
+		})
+	}
+
 	onMounted(() => {
-		const pathRaw = getRuntimeState('crop_image_path')
+		let pathRaw = ''
+		try {
+			pathRaw = getRuntimeState('crop_image_path')
+		} catch (e: any) {
+			showCropFailure('CROP_SOURCE_READ_FAILED', 'crop_page_load', '待裁剪图片读取失败', e)
+			return
+		}
 		if (pathRaw == '') {
 			showCropFailure('CROP_SOURCE_MISSING', 'crop_page_load', '找不到待裁剪图片', 'crop_image_path 为空')
-			uni.navigateBack()
+			navigateCropBack('crop_source_missing_back')
 			return
 		}
 		imagePath.value = pathRaw
@@ -162,6 +179,13 @@
 				showCropFailure('CROP_IMAGE_INFO_FAILED', 'crop_get_image_info', '图片加载失败', err)
 			}
 		})
+	}
+
+	function onImageError(e: any): void {
+		loaded = false
+		if (imageErrorReported == true) { return }
+		imageErrorReported = true
+		showCropFailure('CROP_IMAGE_RENDER_FAILED', 'crop_image_render', '图片加载失败', e)
 	}
 
 	function onTouchStart(e: UniTouchEvent) {
@@ -250,9 +274,14 @@
 					showCropFailure('CROP_SNAPSHOT_EMPTY', 'crop_snapshot', '裁剪结果为空', res)
 					return
 				}
-				setRuntimeState('crop_result', path)
+				if (setRuntimeState('crop_result', path) == false) {
+					cropping = false
+					uni.hideLoading()
+					showCropFailure('CROP_RESULT_SAVE_FAILED', 'crop_result_save', '裁剪结果保存失败', 'crop_result 写入失败')
+					return
+				}
 				uni.hideLoading()
-				uni.navigateBack()
+				navigateCropBack('crop_result_back')
 			},
 			fail: (err: any) => {
 				cropping = false
@@ -263,7 +292,7 @@
 	}
 
 	function goBack() {
-		uni.navigateBack()
+		navigateCropBack('crop_cancel_back')
 	}
 </script>
 

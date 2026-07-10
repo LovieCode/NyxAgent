@@ -47,8 +47,13 @@ export function openAvatarCrop(path: string, target: string): void {
 		return
 	}
 	clearAvatarCropState()
-	setRuntimeState(AVATAR_CROP_TARGET_KEY, target)
-	setRuntimeState(AVATAR_CROP_IMAGE_PATH_KEY, path)
+	const targetSaved = setRuntimeState(AVATAR_CROP_TARGET_KEY, target)
+	const pathSaved = setRuntimeState(AVATAR_CROP_IMAGE_PATH_KEY, path)
+	if (targetSaved == false || pathSaved == false) {
+		clearAvatarCropState()
+		showAvatarPickerFailure('AVATAR_CROP_STATE_FAILED', 'avatar_crop_prepare', '无法准备头像裁剪', '裁剪页临时状态保存失败')
+		return
+	}
 	uni.navigateTo({
 		url: '/pages/common/crop/crop',
 		fail: (err: any) => {

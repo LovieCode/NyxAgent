@@ -222,8 +222,7 @@
 		resolveGroupSchedulerAgentId,
 		revokeGroupAgentMessage,
 		saveGroupMessages,
-		setActiveGroupChat,
-		setActiveGroupSessionId,
+		setActiveGroupSession,
 	} from '@/utils/group-chat-service.uts'
 
 	let groupNyxFloatVoiceCallback: (() => void) | null = null
@@ -412,33 +411,38 @@ let groupTurnRuntimeSyncTimer: number = -1
 				this.userAvatar = profile.avatar
 			},
 			loadGroup(): void {
-				let groupId = getActiveGroupChatId()
-				if (groupId == '') {
-					const group = createDefaultWritingGroupChat()
-					groupId = group.id
-					setActiveGroupChat(group.id)
+				try {
+					let groupId = getActiveGroupChatId()
+					if (groupId == '') {
+						const group = createDefaultWritingGroupChat()
+						groupId = group.id
+					}
+					let group = getGroupChatById(groupId)
+					if (group == null) {
+						group = createDefaultWritingGroupChat()
+						groupId = group.id
+					}
+					const session = ensureGroupActiveSession(group)
+					if (setActiveGroupSession(group.id, session.id) == false) {
+						uni.showToast({ position: 'bottom', title: '群聊状态保存失败，请重试', icon: 'none' })
+						return
+					}
+					if (this.sessionId != session.id) {
+						this.seenRuntimeErrorRevision = 0
+					}
+					this.groupId = group.id
+					this.sessionId = session.id
+					this.group = group
+					this.session = session
+					this.messages = getGroupChatTurnMessages(group.id, session.id)
+					this.isGenerating = isGroupChatTurnRunning(session.id)
+					this.bindGroupTurnRuntime()
+					this.normalizeUserSenderNames()
+					this.resetMessageWindowToRecent()
+					this.scrollToBottom()
+				} catch (e: any) {
+					uni.showToast({ position: 'bottom', title: '群聊加载失败，请重试', icon: 'none' })
 				}
-				let group = getGroupChatById(groupId)
-				if (group == null) {
-					group = createDefaultWritingGroupChat()
-					groupId = group.id
-					setActiveGroupChat(group.id)
-				}
-				const session = ensureGroupActiveSession(group)
-				if (this.sessionId != session.id) {
-					this.seenRuntimeErrorRevision = 0
-				}
-				this.groupId = group.id
-				this.sessionId = session.id
-				this.group = group
-				this.session = session
-				setActiveGroupSessionId(session.id)
-				this.messages = getGroupChatTurnMessages(group.id, session.id)
-				this.isGenerating = isGroupChatTurnRunning(session.id)
-				this.bindGroupTurnRuntime()
-				this.normalizeUserSenderNames()
-				this.resetMessageWindowToRecent()
-				this.scrollToBottom()
 			},
 			goBack(): void { uni.navigateBack() },
 			bindGroupTurnRuntime(): void {

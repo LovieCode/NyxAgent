@@ -18,6 +18,7 @@ import {
 import { rememberGroupWorkspaceName, writeGroupWorkspaceNameMetadata } from '@/utils/workspace-name-snapshot.uts'
 import {
 	APP_ERROR_CATEGORY_DATABASE,
+	APP_ERROR_CATEGORY_STORAGE,
 	formatAppErrorForLog,
 	reportAppErrorFromCause,
 } from '@/utils/app-error.uts'
@@ -33,6 +34,7 @@ import {
 } from '@/utils/chat-models.uts'
 import {
 	deleteGroupAgentContextRow,
+	deleteGroupChatCreationRows,
 	deleteGroupSessionDbRows,
 	getAppSetting,
 	getGroupAgentContextRows,
@@ -826,11 +828,44 @@ export function createDefaultWritingGroupChat(): GroupChat {
 		createdAt: Date.now(),
 		updatedAt: Date.now(),
 	}
-	if (saveGroupChat(group) == false) { throw new Error('默认群聊创建失败') }
-	if (firstMember != '' && addGroupMember(groupId, firstMember) == false) { throw new Error('默认群聊成员保存失败') }
-	if (secondMember != '' && secondMember != firstMember && addGroupMember(groupId, secondMember) == false) { throw new Error('默认群聊成员保存失败') }
-	const session = createGroupSession(groupId, '故事会话')
-	group.activeSessionId = session.id
-	if (saveGroupChat(group) == false) { throw new Error('默认群聊当前会话保存失败') }
+	try {
+		if (saveGroupChat(group) == false) { throw new Error('默认群聊创建失败') }
+		if (firstMember != '' && addGroupMember(groupId, firstMember) == false) { throw new Error('默认群聊成员保存失败') }
+		if (secondMember != '' && secondMember != firstMember && addGroupMember(groupId, secondMember) == false) { throw new Error('默认群聊成员保存失败') }
+		const session = createGroupSession(groupId, '故事会话')
+		group.activeSessionId = session.id
+		if (saveGroupChat(group) == false) { throw new Error('默认群聊当前会话保存失败') }
+	} catch (e: any) {
+		try {
+			deleteGroupChatCreationRows(groupId)
+		} catch (rollbackError: any) {
+			reportAppErrorFromCause(
+				'GROUP_CREATE_ROLLBACK_FAILED',
+				APP_ERROR_CATEGORY_DATABASE,
+				'回滚群聊创建记录',
+				'群聊创建失败，部分数据库记录可能未清理',
+				rollbackError,
+				true,
+			)
+		}
+		const workspaceRoot = buildGroupWorkspaceRoot()
+		if (workspaceRoot != '') {
+			const groupWorkspace = joinPath(workspaceRoot, groupId)
+			if (isInsideGroupWorkspace(groupWorkspace) == true && exists(groupWorkspace) == true) {
+				const deleteResult = deleteItem(groupWorkspace, true)
+				if (deleteResult.ok == false) {
+					reportAppErrorFromCause(
+						'GROUP_CREATE_WORKSPACE_ROLLBACK_FAILED',
+						APP_ERROR_CATEGORY_STORAGE,
+						'清理群聊创建工作区',
+						'群聊创建失败，临时工作区可能未清理',
+						deleteResult.error,
+						true,
+					)
+				}
+			}
+		}
+		throw e
+	}
 	return group
 }

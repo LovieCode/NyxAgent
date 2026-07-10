@@ -364,7 +364,7 @@ function updateMappedMessageAssets(messages: UTSJSONObject[], assetMap: UTSJSONO
 	}
 }
 
-function writeStorageObject(storage: UTSJSONObject, storageKeys: string[]): void {
+function writeStorageObject(storage: UTSJSONObject, storageKeys: string[]): boolean {
 	let keys = storageKeys
 	if (keys.length == 0) {
 		keys = buildFallbackStorageKeys()
@@ -374,8 +374,9 @@ function writeStorageObject(storage: UTSJSONObject, storageKeys: string[]): void
 		const value = storage[key]
 		if (value != null) {
 			const text = value as string
+			let saved = false
 			if (key.startsWith('app_setting_')) {
-				setAppSetting(key.substring(12), text)
+				saved = setAppSetting(key.substring(12), text)
 			} else if (
 				key == 'active_agent_id' ||
 				key == 'active_conversation_id' ||
@@ -386,16 +387,20 @@ function writeStorageObject(storage: UTSJSONObject, storageKeys: string[]): void
 				key.startsWith('editor_') ||
 				key.startsWith('crop_')
 			) {
-				setRuntimeState(key, text)
+				saved = setRuntimeState(key, text)
 			} else {
-				setAppSetting(key, text)
+				saved = setAppSetting(key, text)
+			}
+			if (saved == false) {
+				return false
 			}
 		}
 	}
+	return true
 }
 
-function restoreListStorage(key: string, list: UTSJSONObject[]): void {
-	setAppSetting(key, JSON.stringify(list))
+function restoreListStorage(key: string, list: UTSJSONObject[]): boolean {
+	return setAppSetting(key, JSON.stringify(list))
 }
 
 /** 只读取备份包信息，不写入任何数据。 */
@@ -501,10 +506,14 @@ export function importSettingsOnlyFromZip(zipPath: string): string {
 			importSettingsTables(providers, appSettings, true)
 		}
 		if (agents.length > 0) {
-			saveAgents(agents)
+			if (saveAgents(agents) == false) {
+				throw new Error('Agent 设置恢复失败')
+			}
 		}
 		if (storage != null) {
-			writeStorageObject(storage, storageKeys)
+			if (writeStorageObject(storage, storageKeys) == false) {
+				throw new Error('应用设置恢复失败')
+			}
 		}
 		return '已恢复设置：提供商 ' + providers.length + ' 个，Agent ' + agents.length + ' 个，Skills ' + skills.length + ' 个，资源 ' + assets.length + ' 个。聊天记录和工作区文件未覆盖。'
 	} catch (e: any) {
@@ -567,12 +576,20 @@ export function importAllDataFromZip(zipPath: string): string {
 
 		importDatabaseTables(providers, conversations, messages, appSettings, memoryBuffers, memoryCore, conversationTokenUsageStats, memoryCompactionStates, groupChatData != null ? groupChatData : ({} as UTSJSONObject))
 		if (agents.length > 0) {
-			saveAgents(agents)
+			if (saveAgents(agents) == false) {
+				throw new Error('Agent 数据恢复失败')
+			}
 		}
-		restoreListStorage('notes_list', notes)
-		restoreListStorage('todo_list', todos)
+		if (restoreListStorage('notes_list', notes) == false) {
+			throw new Error('笔记数据恢复失败')
+		}
+		if (restoreListStorage('todo_list', todos) == false) {
+			throw new Error('待办数据恢复失败')
+		}
 		if (storage != null) {
-			writeStorageObject(storage, storageKeys)
+			if (writeStorageObject(storage, storageKeys) == false) {
+				throw new Error('应用设置恢复失败')
+			}
 		}
 		const workspaceCount = importAgentWorkspaceFiles(zipPath)
 		const groupWorkspaceCount = importGroupWorkspaceFiles(zipPath)

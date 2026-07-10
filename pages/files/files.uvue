@@ -124,10 +124,13 @@
 <script lang="uts">
 	import { listDir, listRootContents, createDir, createFile, copyItem, deleteItem, exists, renameItem, parentPath, joinPath, getUserDir, getInternalFilesDir, getExternalFilesDir, getAgentsRoot, formatFileSize, formatTime, isTextFile, isImageFile, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
 	import { isChooseCancelError, parsePickedFileInfo, type PickedLocalFile } from '@/utils/attachment-reader.uts'
+	import { APP_ERROR_CATEGORY_STORAGE, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
+	import { getRuntimeState } from '@/utils/database.uts'
 	import { consumeFilesInitialPath } from '@/utils/runtime-state.uts'
 	import {
-		buildManagedFilePathSegments,
-		buildGroupWorkspacesRootPath,
+			buildManagedFilePathSegments,
+			buildGroupWorkspacesRootPath,
+			clearManagedEditorRuntimeState,
 		consumeManagedEditorSavedState,
 		getManagedFileDisplayName,
 		getManagedFileIconColor,
@@ -233,6 +236,18 @@
 			}
 		},
 		methods: {
+			showFileFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+				const error = reportAppErrorFromCause(
+					code,
+					APP_ERROR_CATEGORY_STORAGE,
+					operation,
+					userMessage,
+					cause,
+					true,
+				)
+				uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+			},
+
 			getRootGroupRank(item : FileItem) : number {
 				const group = this.getItemGroup(item)
 				if (group == 'user') { return 0 }
@@ -349,22 +364,32 @@
 					},
 					fail: (err : any) => {
 						if (isChooseCancelError(err) == true) { return }
-						uni.showToast({ position: 'bottom', title: '选择文件失败', icon: 'none' })
+						this.showFileFailure('FILE_IMPORT_PICK_FAILED', 'file_import_pick', '选择文件失败', err)
 					}
 				})
 			},
 
 			/** 刷新当前目录文件列表 */
 			refreshList() {
-				if (this.currentPath == VIRTUAL_ROOT) {
-					this.items = listRootContents()
-					return
-				}
-				if (this.currentPath == '') {
+				try {
+					if (this.currentPath == VIRTUAL_ROOT) {
+						this.items = listRootContents()
+						return
+					}
+					if (this.currentPath == '') {
+						this.items = []
+						return
+					}
+					if (exists(this.currentPath) == false) {
+						this.items = []
+						this.showFileFailure('FILE_DIRECTORY_UNAVAILABLE', 'file_list_directory', '当前目录不存在或不可访问', this.currentPath)
+						return
+					}
+					this.items = listDir(this.currentPath)
+				} catch (e: any) {
 					this.items = []
-					return
+					this.showFileFailure('FILE_LIST_FAILED', 'file_list_refresh', '文件列表加载失败', e)
 				}
-				this.items = listDir(this.currentPath)
 			},
 
 			/** 跳转到根目录（合并视图） */
@@ -407,7 +432,10 @@
 					// 图片预览
 					uni.previewImage({
 						urls: [item.path],
-						current: item.path
+						current: item.path,
+						fail: (err: any) => {
+							this.showFileFailure('FILE_IMAGE_PREVIEW_FAILED', 'file_image_preview', '图片预览失败', err)
+						}
 					})
 				} else {
 					// 其他文件：显示信息
@@ -415,7 +443,10 @@
 						title: item.name,
 						content: '大小：' + formatFileSize(item.size) + '\n修改时间：' + formatTime(item.lastModified) + '\n路径：' + item.path,
 						showCancel: false,
-						confirmText: '关闭'
+						confirmText: '关闭',
+						fail: (err: any) => {
+							this.showFileFailure('FILE_INFO_DIALOG_FAILED', 'file_info_dialog', '无法显示文件信息', err)
+						}
 					})
 				}
 			},
@@ -447,8 +478,16 @@
 			/** 打开文本编辑器 */
 			openTextEditor(item : FileItem) {
 				prepareManagedTextEditorRuntimeState(item)
+				if (getRuntimeState('editor_target') != 'file-manager' || getRuntimeState('editor_file_path') != item.path) {
+					this.showFileFailure('FILE_EDITOR_STATE_FAILED', 'file_editor_prepare', '无法准备文件编辑器', '编辑器临时状态保存失败')
+					return
+				}
 				uni.navigateTo({
-					url: '/pages/common/editor/editor'
+					url: '/pages/common/editor/editor',
+					fail: (err: any) => {
+						clearManagedEditorRuntimeState()
+						this.showFileFailure('FILE_EDITOR_ROUTE_FAILED', 'file_editor_navigate', '无法打开文件编辑器', err)
+					}
 				})
 			},
 
@@ -587,10 +626,13 @@
 					confirmText: '删除',
 					confirmColor: '#EF4444',
 					success: (res) => {
-						if (res.confirm == true) {
-							this.doDelete(item)
+							if (res.confirm == true) {
+								this.doDelete(item)
+							}
+						},
+						fail: (err: any) => {
+							this.showFileFailure('FILE_DELETE_CONFIRM_FAILED', 'file_delete_confirm', '无法打开删除确认框', err)
 						}
-					}
 				})
 			},
 

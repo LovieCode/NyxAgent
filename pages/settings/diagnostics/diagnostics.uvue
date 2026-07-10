@@ -70,7 +70,7 @@
 </template>
 
 <script lang="uts">
-	import { clearAppDiagnostics, getRecentAppDiagnostics, type AppDiagnosticEntry } from '@/utils/app-error.uts'
+	import { APP_ERROR_CATEGORY_RUNTIME, clearAppDiagnostics, formatAppErrorForUser, getRecentAppDiagnostics, reportAppErrorFromCause, type AppDiagnosticEntry } from '@/utils/app-error.uts'
 
 	export default {
 		data() {
@@ -86,6 +86,19 @@
 			this.loadDiagnostics()
 		},
 		methods: {
+			showDiagnosticsFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+				const error = reportAppErrorFromCause(
+					code,
+					APP_ERROR_CATEGORY_RUNTIME,
+					operation,
+					userMessage,
+					cause,
+					true,
+				)
+				this.loadDiagnostics()
+				uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+			},
+
 			loadDiagnostics() {
 				const recent = getRecentAppDiagnostics(80)
 				const newestFirst: AppDiagnosticEntry[] = []
@@ -119,9 +132,12 @@
 							clearAppDiagnostics()
 							this.expandedDiagnosticId = ''
 							this.loadDiagnostics()
-							uni.showToast({ position: 'bottom', title: '已清空', icon: 'success' })
+								uni.showToast({ position: 'bottom', title: '已清空', icon: 'success' })
+							}
+						},
+						fail: (err: any) => {
+							this.showDiagnosticsFailure('DIAGNOSTICS_CLEAR_CONFIRM_FAILED', 'diagnostics_clear_confirm', '无法打开清空确认框', err)
 						}
-					}
 				})
 			},
 
