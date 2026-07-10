@@ -51,8 +51,8 @@
 </template>
 
 <script lang="uts">
-	import { deleteRuntimeState, getAppSetting, getRuntimeState, setAppSetting, setRuntimeState } from '@/utils/database.uts'
-	import { chooseAvatarImage } from '@/utils/avatar-image-picker.uts'
+	import { deleteRuntimeState, getAppSetting, getRuntimeState, setAppSettings, setRuntimeState } from '@/utils/database.uts'
+	import { chooseAvatarImage, consumeAvatarCropResult, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
 
 	/**
 	 * 用户资料页面 - 扁平化粉白主题
@@ -110,14 +110,10 @@
 				}
 			}
 			// 检查裁剪页面是否有返回结果
-			const cropTarget = getRuntimeState('crop_target')
-			const cropResult = getRuntimeState('crop_result')
-			if (cropTarget == 'profile_avatar' && cropResult != null && cropResult != '') {
+			const cropResult = consumeAvatarCropResult('profile_avatar')
+			if (cropResult != '') {
 				this.avatarPath = cropResult
-				setAppSetting('profile_avatar', this.avatarPath)
-				deleteRuntimeState('crop_result')
-				deleteRuntimeState('crop_target')
-				deleteRuntimeState('crop_image_path')
+				this.hasUnsaved = true
 			}
 		},
 		methods: {
@@ -134,16 +130,21 @@
 				this.avatarPath = (avatar != null) ? avatar : ''
 				this.hasUnsaved = false
 			},
-			saveProfile() {
-				setAppSetting('profile_nickname', this.nickname)
-				setAppSetting('profile_bio', this.bio)
-				setAppSetting('profile_email', this.email)
-				setAppSetting('profile_description', this.description)
+			saveProfile(): boolean {
+				const saved = setAppSettings(
+					['profile_nickname', 'profile_bio', 'profile_email', 'profile_description', 'profile_avatar'],
+					[this.nickname, this.bio, this.email, this.description, this.avatarPath],
+				)
+				if (saved == false) {
+					uni.showToast({ position: 'bottom', title: '保存个人资料失败，请重试', icon: 'none' })
+					return false
+				}
 				this.hasUnsaved = false
 				uni.showToast({ position: 'bottom', 
 					title: '已保存',
 					icon: 'success'
 				})
+				return true
 			},
 			confirmLeave() {
 				if (this.isConfirmingLeave == true) { return }
@@ -156,11 +157,13 @@
 					success: (res) => {
 						this.isConfirmingLeave = false
 						if (res.confirm == true) {
-							this.saveProfile()
+							if (this.saveProfile() == true) {
+								uni.navigateBack()
+							}
 						} else {
 							this.hasUnsaved = false
+							uni.navigateBack()
 						}
-						uni.navigateBack()
 					},
 					fail: () => {
 						this.isConfirmingLeave = false
@@ -177,12 +180,7 @@
 			/** 弹出选择头像（拍照或从相册选取）*/
 			pickAvatar() {
 				chooseAvatarImage((path: string) => {
-					deleteRuntimeState('crop_result')
-					setRuntimeState('crop_target', 'profile_avatar')
-					setRuntimeState('crop_image_path', path)
-					uni.navigateTo({
-						url: '/pages/common/crop/crop'
-					})
+					openAvatarCrop(path, 'profile_avatar')
 				})
 			},
 			/** 打开全屏编辑器 */

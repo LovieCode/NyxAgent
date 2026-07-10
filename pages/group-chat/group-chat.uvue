@@ -15,27 +15,26 @@
 
 		<view class="message-scroll-wrap">
 			<scroll-view id="group-message-scroll" class="message-list" :scroll-y="true" :scroll-with-animation="false" :show-scrollbar="false" :scroll-top="scrollTop" @scroll="onMsgScroll" @touchmove="onMsgTouchMove">
-				<view v-if="canLoadOlderMessages == true" class="load-older-wrap" @click="loadOlderMessages">
-					<text class="load-older-text">加载更早 {{olderMessageCount}} 段消息</text>
-				</view>
-				<view v-for="(msg, index) in visibleMessages" :key="messageViewKey(msg, messageWindowStart + index)">
+				<view v-for="item in visibleMessageItems" :key="messageViewKey(item.sourceMessage, item.sourceIndex)" :id="messageWindowItemId(item.sourceIndex)" class="message-window-item">
 					<ChatBubble
-						:role="msg.role"
-						:content="msg.content != null ? msg.content : ''"
-						:parts="getMessagePartsForView(msg)"
-						:agentAvatar="msg.senderAvatar != null ? msg.senderAvatar : ''"
-						:assistantName="isAgentMessage(msg) ? readMessageSenderName(msg) : ''"
+						:role="item.renderMessage.role"
+						:content="item.renderMessage.content != null ? item.renderMessage.content : ''"
+						:parts="getMessagePartsForView(item.renderMessage)"
+						:agentAvatar="item.renderMessage.senderAvatar != null ? item.renderMessage.senderAvatar : ''"
+						:assistantName="isAgentMessage(item.renderMessage) ? readMessageSenderName(item.renderMessage) : ''"
 						:userNickname="userNickname"
-						:userDisplayName="isUserMessage(msg) ? readUserMessageSenderName(msg) : ''"
+						:userDisplayName="isUserMessage(item.renderMessage) ? readUserMessageSenderName(item.renderMessage) : ''"
 						:userAvatar="userAvatar"
-						:toolName="msg.toolName != null ? msg.toolName : ''"
-						:hideThinking="readMessageHideThinking(msg)"
-						:msgSegmentation="readMessageMsgSegmentation(msg)"
-						:isError="msg.isError == true"
-						:isStreaming="msg.isStreaming == true"
+						:toolName="item.renderMessage.toolName != null ? item.renderMessage.toolName : ''"
+						:hideThinking="readMessageHideThinking(item.renderMessage)"
+						:msgSegmentation="readMessageMsgSegmentation(item.renderMessage)"
+						:isError="item.renderMessage.isError == true"
+							:isStreaming="item.renderMessage.isStreaming == true"
+							:isPrivateMessage="isPrivateMessage(item.renderMessage)"
 						:cancelToken="longpressCancelToken"
-						@bubbleLongpress="onMessageLongpress(msg)"
-						@avatarClick="openAgentPrivateChat(msg)"
+						@contentResize="onMessageContentResize"
+						@bubbleLongpress="onMessageLongpress(item.sourceMessage)"
+						@avatarClick="openAgentPrivateChat(item.sourceMessage)"
 					/>
 				</view>
 				<view v-if="allVisibleMessageCount == 0" class="empty-state">
@@ -52,13 +51,13 @@
 			</view>
 		</view>
 
-		<view class="chat-bottom">
+		<view class="chat-bottom" :style="{ marginBottom: keyboardInset + 'px' }">
 			<view class="input-bar">
 				<view class="toolbar-toggle" @click="toggleToolPanel">
 					<oui-icon-unix name="plus" size="18px" color="#FFFFFF" />
 				</view>
 				<view class="input-wrap">
-					<textarea class="text-input" v-model="inputText" :style="{ height: inputHeight + 'px' }" :adjust-position="false" placeholder="给群里发消息..." placeholder-style="color:var(--rice-text-color-3)" @linechange="onInputLineChange" :disabled="isGenerating == true" />
+					<textarea class="text-input" v-model="inputText" :style="{ height: inputHeight + 'px' }" :adjust-position="false" placeholder="给群里发消息..." placeholder-style="color:#9CA3AF" @linechange="onInputLineChange" :disabled="isGenerating == true" />
 				</view>
 				<view v-if="isGenerating == false" class="send-chip" @click="sendMessage">
 					<text class="send-chip-text">发送</text>
@@ -165,8 +164,14 @@
 		readGroupUserMessageSenderName,
 		stringifyGroupContextPreview,
 	} from '@/utils/group-chat-page-helpers.uts'
-	import {
-		buildChatScrollbarThumbStyle,
+		import {
+			buildChatStreamScrollTop,
+			CHAT_IDLE_SCROLL_BOTTOM_TOP,
+			CHAT_STREAM_SCROLL_DELAY_MS,
+			nextChatStreamScrollTick,
+		} from '@/utils/chat-stream-events.uts'
+		import {
+			buildChatScrollbarThumbStyle,
 		clampChatScrollTarget,
 		isChatScrollAtBottom,
 		resolveChatScrollbarDragTarget,
@@ -174,15 +179,22 @@
 	} from '@/utils/chat-scroll-helpers.uts'
 	import {
 		CHAT_MESSAGE_WINDOW_BASE_SIZE,
-		buildChatMessageWindowByUnits,
-		countRemainingChatMessageWindowUnits,
-		countChatMessageRenderUnits,
-		resolveNextChatMessageWindowCount,
+		CHAT_MESSAGE_WINDOW_EDGE_THRESHOLD_PX,
+		type ChatMessageWindowItem,
+		buildChatMessageWindowRange,
+		isChatMessageWindowAtRecentEnd,
+		resolveChatMessageWindowEnd,
+		resolveRecentChatMessageWindowStart,
+		resolveShiftedChatMessageWindowStart,
 	} from '@/utils/chat-message-window.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
+	import { resolveKeyboardInset } from '@/utils/keyboard-inset.uts'
 	import { NYX_FLOAT_CONTEXT_GROUP, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
 	import {
+		acknowledgeGroupChatTurnError,
 		getGroupChatRuntimeEventName,
+		getGroupChatTurnErrorMessage,
+		getGroupChatTurnErrorRevision,
 		getGroupChatTurnMessages,
 		isGroupChatTurnRunning,
 		startGroupChatTurn,
@@ -190,6 +202,8 @@
 	} from '@/utils/group-chat-turn-runtime.uts'
 	import {
 		GROUP_MESSAGE_SENDER_AGENT,
+		GROUP_MESSAGE_AUDIENCE_USER,
+		GROUP_MESSAGE_VISIBILITY_PRIVATE,
 		type GroupChat,
 		type GroupChatSession,
 		createDefaultWritingGroupChat,
@@ -203,7 +217,7 @@
 		getGroupMessages,
 		getGroupSessionById,
 		getGroupSessionWorkspaceDir,
-		getVisibleGroupMessages,
+		getGroupMessagesVisibleToUser,
 		resolveGroupReviewerAgentId,
 		resolveGroupSchedulerAgentId,
 		revokeGroupAgentMessage,
@@ -213,8 +227,9 @@
 	} from '@/utils/group-chat-service.uts'
 
 	let groupNyxFloatVoiceCallback: (() => void) | null = null
-	let groupTurnRuntimeCallback: (() => void) | null = null
-	let groupTurnRuntimeEventName: string = ''
+let groupTurnRuntimeCallback: (() => void) | null = null
+let groupTurnRuntimeEventName: string = ''
+let groupTurnRuntimeSyncTimer: number = -1
 
 	export default {
 		data() {
@@ -232,14 +247,26 @@
 				toolbarTouchStartX: 0 as number,
 				toolbarTouchStartY: 0 as number,
 				keyboardHeight: 0 as number,
+				keyboardInset: 0 as number,
+				keyboardBaseWindowHeight: 0 as number,
 				toolbarTouchCurrentX: 0 as number,
 				toolbarDragOffset: 0 as number,
 				toolbarViewportWidth: 0 as number,
 				toolbarDragging: false as boolean,
-				toolbarSwipeMoved: false as boolean,
-				toolbarSwipeLockedUntil: 0 as number,
-				scrollTop: 0 as number,
-				messageWindowCount: CHAT_MESSAGE_WINDOW_BASE_SIZE as number,
+					toolbarSwipeMoved: false as boolean,
+					toolbarSwipeLockedUntil: 0 as number,
+					_streamScrollTick: 0 as number,
+					streamScrollTimer: -1 as number,
+					scrollTop: 0 as number,
+				messageWindowStartIndex: 0 as number,
+				messageWindowEndIndex: 0 as number,
+				messageTotalCount: 0 as number,
+				messageWindowShifting: false as boolean,
+				messageWindowShiftToken: 0 as number,
+				messageWindowShiftLockUntil: 0 as number,
+				messagesRevision: 0 as number,
+				/** 流式期间是否跟随尾部，只由用户主动上滑取消 */
+				streamFollowBottom: true as boolean,
 				scrollViewHeight: 0 as number,
 				scrollContentHeight: 0 as number,
 				scrollOffset: 0 as number,
@@ -251,9 +278,13 @@
 				longpressCancelToken: 0 as number,
 				userNickname: '' as string,
 				userAvatar: '' as string,
-				imageCaptionTaskId: 0 as number,
-				keyboardHeightListenerId: -1 as number,
-			}
+					imageCaptionTaskId: 0 as number,
+					keyboardHeightListenerId: -1 as number,
+					measureScrollTimer: -1 as number,
+					measureStableTimer: -1 as number,
+					pageVisible: true as boolean,
+					seenRuntimeErrorRevision: 0 as number,
+				}
 		},
 		computed: {
 			headerTitle(): string {
@@ -265,25 +296,15 @@
 				return group != null ? group.name : '群聊'
 			},
 			allVisibleMessages(): UTSJSONObject[] {
-				return getVisibleGroupMessages(this.messages)
+				const revision = this.messagesRevision
+				if (revision < 0) { return [] as UTSJSONObject[] }
+				return getGroupMessagesVisibleToUser(this.messages)
 			},
-			visibleMessages(): UTSJSONObject[] {
-				return buildChatMessageWindowByUnits(this.allVisibleMessages, this.messageWindowCount, true)
+			visibleMessageItems(): ChatMessageWindowItem[] {
+				return buildChatMessageWindowRange(this.allVisibleMessages, this.messageWindowStartIndex, this.messageWindowEndIndex)
 			},
 			allVisibleMessageCount(): number {
 				return this.allVisibleMessages.length
-			},
-			totalMessageUnitCount(): number {
-				return this.countGroupMessageRenderUnitsBefore(this.allVisibleMessages, this.allVisibleMessages.length)
-			},
-			messageWindowStart(): number {
-				return this.resolveGroupMessageWindowStart(this.allVisibleMessages, this.messageWindowCount)
-			},
-			canLoadOlderMessages(): boolean {
-				return countRemainingChatMessageWindowUnits(this.totalMessageUnitCount, this.messageWindowCount) > 0
-			},
-			olderMessageCount(): number {
-				return countRemainingChatMessageWindowUnits(this.totalMessageUnitCount, this.messageWindowCount)
 			},
 			toolbarTrackStyle(): string {
 				return buildGroupToolbarTrackStyle(this.toolbarPageIndex, this.toolbarViewportWidth, this.toolbarDragOffset)
@@ -292,18 +313,35 @@
 				return buildChatScrollbarThumbStyle(this.scrollContentHeight, this.scrollViewHeight, this.scrollOffset)
 			},
 			showCustomScrollbar(): boolean {
-				return this.scrollViewHeight > 0 && this.scrollContentHeight > this.scrollViewHeight + 2
+				return this.messageTotalCount <= CHAT_MESSAGE_WINDOW_BASE_SIZE && this.scrollViewHeight > 0 && this.scrollContentHeight > this.scrollViewHeight + 2
 			},
 			showBackToBottom(): boolean {
-				return this.scrollViewHeight > 0 && this.scrollContentHeight > this.scrollViewHeight + 2 && this.isAtBottom == false
+				return this.messageTotalCount > 0 && this.isAtBottom == false
 			}
 		},
 		onLoad() {
 			this.loadUserProfile()
 			this.loadGroup()
+			try {
+				const windowInfo = uni.getWindowInfo()
+				this.keyboardBaseWindowHeight = windowInfo.windowHeight
+			} catch (error) {
+				this.keyboardBaseWindowHeight = 0
+			}
 			this.keyboardHeightListenerId = uni.onKeyboardHeightChange((res: OnKeyboardHeightChangeCallbackResult) => {
 				const keepBottom = this.isAtBottom
+				let currentWindowHeight = this.keyboardBaseWindowHeight
+				try {
+					const windowInfo = uni.getWindowInfo()
+					currentWindowHeight = windowInfo.windowHeight
+				} catch (error) {
+					currentWindowHeight = this.keyboardBaseWindowHeight
+				}
+				if (res.height == 0 && currentWindowHeight > 0) {
+					this.keyboardBaseWindowHeight = currentWindowHeight
+				}
 				this.keyboardHeight = res.height
+				this.keyboardInset = resolveKeyboardInset(res.height, this.keyboardBaseWindowHeight, currentWindowHeight)
 				if (res.height > 0 && this.showToolPanel == true) {
 					this.showToolPanel = false
 				}
@@ -322,20 +360,34 @@
 				eventBus.on(NYX_FLOAT_VOICE_EVENT, callback)
 			}
 		},
-		onShow() {
-			this.loadUserProfile()
-			this.loadGroup()
-			activateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
+			onShow() {
+				this.pageVisible = true
+					this.loadUserProfile()
+				this.loadGroup()
+				this.syncGroupTurnRuntime()
+				activateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
 			this.consumeNyxFloatVoiceText()
 		},
 		onReady() {
 			this.scheduleMeasureMessageScroll()
 			this.scrollToBottom()
 		},
-		onHide() {
-			deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
-		},
-		onUnload() {
+			onHide() {
+				this.pageVisible = false
+				if (this.streamScrollTimer != -1) { clearTimeout(this.streamScrollTimer); this.streamScrollTimer = -1 }
+				if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
+				if (this.measureStableTimer != -1) { clearTimeout(this.measureStableTimer); this.measureStableTimer = -1 }
+				deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
+			},
+			onUnload() {
+				this.pageVisible = false
+				if (this.streamScrollTimer != -1) { clearTimeout(this.streamScrollTimer); this.streamScrollTimer = -1 }
+				if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
+				if (this.measureStableTimer != -1) { clearTimeout(this.measureStableTimer); this.measureStableTimer = -1 }
+			if (groupTurnRuntimeSyncTimer != -1) {
+				clearTimeout(groupTurnRuntimeSyncTimer)
+				groupTurnRuntimeSyncTimer = -1
+			}
 			if (this.keyboardHeightListenerId != -1) {
 				uni.offKeyboardHeightChange(this.keyboardHeightListenerId)
 				this.keyboardHeightListenerId = -1
@@ -373,6 +425,9 @@
 					setActiveGroupChat(group.id)
 				}
 				const session = ensureGroupActiveSession(group)
+				if (this.sessionId != session.id) {
+					this.seenRuntimeErrorRevision = 0
+				}
 				this.groupId = group.id
 				this.sessionId = session.id
 				this.group = group
@@ -391,9 +446,14 @@
 				if (oldCallback != null && groupTurnRuntimeEventName != '') {
 					eventBus.off(groupTurnRuntimeEventName, oldCallback)
 				}
-				groupTurnRuntimeEventName = getGroupChatRuntimeEventName(this.sessionId)
-				groupTurnRuntimeCallback = () => {
-					this.syncGroupTurnRuntime()
+					groupTurnRuntimeEventName = getGroupChatRuntimeEventName(this.sessionId)
+					groupTurnRuntimeCallback = () => {
+						if (this.pageVisible == false) { return }
+						if (groupTurnRuntimeSyncTimer != -1) { return }
+					groupTurnRuntimeSyncTimer = setTimeout(() => {
+						groupTurnRuntimeSyncTimer = -1
+						this.syncGroupTurnRuntime()
+					}, 40)
 				}
 				const callback = groupTurnRuntimeCallback
 				if (callback != null && groupTurnRuntimeEventName != '') {
@@ -402,12 +462,27 @@
 			},
 			syncGroupTurnRuntime(): void {
 				if (this.groupId == '' || this.sessionId == '') { return }
+				const keepBottom = this.streamFollowBottom
 				this.messages = getGroupChatTurnMessages(this.groupId, this.sessionId)
+				this.messagesRevision++
 				this.isGenerating = isGroupChatTurnRunning(this.sessionId)
+				const errorRevision = getGroupChatTurnErrorRevision(this.sessionId)
+				if (errorRevision > this.seenRuntimeErrorRevision) {
+					this.seenRuntimeErrorRevision = errorRevision
+					const errorMessage = getGroupChatTurnErrorMessage(this.sessionId)
+					if (errorMessage != '') {
+						uni.showToast({ position: 'bottom', title: errorMessage, icon: 'none' })
+					}
+					acknowledgeGroupChatTurnError(this.sessionId, errorRevision)
+				}
 				const freshSession = getGroupSessionById(this.groupId, this.sessionId)
 				if (freshSession != null) { this.session = freshSession }
-				this.resetMessageWindowToRecent()
-				this.scrollToBottomIfPinned()
+				this.syncMessageWindowBounds(keepBottom)
+				if (keepBottom == true) {
+					this.scrollToBottom()
+				} else {
+					this.scheduleMeasureMessageScroll()
+				}
 			},
 			goSettings(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
@@ -530,17 +605,34 @@
 				this.longpressCancelToken++
 				this.scrollOffset = e.detail.scrollTop
 				this.updateBottomState()
+				this.maybeShiftMessageWindow()
 			},
 			onMsgTouchMove(): void {
 				this.longpressCancelToken++
+				if (this.isGenerating == true) {
+					this.streamFollowBottom = false
+					if (this.streamScrollTimer != -1) {
+						clearTimeout(this.streamScrollTimer)
+						this.streamScrollTimer = -1
+					}
+				}
 			},
 			updateBottomState(): void {
-				this.isAtBottom = isChatScrollAtBottom(this.scrollOffset, this.scrollContentHeight, this.scrollViewHeight)
+				const windowAtRecentEnd = isChatMessageWindowAtRecentEnd(this.messageTotalCount, this.messageWindowEndIndex)
+				this.isAtBottom = windowAtRecentEnd == true && isChatScrollAtBottom(this.scrollOffset, this.scrollContentHeight, this.scrollViewHeight)
 			},
-			scheduleMeasureMessageScroll(): void {
-				setTimeout(() => { this.measureMessageScrollSize() }, 60)
-				setTimeout(() => { this.measureMessageScrollSize() }, 260)
-			},
+				scheduleMeasureMessageScroll(): void {
+					if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
+					if (this.measureStableTimer != -1) { clearTimeout(this.measureStableTimer); this.measureStableTimer = -1 }
+					this.measureScrollTimer = setTimeout(() => {
+						this.measureScrollTimer = -1
+						if (this.pageVisible == true) { this.measureMessageScrollSize() }
+					}, 60)
+					this.measureStableTimer = setTimeout(() => {
+						this.measureStableTimer = -1
+						if (this.pageVisible == true) { this.measureMessageScrollSize() }
+					}, 260)
+				},
 			measureMessageScrollSize(): void {
 				const query = uni.createSelectorQuery().in(this)
 				query.select('#group-message-scroll').boundingClientRect()
@@ -588,11 +680,15 @@
 			onScrollbarTrackTap(e: UniTouchEvent): void {
 				const y = this.getScrollbarTouchY(e)
 				if (y == null) { return }
+				if (this.isGenerating == true) { this.streamFollowBottom = false }
+				this.clearGroupStreamScrollTimer()
 				this.commitMessageScrollTop(resolveChatScrollbarTrackTarget(y, this.scrollContentHeight, this.scrollViewHeight))
 			},
 			onScrollbarThumbStart(e: UniTouchEvent): void {
 				const y = this.getScrollbarTouchY(e)
 				if (y == null) { return }
+				if (this.isGenerating == true) { this.streamFollowBottom = false }
+				this.clearGroupStreamScrollTimer()
 				this.scrollbarDragging = true
 				this.scrollbarDragStartY = y
 				this.scrollbarDragStartTop = this.scrollOffset
@@ -611,64 +707,115 @@
 				this.scrollToBottom()
 			},
 
-			messageViewKey(msg: UTSJSONObject, index: number): string {
-				const id = msg['id'] as string | null
-				const timestamp = msg['timestamp'] as number | null
-				const content = msg['content'] as string | null
-				const parts = msg['message'] as UTSJSONObject[] | null
-				const streaming = (msg['isStreaming'] as boolean | null) == true ? 's' : 'f'
-				const windowed = (msg['windowed'] as boolean | null) == true ? 'w' : 'n'
-				const textLength = content != null ? content.length : 0
-				const partCount = parts != null ? parts.length : 0
-				return (id != null && id != '' ? id : (index + '')) + '-' + (timestamp != null ? timestamp : 0) + '-' + textLength + '-' + partCount + '-' + streaming + '-' + windowed
+			messageViewKey(_msg: UTSJSONObject, index: number): string {
+				// 不读取数据库原生主键，避免 Android Long 被强转为 string。
+				return 'index-' + index
+			},
+
+			messageWindowItemId(sourceIndex: number): string {
+				return 'group-window-message-' + sourceIndex
 			},
 
 			refreshMessagesView(): void {
-				const next: UTSJSONObject[] = []
-				for (let i = 0; i < this.messages.length; i++) {
-					next.push(this.messages[i])
-				}
-				this.messages = next
+				const keepRecent = this.isGenerating == true ? this.streamFollowBottom : this.isAtBottom == true
+				this.messagesRevision++
+				this.syncMessageWindowBounds(keepRecent)
 			},
 
-			countGroupMessageRenderUnits(msg: UTSJSONObject): number {
-				return countChatMessageRenderUnits(msg, readGroupMessageMsgSegmentation(msg))
-			},
-			countGroupMessageRenderUnitsBefore(source: UTSJSONObject[], endIndex: number): number {
-				let limit = endIndex
-				if (limit < 0) { limit = 0 }
-				if (limit > source.length) { limit = source.length }
-				let count = 0
-				for (let i = 0; i < limit; i++) {
-					count = count + this.countGroupMessageRenderUnits(source[i])
-				}
-				return count
-			},
-			resolveGroupMessageWindowStart(source: UTSJSONObject[], windowUnits: number): number {
-				if (source.length == 0) { return 0 }
-				if (windowUnits <= 0) { return source.length }
-				let remaining = windowUnits
-				let start = source.length
-				for (let i = source.length - 1; i >= 0; i--) {
-					const units = this.countGroupMessageRenderUnits(source[i])
-					if (start < source.length && remaining - units < 0) {
-						break
-					}
-					remaining = remaining - units
-					start = i
-					if (remaining <= 0) {
-						break
-					}
-				}
-				return start
-			},
-			loadOlderMessages(): void {
-				this.messageWindowCount = resolveNextChatMessageWindowCount(this.messageWindowCount, this.totalMessageUnitCount)
+			onMessageContentResize(): void {
 				this.scheduleMeasureMessageScroll()
+			},
+
+			syncMessageWindowBounds(keepRecent: boolean): void {
+				const source = this.allVisibleMessages
+				const total = source.length
+				this.messageTotalCount = total
+				let start = this.messageWindowStartIndex
+				if (keepRecent == true || this.messageWindowEndIndex <= this.messageWindowStartIndex) {
+					start = resolveRecentChatMessageWindowStart(total)
+				} else {
+					start = resolveShiftedChatMessageWindowStart(total, start, 0)
+				}
+				this.messageWindowStartIndex = start
+				this.messageWindowEndIndex = resolveChatMessageWindowEnd(total, start)
 			},
 			resetMessageWindowToRecent(): void {
-				this.messageWindowCount = CHAT_MESSAGE_WINDOW_BASE_SIZE
+				this.syncMessageWindowBounds(true)
 				this.scheduleMeasureMessageScroll()
+			},
+			maybeShiftMessageWindow(): void {
+				if (this.messageWindowShifting == true || Date.now() < this.messageWindowShiftLockUntil) { return }
+				if (this.messageTotalCount <= CHAT_MESSAGE_WINDOW_BASE_SIZE || this.scrollViewHeight <= 0) { return }
+				if (this.scrollOffset <= CHAT_MESSAGE_WINDOW_EDGE_THRESHOLD_PX && this.messageWindowStartIndex > 0) {
+					this.shiftMessageWindow(-1)
+					return
+				}
+				const bottomGap = this.scrollContentHeight - this.scrollOffset - this.scrollViewHeight
+				if (bottomGap <= CHAT_MESSAGE_WINDOW_EDGE_THRESHOLD_PX && this.messageWindowEndIndex < this.messageTotalCount) {
+					this.shiftMessageWindow(1)
+				}
+			},
+			shiftMessageWindow(direction: number): void {
+				const nextStart = resolveShiftedChatMessageWindowStart(this.messageTotalCount, this.messageWindowStartIndex, direction)
+				if (nextStart == this.messageWindowStartIndex) { return }
+				const items = this.visibleMessageItems
+				if (items.length == 0) { return }
+				let anchorPosition = direction < 0 ? 1 : items.length - 2
+				if (anchorPosition < 0) { anchorPosition = 0 }
+				if (anchorPosition >= items.length) { anchorPosition = items.length - 1 }
+				const anchorIndex = items[anchorPosition].sourceIndex
+				const anchorSelector = '#' + this.messageWindowItemId(anchorIndex)
+				const oldScrollOffset = this.scrollOffset
+				const oldStart = this.messageWindowStartIndex
+				this.messageWindowShifting = true
+				this.messageWindowShiftToken++
+				const shiftToken = this.messageWindowShiftToken
+				const query = uni.createSelectorQuery().in(this)
+				query.select(anchorSelector).boundingClientRect()
+				query.exec((res: any) => {
+					const rows = res as UTSArray<any> | null
+					const oldRect = rows != null && rows.length > 0 ? rows[0] as NodeInfo | null : null
+					const oldTop = oldRect != null ? oldRect.top as number | null : null
+					if (oldTop == null) {
+						this.messageWindowShifting = false
+						this.messageWindowShiftLockUntil = Date.now() + 80
+						return
+					}
+					this.messageWindowStartIndex = nextStart
+					this.messageWindowEndIndex = resolveChatMessageWindowEnd(this.messageTotalCount, nextStart)
+					setTimeout(() => {
+						this.finishMessageWindowShift(anchorSelector, oldTop, oldScrollOffset, oldStart, shiftToken, 0)
+					}, 32)
+				})
+			},
+			finishMessageWindowShift(anchorSelector: string, oldTop: number, oldScrollOffset: number, oldStart: number, shiftToken: number, attempt: number): void {
+				if (shiftToken != this.messageWindowShiftToken) { return }
+				const nextQuery = uni.createSelectorQuery().in(this)
+				nextQuery.select(anchorSelector).boundingClientRect()
+				nextQuery.exec((nextRes: any) => {
+					if (shiftToken != this.messageWindowShiftToken) { return }
+					const nextRows = nextRes as UTSArray<any> | null
+					const nextRect = nextRows != null && nextRows.length > 0 ? nextRows[0] as NodeInfo | null : null
+					const nextTop = nextRect != null ? nextRect.top as number | null : null
+					if (nextTop == null && attempt < 2) {
+						setTimeout(() => {
+							this.finishMessageWindowShift(anchorSelector, oldTop, oldScrollOffset, oldStart, shiftToken, attempt + 1)
+						}, 32)
+						return
+					}
+					if (nextTop == null) {
+						this.messageWindowStartIndex = oldStart
+						this.messageWindowEndIndex = resolveChatMessageWindowEnd(this.messageTotalCount, oldStart)
+					} else {
+						let targetTop = oldScrollOffset + nextTop - oldTop
+						if (targetTop < 0) { targetTop = 0 }
+						this.scrollTop = targetTop
+						this.scrollOffset = targetTop
+					}
+					this.messageWindowShifting = false
+					this.messageWindowShiftLockUntil = Date.now() + 80
+					this.scheduleMeasureMessageScroll()
+				})
 			},
 			onInputLineChange(e: UniTextareaLineChangeEvent): void {
 				this.inputHeight = calcGroupInputHeight(e.detail.lineCount)
@@ -687,6 +834,11 @@
 			isUserMessage(msg: UTSJSONObject): boolean {
 				return isGroupUserMessage(msg)
 			},
+			isPrivateMessage(msg: UTSJSONObject): boolean {
+				const visibility = msg['visibility'] as string | null
+				const audience = msg['audience'] as string | null
+				return visibility == GROUP_MESSAGE_VISIBILITY_PRIVATE && audience == GROUP_MESSAGE_AUDIENCE_USER
+			},
 			readMessageSenderName(msg: UTSJSONObject): string {
 				return readGroupMessageSenderName(msg)
 			},
@@ -698,11 +850,44 @@
 					this.saveMessages()
 				}
 			},
-			scrollToBottom(): void {
-				this.isAtBottom = true
-				this.scrollTop = 0
-				setTimeout(() => {
-					this.scrollTop = 100000000 + this.messageWindowCount
+				clearGroupStreamScrollTimer(): void {
+					if (this.streamScrollTimer != -1) {
+						clearTimeout(this.streamScrollTimer)
+						this.streamScrollTimer = -1
+					}
+				},
+				performGroupStreamScrollToBottom(): void {
+					this.syncMessageWindowBounds(true)
+					this._streamScrollTick = nextChatStreamScrollTick(this._streamScrollTick)
+					this.scrollTop = buildChatStreamScrollTop(this._streamScrollTick)
+					this.isAtBottom = true
+					this.scheduleMeasureMessageScroll()
+				},
+				scheduleGroupStreamScroll(): void {
+					if (this.pageVisible == false || this.streamFollowBottom == false || this.streamScrollTimer != -1) { return }
+					this.streamScrollTimer = setTimeout(() => {
+						this.streamScrollTimer = -1
+						if (this.pageVisible == false || this.streamFollowBottom == false) { return }
+						if (this.isGenerating == true) {
+							this.performGroupStreamScrollToBottom()
+						} else {
+							this.scrollToBottom()
+						}
+					}, CHAT_STREAM_SCROLL_DELAY_MS)
+				},
+				scrollToBottom(): void {
+					this.streamFollowBottom = true
+					this.resetMessageWindowToRecent()
+					this.isAtBottom = true
+					if (this.isGenerating == true) {
+						this.scheduleGroupStreamScroll()
+						return
+					}
+					this.clearGroupStreamScrollTimer()
+					this.scrollTop = 0
+					setTimeout(() => {
+						if (this.pageVisible == false) { return }
+						this.scrollTop = CHAT_IDLE_SCROLL_BOTTOM_TOP
 					this.isAtBottom = true
 					this.scheduleMeasureMessageScroll()
 				}, 80)
@@ -710,31 +895,36 @@
 			scrollToBottomIfPinned(): void {
 				this.refreshMessagesView()
 				this.scheduleMeasureMessageScroll()
-				if (this.isAtBottom == true) {
+				const shouldFollow = this.isGenerating == true ? this.streamFollowBottom : this.isAtBottom == true
+				if (shouldFollow == true) {
 					this.scrollToBottom()
 				}
 			},
-			saveMessages(): void {
-				if (this.groupId == '' || this.sessionId == '') { return }
-				saveGroupMessages(this.groupId, this.sessionId, this.messages)
+			saveMessages(): boolean {
+				if (this.groupId == '' || this.sessionId == '') { return false }
+				return saveGroupMessages(this.groupId, this.sessionId, this.messages)
 			},
 			sendMessage(): void {
 				const text = this.inputText.trim()
 				if (text == '') { return }
 				if (this.isGenerating == true) { return }
-				this.inputText = ''
-				this.showToolPanel = false
 				const profile = loadChatUserProfile()
 				this.userNickname = profile.nickname
 				this.userAvatar = profile.avatar
 				const msg = createGroupUserMessage(this.groupId, this.sessionId, text, profile.nickname)
 				this.messages.push(msg)
-				this.saveMessages()
+				if (this.saveMessages() == false) {
+					this.messages.splice(this.messages.length - 1, 1)
+					uni.showToast({ position: 'bottom', title: '消息保存失败', icon: 'none' })
+					return
+				}
+				this.inputText = ''
+				this.showToolPanel = false
 				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
 				const started = startGroupChatTurn(this.groupId, this.sessionId, '用户发送消息', true)
 				if (started == false) {
-					uni.showToast({ position: 'bottom', title: '群里还没有可发言成员', icon: 'none' })
+					uni.showToast({ position: 'bottom', title: '讨论启动失败，请检查成员或存储', icon: 'none' })
 				}
 				this.isGenerating = isGroupChatTurnRunning(this.sessionId)
 			},
@@ -754,9 +944,10 @@
 				if (this.consumeToolbarSwipeClick() == true) { return }
 				if (this.isGenerating == true) { return }
 				this.showToolPanel = false
+				this.scrollToBottom()
 				const started = startGroupChatTurn(this.groupId, this.sessionId, '用户要求继续讨论', true)
 				if (started == false) {
-					uni.showToast({ position: 'bottom', title: '群里还没有可发言成员', icon: 'none' })
+					uni.showToast({ position: 'bottom', title: '讨论启动失败，请检查成员或存储', icon: 'none' })
 				}
 				this.isGenerating = isGroupChatTurnRunning(this.sessionId)
 			},
@@ -773,7 +964,10 @@
 				this.userAvatar = profile.avatar
 				const msg = createGroupUserImageMessage(this.groupId, this.sessionId, imagePath, profile.nickname)
 				this.messages.push(msg)
-				this.saveMessages()
+				if (this.saveMessages() == false) {
+					this.messages.splice(this.messages.length - 1, 1)
+					return -1
+				}
 				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
 				return this.messages.length - 1
@@ -784,13 +978,17 @@
 					return
 				}
 				const msgIndex = this.addGroupImageMessage(imagePath)
+				if (msgIndex < 0) {
+					uni.showToast({ position: 'bottom', title: '图片消息保存失败', icon: 'none' })
+					return
+				}
 				this.startGenerationForImage(imagePath, fallbackReason, msgIndex)
 			},
 			startGroupGenerationForMedia(reason: string): void {
 				if (this.isGenerating == true) { return }
 				const started = startGroupChatTurn(this.groupId, this.sessionId, reason, true)
 				if (started == false) {
-					uni.showToast({ position: 'bottom', title: '群里还没有可发言成员', icon: 'none' })
+					uni.showToast({ position: 'bottom', title: '讨论启动失败，请检查成员或存储', icon: 'none' })
 				}
 				this.isGenerating = isGroupChatTurnRunning(this.sessionId)
 			},
@@ -1019,8 +1217,14 @@
 					itemList: ['撤回这条成员消息', '跳转私聊'],
 					success: (res) => {
 						if (res.tapIndex == 0) {
-							revokeGroupAgentMessage(this.groupId, this.sessionId, id)
+							const keepRecent = this.isAtBottom == true
+							if (revokeGroupAgentMessage(this.groupId, this.sessionId, id) == false) {
+								uni.showToast({ position: 'bottom', title: '撤回失败，请重试', icon: 'none' })
+								return
+							}
 							this.messages = getGroupMessages(this.groupId, this.sessionId)
+							this.syncMessageWindowBounds(keepRecent)
+							this.scheduleMeasureMessageScroll()
 						} else if (res.tapIndex == 1) {
 							this.openAgentPrivateChat(msg)
 						}
@@ -1075,6 +1279,10 @@
 		padding-left: 6px;
 		padding-right: 6px;
 		background-color: #FAF7F5;
+	}
+
+	.message-window-item {
+		flex-direction: column;
 	}
 
 	.message-scroll-wrap {

@@ -105,7 +105,7 @@
 		buildGroupHistoryPreviewPayload,
 		deleteGroupHistoryContextById,
 	} from '@/utils/history-group-context-service.uts'
-	import { getActiveAgentRuntimeId, setActiveConversationRuntimeId } from '@/utils/runtime-state.uts'
+	import { getActiveAgentRuntimeId, setActiveAgentRuntimeId, setActiveConversationRuntimeId } from '@/utils/runtime-state.uts'
 	import {
 		buildAllHistoryIds,
 		buildHistoryDialogJson,
@@ -154,8 +154,8 @@
 			},
 
 			loadHistory() {
-				this.activeAgentId = getActiveAgentRuntimeId()
 				try {
+					this.activeAgentId = getActiveAgentRuntimeId()
 					const list = getConversations()
 					if (this.activeAgentId == '') {
 						this.historyList = list
@@ -168,13 +168,18 @@
 						this.historyList = filtered
 					}
 				} catch (_e: any) {
-					this.historyList = []
+					uni.showToast({ position: 'bottom', title: '历史记录加载失败，请重试', icon: 'none' })
+					return
 				}
 				this.loadGroupHistory()
 			},
 
 			loadGroupHistory(): void {
-				this.groupHistoryList = buildGroupHistoryContextItems(this.activeAgentId)
+				try {
+					this.groupHistoryList = buildGroupHistoryContextItems(this.activeAgentId)
+				} catch (_e: any) {
+					uni.showToast({ position: 'bottom', title: '群聊上下文加载失败，请重试', icon: 'none' })
+				}
 			},
 
 			switchTab(tab: string): void {
@@ -246,7 +251,9 @@
 							let failedCount = 0
 							for (let i = 0; i < this.selectedIds.length; i++) {
 								if (this.activeTab == 'group') {
-									this.deleteGroupHistoryById(this.selectedIds[i])
+									if (this.deleteGroupHistoryById(this.selectedIds[i]) == false) {
+										failedCount++
+									}
 								} else {
 									if (deleteConversation(this.selectedIds[i]) == false) {
 										failedCount++
@@ -311,17 +318,22 @@
 				const tab = this.activeTab
 				let previewJson = '[]'
 				let subtitle = ''
-				if (tab == 'group') {
-					const payload = buildGroupHistoryPreviewPayload(item)
-					previewJson = payload.previewJson
-					subtitle = payload.subtitle
-				} else {
-					const id = item['id'] as string | null
-					let messages: UTSJSONObject[] = []
-					if (id != null && id != '') { messages = getMessages(id) }
-					const clean = buildHistoryDialogJson(messages, false)
-					previewJson = JSON.stringify(clean, null, 2)
-					subtitle = '仅展示对话 JSON，已过滤思考过程、工具调用和工具结果 · ' + clean.length + ' 条'
+				try {
+					if (tab == 'group') {
+						const payload = buildGroupHistoryPreviewPayload(item)
+						previewJson = payload.previewJson
+						subtitle = payload.subtitle
+					} else {
+						const id = item['id'] as string | null
+						let messages: UTSJSONObject[] = []
+						if (id != null && id != '') { messages = getMessages(id) }
+						const clean = buildHistoryDialogJson(messages, false)
+						previewJson = JSON.stringify(clean, null, 2)
+						subtitle = '仅展示对话 JSON，已过滤思考过程、工具调用和工具结果 · ' + clean.length + ' 条'
+					}
+				} catch (_e: any) {
+					uni.showToast({ position: 'bottom', title: '历史详情加载失败，请重试', icon: 'none' })
+					return
 				}
 				this.previewItem = item
 				this.previewTab = tab
@@ -350,15 +362,22 @@
 					uni.showToast({ position: 'bottom', title: '这是群聊上下文快照，不是会话', icon: 'none' })
 					return
 				}
-				setActiveConversationRuntimeId(item['id'] as string)
+				const conversationId = item['id'] as string | null
+				const agentId = item['agent_id'] as string | null
+				if (conversationId == null || conversationId == '' || agentId == null || agentId == '') {
+					uni.showToast({ position: 'bottom', title: '对话归属信息缺失', icon: 'none' })
+					return
+				}
+				setActiveAgentRuntimeId(agentId)
+				setActiveConversationRuntimeId(conversationId)
 				uni.redirectTo({
 					url: '/pages/chat/chat'
 				})
 			},
 
 
-			deleteGroupHistoryById(id: string): void {
-				deleteGroupHistoryContextById(this.activeAgentId, id)
+			deleteGroupHistoryById(id: string): boolean {
+				return deleteGroupHistoryContextById(this.activeAgentId, id)
 			},
 
 			/** 导出对话为 Markdown，并复制到剪贴板 */
@@ -372,7 +391,13 @@
 				const modelRaw = item['model'] as string | null
 				const title = titleRaw != null && titleRaw != '' ? titleRaw : '未命名对话'
 				const model = modelRaw != null ? modelRaw : ''
-				const msgs = getMessages(id)
+				let msgs: UTSJSONObject[] = []
+				try {
+					msgs = getMessages(id)
+				} catch (_e: any) {
+					uni.showToast({ position: 'bottom', title: '对话导出失败，消息读取异常', icon: 'none' })
+					return
+				}
 				let markdown = '# ' + title + '\n\n'
 				if (model != '') {
 					markdown += '> Model: ' + model + '\n\n'
@@ -418,7 +443,9 @@
 							for (let i = 0; i < list.length; i++) {
 								const id = list[i]['id'] as string
 								if (this.activeTab == 'group') {
-									this.deleteGroupHistoryById(id)
+									if (this.deleteGroupHistoryById(id) == false) {
+										failedCount++
+									}
 								} else {
 									if (deleteConversation(id) == false) {
 										failedCount++

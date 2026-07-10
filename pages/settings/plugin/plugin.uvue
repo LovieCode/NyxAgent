@@ -12,7 +12,7 @@
 				<text class="plugin-desc">为聊天提供联网搜索能力。可选择免费 SearXNG 或调用 AI 提供商内置搜索（Grok / 豆包 等）。</text>
 				<view class="setting-row" style="margin-top: 10px;">
 					<text class="setting-label">启用网络搜索</text>
-					<rice-switch v-model="webSearchEnabled" @change="saveSettings" />
+					<rice-switch v-model="webSearchEnabled" @change="toggleWebSearch" />
 				</view>
 				<view v-if="webSearchEnabled">
 					<text class="input-label" style="margin-top: 10px;">搜索引擎</text>
@@ -68,7 +68,7 @@
 				<text class="plugin-desc">把 AstrBot 当成远程执行器：App 里的 Agent 可以把复杂任务交给 AstrBot，拿到结果后再验收并回复用户。</text>
 				<view class="setting-row" style="margin-top: 10px;">
 					<text class="setting-label">启用 AstrBot 工具</text>
-					<rice-switch v-model="astrBotEnabled" @change="saveSettings" />
+					<rice-switch v-model="astrBotEnabled" @change="toggleAstrBot" />
 				</view>
 				<view v-if="astrBotEnabled">
 					<view class="input-wrap" style="margin-top: 10px;">
@@ -167,8 +167,8 @@
 	 * 插件设置子页面 - GitHub 代理 / 网络搜索配置
 	 */
 	import { getAllProviders, getProviderModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
-	import { getAppSetting, setAppSetting } from '@/utils/database.uts'
-	import { getAstrBotConfig, saveAstrBotSettings, testAstrBotConnection } from '@/utils/astrbot-service.uts'
+	import { getAppSetting, setAppSettings } from '@/utils/database.uts'
+	import { ASTRBOT_API_KEY_KEY, ASTRBOT_BASE_URL_KEY, ASTRBOT_CONFIG_ID_KEY, ASTRBOT_ENABLED_KEY, ASTRBOT_SESSION_ID_KEY, ASTRBOT_USERNAME_KEY, getAstrBotConfig, normalizeAstrBotBaseUrl, testAstrBotConnection } from '@/utils/astrbot-service.uts'
 
 	export default {
 		data() {
@@ -221,20 +221,29 @@
 				this.loadSearchProviderModels()
 			},
 
-			saveSettings() {
-				setAppSetting('settings_gh_proxy_enabled', this.ghProxyEnabled ? 'true' : 'false')
-				setAppSetting('settings_gh_proxy_domain', this.ghProxyDomain)
-				setAppSetting('settings_web_search_enabled', this.webSearchEnabled ? 'true' : 'false')
-				setAppSetting('settings_web_search_provider', this.webSearchProvider)
-				setAppSetting('settings_web_search_provider_id', this.webSearchProviderId)
-				setAppSetting('settings_web_search_model', this.webSearchModel)
-				setAppSetting('settings_web_search_instance', this.webSearchInstance)
-				saveAstrBotSettings(this.astrBotEnabled, this.astrBotBaseUrl, this.astrBotApiKey, this.astrBotUsername, this.astrBotSessionId, this.astrBotConfigId)
+			saveSettings(): boolean {
+				const saved = setAppSettings(
+					[
+						'settings_gh_proxy_enabled', 'settings_gh_proxy_domain',
+						'settings_web_search_enabled', 'settings_web_search_provider', 'settings_web_search_provider_id', 'settings_web_search_model', 'settings_web_search_instance',
+						ASTRBOT_ENABLED_KEY, ASTRBOT_BASE_URL_KEY, ASTRBOT_API_KEY_KEY, ASTRBOT_USERNAME_KEY, ASTRBOT_SESSION_ID_KEY, ASTRBOT_CONFIG_ID_KEY,
+					],
+					[
+						this.ghProxyEnabled ? 'true' : 'false', this.ghProxyDomain,
+						this.webSearchEnabled ? 'true' : 'false', this.webSearchProvider, this.webSearchProviderId, this.webSearchModel, this.webSearchInstance,
+						this.astrBotEnabled ? 'true' : 'false', normalizeAstrBotBaseUrl(this.astrBotBaseUrl), this.astrBotApiKey.trim(), this.astrBotUsername.trim() != '' ? this.astrBotUsername.trim() : 'nyx-agent', this.astrBotSessionId.trim(), this.astrBotConfigId.trim(),
+					],
+				)
+				if (saved == false) {
+					uni.showToast({ position: 'bottom', title: '保存插件设置失败，请重试', icon: 'none' })
+					return false
+				}
+				return true
 			},
 
 			testAstrBot(): void {
 				if (this.astrBotTesting == true) { return }
-				this.saveSettings()
+				if (this.saveSettings() == false) { return }
 				this.astrBotTesting = true
 				testAstrBotConnection().then((result) => {
 					this.astrBotTesting = false
@@ -247,22 +256,34 @@
 			},
 
 			selectProvider(provider: string) {
+				const oldProvider = this.webSearchProvider
 				this.webSearchProvider = provider
-				this.saveSettings()
+				if (this.saveSettings() == false) {
+					this.webSearchProvider = oldProvider
+				}
 			},
 
 			selectSearchProvider(provider: UTSJSONObject) {
+				const oldProviderId = this.webSearchProviderId
+				const oldModel = this.webSearchModel
 				const id = provider['id'] as string | null
 				this.webSearchProviderId = (id != null) ? id : ''
 				this.webSearchModel = ''
 				this.loadSearchProviderModels()
-				this.saveSettings()
+				if (this.saveSettings() == false) {
+					this.webSearchProviderId = oldProviderId
+					this.webSearchModel = oldModel
+					this.loadSearchProviderModels()
+				}
 			},
 
 			selectSearchModel(model: UTSJSONObject) {
+				const oldModel = this.webSearchModel
 				const id = model['id'] as string | null
 				this.webSearchModel = (id != null) ? id : ''
-				this.saveSettings()
+				if (this.saveSettings() == false) {
+					this.webSearchModel = oldModel
+				}
 			},
 
 			loadSearchProviderModels() {
@@ -303,7 +324,21 @@
 
 			toggleGhProxy() {
 				// rice-switch 的 v-model 已自动同步值
-				this.saveSettings()
+				if (this.saveSettings() == false) {
+					this.ghProxyEnabled = !this.ghProxyEnabled
+				}
+			},
+
+			toggleWebSearch() {
+				if (this.saveSettings() == false) {
+					this.webSearchEnabled = !this.webSearchEnabled
+				}
+			},
+
+			toggleAstrBot() {
+				if (this.saveSettings() == false) {
+					this.astrBotEnabled = !this.astrBotEnabled
+				}
 			}
 		}
 	}

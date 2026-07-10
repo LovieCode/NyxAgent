@@ -1,0 +1,21 @@
+/**
+ * 计算页面需要手动补偿的键盘高度。
+ * 部分设备会先缩小 windowHeight，部分设备完全不缩小，因此只补系统未处理的差额。
+ */
+export function resolveKeyboardInset(keyboardHeight: number, baselineWindowHeight: number, currentWindowHeight: number): number {
+	let safeKeyboardHeight = keyboardHeight
+	if (safeKeyboardHeight < 0) {
+		safeKeyboardHeight = 0
+	}
+	if (safeKeyboardHeight == 0 || baselineWindowHeight <= 0 || currentWindowHeight <= 0) {
+		return safeKeyboardHeight
+	}
+	let resizedHeight = baselineWindowHeight - currentWindowHeight
+	if (resizedHeight <= 0) {
+		return safeKeyboardHeight
+	}
+	if (resizedHeight >= safeKeyboardHeight) {
+		return 0
+	}
+	return safeKeyboardHeight - resizedHeight
+}

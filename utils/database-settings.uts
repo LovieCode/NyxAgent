@@ -115,6 +115,7 @@ export function getAllProviders(): UTSJSONObject[] {
 	const db = getDb()
 	const result = db.query('SELECT * FROM providers ORDER BY enabled DESC, created_at ASC, id ASC')
 	db.close()
+	assertSqlSuccess(result, '读取模型提供商失败')
 	return rowsToObjects(result)
 }
 
@@ -158,18 +159,26 @@ export function initDefaultProviders(): void {
 
 	const db = getDb()
 	const now = Date.now()
-	for (let i = 0; i < defaults.length; i++) {
-		const p = defaults[i]
-		const id: string = p['id'] as string
-		const name: string = p['name'] as string
-		const apiBase: string = p['api_base'] as string
-		const apiKey: string = p['api_key'] as string
-		const models: string = p['models'] as string
-		const enabled: number = p['enabled'] as number
-		db.run(
-			'INSERT INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-			[id, name, apiBase, apiKey, models, enabled, now, now]
-		)
+	try {
+		assertSqlSuccess(db.beginTransaction(), '无法开始默认模型提供商初始化事务')
+		for (let i = 0; i < defaults.length; i++) {
+			const p = defaults[i]
+			const id: string = p['id'] as string
+			const name: string = p['name'] as string
+			const apiBase: string = p['api_base'] as string
+			const apiKey: string = p['api_key'] as string
+			const models: string = p['models'] as string
+			const enabled: number = p['enabled'] as number
+			assertSqlSuccess(db.run(
+				'INSERT INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+				[id, name, apiBase, apiKey, models, enabled, now, now]
+			), '初始化默认模型提供商失败')
+		}
+		assertSqlSuccess(db.commit(), '无法提交默认模型提供商初始化事务')
+	} catch (e: any) {
+		db.rollback()
+		db.close()
+		throw e
 	}
 	db.close()
 }
@@ -184,43 +193,81 @@ export function saveProvider(
 	apiKey: string,
 	models: string,
 	enabled: boolean
-): void {
+): boolean {
 	const db = getDb()
+	ensureProvidersTable(db)
 	const now = Date.now()
-	// 用 tableExists 替代 SELECT 查询，避免 Android 单行结果问题
-	const tableExists = db.tableExists('providers')
-	if (tableExists == false) {
-		// 表不存在时直接 INSERT
-		db.run(
-			'INSERT INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-			[id, name, apiBase, apiKey, models, enabled ? 1 : 0, now, now]
-		)
-	} else {
-		// 直接用 INSERT OR REPLACE 简化逻辑
-		db.run(
+	let success = true
+	try {
+		assertSqlSuccess(
+			db.run(
 			'INSERT OR REPLACE INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
 			[id, name, apiBase, apiKey, models, enabled ? 1 : 0, now, now]
+			),
+			'保存提供商',
 		)
+	} catch (_e: any) {
+		success = false
 	}
 	db.close()
+	return success
 }
 
 /**
  * 删除提供商
  */
-export function deleteProvider(id: string): void {
+export function deleteProvider(id: string): boolean {
 	const db = getDb()
-	db.run('DELETE FROM providers WHERE id = ? AND ? = ?', [id, 1, 1])
+	let success = true
+	try {
+		const result = db.run('DELETE FROM providers WHERE id = ? AND ? = ?', [id, 1, 1])
+		assertSqlSuccess(result, '删除提供商')
+		const changes = result.changes
+		success = changes != null && changes > 0
+	} catch (_e: any) {
+		success = false
+	}
 	db.close()
+	return success
 }
 
 /**
  * 切换提供商启用状态
  */
-export function toggleProvider(id: string, enabled: boolean): void {
+export function toggleProvider(id: string, enabled: boolean): boolean {
 	const db = getDb()
-	db.run('UPDATE providers SET enabled=?, updated_at=? WHERE id=?', [enabled ? 1 : 0, Date.now(), id])
+	let success = true
+	try {
+		const result = db.run('UPDATE providers SET enabled=?, updated_at=? WHERE id=?', [enabled ? 1 : 0, Date.now(), id])
+		assertSqlSuccess(result, '更新提供商状态')
+		const changes = result.changes
+		success = changes != null && changes > 0
+	} catch (_e: any) {
+		success = false
+	}
 	db.close()
+	return success
+}
+
+/** 启用指定提供商并禁用其他提供商。 */
+export function activateProvider(id: string): boolean {
+	if (id == '') { return false }
+	const db = getDb()
+	ensureProvidersTable(db)
+	let success = true
+	try {
+		const result = db.run(
+			'UPDATE providers SET enabled=CASE WHEN id=? THEN 1 ELSE 0 END, updated_at=?',
+			[id, Date.now()],
+		)
+		assertSqlSuccess(result, '切换当前提供商')
+		const changes = result.changes
+		success = changes != null && changes > 0
+	} catch (_e: any) {
+		success = false
+	}
+	db.close()
+	return success
 }
 
 // ==================== 应用设置（SQLite app_settings） ====================
@@ -248,24 +295,61 @@ export function getAppSetting(key: string): string | null {
 /**
  * 保存应用设置
  */
-export function setAppSetting(key: string, value: string): void {
-	if (key == '') { return }
+export function setAppSetting(key: string, value: string): boolean {
+	if (key == '') { return false }
 	const db = getDb()
 	ensureAppSettingsTable(db)
-	if (value == '') {
-		db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [key, ''])
-	} else {
-		db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [key, value])
+	let success = true
+	try {
+		assertSqlSuccess(
+			db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [key, value]),
+			'保存应用设置',
+		)
+	} catch (_e: any) {
+		success = false
 	}
 	db.close()
+	return success
 }
 
-export function removeAppSetting(key: string): void {
-	if (key == '') { return }
+/** 在一个事务内批量保存应用设置，避免页面出现部分保存。 */
+export function setAppSettings(keys: string[], values: string[]): boolean {
+	if (keys.length == 0 || keys.length != values.length) { return false }
+	for (let i = 0; i < keys.length; i++) {
+		if (keys[i] == '') { return false }
+	}
 	const db = getDb()
 	ensureAppSettingsTable(db)
-	db.run('DELETE FROM app_settings WHERE key = ?', [key])
+	let success = true
+	try {
+		assertSqlSuccess(db.beginTransaction(), '开始保存应用设置')
+		for (let i = 0; i < keys.length; i++) {
+			assertSqlSuccess(
+				db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [keys[i], values[i]]),
+				'保存应用设置',
+			)
+		}
+		assertSqlSuccess(db.commit(), '提交应用设置')
+	} catch (_e: any) {
+		db.rollback()
+		success = false
+	}
 	db.close()
+	return success
+}
+
+export function removeAppSetting(key: string): boolean {
+	if (key == '') { return false }
+	const db = getDb()
+	ensureAppSettingsTable(db)
+	let success = true
+	try {
+		assertSqlSuccess(db.run('DELETE FROM app_settings WHERE key = ?', [key]), '删除应用设置')
+	} catch (_e: any) {
+		success = false
+	}
+	db.close()
+	return success
 }
 
 /**

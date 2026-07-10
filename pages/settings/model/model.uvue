@@ -176,8 +176,12 @@
 			},
 
 			selectModel(id: string) {
+				const previousModel = this.selectedModel
 				this.selectedModel = id
-				this.saveSettings()
+				const saved = this.saveSettings()
+				if (saved == false) {
+					this.selectedModel = previousModel
+				}
 			},
 
 			formatModelContext(context: number | null): string {
@@ -187,18 +191,27 @@
 				return Math.floor(context / 1000).toString() + 'k'
 			},
 
-			saveSettings() {
+			saveSettings(): boolean {
 				if (this.selectedProvider == '' || this.selectedModel == '') {
 					uni.showToast({ title: '请选择提供商和模型', icon: 'none' })
-					return
+					return false
 				}
 				if (this.pendingAgentId != '') {
 					// 智能体专用：存 "providerId||modelId"
-					updateAgentModel(this.pendingAgentId, this.selectedProvider + '||' + this.selectedModel)
+					const saved = updateAgentModel(this.pendingAgentId, this.selectedProvider + '||' + this.selectedModel)
+					if (saved == false) {
+						uni.showToast({ title: '保存智能体模型失败，请重试', icon: 'none' })
+						return false
+					}
 				} else {
-					setDefaultTaskModel('chat', this.selectedProvider, this.selectedModel)
-					setAppSetting('settings_model', this.selectedModel)
+					const defaultSaved = setDefaultTaskModel('chat', this.selectedProvider, this.selectedModel)
+					const legacySaved = setAppSetting('settings_model', this.selectedModel)
+					if (defaultSaved == false || legacySaved == false) {
+						uni.showToast({ title: '保存默认模型失败，请重试', icon: 'none' })
+						return false
+					}
 				}
+				return true
 			}
 		}
 	}

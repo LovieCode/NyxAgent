@@ -4,6 +4,7 @@
  * 只放 SQLite 连接、结果转换、字段读取和 schema ensure，业务 DAO 分散到独立模块。
  */
 import { xSqlite, SQLiteResult } from '@/uni_modules/laoqianjunzi-sqlite'
+import { APP_ERROR_CATEGORY_DATABASE, formatAppErrorForLog, reportAppError } from '@/utils/app-error.uts'
 
 /** 数据库文件名 */
 const DB_NAME = 'agent_chat.db'
@@ -47,8 +48,27 @@ export function rowsToObjects(result: SQLiteResult): UTSJSONObject[] {
 export function assertSqlSuccess(result: SQLiteResult, operation: string): void {
 	const error = result.error
 	if (error != null && error != '') {
-		throw new Error(operation + ': ' + error)
+		const appError = reportAppError(
+			'SQLITE_OPERATION_FAILED',
+			APP_ERROR_CATEGORY_DATABASE,
+			operation,
+			'数据操作失败，请重试',
+			error,
+			true,
+		)
+		throw new Error(formatAppErrorForLog(appError))
 	}
+}
+
+export function hasSqliteColumn(db: xSqlite, tableName: string, columnName: string): boolean {
+	const result = db.query('PRAGMA table_info(' + tableName + ')')
+	assertSqlSuccess(result, '读取数据库表结构失败：' + tableName)
+	const columns = rowsToObjects(result)
+	for (let i = 0; i < columns.length; i++) {
+		const name = columns[i]['name'] as string | null
+		if (name == columnName) { return true }
+	}
+	return false
 }
 
 export function runSqlOrThrow(db: xSqlite, sql: string, params: any[] = []): void {
@@ -136,10 +156,11 @@ export function ensureGroupChatTables(db: xSqlite): void {
 		'payload_json TEXT NOT NULL DEFAULT \'{}\',' +
 		'updated_at INTEGER NOT NULL DEFAULT 0)'
 	)
-	try {
-		db.run('ALTER TABLE group_chat_messages ADD COLUMN visible_agent_ids_json TEXT NOT NULL DEFAULT \'[]\'')
-	} catch (_e: any) {
-		// 列已存在，忽略
+	if (hasSqliteColumn(db, 'group_chat_messages', 'visible_agent_ids_json') == false) {
+		assertSqlSuccess(
+			db.run('ALTER TABLE group_chat_messages ADD COLUMN visible_agent_ids_json TEXT NOT NULL DEFAULT \'[]\''),
+			'迁移群消息可见成员字段失败',
+		)
 	}
 	db.run(
 		'CREATE TABLE IF NOT EXISTS group_agent_context_records (' +

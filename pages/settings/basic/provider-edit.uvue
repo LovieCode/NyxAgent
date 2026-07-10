@@ -385,23 +385,24 @@
 				this.fetchedModelIds = []
 				this.selectedModelIndexes = []
 				this.pickerSearchText = ''
-				this.autoSaveProvider()
+				const saved = this.autoSaveProvider()
+				if (saved == false) { return }
 				uni.showToast({ position: 'bottom',  title: '已添加 ' + addedCount + ' 个模型', icon: 'success' })
 			},
 
-			autoSaveProvider() {
-				if (this.isNew == true) { return }
-				this.saveProvider(false)
+			autoSaveProvider(): boolean {
+				if (this.isNew == true) { return true }
+				return this.saveProvider(false)
 			},
 
 			saveProviderAndBack() {
 				this.saveProvider(true)
 			},
 
-			saveProvider(navigateAfterSave: boolean) {
+			saveProvider(navigateAfterSave: boolean): boolean {
 				if (this.editId == '') {
 					uni.showToast({ position: 'bottom',  title: '请输入标识', icon: 'none' })
-					return
+					return false
 				}
 				if (this.editName == '') {
 					this.editName = this.editId
@@ -414,36 +415,44 @@
 					this.editApiBase = this.editApiBase.trim()
 					if (this.editApiKey == '') {
 						uni.showToast({ position: 'bottom',  title: '先填写 API Key', icon: 'none' })
-						return
+						return false
 					}
 					if (this.editApiBase == '') {
 						uni.showToast({ position: 'bottom',  title: '先填写接口地址', icon: 'none' })
-						return
+						return false
 					}
 				}
 				// 同步字符串 → 数字，清理空模型
 				const validModels = normalizeProviderModelsForSave(this.editModels)
 				if (this.fromFirstRunGuide == true && navigateAfterSave == true && validModels.length == 0) {
 					uni.showToast({ position: 'bottom',  title: '先添加或获取一个模型', icon: 'none' })
-					return
+					return false
 				}
-				saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, true)
+				const providerSaved = saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, true)
+				if (providerSaved == false) {
+					uni.showToast({ position: 'bottom', title: '保存提供商失败，请重试', icon: 'none' })
+					return false
+				}
 				if (navigateAfterSave == false) {
-					return
+					return true
 				}
 				if (this.fromFirstRunGuide == true) {
 					const defaultModel = validModels[0].id
-					setActiveProvider(this.editId)
-					setDefaultTaskModel('chat', this.editId, defaultModel)
+					const activeSaved = setActiveProvider(this.editId)
+					const defaultSaved = setDefaultTaskModel('chat', this.editId, defaultModel)
 					// LEGACY_MODEL_SETTINGS: 旧聊天创建逻辑还读 settings_*；默认模型页统一后可清空。
-					setAppSetting('settings_provider_id', this.editId)
-					setAppSetting('settings_model', defaultModel)
-					setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true')
+					const legacyProviderSaved = setAppSetting('settings_provider_id', this.editId)
+					const legacyModelSaved = setAppSetting('settings_model', defaultModel)
+					const guideSaved = setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true')
+					if (activeSaved == false || defaultSaved == false || legacyProviderSaved == false || legacyModelSaved == false || guideSaved == false) {
+						uni.showToast({ position: 'bottom', title: '模型配置保存不完整，请重试', icon: 'none' })
+						return false
+					}
 					uni.showToast({ position: 'bottom',  title: '已接入，可以开始聊天', icon: 'success' })
 					setTimeout(() => {
 						uni.navigateBack()
 					}, 500)
-					return
+					return true
 				}
 				uni.showToast({ position: 'bottom',  title: '已保存', icon: 'success' })
 
@@ -468,6 +477,7 @@
 						uni.navigateBack()
 					}, 500)
 				}
+				return true
 			}
 		}
 	}

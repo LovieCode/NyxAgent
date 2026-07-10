@@ -12,6 +12,7 @@ import {
 	ToolCallInfo,
 	ToolResultInfo,
 } from '@/uni_modules/agent-core/utssdk/types.uts'
+import { APP_ERROR_CATEGORY_RUNTIME, reportAppError } from '@/utils/app-error.uts'
 
 // 重导出 SDK 类型，业务代码无需改 import 路径
 export {
@@ -75,6 +76,14 @@ export class AgentEventStream {
 		if (this._ended == true) return
 		this.abortHandler = null
 		this._error = message
+		reportAppError(
+			'AGENT_STREAM_FAILED',
+			APP_ERROR_CATEGORY_RUNTIME,
+			'agent_event_stream',
+			'生成失败，请重试',
+			message,
+			true,
+		)
 		this.push({ type: 'error', error: message })
 		this.push({ type: 'agent_end' })
 		this._ended = true

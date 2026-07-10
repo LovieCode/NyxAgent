@@ -5,7 +5,7 @@
 				<text v-if="readOnly == false" class="done-btn" @click="handleSave">{{ saveText }}</text>
 			</template>
 		</NavBar>
-		<view class="editor-wrap">
+		<view class="editor-wrap" :style="{ marginBottom: keyboardInset + 'px' }">
 			<slot name="header"></slot>
 			<view class="editor-meta" v-if="subtitle != ''">
 				<text class="editor-meta-text">{{ subtitle }}</text>
@@ -29,6 +29,8 @@
 </template>
 
 <script lang="uts">
+	import { resolveKeyboardInset } from '@/utils/keyboard-inset.uts'
+
 	/**
 	 * 通用全屏文本编辑组件。
 	 * 只负责编辑体验，不碰 storage / 文件系统 / 业务保存。
@@ -69,6 +71,9 @@
 		data() {
 			return {
 				localText: '' as string,
+				keyboardInset: 0 as number,
+				keyboardBaseWindowHeight: 0 as number,
+				keyboardHeightListenerId: -1 as number,
 			}
 		},
 		watch: {
@@ -80,6 +85,33 @@
 		},
 		created() {
 			this.localText = this.value
+		},
+		mounted() {
+			try {
+				const windowInfo = uni.getWindowInfo()
+				this.keyboardBaseWindowHeight = windowInfo.windowHeight
+			} catch (error) {
+				this.keyboardBaseWindowHeight = 0
+			}
+			this.keyboardHeightListenerId = uni.onKeyboardHeightChange((res: OnKeyboardHeightChangeCallbackResult) => {
+				let currentWindowHeight = this.keyboardBaseWindowHeight
+				try {
+					const windowInfo = uni.getWindowInfo()
+					currentWindowHeight = windowInfo.windowHeight
+				} catch (error) {
+					currentWindowHeight = this.keyboardBaseWindowHeight
+				}
+				if (res.height == 0 && currentWindowHeight > 0) {
+					this.keyboardBaseWindowHeight = currentWindowHeight
+				}
+				this.keyboardInset = resolveKeyboardInset(res.height, this.keyboardBaseWindowHeight, currentWindowHeight)
+			})
+		},
+		unmounted() {
+			if (this.keyboardHeightListenerId != -1) {
+				uni.offKeyboardHeightChange(this.keyboardHeightListenerId)
+				this.keyboardHeightListenerId = -1
+			}
 		},
 		methods: {
 			handleInput() {

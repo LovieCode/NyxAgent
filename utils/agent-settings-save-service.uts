@@ -5,18 +5,9 @@
  */
 
 import {
-	updateAgent,
-	updateAgentInteractionRules,
-	updateAgentModel,
-	updateAgentGenerationSettings,
-	updateAgentTruncation,
-	updateAgentCache,
-	updateAgentHideThinking,
-	updateAgentInjectDatetime,
-	updateAgentMsgSegmentation,
-	updateAgentTTSSettings,
-	updateAgentSkills,
-	updateAgentTools,
+	filterAllowedAgentToolIdsForAgent,
+	getAgents,
+	saveAgents,
 } from '@/utils/agent.uts'
 import { updateSystemPromptForAgent } from '@/utils/database.uts'
 import { type GenerationSettings } from '@/utils/generation-settings.uts'
@@ -77,10 +68,6 @@ export function saveAgentSettings(input: AgentSettingsSaveInput, global: Generat
 	const name = input.name.trim()
 	if (name == '') { return failSave('昵称不能为空') }
 	const desc = input.desc.trim()
-	updateAgent(agentId, name, desc, input.avatar, input.systemPrompt)
-	updateAgentInteractionRules(agentId, input.interactionRules.trim())
-	updateAgentModel(agentId, input.model)
-	updateAgentTTSSettings(agentId, input.ttsVoice, input.ttsVolume, input.ttsPitch)
 	const generation = buildAgentGenerationSaveState(
 		input.useGlobalGeneration,
 		input.temperatureStr,
@@ -91,14 +78,45 @@ export function saveAgentSettings(input: AgentSettingsSaveInput, global: Generat
 		input.truncateDropCountStr,
 		global
 	)
-	updateAgentGenerationSettings(agentId, generation.temperature, generation.maxTokens, generation.maxIterations, generation.streamEnabled)
-	updateAgentTruncation(agentId, generation.truncateThreshold, generation.truncateDropCount)
-	updateAgentCache(agentId, input.cacheEnabled)
-	updateAgentHideThinking(agentId, input.hideThinking)
-	updateAgentInjectDatetime(agentId, input.injectDatetime)
-	updateAgentMsgSegmentation(agentId, input.msgSegmentation)
-	updateAgentSkills(agentId, filterExistingSkillIds(input.selectedSkillIds))
-	updateAgentTools(agentId, input.selectedToolIds)
-	updateSystemPromptForAgent(agentId, input.systemPrompt)
+	const agents = getAgents()
+	let target: UTSJSONObject | null = null
+	for (let i = 0; i < agents.length; i++) {
+		const id = agents[i]['id'] as string | null
+		if (id != null && id == agentId) {
+			target = agents[i]
+			break
+		}
+	}
+	if (target == null) { return failSave('联系人不存在，无法保存') }
+	target['name'] = name
+	target['desc'] = desc
+	target['systemPrompt'] = input.systemPrompt
+	target['interactionRules'] = input.interactionRules.trim()
+	target['model'] = input.model
+	target['time'] = '刚刚'
+	if (input.avatar != '') {
+		target['avatar'] = input.avatar
+	}
+	target['ttsVoice'] = input.ttsVoice.trim()
+	target['ttsVolume'] = input.ttsVolume.trim()
+	target['ttsPitch'] = input.ttsPitch.trim()
+	target['temperature'] = generation.temperature
+	target['maxTokens'] = generation.maxTokens
+	target['maxIterations'] = generation.maxIterations
+	target['streamEnabled'] = generation.streamEnabled
+	target['truncateThreshold'] = generation.truncateThreshold
+	target['truncateDropCount'] = generation.truncateDropCount
+	target['cacheEnabled'] = input.cacheEnabled
+	target['hideThinking'] = input.hideThinking
+	target['injectDatetime'] = input.injectDatetime
+	target['msgSegmentation'] = input.msgSegmentation
+	target['skillIds'] = filterExistingSkillIds(input.selectedSkillIds)
+	target['enabledToolIds'] = filterAllowedAgentToolIdsForAgent(input.selectedToolIds, target, false)
+	if (saveAgents(agents) == false) {
+		return failSave('保存联系人设置失败，请重试')
+	}
+	if (updateSystemPromptForAgent(agentId, input.systemPrompt) == false) {
+		return failSave('联系人已保存，但历史对话提示词同步失败，请重试')
+	}
 	return okSave(generation)
 }

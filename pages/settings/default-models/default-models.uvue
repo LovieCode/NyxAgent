@@ -158,7 +158,7 @@
 </template>
 
 <script lang="uts">
-	import { getAllProviders, setDefaultTaskModel, getAllDefaultTaskModels, getImageCaptionPrompt, setImageCaptionPrompt, getDefaultTTSSettings, setDefaultTTSSettings, TTS_ADAPTER_OPENAI_COMPAT } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { getAllProviders, setDefaultTaskModel, getAllDefaultTaskModels, getImageCaptionPrompt, setImageCaptionPrompt, getDefaultTTSSettings, setDefaultTTSSettings, setDefaultTTSModelSettings, TTS_ADAPTER_OPENAI_COMPAT } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { getSpeechTempDir, clearSpeechTempFiles } from '@/utils/speech-service.uts'
 	import {
 		defaultSpeechDisabledHint,
@@ -287,51 +287,81 @@
 			selectProvider(taskIndex: number, providerId: string) {
 				const task = this.taskList[taskIndex]
 				if (task == null) return
+				const oldProviderId = readDefaultTaskProviderId(task)
+				const oldModel = readDefaultTaskModel(task)
 				task['providerId'] = providerId
 				const firstModel = getFirstDefaultProviderModelId(providerId)
 				if (firstModel != '') {
 					task['model'] = firstModel
-					this.saveTaskModel(taskIndex)
+					if (this.saveTaskModel(taskIndex) == false) {
+						this.restoreTaskModel(taskIndex, oldProviderId, oldModel)
+					}
 					return
 				}
-				task['model'] = ''
+				this.restoreTaskModel(taskIndex, oldProviderId, oldModel)
 				uni.showToast({ title: '该提供商未配置模型', icon: 'none' })
+			},
+
+			restoreTaskModel(taskIndex: number, providerId: string, model: string) {
+				const task = this.taskList[taskIndex]
+				if (task == null) { return }
+				task['providerId'] = providerId
+				task['model'] = model
 			},
 
 			selectFollowChat(taskIndex: number) {
 				const task = this.taskList[taskIndex]
 				if (task == null) return
+				const oldProviderId = readDefaultTaskProviderId(task)
+				const oldModel = readDefaultTaskModel(task)
 				task['providerId'] = ''
 				task['model'] = ''
-				this.saveTaskModel(taskIndex)
+				if (this.saveTaskModel(taskIndex) == false) {
+					this.restoreTaskModel(taskIndex, oldProviderId, oldModel)
+				}
 			},
 
 			selectDisableVision(taskIndex: number) {
 				const task = this.taskList[taskIndex]
 				if (task == null) return
+				const oldProviderId = readDefaultTaskProviderId(task)
+				const oldModel = readDefaultTaskModel(task)
 				task['providerId'] = ''
 				task['model'] = ''
-				this.saveTaskModel(taskIndex)
+				if (this.saveTaskModel(taskIndex) == false) {
+					this.restoreTaskModel(taskIndex, oldProviderId, oldModel)
+				}
 			},
 
 			selectDisableSpeech(taskIndex: number) {
 				const task = this.taskList[taskIndex]
 				if (task == null) return
+				const oldProviderId = readDefaultTaskProviderId(task)
+				const oldModel = readDefaultTaskModel(task)
 				task['providerId'] = ''
 				task['model'] = ''
-				this.saveTaskModel(taskIndex)
+				if (this.saveTaskModel(taskIndex) == false) {
+					this.restoreTaskModel(taskIndex, oldProviderId, oldModel)
+				}
 			},
 
 			selectModel(taskIndex: number, model: string) {
 				const task = this.taskList[taskIndex]
 				if (task == null) return
+				const oldProviderId = readDefaultTaskProviderId(task)
+				const oldModel = readDefaultTaskModel(task)
 				task['model'] = model
-				this.saveTaskModel(taskIndex)
+				if (this.saveTaskModel(taskIndex) == false) {
+					this.restoreTaskModel(taskIndex, oldProviderId, oldModel)
+				}
 			},
 
 			selectTtsAdapter(adapter: string) {
+				const oldAdapter = this.ttsAdapter
 				this.ttsAdapter = adapter
-				this.saveTtsSettings()
+				if (this.saveTtsSettings() == false) {
+					this.ttsAdapter = oldAdapter
+				}
 			},
 
 			validateTtsExtraParams(): boolean {
@@ -344,14 +374,17 @@
 			},
 
 			saveTtsSettingsQuiet(): boolean {
-				if (this.validateTtsExtraParams() == false) { return false }
-				setDefaultTTSSettings(this.ttsAdapter, this.ttsVoice, this.ttsResponseFormat, this.ttsSpeed, this.ttsVolume, this.ttsPitch, this.ttsExtraParams)
-				return true
+				return setDefaultTTSSettings(this.ttsAdapter, this.ttsVoice, this.ttsResponseFormat, this.ttsSpeed, this.ttsVolume, this.ttsPitch, this.ttsExtraParams)
 			},
 
-			saveTtsSettings() {
-				if (this.saveTtsSettingsQuiet() == false) { return }
+			saveTtsSettings(): boolean {
+				if (this.validateTtsExtraParams() == false) { return false }
+				if (this.saveTtsSettingsQuiet() == false) {
+					uni.showToast({ title: '保存 TTS 参数失败，请重试', icon: 'none' })
+					return false
+				}
 				uni.showToast({ title: '已保存 TTS 参数', icon: 'success' })
+				return true
 			},
 
 			clearTtsTempFiles() {
@@ -364,36 +397,43 @@
 				uni.showToast({ title: '清理语音缓存失败', icon: 'none' })
 			},
 
-			saveTaskModel(taskIndex: number) {
+			saveTaskModel(taskIndex: number): boolean {
 				const task = this.taskList[taskIndex]
-				if (task == null) return
+				if (task == null) return false
 				const type = readDefaultTaskType(task)
 				const providerId = readDefaultTaskProviderId(task)
 				const model = readDefaultTaskModel(task)
 				if (type == 'chat' && (providerId == '' || model == '')) {
 					uni.showToast({ title: '对话模型不能为空', icon: 'none' })
-					return
+					return false
 				}
 				if (type == 'tts' && this.validateTtsExtraParams() == false) {
-					return
+					return false
+				}
+				let saved = false
+				if (type == 'tts') {
+					saved = setDefaultTTSModelSettings(providerId, model, this.ttsAdapter, this.ttsVoice, this.ttsResponseFormat, this.ttsSpeed, this.ttsVolume, this.ttsPitch, this.ttsExtraParams)
+				} else {
+					saved = setDefaultTaskModel(type, providerId, model)
+				}
+				if (saved == false) {
+					uni.showToast({ title: '保存默认任务模型失败，请重试', icon: 'none' })
+					return false
 				}
 				if (providerId == '' || model == '') {
-					setDefaultTaskModel(type, providerId, model)
-					if (type == 'tts') {
-						this.saveTtsSettingsQuiet()
-					}
 					uni.showToast({ title: '已停用默认任务模型', icon: 'none' })
-					return
-				}
-				setDefaultTaskModel(type, providerId, model)
-				if (type == 'tts') {
-					this.saveTtsSettingsQuiet()
+					return true
 				}
 				uni.showToast({ title: '已保存', icon: 'success' })
+				return true
 			},
 
-			saveImageCaptionPrompt() {
-				setImageCaptionPrompt(this.imageCaptionPrompt.trim())
+			saveImageCaptionPrompt(): boolean {
+				const saved = setImageCaptionPrompt(this.imageCaptionPrompt.trim())
+				if (saved == false) {
+					uni.showToast({ title: '保存图片转述提示词失败，请重试', icon: 'none' })
+					return false
+				}
 				this.savedImageCaptionPrompt = this.imageCaptionPrompt.trim()
 				this.imageCaptionPrompt = this.savedImageCaptionPrompt
 				this.hasUnsavedPrompt = false
@@ -401,6 +441,7 @@
 					title: '已保存',
 					icon: 'success'
 				})
+				return true
 			},
 
 			confirmLeave() {
@@ -414,12 +455,14 @@
 					success: (res) => {
 						this.isConfirmingLeave = false
 						if (res.confirm == true) {
-							this.saveImageCaptionPrompt()
+							if (this.saveImageCaptionPrompt() == true) {
+								uni.navigateBack()
+							}
 						} else {
 							this.imageCaptionPrompt = this.savedImageCaptionPrompt
 							this.hasUnsavedPrompt = false
+							uni.navigateBack()
 						}
-						uni.navigateBack()
 					},
 					fail: () => {
 						this.isConfirmingLeave = false

@@ -123,6 +123,12 @@
 			}
 		},
 		{
+			"path": "pages/settings/diagnostics/diagnostics",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/settings/about/about",
 			"style": {
 				"navigationStyle": "custom"

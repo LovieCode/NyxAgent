@@ -98,7 +98,7 @@
 						<text class="setting-title">普通聊天流式显示</text>
 						<text class="setting-desc">开启后边生成边显示；记忆整理固定非流式，不受这里影响。</text>
 					</view>
-					<rice-switch v-model="streamEnabled" @change="autoSaveSettings" />
+					<rice-switch v-model="streamEnabled" @change="saveStreamSetting" />
 				</view>
 			</view>
 		</scroll-view>
@@ -106,7 +106,7 @@
 </template>
 
 <script lang="uts">
-	import { getGlobalGenerationSettings, saveGlobalGenerationSettings, getMemoryOrganizerGenerationSettings, saveMemoryOrganizerGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
+	import { getGlobalGenerationSettings, getMemoryOrganizerGenerationSettings, saveGenerationSettings, type GenerationSettings } from '@/utils/generation-settings.uts'
 
 	export default {
 		data() {
@@ -179,26 +179,40 @@
 				} as UTSJSONObject
 			},
 
-			autoSaveSettings() {
+			autoSaveSettings(): boolean {
 				const built = this.buildCurrentSettings()
 				const settings = built['settings'] as GenerationSettings
 				const memorySettings = built['memorySettings'] as GenerationSettings
-				saveGlobalGenerationSettings(settings)
-				saveMemoryOrganizerGenerationSettings(memorySettings)
+				const saved = saveGenerationSettings(settings, memorySettings)
+				if (saved == false) {
+					uni.showToast({ title: '保存生成参数失败，请重试', icon: 'none' })
+					return false
+				}
+				return true
 			},
 
 			normalizeAndSaveSettings() {
 				const built = this.buildCurrentSettings()
 				const settings = built['settings'] as GenerationSettings
 				const memorySettings = built['memorySettings'] as GenerationSettings
-				saveGlobalGenerationSettings(settings)
-				saveMemoryOrganizerGenerationSettings(memorySettings)
+				const saved = saveGenerationSettings(settings, memorySettings)
+				if (saved == false) {
+					uni.showToast({ title: '保存生成参数失败，请重试', icon: 'none' })
+					return
+				}
 				this.temperatureStr = settings.temperature + ''
 				this.maxTokensStr = settings.maxTokens + ''
 				this.maxIterationsStr = settings.maxIterations + ''
 				this.memoryTemperatureStr = memorySettings.temperature + ''
 				this.memoryMaxTokensStr = memorySettings.maxTokens + ''
 				this.memoryMaxIterationsStr = memorySettings.maxIterations + ''
+			},
+
+			saveStreamSetting() {
+				const oldValue = !this.streamEnabled
+				if (this.autoSaveSettings() == false) {
+					this.streamEnabled = oldValue
+				}
 			},
 		}
 	}

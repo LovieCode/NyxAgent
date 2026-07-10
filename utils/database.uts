@@ -11,12 +11,18 @@ import {
 	ensureMemoryCompactionStateTable,
 	ensureProvidersTable,
 	getDb,
+	hasSqliteColumn,
 	readNumberField,
 	readObjectArrayField,
 	readStringField,
 	runSqlOrThrow,
 	rowsToObjects,
 } from '@/utils/database-core.uts'
+import {
+	APP_ERROR_CATEGORY_DATABASE,
+	formatAppErrorForLog,
+	reportAppError,
+} from '@/utils/app-error.uts'
 export * from '@/utils/database-group-chat.uts'
 export * from '@/utils/database-conversation.uts'
 export * from '@/utils/database-settings.uts'
@@ -41,8 +47,8 @@ export function getDatabaseFilePathForExport(): string {
  */
 export function initDatabase(): void {
 	const db = getDb()
-
-	db.run(
+	try {
+	assertSqlSuccess(db.run(
 		'CREATE TABLE IF NOT EXISTS conversations (' +
 		'id TEXT PRIMARY KEY,' +
 		'title TEXT NOT NULL DEFAULT \'\',' +
@@ -52,38 +58,39 @@ export function initDatabase(): void {
 		'updated_at INTEGER NOT NULL DEFAULT (CAST(strftime(\'%s\',\'now\') AS INTEGER) * 1000),' +
 		'message_count INTEGER NOT NULL DEFAULT 0,' +
 		'preview TEXT NOT NULL DEFAULT \'\')'
-	)
+	), '创建对话表失败')
 
-	// 兼容旧表：尝试添加 agent_id 列（表已存在时忽略）
-	try {
-		db.run('ALTER TABLE conversations ADD COLUMN agent_id TEXT NOT NULL DEFAULT \'\'')
-	} catch (_e: any) {
-		// 列已存在，忽略
+	// 兼容旧表：仅在字段缺失时执行迁移，避免每次启动制造 SQLite 错误日志。
+	if (hasSqliteColumn(db, 'conversations', 'agent_id') == false) {
+		assertSqlSuccess(
+			db.run('ALTER TABLE conversations ADD COLUMN agent_id TEXT NOT NULL DEFAULT \'\''),
+			'迁移对话 Agent 字段失败',
+		)
 	}
 
-	// 兼容旧表：尝试添加 updated_at 列
-	try {
-		db.run('ALTER TABLE conversations ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0')
-	} catch (_e: any) {
-		// 列已存在，忽略
+	if (hasSqliteColumn(db, 'conversations', 'updated_at') == false) {
+		assertSqlSuccess(
+			db.run('ALTER TABLE conversations ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0'),
+			'迁移对话更新时间字段失败',
+		)
 	}
 
-	// 兼容旧表：尝试添加 system_prompt 列
-	try {
-		db.run('ALTER TABLE conversations ADD COLUMN system_prompt TEXT NOT NULL DEFAULT \'\'')
-	} catch (_e: any) {
-		// 列已存在，忽略
+	if (hasSqliteColumn(db, 'conversations', 'system_prompt') == false) {
+		assertSqlSuccess(
+			db.run('ALTER TABLE conversations ADD COLUMN system_prompt TEXT NOT NULL DEFAULT \'\''),
+			'迁移对话提示词字段失败',
+		)
 	}
 
 	ensureProvidersTable(db)
 
-	db.run(
+	assertSqlSuccess(db.run(
 		'CREATE TABLE IF NOT EXISTS app_settings (' +
 		'key TEXT PRIMARY KEY,' +
 		'value TEXT NOT NULL DEFAULT \'\')'
-	)
+	), '创建应用设置表失败')
 
-	db.run(
+	assertSqlSuccess(db.run(
 		'CREATE TABLE IF NOT EXISTS messages (' +
 		'id INTEGER PRIMARY KEY AUTOINCREMENT,' +
 		'conversation_id TEXT NOT NULL,' +
@@ -91,14 +98,14 @@ export function initDatabase(): void {
 		'content TEXT NOT NULL DEFAULT \'\',' +
 		'timestamp INTEGER NOT NULL,' +
 		'extra TEXT NOT NULL DEFAULT \'{}\')'
-	)
+	), '创建消息表失败')
 
 	ensureConversationTokenUsageStatsTable(db)
 	ensureMemoryCompactionStateTable(db)
 	ensureAppRuntimeStateTable(db)
 	ensureGroupChatTables(db)
 
-	db.run(
+	assertSqlSuccess(db.run(
 		'CREATE TABLE IF NOT EXISTS memory_buffer (' +
 		'id TEXT PRIMARY KEY,' +
 		'agent_id TEXT NOT NULL DEFAULT \'\',' +
@@ -106,9 +113,9 @@ export function initDatabase(): void {
 		'conversation_id TEXT NOT NULL DEFAULT \'\',' +
 		'content TEXT NOT NULL DEFAULT \'\',' +
 		'updated_at INTEGER NOT NULL DEFAULT 0)'
-	)
+	), '创建记忆缓冲表失败')
 
-	db.run(
+	assertSqlSuccess(db.run(
 		'CREATE TABLE IF NOT EXISTS agent_memory_core (' +
 		'id TEXT PRIMARY KEY,' +
 		'agent_id TEXT NOT NULL DEFAULT \'\',' +
@@ -125,7 +132,33 @@ export function initDatabase(): void {
 		'updated_at INTEGER NOT NULL DEFAULT 0,' +
 		'last_used_at INTEGER NOT NULL DEFAULT 0,' +
 		'use_count INTEGER NOT NULL DEFAULT 0)'
+	), '创建长期记忆表失败')
+
+	const schemaResult = db.query(
+		"SELECT COUNT(*) AS table_count FROM sqlite_master WHERE type = 'table' AND name IN (" +
+		"'conversations','providers','app_settings','messages','conversation_token_usage_stats'," +
+		"'agent_memory_compaction_state','app_runtime_state','group_chats','group_chat_members'," +
+		"'group_chat_sessions','group_chat_messages','group_agent_context_records','group_chat_reviews'," +
+		"'group_chat_tasks','group_agent_memories','group_agent_metrics','group_chat_state','memory_buffer','agent_memory_core')"
 	)
+	assertSqlSuccess(schemaResult, '验证数据库结构失败')
+	const schemaRows = rowsToObjects(schemaResult)
+	const tableCount = schemaRows.length > 0 ? readNumberField(schemaRows[0], 'table_count') : 0
+	if (tableCount != 19) {
+		const appError = reportAppError(
+			'DATABASE_SCHEMA_INCOMPLETE',
+			APP_ERROR_CATEGORY_DATABASE,
+			'初始化本地数据库',
+			'本地数据初始化失败，请重启应用',
+			'Expected 19 application tables, found ' + tableCount,
+			false,
+		)
+		throw new Error(formatAppErrorForLog(appError))
+	}
+	} catch (e: any) {
+		db.close()
+		throw e
+	}
 
 	db.close()
 }

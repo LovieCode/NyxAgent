@@ -9,7 +9,7 @@
 					@touchend="onBubbleTouchEnd">
 					<view v-for="(part, pi) in renderContentParts" :key="'user-part-' + pi" class="part-wrap" :class="isLastContentPart(pi) == true ? '' : 'part-wrap-spaced'">
 						<view v-if="part.type == 'image' && part.url != ''" class="image-part">
-							<image :src="part.url" class="bubble-image" mode="widthFix" />
+							<image :src="part.url" class="bubble-image" mode="widthFix" @load="notifyContentResize" />
 							<view v-if="part.caption != ''" class="caption-card user-caption-card">
 								<text class="caption-label user-caption-label">图片转述</text>
 								<text class="caption-text user-caption-text">{{part.caption}}</text>
@@ -34,15 +34,21 @@
 				<image v-if="agentAvatar != ''" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" @click.stop="onAvatarClick" />
 				<view v-else class="chat-avatar ai-avatar" @click.stop="onAvatarClick">
 					<text class="chat-avatar-text">AI</text>
-				</view>
-				<view class="ai-stack">
-					<text v-if="assistantName != ''" class="speaker-name assistant-name">{{assistantName}}</text>
-					<view class="ai-content timeline-content" :class="isPressed ? 'bubble-pressed' : ''"
+					</view>
+					<view class="ai-stack">
+						<view v-if="assistantName != '' || (isPrivateMessage == true && pi == 0)" class="assistant-meta-row">
+							<text v-if="assistantName != ''" class="speaker-name assistant-name">{{assistantName}}</text>
+							<view v-if="isPrivateMessage == true && pi == 0" class="private-message-badge">
+								<oui-icon-unix name="lock" size="10px" color="#9A5A72" />
+								<text class="private-message-badge-text">私发给你</text>
+							</view>
+						</view>
+					<view class="ai-content timeline-content" :class="(isPressed ? 'bubble-pressed ' : '') + (isErrorBool ? 'ai-content-error' : '')"
 						@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
 						@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
 						@touchend="onBubbleTouchEnd">
 						<view v-if="pi == 0 && reasoningBlocks.length > 0 && hideThinking == false" class="reasoning-panel">
-							<view class="reasoning-header" @click.stop="thinkingExpanded = !thinkingExpanded">
+								<view class="reasoning-header" @click.stop="toggleThinkingExpanded">
 								<oui-icon-unix :name="thinkingExpanded ? 'down' : 'right'" size="9px" color="var(--rice-text-color-3)" />
 								<text class="thinking-step-label">思考过程</text>
 							</view>
@@ -77,7 +83,7 @@
 							</view>
 						</view>
 						<view v-if="part.type == 'image' && part.url != ''" class="image-part">
-							<image :src="part.url" class="bubble-image" mode="widthFix" />
+								<image :src="part.url" class="bubble-image" mode="widthFix" @load="notifyContentResize" />
 							<view v-if="part.caption != ''" class="caption-card">
 								<text class="caption-label">图片转述</text>
 								<text class="caption-text">{{part.caption}}</text>
@@ -98,13 +104,19 @@
 				<text class="chat-avatar-text">AI</text>
 			</view>
 			<view class="ai-stack">
-				<text v-if="assistantName != ''" class="speaker-name assistant-name">{{assistantName}}</text>
-				<view class="ai-content timeline-content" :class="isPressed ? 'bubble-pressed' : ''"
+				<view v-if="assistantName != '' || isPrivateMessage == true" class="assistant-meta-row">
+					<text v-if="assistantName != ''" class="speaker-name assistant-name">{{assistantName}}</text>
+					<view v-if="isPrivateMessage == true" class="private-message-badge">
+						<oui-icon-unix name="lock" size="10px" color="#9A5A72" />
+						<text class="private-message-badge-text">私发给你</text>
+					</view>
+				</view>
+				<view class="ai-content timeline-content" :class="(isPressed ? 'bubble-pressed ' : '') + (isErrorBool ? 'ai-content-error' : '')"
 					@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
 					@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
 					@touchend="onBubbleTouchEnd">
 					<view v-if="reasoningBlocks.length > 0 && hideThinking == false" class="reasoning-panel">
-						<view class="reasoning-header" @click.stop="thinkingExpanded = !thinkingExpanded">
+							<view class="reasoning-header" @click.stop="toggleThinkingExpanded">
 							<text class="thinking-step-icon">{{thinkingExpanded ? '⌄' : '›'}}</text>
 							<text class="thinking-step-label">思考过程</text>
 						</view>
@@ -141,7 +153,7 @@
 
 					<view v-for="(part, pi) in renderContentParts" :key="'assistant-part-' + pi" class="part-wrap" :class="isLastContentPart(pi) == true ? '' : 'part-wrap-spaced'">
 						<view v-if="part.type == 'image' && part.url != ''" class="image-part">
-							<image :src="part.url" class="bubble-image" mode="widthFix" />
+								<image :src="part.url" class="bubble-image" mode="widthFix" @load="notifyContentResize" />
 							<view v-if="part.caption != ''" class="caption-card">
 								<text class="caption-label">图片转述</text>
 								<text class="caption-text">{{part.caption}}</text>
@@ -225,6 +237,10 @@
 				default: false
 			},
 			isStreaming: {
+				type: Boolean,
+				default: false
+			},
+			isPrivateMessage: {
 				type: Boolean,
 				default: false
 			},
@@ -360,6 +376,13 @@
 			}
 		},
 		methods: {
+			notifyContentResize(): void {
+				this.$emit('contentResize')
+			},
+			toggleThinkingExpanded(): void {
+				this.thinkingExpanded = !this.thinkingExpanded
+				this.notifyContentResize()
+			},
 			onAvatarClick() {
 				this.$emit('avatarClick')
 			},
@@ -405,6 +428,7 @@
 					this.toolCallExpanded.push(false)
 				}
 				this.toolCallExpanded[index] = !(this.toolCallExpanded[index] == true)
+				this.notifyContentResize()
 			},
 			getToolCallExpanded(index: number): boolean {
 				if (index >= this.toolCallExpanded.length) return false
@@ -515,12 +539,45 @@
 	.ai-content:active {
 		background-color: #FFF7FA;
 	}
+	.ai-content-error {
+		background-color: #FFF5F5;
+		border-color: #EF4444;
+	}
 	.ai-stack {
 		flex-direction: column;
 		align-items: flex-start;
 		flex: 1;
 		flex-shrink: 1;
 		width: 0;
+	}
+	.assistant-meta-row {
+		flex-direction: row;
+		align-items: center;
+		min-height: 20px;
+		margin-bottom: 4px;
+	}
+	.assistant-meta-row .assistant-name {
+		margin-bottom: 0;
+	}
+	.private-message-badge {
+		flex-direction: row;
+		align-items: center;
+		margin-left: 7px;
+		padding-left: 6px;
+		padding-right: 7px;
+		padding-top: 2px;
+		padding-bottom: 2px;
+		border-radius: 8px;
+		background-color: #FFF0F5;
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(154, 90, 114, 0.18);
+	}
+	.private-message-badge-text {
+		font-size: 10px;
+		line-height: 12px;
+		color: #9A5A72;
+		margin-left: 3px;
 	}
 	.speaker-name {
 		font-size: 13px;

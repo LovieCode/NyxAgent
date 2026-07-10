@@ -349,13 +349,15 @@
 				return buildCurrentSkillRecord(this.selectedSkillId, this.skillName, this.skillDescription, this.skillEnabled, this.documents, this.skillCreatedAt)
 			},
 
-			saveCurrentSkillSilently() {
+			saveCurrentSkillSilently(): boolean {
 				if (this.selectedSkillId == '') {
-					return
+					return false
 				}
-				upsertSkill(this.buildCurrentSkill())
+				const saved = upsertSkill(this.buildCurrentSkill())
+				if (saved == false) { return false }
 				this.skills = getSkills()
 				this.hasUnsaved = false
+				return true
 			},
 
 			saveCurrentSkill(): boolean {
@@ -363,7 +365,10 @@
 					uni.showToast({ position: 'bottom', title: 'Name 不能为空', icon: 'none' })
 					return false
 				}
-				this.saveCurrentSkillSilently()
+				if (this.saveCurrentSkillSilently() == false) {
+					uni.showToast({ position: 'bottom', title: '保存 Skill 失败，请重试', icon: 'none' })
+					return false
+				}
 				this.skillName = normalizeSkillName(this.skillName)
 				uni.showToast({ position: 'bottom', title: '已保存', icon: 'success' })
 				return true
@@ -381,7 +386,10 @@
 
 			createNewSkillNow() {
 				const skill = createEmptySkillRecord()
-				upsertSkill(skill)
+				if (upsertSkill(skill) == false) {
+					uni.showToast({ position: 'bottom', title: '创建 Skill 失败，请重试', icon: 'none' })
+					return
+				}
 				this.skills = getSkills()
 				this.loadSkillToEditor(skill)
 			},
@@ -411,7 +419,10 @@
 					return
 				}
 				const skill = createSkillFromMarkdown(text, 'imported-skill')
-				upsertSkill(skill)
+				if (upsertSkill(skill) == false) {
+					uni.showToast({ position: 'bottom', title: '导入 Skill 失败，请重试', icon: 'none' })
+					return
+				}
 				this.importMarkdown = ''
 				this.showImportPanel = false
 				this.skills = getSkills()
@@ -466,13 +477,18 @@
 					confirmColor: '#EF4444',
 					success: (res) => {
 						if (res.confirm == true) {
-							deleteSkill(this.selectedSkillId)
+							const deleted = deleteSkill(this.selectedSkillId)
+							if (deleted == false) {
+								uni.showToast({ position: 'bottom', title: '删除 Skill 失败，请重试', icon: 'none' })
+								return
+							}
 							this.selectedSkillId = ''
 							this.skillName = ''
 							this.skillDescription = ''
 							this.documents = [] as UTSJSONObject[]
 							this.docTitle = ''
 							this.docContent = ''
+							this.hasUnsaved = false
 							this.reloadSkills()
 							uni.showToast({ position: 'bottom', title: '已删除', icon: 'success' })
 						}

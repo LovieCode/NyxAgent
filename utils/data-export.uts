@@ -11,6 +11,7 @@ import { getAgentDir, getAgentsRoot, getInternalFilesDir, getUserDir, listDir, j
 import { buildTodoMarkdown, buildNoteMarkdown } from '@/utils/markdown.uts'
 import { writeExportZipFile, shareExportFile, getLastShareExportError } from '@/utssdk/app-data-export/index.uts'
 import { appendDirectorySpec, appendFileSpec, appendTextSpec, cloneExportObject, inferExtension, isLocalExportPath, sanitizeFilePart, sanitizeRelativeZipPath, sanitizeZipSegment, stripFileSpecContent } from '@/utils/data-export-helpers.uts'
+import { APP_ERROR_CATEGORY_STORAGE, reportAppErrorFromCause } from '@/utils/app-error.uts'
 
 const EXPORT_SCHEMA_VERSION = 1
 const MAX_EXPORT_FILE_BYTES: number = 50 * 1024 * 1024
@@ -145,7 +146,15 @@ function parseStorageArray(storage: UTSJSONObject, key: string): UTSJSONObject[]
 	}
 	try {
 		return JSON.parse(value) as UTSJSONObject[]
-	} catch (_e: any) {
+	} catch (e: any) {
+		reportAppErrorFromCause(
+			'EXPORT_STORED_LIST_INVALID',
+			APP_ERROR_CATEGORY_STORAGE,
+			'data_export_parse_' + key,
+			'备份中有一项列表数据无法读取',
+			e,
+			true,
+		)
 		return []
 	}
 }
@@ -264,7 +273,15 @@ function appendMessagePartAssets(messages: UTSJSONObject[], assets: UTSJSONObjec
 					const zipPath = 'assets/messages/' + sanitizeZipSegment(idText) + '/legacy-image.' + ext
 					appendAsset(assets, specs, 'messageImage', imageUrl, zipPath, 'messages.' + idText + '.imageUrl')
 				}
-			} catch (_e: any) {
+			} catch (e: any) {
+				reportAppErrorFromCause(
+					'EXPORT_MESSAGE_ASSET_INVALID',
+					APP_ERROR_CATEGORY_STORAGE,
+					'data_export_message_asset_' + idText,
+					'部分消息附件无法加入备份',
+					e,
+					true,
+				)
 			}
 		}
 	}

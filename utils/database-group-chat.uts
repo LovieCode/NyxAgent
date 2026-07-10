@@ -17,12 +17,18 @@ import {
 	safeJsonForDb,
 } from '@/utils/database-core.uts'
 
-export function setRuntimeState(key: string, value: string): void {
-	if (key == '') { return }
+export function setRuntimeState(key: string, value: string): boolean {
+	if (key == '') { return false }
 	const db = getDb()
 	ensureAppRuntimeStateTable(db)
-	db.run('INSERT OR REPLACE INTO app_runtime_state (key, value, updated_at) VALUES (?, ?, ?)', [key, value, Date.now()])
+	const result = db.run('INSERT OR REPLACE INTO app_runtime_state (key, value, updated_at) VALUES (?, ?, ?)', [key, value, Date.now()])
 	db.close()
+	try {
+		assertSqlSuccess(result, '保存页面运行状态失败')
+	} catch (_e: any) {
+		return false
+	}
+	return true
 }
 
 export function getRuntimeState(key: string): string {
@@ -31,6 +37,7 @@ export function getRuntimeState(key: string): string {
 	ensureAppRuntimeStateTable(db)
 	const result = db.query('SELECT value FROM app_runtime_state WHERE key = ? AND ? = ? LIMIT 1', [key, 1, 1])
 	db.close()
+	assertSqlSuccess(result, '读取页面运行状态失败')
 	const rows = rowsToObjects(result)
 	if (rows.length > 0) {
 		return readStringField(rows[0], 'value')
@@ -43,7 +50,13 @@ export function consumeRuntimeState(key: string): string {
 	const db = getDb()
 	ensureAppRuntimeStateTable(db)
 	const result = db.query('SELECT value FROM app_runtime_state WHERE key = ? AND ? = ? LIMIT 1', [key, 1, 1])
-	db.run('DELETE FROM app_runtime_state WHERE key = ?', [key])
+	try {
+		assertSqlSuccess(result, '读取页面运行状态失败')
+		assertSqlSuccess(db.run('DELETE FROM app_runtime_state WHERE key = ?', [key]), '清理页面运行状态失败')
+	} catch (e: any) {
+		db.close()
+		throw e
+	}
 	db.close()
 	const rows = rowsToObjects(result)
 	if (rows.length > 0) {
@@ -52,12 +65,18 @@ export function consumeRuntimeState(key: string): string {
 	return ''
 }
 
-export function deleteRuntimeState(key: string): void {
-	if (key == '') { return }
+export function deleteRuntimeState(key: string): boolean {
+	if (key == '') { return false }
 	const db = getDb()
 	ensureAppRuntimeStateTable(db)
-	db.run('DELETE FROM app_runtime_state WHERE key = ?', [key])
+	const result = db.run('DELETE FROM app_runtime_state WHERE key = ?', [key])
 	db.close()
+	try {
+		assertSqlSuccess(result, '删除页面运行状态失败')
+	} catch (_e: any) {
+		return false
+	}
+	return true
 }
 
 export function getGroupChatRows(): UTSJSONObject[] {
@@ -65,6 +84,7 @@ export function getGroupChatRows(): UTSJSONObject[] {
 	ensureGroupChatTables(db)
 	const result = db.query('SELECT * FROM group_chats ORDER BY updated_at DESC')
 	db.close()
+	assertSqlSuccess(result, '读取群聊列表失败')
 	return rowsToObjects(result)
 }
 
@@ -79,7 +99,7 @@ export function getGroupChatRowById(groupId: string): UTSJSONObject | null {
 	return null
 }
 
-export function saveGroupChatRow(row: UTSJSONObject): void {
+export function saveGroupChatRow(row: UTSJSONObject): boolean {
 	const now = Date.now()
 	let createdAt = readNumberField(row, 'created_at')
 	if (createdAt <= 0) { createdAt = readNumberField(row, 'createdAt') }
@@ -89,7 +109,7 @@ export function saveGroupChatRow(row: UTSJSONObject): void {
 	if (updatedAt <= 0) { updatedAt = now }
 	const db = getDb()
 	ensureGroupChatTables(db)
-	db.run(
+	const result = db.run(
 		'INSERT OR REPLACE INTO group_chats (id, name, avatar, scheduler_agent_id, scheduler_prompt, shared_prompt, active_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		[
 			readStringField(row, 'id'),
@@ -104,6 +124,12 @@ export function saveGroupChatRow(row: UTSJSONObject): void {
 		]
 	)
 	db.close()
+	try {
+		assertSqlSuccess(result, '保存群聊设置失败')
+	} catch (_e: any) {
+		return false
+	}
+	return true
 }
 
 export function getGroupMemberRows(groupId: string): UTSJSONObject[] {
@@ -114,7 +140,7 @@ export function getGroupMemberRows(groupId: string): UTSJSONObject[] {
 	return rowsToObjects(result)
 }
 
-export function saveGroupMemberRows(groupId: string, rows: UTSJSONObject[]): void {
+export function saveGroupMemberRows(groupId: string, rows: UTSJSONObject[]): boolean {
 	const db = getDb()
 	ensureGroupChatTables(db)
 	try {
@@ -136,12 +162,13 @@ export function saveGroupMemberRows(groupId: string, rows: UTSJSONObject[]): voi
 			)
 		}
 		assertSqlSuccess(db.commit(), '无法提交群成员保存事务')
-	} catch (e: any) {
+	} catch (_e: any) {
 		db.rollback()
 		db.close()
-		throw e
+		return false
 	}
 	db.close()
+	return true
 }
 
 export function getGroupSessionRows(groupId: string): UTSJSONObject[] {
@@ -149,10 +176,11 @@ export function getGroupSessionRows(groupId: string): UTSJSONObject[] {
 	ensureGroupChatTables(db)
 	const result = db.query('SELECT * FROM group_chat_sessions WHERE group_id = ? AND ? = ? ORDER BY updated_at DESC, created_at DESC', [groupId, 1, 1])
 	db.close()
+	assertSqlSuccess(result, '读取群聊会话列表失败')
 	return rowsToObjects(result)
 }
 
-export function saveGroupSessionRows(groupId: string, rows: UTSJSONObject[]): void {
+export function saveGroupSessionRows(groupId: string, rows: UTSJSONObject[]): boolean {
 	const db = getDb()
 	ensureGroupChatTables(db)
 	try {
@@ -175,12 +203,13 @@ export function saveGroupSessionRows(groupId: string, rows: UTSJSONObject[]): vo
 			)
 		}
 		assertSqlSuccess(db.commit(), '无法提交群会话保存事务')
-	} catch (e: any) {
+	} catch (_e: any) {
 		db.rollback()
 		db.close()
-		throw e
+		return false
 	}
 	db.close()
+	return true
 }
 
 export function getGroupMessageRows(groupId: string, sessionId: string): UTSJSONObject[] {
@@ -188,10 +217,11 @@ export function getGroupMessageRows(groupId: string, sessionId: string): UTSJSON
 	ensureGroupChatTables(db)
 	const result = db.query('SELECT * FROM group_chat_messages WHERE group_id = ? AND session_id = ? ORDER BY timestamp ASC, updated_at ASC', [groupId, sessionId])
 	db.close()
+	assertSqlSuccess(result, '读取群聊消息失败')
 	return rowsToObjects(result)
 }
 
-export function saveGroupMessageRows(groupId: string, sessionId: string, messages: UTSJSONObject[]): void {
+export function saveGroupMessageRows(groupId: string, sessionId: string, messages: UTSJSONObject[]): boolean {
 	const now = Date.now()
 	const db = getDb()
 	ensureGroupChatTables(db)
@@ -227,19 +257,26 @@ export function saveGroupMessageRows(groupId: string, sessionId: string, message
 			)
 		}
 		assertSqlSuccess(db.commit(), '无法提交群消息保存事务')
-	} catch (e: any) {
+	} catch (_e: any) {
 		db.rollback()
 		db.close()
-		throw e
+		return false
 	}
 	db.close()
+	return true
 }
 
-export function deleteGroupMessageRows(groupId: string, sessionId: string): void {
+export function deleteGroupMessageRows(groupId: string, sessionId: string): boolean {
 	const db = getDb()
 	ensureGroupChatTables(db)
-	db.run('DELETE FROM group_chat_messages WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+	const result = db.run('DELETE FROM group_chat_messages WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
 	db.close()
+	try {
+		assertSqlSuccess(result, '删除群聊消息失败')
+	} catch (_e: any) {
+		return false
+	}
+	return true
 }
 
 export function getGroupAgentContextRows(agentId: string): UTSJSONObject[] {
@@ -247,13 +284,14 @@ export function getGroupAgentContextRows(agentId: string): UTSJSONObject[] {
 	ensureGroupChatTables(db)
 	const result = db.query('SELECT * FROM group_agent_context_records WHERE agent_id = ? AND ? = ? ORDER BY created_at DESC', [agentId, 1, 1])
 	db.close()
+	assertSqlSuccess(result, '读取群聊成员上下文失败')
 	return rowsToObjects(result)
 }
 
-export function saveGroupAgentContextRow(record: UTSJSONObject): void {
+export function saveGroupAgentContextRow(record: UTSJSONObject): boolean {
 	const db = getDb()
 	ensureGroupChatTables(db)
-	db.run(
+	const result = db.run(
 		'INSERT OR REPLACE INTO group_agent_context_records (id, agent_id, group_id, session_id, created_at, payload_json) VALUES (?, ?, ?, ?, ?, ?)',
 		[
 			readStringField(record, 'id'),
@@ -265,19 +303,31 @@ export function saveGroupAgentContextRow(record: UTSJSONObject): void {
 		]
 	)
 	db.close()
+	try {
+		assertSqlSuccess(result, '保存群聊成员上下文失败')
+	} catch (_e: any) {
+		return false
+	}
+	return true
 }
 
-export function deleteGroupAgentContextRow(agentId: string, recordId: string): void {
+export function deleteGroupAgentContextRow(agentId: string, recordId: string): boolean {
 	const db = getDb()
 	ensureGroupChatTables(db)
-	db.run('DELETE FROM group_agent_context_records WHERE agent_id = ? AND id = ?', [agentId, recordId])
+	const result = db.run('DELETE FROM group_agent_context_records WHERE agent_id = ? AND id = ?', [agentId, recordId])
 	db.close()
+	try {
+		assertSqlSuccess(result, '删除群聊成员上下文失败')
+	} catch (_e: any) {
+		return false
+	}
+	return true
 }
 
-export function saveGroupReviewRow(record: UTSJSONObject): void {
+export function saveGroupReviewRow(record: UTSJSONObject): boolean {
 	const db = getDb()
 	ensureGroupChatTables(db)
-	db.run(
+	const result = db.run(
 		'INSERT OR REPLACE INTO group_chat_reviews (id, group_id, session_id, message_id, summary, continue_advice, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
 		[
 			readStringField(record, 'id'),
@@ -291,14 +341,20 @@ export function saveGroupReviewRow(record: UTSJSONObject): void {
 		]
 	)
 	db.close()
+	try {
+		assertSqlSuccess(result, '保存群聊复盘失败')
+	} catch (_e: any) {
+		return false
+	}
+	return true
 }
 
-export function saveGroupTaskRow(record: UTSJSONObject): void {
+export function saveGroupTaskRow(record: UTSJSONObject): boolean {
 	const now = Date.now()
 	const participants = record['participants'] as string[] | null
 	const db = getDb()
 	ensureGroupChatTables(db)
-	db.run(
+	const result = db.run(
 		'INSERT OR REPLACE INTO group_chat_tasks (id, group_id, session_id, title, owner_agent_id, participants_json, status, source_review_id, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		[
 			readStringField(record, 'id'),
@@ -315,13 +371,19 @@ export function saveGroupTaskRow(record: UTSJSONObject): void {
 		]
 	)
 	db.close()
+	try {
+		assertSqlSuccess(result, '保存群聊任务失败')
+	} catch (_e: any) {
+		return false
+	}
+	return true
 }
 
-export function saveGroupMemoryRow(record: UTSJSONObject): void {
+export function saveGroupMemoryRow(record: UTSJSONObject): boolean {
 	const now = Date.now()
 	const db = getDb()
 	ensureGroupChatTables(db)
-	db.run(
+	const result = db.run(
 		'INSERT OR REPLACE INTO group_agent_memories (id, group_id, session_id, agent_id, category, visibility, content, source_review_id, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		[
 			readStringField(record, 'id'),
@@ -338,15 +400,27 @@ export function saveGroupMemoryRow(record: UTSJSONObject): void {
 		]
 	)
 	db.close()
+	try {
+		assertSqlSuccess(result, '保存群聊记忆失败')
+	} catch (_e: any) {
+		return false
+	}
+	return true
 }
 
-export function incrementGroupAgentMetric(groupId: string, sessionId: string, agentId: string, speakDelta: number, usefulDelta: number, issueDelta: number, memoryDelta: number): void {
-	if (groupId == '' || sessionId == '' || agentId == '') { return }
+export function incrementGroupAgentMetric(groupId: string, sessionId: string, agentId: string, speakDelta: number, usefulDelta: number, issueDelta: number, memoryDelta: number): boolean {
+	if (groupId == '' || sessionId == '' || agentId == '') { return false }
 	const id = groupId + '::' + sessionId + '::' + agentId
 	const now = Date.now()
 	const db = getDb()
 	ensureGroupChatTables(db)
 	const result = db.query('SELECT speak_count, useful_count, issue_count, memory_count FROM group_agent_metrics WHERE id = ? AND ? = ? LIMIT 1', [id, 1, 1])
+	try {
+		assertSqlSuccess(result, '读取群聊成员指标失败')
+	} catch (_e: any) {
+		db.close()
+		return false
+	}
 	const rows = rowsToObjects(result)
 	let speak = 0
 	let useful = 0
@@ -359,11 +433,17 @@ export function incrementGroupAgentMetric(groupId: string, sessionId: string, ag
 		issue = readNumberField(row, 'issue_count')
 		memory = readNumberField(row, 'memory_count')
 	}
-	db.run(
+	const saveResult = db.run(
 		'INSERT OR REPLACE INTO group_agent_metrics (id, group_id, session_id, agent_id, speak_count, useful_count, issue_count, memory_count, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		[id, groupId, sessionId, agentId, speak + speakDelta, useful + usefulDelta, issue + issueDelta, memory + memoryDelta, now]
 	)
 	db.close()
+	try {
+		assertSqlSuccess(saveResult, '保存群聊成员指标失败')
+	} catch (_e: any) {
+		return false
+	}
+	return true
 }
 
 export function getGroupAgentMetricRows(groupId: string, sessionId: string): UTSJSONObject[] {
@@ -393,11 +473,17 @@ export function getGroupAgentMemoryRows(groupId: string, sessionId: string, agen
 	return rowsToObjects(result)
 }
 
-export function setGroupChatState(key: string, value: string): void {
+export function setGroupChatState(key: string, value: string): boolean {
 	const db = getDb()
 	ensureGroupChatTables(db)
-	db.run('INSERT OR REPLACE INTO group_chat_state (key, value, updated_at) VALUES (?, ?, ?)', [key, value, Date.now()])
+	const result = db.run('INSERT OR REPLACE INTO group_chat_state (key, value, updated_at) VALUES (?, ?, ?)', [key, value, Date.now()])
 	db.close()
+	try {
+		assertSqlSuccess(result, '保存群聊运行状态失败')
+	} catch (_e: any) {
+		return false
+	}
+	return true
 }
 
 export function getGroupChatState(key: string): string {

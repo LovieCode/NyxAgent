@@ -1,0 +1,246 @@
+/**
+ * 应用统一错误模型与运行时诊断入口。
+ *
+ * 这里不负责弹出 UI。业务层只需要上报结构化错误，页面层后续可按
+ * userMessage/recoverable 决定 toast、重试或错误详情展示。
+ */
+
+export const APP_ERROR_CATEGORY_RUNTIME = 'runtime'
+export const APP_ERROR_CATEGORY_DATABASE = 'database'
+export const APP_ERROR_CATEGORY_STORAGE = 'storage'
+export const APP_ERROR_CATEGORY_NETWORK = 'network'
+export const APP_ERROR_CATEGORY_VALIDATION = 'validation'
+export const APP_ERROR_CATEGORY_UNKNOWN = 'unknown'
+
+const APP_DIAGNOSTIC_LIMIT = 80
+const APP_DIAGNOSTIC_DETAIL_LIMIT = 2000
+
+export type AppDiagnosticEntry = {
+	diagnosticId: string
+	code: string
+	category: string
+	operation: string
+	userMessage: string
+	detail: string
+	recoverable: boolean
+	createdAt: number
+}
+
+export class AppError {
+	diagnosticId: string
+	code: string
+	category: string
+	operation: string
+	userMessage: string
+	detail: string
+	recoverable: boolean
+	createdAt: number
+
+	constructor(
+		diagnosticId: string,
+		code: string,
+		category: string,
+		operation: string,
+		userMessage: string,
+		detail: string,
+		recoverable: boolean,
+		createdAt: number,
+	) {
+		this.diagnosticId = diagnosticId
+		this.code = code
+		this.category = category
+		this.operation = operation
+		this.userMessage = userMessage
+		this.detail = detail
+		this.recoverable = recoverable
+		this.createdAt = createdAt
+	}
+}
+
+/** 仅表示操作是否成功，不携带业务值。 */
+export type AppOpResult = {
+	ok: boolean
+	error: AppError | null
+}
+
+/** UTS 不使用泛型 Result，文本返回值显式建模。 */
+export type AppTextResult = {
+	ok: boolean
+	value: string
+	error: AppError | null
+}
+
+/** UTS 不使用泛型 Result，数值返回值显式建模。 */
+export type AppNumberResult = {
+	ok: boolean
+	value: number
+	error: AppError | null
+}
+
+let diagnosticSequence = 0
+let diagnosticEntries: AppDiagnosticEntry[] = []
+
+function createDiagnosticId(createdAt: number): string {
+	diagnosticSequence++
+	return 'ERR-' + createdAt + '-' + diagnosticSequence
+}
+
+function truncateDiagnosticDetail(detail: string): string {
+	let value = detail.trim()
+	if (value.length <= APP_DIAGNOSTIC_DETAIL_LIMIT) { return value }
+	value = value.substring(0, APP_DIAGNOSTIC_DETAIL_LIMIT)
+	return value + '\n...[诊断详情已截断]'
+}
+
+function toDiagnosticEntry(error: AppError): AppDiagnosticEntry {
+	return {
+		diagnosticId: error.diagnosticId,
+		code: error.code,
+		category: error.category,
+		operation: error.operation,
+		userMessage: error.userMessage,
+		detail: error.detail,
+		recoverable: error.recoverable,
+		createdAt: error.createdAt,
+	} as AppDiagnosticEntry
+}
+
+export function errorCauseToDetail(cause: any | null): string {
+	if (cause == null) { return '' }
+	if (typeof cause == 'string') {
+		return truncateDiagnosticDetail(cause as string)
+	}
+	try {
+		const text = '' + cause
+		if (text != '' && text != '[object Object]') {
+			return truncateDiagnosticDetail(text)
+		}
+	} catch (_e: any) {
+	}
+	try {
+		return truncateDiagnosticDetail(JSON.stringify(cause))
+	} catch (_e2: any) {
+	}
+	return '无法读取原始错误详情'
+}
+
+export function createAppError(
+	code: string,
+	category: string,
+	operation: string,
+	userMessage: string,
+	detail: string,
+	recoverable: boolean,
+): AppError {
+	const createdAt = Date.now()
+	const normalizedCode = code.trim() != '' ? code.trim() : 'APP_UNKNOWN_ERROR'
+	const normalizedCategory = category.trim() != '' ? category.trim() : APP_ERROR_CATEGORY_UNKNOWN
+	const normalizedOperation = operation.trim() != '' ? operation.trim() : 'unknown_operation'
+	const normalizedMessage = userMessage.trim() != '' ? userMessage.trim() : '操作失败，请重试'
+	return new AppError(
+		createDiagnosticId(createdAt),
+		normalizedCode,
+		normalizedCategory,
+		normalizedOperation,
+		normalizedMessage,
+		truncateDiagnosticDetail(detail),
+		recoverable,
+		createdAt,
+	)
+}
+
+export function createAppErrorFromCause(
+	code: string,
+	category: string,
+	operation: string,
+	userMessage: string,
+	cause: any | null,
+	recoverable: boolean,
+): AppError {
+	return createAppError(code, category, operation, userMessage, errorCauseToDetail(cause), recoverable)
+}
+
+export function formatAppErrorForUser(error: AppError): string {
+	return error.userMessage + '（诊断编号 ' + error.diagnosticId + '）'
+}
+
+export function formatAppErrorForLog(error: AppError): string {
+	let text = '[' + error.diagnosticId + '][' + error.category + '][' + error.code + '] ' + error.operation
+	if (error.detail != '') {
+		text += ': ' + error.detail
+	}
+	return text
+}
+
+/**
+ * 记录到有界内存队列，供诊断页或日志导出功能读取。
+ * 暂不持久化，避免错误记录依赖 SQLite 后形成递归失败链。
+ */
+export function recordAppError(error: AppError): void {
+	diagnosticEntries.push(toDiagnosticEntry(error))
+	while (diagnosticEntries.length > APP_DIAGNOSTIC_LIMIT) {
+		diagnosticEntries.shift()
+	}
+	console.error(formatAppErrorForLog(error))
+}
+
+export function reportAppError(
+	code: string,
+	category: string,
+	operation: string,
+	userMessage: string,
+	detail: string,
+	recoverable: boolean,
+): AppError {
+	const error = createAppError(code, category, operation, userMessage, detail, recoverable)
+	recordAppError(error)
+	return error
+}
+
+export function reportAppErrorFromCause(
+	code: string,
+	category: string,
+	operation: string,
+	userMessage: string,
+	cause: any | null,
+	recoverable: boolean,
+): AppError {
+	const error = createAppErrorFromCause(code, category, operation, userMessage, cause, recoverable)
+	recordAppError(error)
+	return error
+}
+
+export function getRecentAppDiagnostics(limit: number = 20): AppDiagnosticEntry[] {
+	if (limit <= 0 || diagnosticEntries.length == 0) { return [] }
+	let start = diagnosticEntries.length - limit
+	if (start < 0) { start = 0 }
+	return diagnosticEntries.slice(start)
+}
+
+export function clearAppDiagnostics(): void {
+	diagnosticEntries = []
+}
+
+export function appOpSuccess(): AppOpResult {
+	return { ok: true, error: null } as AppOpResult
+}
+
+export function appOpFailure(error: AppError): AppOpResult {
+	return { ok: false, error: error } as AppOpResult
+}
+
+export function appTextSuccess(value: string): AppTextResult {
+	return { ok: true, value: value, error: null } as AppTextResult
+}
+
+export function appTextFailure(error: AppError): AppTextResult {
+	return { ok: false, value: '', error: error } as AppTextResult
+}
+
+export function appNumberSuccess(value: number): AppNumberResult {
+	return { ok: true, value: value, error: null } as AppNumberResult
+}
+
+export function appNumberFailure(error: AppError): AppNumberResult {
+	return { ok: false, value: 0, error: error } as AppNumberResult
+}

@@ -122,7 +122,8 @@
 </template>
 
 <script lang="uts">
-	import { listDir, listRootContents, createDir, createFile, deleteItem, renameItem, parentPath, joinPath, getUserDir, getInternalFilesDir, getExternalFilesDir, getAgentsRoot, formatFileSize, formatTime, isTextFile, isImageFile, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
+	import { listDir, listRootContents, createDir, createFile, copyItem, deleteItem, exists, renameItem, parentPath, joinPath, getUserDir, getInternalFilesDir, getExternalFilesDir, getAgentsRoot, formatFileSize, formatTime, isTextFile, isImageFile, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
+	import { isChooseCancelError, parsePickedFileInfo, type PickedLocalFile } from '@/utils/attachment-reader.uts'
 	import { consumeFilesInitialPath } from '@/utils/runtime-state.uts'
 	import {
 		buildManagedFilePathSegments,
@@ -232,7 +233,22 @@
 			}
 		},
 		methods: {
+			getRootGroupRank(item : FileItem) : number {
+				const group = this.getItemGroup(item)
+				if (group == 'user') { return 0 }
+				if (group == 'group') { return 1 }
+				if (group == 'agent') { return 2 }
+				return 3
+			},
+
 			shouldShiftFileItem(left : FileItem, right : FileItem) : boolean {
+				if (this.currentPath == VIRTUAL_ROOT) {
+					const leftRank = this.getRootGroupRank(left)
+					const rightRank = this.getRootGroupRank(right)
+					if (leftRank != rightRank) {
+						return leftRank > rightRank
+					}
+				}
 				if (this.sortMode == 'time') {
 					return left.lastModified < right.lastModified
 				}
@@ -272,13 +288,15 @@
 				}
 				this.actionSheetOpen = true
 				uni.showActionSheet({
-					itemList: ['刷新', '回到根目录', '新建文件夹'],
+					itemList: ['导入文件', '刷新', '回到根目录', '新建文件夹'],
 					success: (res) => {
 						if (res.tapIndex == 0) {
-							this.refreshList()
+							this.importFile()
 						} else if (res.tapIndex == 1) {
-							this.goToRoot()
+							this.refreshList()
 						} else if (res.tapIndex == 2) {
+							this.goToRoot()
+						} else if (res.tapIndex == 3) {
 							this.startCreate('dir')
 						}
 					},
@@ -290,6 +308,50 @@
 
 			onItemMore(item : FileItem) {
 				this.onItemLongPress(item)
+			},
+
+			resolveImportBasePath() : string {
+				if (this.currentPath == VIRTUAL_ROOT) {
+					return getUserDir()
+				}
+				return this.currentPath
+			},
+
+			importPickedFile(file : PickedLocalFile) {
+				if (file.path == '' || file.name == '') {
+					uni.showToast({ position: 'bottom', title: '未选择文件', icon: 'none' })
+					return
+				}
+				const basePath = this.resolveImportBasePath()
+				if (basePath == '') {
+					uni.showToast({ position: 'bottom', title: '当前目录不可用', icon: 'none' })
+					return
+				}
+				const targetPath = joinPath(basePath, file.name)
+				if (exists(targetPath) == true) {
+					uni.showToast({ position: 'bottom', title: '同名文件已存在', icon: 'none' })
+					return
+				}
+				const result = copyItem(file.path, targetPath)
+				if (result.ok == false) {
+					uni.showToast({ position: 'bottom', title: '导入失败: ' + result.error, icon: 'none' })
+					return
+				}
+				uni.showToast({ position: 'bottom', title: '已导入', icon: 'success' })
+				this.refreshList()
+			},
+
+			importFile() {
+				uni.chooseFile({
+					count: 1,
+					success: (res : any) => {
+						this.importPickedFile(parsePickedFileInfo(res))
+					},
+					fail: (err : any) => {
+						if (isChooseCancelError(err) == true) { return }
+						uni.showToast({ position: 'bottom', title: '选择文件失败', icon: 'none' })
+					}
+				})
 			},
 
 			/** 刷新当前目录文件列表 */
@@ -397,12 +459,14 @@
 				}
 				this.actionSheetOpen = true
 				uni.showActionSheet({
-					itemList: ['新建文件', '新建文件夹'],
+					itemList: ['导入文件', '新建文件', '新建文件夹'],
 					success: (res) => {
 						const tapIdx = res.tapIndex
 						if (tapIdx == 0) {
-							this.startCreate('file')
+							this.importFile()
 						} else if (tapIdx == 1) {
+							this.startCreate('file')
+						} else if (tapIdx == 2) {
 							this.startCreate('dir')
 						}
 					},

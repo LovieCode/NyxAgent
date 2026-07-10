@@ -11,6 +11,7 @@ import {
 	saveProvider as dbSaveProvider,
 	deleteProvider as dbDeleteProvider,
 	toggleProvider as dbToggleProvider,
+	activateProvider as dbActivateProvider,
 	getAppSetting,
 	setAppSetting,
 } from '@/utils/database.uts'
@@ -268,38 +269,43 @@ export function saveProvider(
 	apiKey: string,
 	models: ModelInfo[],
 	enabled: boolean
-): void {
+): boolean {
 	let finalApiBase = apiBase
 	if (finalApiBase == '') {
 		finalApiBase = getDefaultUrl(id)
 	}
-	dbSaveProvider(id, name, finalApiBase, apiKey, serializeModels(models), enabled)
+	return dbSaveProvider(id, name, finalApiBase, apiKey, serializeModels(models), enabled)
 }
 
 /**
  * 删除提供商
  */
-export function deleteProvider(id: string): void {
-	dbDeleteProvider(id)
+export function deleteProvider(id: string): boolean {
+	return dbDeleteProvider(id)
 }
 
 /**
  * 设置提供商启用状态
  */
-export function setProviderEnabled(id: string, enabled: boolean): void {
-	dbToggleProvider(id, enabled)
+export function setProviderEnabled(id: string, enabled: boolean): boolean {
+	return dbToggleProvider(id, enabled)
 }
 
 /**
  * 启用一个提供商（同时禁用其他）
  */
-export function setActiveProvider(id: string): void {
+export function setActiveProvider(id: string): boolean {
 	const all = dbGetAllProviders()
+	let found = false
 	for (let i = 0; i < all.length; i++) {
-		const p = all[i]
-		const pid = p['id'] as string
-		dbToggleProvider(pid, pid == id)
+		const providerId = all[i]['id'] as string | null
+		if (providerId != null && providerId == id) {
+			found = true
+			break
+		}
 	}
+	if (found == false) { return false }
+	return dbActivateProvider(id)
 }
 
 /**
@@ -511,16 +517,7 @@ export function getDefaultTTSSettings(): UTSJSONObject {
 /**
  * 设置 TTS 额外参数，和 default_task_tts 保存在一起。
  */
-export function setDefaultTTSSettings(adapter: string, voice: string, responseFormat: string, speed: string, volume: string, pitch: string, extraParams: string): void {
-	const current = getDefaultTaskModel('tts')
-	let providerId = ''
-	let model = ''
-	if (current != null) {
-		const rawPid = current['providerId'] as string | null
-		const rawModel = current['model'] as string | null
-		providerId = rawPid != null ? rawPid : ''
-		model = rawModel != null ? rawModel : ''
-	}
+export function setDefaultTTSModelSettings(providerId: string, model: string, adapter: string, voice: string, responseFormat: string, speed: string, volume: string, pitch: string, extraParams: string): boolean {
 	let normalizedAdapter = adapter.trim()
 	if (normalizedAdapter == '') { normalizedAdapter = TTS_ADAPTER_OPENAI_COMPAT }
 	const val = JSON.stringify({
@@ -534,13 +531,26 @@ export function setDefaultTTSSettings(adapter: string, voice: string, responseFo
 		ttsPitch: pitch.trim(),
 		ttsExtraParams: extraParams.trim(),
 	})
-	setAppSetting(TASK_KEY_PREFIX + 'tts', val)
+	return setAppSetting(TASK_KEY_PREFIX + 'tts', val)
+}
+
+export function setDefaultTTSSettings(adapter: string, voice: string, responseFormat: string, speed: string, volume: string, pitch: string, extraParams: string): boolean {
+	const current = getDefaultTaskModel('tts')
+	let providerId = ''
+	let model = ''
+	if (current != null) {
+		const rawPid = current['providerId'] as string | null
+		const rawModel = current['model'] as string | null
+		providerId = rawPid != null ? rawPid : ''
+		model = rawModel != null ? rawModel : ''
+	}
+	return setDefaultTTSModelSettings(providerId, model, adapter, voice, responseFormat, speed, volume, pitch, extraParams)
 }
 
 /**
  * 设置某个任务的默认提供商 + 模型。
  */
-export function setDefaultTaskModel(type: string, providerId: string, model: string): void {
+export function setDefaultTaskModel(type: string, providerId: string, model: string): boolean {
 	const key = TASK_KEY_PREFIX + type
 	const current = type == 'tts' ? getDefaultTaskModel('tts') : null
 	const next: UTSJSONObject = {
@@ -552,13 +562,11 @@ export function setDefaultTaskModel(type: string, providerId: string, model: str
 	}
 	if (providerId == '' || model == '') {
 		if (type == 'tts') {
-			setAppSetting(key, JSON.stringify(next))
-			return
+			return setAppSetting(key, JSON.stringify(next))
 		}
-		setAppSetting(key, '')
-		return
+		return setAppSetting(key, '')
 	}
-	setAppSetting(key, JSON.stringify(next))
+	return setAppSetting(key, JSON.stringify(next))
 }
 
 export function getMemoryOrganizeTaskModel(): UTSJSONObject | null {
@@ -594,8 +602,8 @@ export function getImageCaptionPrompt(): string {
 	return DEFAULT_IMAGE_CAPTION_PROMPT
 }
 
-export function setImageCaptionPrompt(prompt: string): void {
-	setAppSetting(IMAGE_CAPTION_PROMPT_KEY, prompt)
+export function setImageCaptionPrompt(prompt: string): boolean {
+	return setAppSetting(IMAGE_CAPTION_PROMPT_KEY, prompt)
 }
 
 

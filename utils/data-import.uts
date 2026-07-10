@@ -7,8 +7,20 @@ import { importDatabaseTables, importSettingsTables, setAppSetting, setRuntimeSt
 import { saveAgents } from '@/utils/agent.uts'
 import { getAgentDir, joinPath, exists, createDir, writeContent } from '@/utils/file-manager.uts'
 import { readImportManifest, importAgentWorkspaceFiles, importBackupAssets, importGroupWorkspaceFiles, importUserWorkspaceFiles } from '@/utssdk/app-data-export/index.uts'
+import { APP_ERROR_CATEGORY_STORAGE, reportAppErrorFromCause } from '@/utils/app-error.uts'
 
 const IMPORT_SCHEMA_VERSION = 1
+
+function recordDataImportFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+	reportAppErrorFromCause(
+		code,
+		APP_ERROR_CATEGORY_STORAGE,
+		operation,
+		userMessage,
+		cause,
+		true,
+	)
+}
 
 export type ImportBackupSummary = {
 	ok: boolean
@@ -309,8 +321,14 @@ function updateMappedMessageAssets(messages: UTSJSONObject[], assetMap: UTSJSONO
 		if (extraText != null && extraText != '') {
 			try {
 				extra = JSON.parse(extraText) as UTSJSONObject
-			} catch (_e: any) {
+			} catch (e: any) {
 				extra = {}
+				recordDataImportFailure(
+					'IMPORT_MESSAGE_ASSET_INVALID',
+					'data_import_message_asset_' + idText,
+					'部分消息附件路径无法恢复',
+					e,
+				)
 			}
 		}
 		const parts = extra['message'] as UTSJSONObject[] | null
@@ -384,16 +402,21 @@ function restoreListStorage(key: string, list: UTSJSONObject[]): void {
 export function previewImportBackup(zipPath: string): ImportBackupSummary {
 	const manifestJson = readImportManifest(zipPath)
 	if (manifestJson == '') {
+		recordDataImportFailure('IMPORT_MANIFEST_READ_FAILED', 'data_import_preview_manifest', '无法读取备份清单', 'readImportManifest 返回空内容')
 		return buildImportBackupError(zipPath, '无法读取备份清单')
 	}
 	try {
 		const root = JSON.parse(manifestJson) as UTSJSONObject
 		const validationError = validateBackupRoot(root)
 		if (validationError != '') {
+			recordDataImportFailure('IMPORT_BACKUP_INVALID', 'data_import_preview_validate', validationError, validationError)
 			return buildImportBackupError(zipPath, validationError)
 		}
 		const data = root['data'] as UTSJSONObject | null
-		if (data == null) { return buildImportBackupError(zipPath, '备份包缺少 data 字段') }
+		if (data == null) {
+			recordDataImportFailure('IMPORT_BACKUP_DATA_MISSING', 'data_import_preview_data', '备份包缺少 data 字段', 'data 字段为空')
+			return buildImportBackupError(zipPath, '备份包缺少 data 字段')
+		}
 		const providers = readObjectArray(data, 'providers')
 		const conversations = readObjectArray(data, 'conversations')
 		const messages = readObjectArray(data, 'messages')
@@ -428,7 +451,8 @@ export function previewImportBackup(zipPath: string): ImportBackupSummary {
 			summary: summary,
 			error: '',
 		} as ImportBackupSummary
-	} catch (_e: any) {
+	} catch (e: any) {
+		recordDataImportFailure('IMPORT_MANIFEST_PARSE_FAILED', 'data_import_preview_parse', '备份清单解析失败', e)
 		return buildImportBackupError(zipPath, '备份清单解析失败')
 	}
 }
@@ -437,13 +461,19 @@ export function previewImportBackup(zipPath: string): ImportBackupSummary {
 export function importSettingsOnlyFromZip(zipPath: string): string {
 	const manifestJson = readImportManifest(zipPath)
 	if (manifestJson == '') {
+		recordDataImportFailure('IMPORT_SETTINGS_MANIFEST_READ_FAILED', 'data_import_settings_manifest', '无法读取备份清单', 'readImportManifest 返回空内容')
 		return ''
 	}
 	try {
 		const root = JSON.parse(manifestJson) as UTSJSONObject
-		if (validateBackupRoot(root) != '') { return '' }
+		const validationError = validateBackupRoot(root)
+		if (validationError != '') {
+			recordDataImportFailure('IMPORT_SETTINGS_BACKUP_INVALID', 'data_import_settings_validate', validationError, validationError)
+			return ''
+		}
 		const data = root['data'] as UTSJSONObject | null
 		if (data == null) {
+			recordDataImportFailure('IMPORT_SETTINGS_DATA_MISSING', 'data_import_settings_data', '备份包缺少 data 字段', 'data 字段为空')
 			return ''
 		}
 		const providers = readObjectArray(data, 'providers')
@@ -477,7 +507,8 @@ export function importSettingsOnlyFromZip(zipPath: string): string {
 			writeStorageObject(storage, storageKeys)
 		}
 		return '已恢复设置：提供商 ' + providers.length + ' 个，Agent ' + agents.length + ' 个，Skills ' + skills.length + ' 个，资源 ' + assets.length + ' 个。聊天记录和工作区文件未覆盖。'
-	} catch (_e: any) {
+	} catch (e: any) {
+		recordDataImportFailure('IMPORT_SETTINGS_FAILED', 'data_import_settings_apply', '恢复设置失败', e)
 		return ''
 	}
 }
@@ -486,13 +517,19 @@ export function importSettingsOnlyFromZip(zipPath: string): string {
 export function importAllDataFromZip(zipPath: string): string {
 	const manifestJson = readImportManifest(zipPath)
 	if (manifestJson == '') {
+		recordDataImportFailure('IMPORT_ALL_MANIFEST_READ_FAILED', 'data_import_all_manifest', '无法读取备份清单', 'readImportManifest 返回空内容')
 		return ''
 	}
 	try {
 		const root = JSON.parse(manifestJson) as UTSJSONObject
-		if (validateBackupRoot(root) != '') { return '' }
+		const validationError = validateBackupRoot(root)
+		if (validationError != '') {
+			recordDataImportFailure('IMPORT_ALL_BACKUP_INVALID', 'data_import_all_validate', validationError, validationError)
+			return ''
+		}
 		const data = root['data'] as UTSJSONObject | null
 		if (data == null) {
+			recordDataImportFailure('IMPORT_ALL_DATA_MISSING', 'data_import_all_data', '备份包缺少 data 字段', 'data 字段为空')
 			return ''
 		}
 
@@ -544,7 +581,8 @@ export function importAllDataFromZip(zipPath: string): string {
 			throw new Error('工作区文件恢复失败')
 		}
 		return '已导入：提供商 ' + providers.length + ' 个，对话 ' + conversations.length + ' 条，消息 ' + messages.length + ' 条，记忆 ' + memoryCore.length + ' 条，Skills ' + skills.length + ' 个，资源 ' + assets.length + ' 个，用户文件 ' + userWorkspaceCount + ' 个，Agent 文件 ' + workspaceCount + ' 个，群聊文件 ' + groupWorkspaceCount + ' 个。'
-	} catch (_e: any) {
+	} catch (e: any) {
+		recordDataImportFailure('IMPORT_ALL_FAILED', 'data_import_all_apply', '导入备份失败', e)
 		return ''
 	}
 }

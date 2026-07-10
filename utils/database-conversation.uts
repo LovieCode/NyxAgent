@@ -12,6 +12,11 @@ import {
 	runSqlOrThrow,
 	rowsToObjects,
 } from '@/utils/database-core.uts'
+import {
+	APP_ERROR_CATEGORY_DATABASE,
+	formatAppErrorForLog,
+	reportAppErrorFromCause,
+} from '@/utils/app-error.uts'
 
 export function addConversationTokenUsage(conversationId: string, promptTokens: number, promptCacheHitTokens: number): void {
 	const cid = conversationId.trim()
@@ -177,6 +182,7 @@ export function getConversations(): UTSJSONObject[] {
 		'SELECT id, title, model, agent_id, created_at, updated_at, message_count, preview FROM conversations ORDER BY updated_at DESC'
 	)
 	db.close()
+	assertSqlSuccess(result, '读取对话列表失败')
 	return rowsToObjects(result)
 }
 
@@ -200,6 +206,7 @@ export function getConversationsByAgent(agentId: string): UTSJSONObject[] {
 		[agentId, 1, 1]
 	)
 	db.close()
+	assertSqlSuccess(result, '读取智能体对话列表失败')
 	return rowsToObjects(result)
 }
 
@@ -213,6 +220,7 @@ export function getMessages(conversationId: string): UTSJSONObject[] {
 		[conversationId, 1, 1]
 	)
 	db.close()
+	assertSqlSuccess(result, '读取对话消息失败')
 
 	const rows = rowsToObjects(result)
 
@@ -245,8 +253,16 @@ export function getMessages(conversationId: string): UTSJSONObject[] {
 				if (extra['ttsAudioPath'] != null) {
 					row['ttsAudioPath'] = extra['ttsAudioPath']
 				}
-			} catch (_e: any) {
-				// ignore parse error
+			} catch (e: any) {
+				const appError = reportAppErrorFromCause(
+					'CONVERSATION_MESSAGE_CORRUPTED',
+					APP_ERROR_CATEGORY_DATABASE,
+					'解析对话消息扩展字段',
+					'部分对话消息已损坏，无法加载',
+					e,
+					true,
+				)
+				throw new Error(formatAppErrorForLog(appError))
 			}
 		}
 	}
@@ -292,8 +308,17 @@ export function deleteConversation(id: string): boolean {
  * 更新某个智能体所有历史对话的 system_prompt
  * 当用户在智能体设置中修改了系统提示词后调用
  */
-export function updateSystemPromptForAgent(agentId: string, systemPrompt: string): void {
+export function updateSystemPromptForAgent(agentId: string, systemPrompt: string): boolean {
 	const db = getDb()
-	db.run('UPDATE conversations SET system_prompt = ? WHERE agent_id = ?', [systemPrompt, agentId])
+	let success = true
+	try {
+		assertSqlSuccess(
+			db.run('UPDATE conversations SET system_prompt = ? WHERE agent_id = ?', [systemPrompt, agentId]),
+			'同步联系人历史对话提示词',
+		)
+	} catch (_e: any) {
+		success = false
+	}
 	db.close()
+	return success
 }

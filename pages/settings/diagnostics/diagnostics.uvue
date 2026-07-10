@@ -1,0 +1,360 @@
+<template>
+	<view class="page-shell rice-theme-light">
+		<NavBar variant="light" title="运行诊断" showBack>
+			<template #right>
+				<view class="clear-action" :class="diagnostics.length == 0 ? 'clear-action-disabled' : ''" @click="confirmClear">
+					<text class="clear-action-text" :class="diagnostics.length == 0 ? 'clear-action-text-disabled' : ''">清空</text>
+				</view>
+			</template>
+		</NavBar>
+
+		<view class="summary-band">
+			<view class="summary-main">
+				<text class="summary-title">{{diagnostics.length}} 条记录</text>
+				<text class="summary-desc">仅保留本次运行，应用重启后自动清除</text>
+			</view>
+			<view v-if="diagnostics.length > 0" class="status-dot"></view>
+		</view>
+
+		<scroll-view class="diagnostics-scroll" :scroll-y="true">
+			<view v-if="diagnostics.length == 0" class="empty-state">
+				<view class="empty-icon">
+					<oui-icon-unix name="info-circle" size="28px" color="#C8BBC1" />
+				</view>
+				<text class="empty-title">本次运行没有错误记录</text>
+				<text class="empty-desc">发生可诊断错误后，会在这里显示错误编号和技术详情。</text>
+			</view>
+
+			<view
+				v-for="entry in diagnostics"
+				:key="entry.diagnosticId"
+				class="diagnostic-item"
+				@click="toggleDetail(entry.diagnosticId)"
+			>
+				<view class="item-head">
+					<view class="item-title-wrap">
+						<text class="item-message">{{entry.userMessage}}</text>
+						<text class="item-time">{{formatDiagnosticTime(entry.createdAt)}}</text>
+					</view>
+					<oui-icon-unix
+						:name="expandedDiagnosticId == entry.diagnosticId ? 'up' : 'down'"
+						size="14px"
+						color="#A79DA4"
+					/>
+				</view>
+
+				<view class="identity-row">
+					<text class="code-chip">{{entry.code}}</text>
+					<text class="category-text">{{entry.category}}</text>
+				</view>
+
+				<view class="meta-row">
+					<text class="meta-label">操作</text>
+					<text class="meta-value">{{entry.operation}}</text>
+				</view>
+				<view class="meta-row">
+					<text class="meta-label">诊断编号</text>
+					<text class="meta-value diagnostic-id">{{entry.diagnosticId}}</text>
+				</view>
+
+				<view v-if="expandedDiagnosticId == entry.diagnosticId" class="detail-box">
+					<text class="detail-label">技术详情</text>
+					<text class="detail-text">{{entry.detail != '' ? entry.detail : '没有附加技术详情'}}</text>
+					<text class="recoverable-text">{{entry.recoverable == true ? '可重试' : '需要检查配置或数据'}}</text>
+				</view>
+			</view>
+
+			<view class="bottom-space"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script lang="uts">
+	import { clearAppDiagnostics, getRecentAppDiagnostics, type AppDiagnosticEntry } from '@/utils/app-error.uts'
+
+	export default {
+		data() {
+			return {
+				diagnostics: [] as AppDiagnosticEntry[],
+				expandedDiagnosticId: '' as string,
+			}
+		},
+		onLoad() {
+			this.loadDiagnostics()
+		},
+		onShow() {
+			this.loadDiagnostics()
+		},
+		methods: {
+			loadDiagnostics() {
+				const recent = getRecentAppDiagnostics(80)
+				const newestFirst: AppDiagnosticEntry[] = []
+				for (let i = recent.length - 1; i >= 0; i--) {
+					newestFirst.push(recent[i])
+				}
+				this.diagnostics = newestFirst
+				if (this.expandedDiagnosticId != '' && this.containsDiagnosticId(this.expandedDiagnosticId) == false) {
+					this.expandedDiagnosticId = ''
+				}
+			},
+
+			containsDiagnosticId(diagnosticId: string): boolean {
+				for (let i = 0; i < this.diagnostics.length; i++) {
+					if (this.diagnostics[i].diagnosticId == diagnosticId) { return true }
+				}
+				return false
+			},
+
+			toggleDetail(diagnosticId: string) {
+				this.expandedDiagnosticId = this.expandedDiagnosticId == diagnosticId ? '' : diagnosticId
+			},
+
+			confirmClear() {
+				if (this.diagnostics.length == 0) { return }
+				uni.showModal({
+					title: '清空错误记录',
+					content: '只会清空本次运行的诊断记录，不会影响聊天和设置。',
+					success: (res) => {
+						if (res.confirm == true) {
+							clearAppDiagnostics()
+							this.expandedDiagnosticId = ''
+							this.loadDiagnostics()
+							uni.showToast({ position: 'bottom', title: '已清空', icon: 'success' })
+						}
+					}
+				})
+			},
+
+			formatDiagnosticTime(timestamp: number): string {
+				const date = new Date(timestamp)
+				const month = date.getMonth() + 1
+				const day = date.getDate()
+				const hour = date.getHours()
+				const minute = date.getMinutes()
+				const second = date.getSeconds()
+				return date.getFullYear() + '-' + this.padTime(month) + '-' + this.padTime(day) + ' ' +
+					this.padTime(hour) + ':' + this.padTime(minute) + ':' + this.padTime(second)
+			},
+
+			padTime(value: number): string {
+				return value < 10 ? '0' + value : '' + value
+			}
+		}
+	}
+</script>
+
+<style>
+	.page-shell {
+		background-color: #FAF7F5;
+	}
+
+	.summary-band {
+		flex-direction: row;
+		align-items: center;
+		padding: 14px 24px 12px 24px;
+		background-color: #FAF7F5;
+		border-bottom-width: 1px;
+		border-bottom-style: solid;
+		border-bottom-color: #F1E5EA;
+	}
+
+	.summary-main {
+		flex: 1;
+		flex-direction: column;
+	}
+
+	.summary-title {
+		font-size: 15px;
+		font-weight: bold;
+		color: #2A2529;
+		line-height: 20px;
+	}
+
+	.summary-desc {
+		font-size: 12px;
+		color: #A79DA4;
+		line-height: 17px;
+		margin-top: 2px;
+	}
+
+	.status-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 4px;
+		background-color: #EF4444;
+		margin-left: 12px;
+	}
+
+	.clear-action {
+		width: 58px;
+		height: 40px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.clear-action-disabled {
+		opacity: 0.5;
+	}
+
+	.clear-action-text {
+		font-size: 14px;
+		font-weight: bold;
+		color: #EF4444;
+	}
+
+	.clear-action-text-disabled {
+		color: #B8AEB3;
+	}
+
+	.diagnostics-scroll {
+		flex: 1;
+		padding: 16px 24px 0 24px;
+		background-color: #FAF7F5;
+	}
+
+	.empty-state {
+		align-items: center;
+		justify-content: center;
+		padding: 72px 24px;
+	}
+
+	.empty-icon {
+		width: 58px;
+		height: 58px;
+		border-radius: 29px;
+		align-items: center;
+		justify-content: center;
+		background-color: #FFF0F5;
+		margin-bottom: 16px;
+	}
+
+	.empty-title {
+		font-size: 16px;
+		font-weight: bold;
+		color: #4A4147;
+		line-height: 22px;
+		text-align: center;
+	}
+
+	.empty-desc {
+		font-size: 13px;
+		color: #A79DA4;
+		line-height: 20px;
+		text-align: center;
+		margin-top: 8px;
+	}
+
+	.diagnostic-item {
+		background-color: #FFFFFF;
+		border-radius: 8px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #F1E5EA;
+		padding: 15px 16px;
+		margin-bottom: 12px;
+	}
+
+	.item-head {
+		flex-direction: row;
+		align-items: flex-start;
+	}
+
+	.item-title-wrap {
+		flex: 1;
+		flex-direction: column;
+		padding-right: 12px;
+	}
+
+	.item-message {
+		font-size: 15px;
+		font-weight: bold;
+		color: #2A2529;
+		line-height: 21px;
+	}
+
+	.item-time {
+		font-size: 11px;
+		color: #A79DA4;
+		line-height: 16px;
+		margin-top: 3px;
+	}
+
+	.identity-row {
+		flex-direction: row;
+		align-items: center;
+		margin-top: 11px;
+		margin-bottom: 9px;
+	}
+
+	.code-chip {
+		font-size: 11px;
+		color: #B63E67;
+		background-color: #FFF0F5;
+		border-radius: 4px;
+		padding: 4px 7px;
+		line-height: 15px;
+	}
+
+	.category-text {
+		font-size: 11px;
+		color: #8A7B84;
+		margin-left: 8px;
+	}
+
+	.meta-row {
+		flex-direction: row;
+		align-items: flex-start;
+		margin-top: 5px;
+	}
+
+	.meta-label {
+		width: 66px;
+		font-size: 12px;
+		color: #A79DA4;
+		line-height: 18px;
+	}
+
+	.meta-value {
+		flex: 1;
+		font-size: 12px;
+		color: #5F555B;
+		line-height: 18px;
+	}
+
+	.diagnostic-id {
+		color: #8A5164;
+	}
+
+	.detail-box {
+		background-color: #F8F2F4;
+		border-radius: 6px;
+		padding: 12px;
+		margin-top: 13px;
+	}
+
+	.detail-label {
+		font-size: 12px;
+		font-weight: bold;
+		color: #5F555B;
+		line-height: 18px;
+		margin-bottom: 6px;
+	}
+
+	.detail-text {
+		font-size: 12px;
+		color: #6F6269;
+		line-height: 19px;
+	}
+
+	.recoverable-text {
+		font-size: 11px;
+		color: #B85A79;
+		line-height: 16px;
+		margin-top: 9px;
+	}
+
+	.bottom-space {
+		height: 28px;
+		flex-shrink: 0;
+	}
+</style>

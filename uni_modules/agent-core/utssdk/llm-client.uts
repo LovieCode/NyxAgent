@@ -189,7 +189,8 @@ function prepareAgentContext(
 	conversationId: string,
 	allowCoreMemoryWrite: boolean = false,
 	enableContextTruncation: boolean = true,
-	workspaceRoot: string = ''
+	workspaceRoot: string = '',
+	disableTools: boolean = false
 ): PreparedAgentContext {
 	const workingMessages: UTSJSONObject[] = []
 	const droppedMessages: UTSJSONObject[] = []
@@ -210,7 +211,7 @@ function prepareAgentContext(
 			} as UTSJSONObject)
 		}
 	}
-	if (allowCoreMemoryWrite == false && isAgentToolEnabled(agent, AGENT_TOOL_MEMORY_BUFFER_WRITE, allowCoreMemoryWrite) == true) {
+	if (allowCoreMemoryWrite == false && disableTools == false && isAgentToolEnabled(agent, AGENT_TOOL_MEMORY_BUFFER_WRITE, allowCoreMemoryWrite) == true) {
 		workingMessages.push({
 			role: 'system',
 			content: '短记忆缓存使用策略：当用户提出或改变当前任务、临时要求、输出偏好、对话阶段或下一步动作时，优先调用 memory_buffer_write 写入一句 64 字以内短状态，覆盖旧缓存；它用于下一轮立刻接上上下文。没有短期状态变化、只是普通问答或闲聊收尾时不要调用。',
@@ -318,7 +319,10 @@ function prepareAgentContext(
 		workingMessages.push(msg)
 	}
 
-	const tools = createAgentTools(agentId, conversationId, personId, allowCoreMemoryWrite, workspaceRoot)
+	let tools: AgentTool[] = [] as AgentTool[]
+	if (disableTools == false) {
+		tools = createAgentTools(agentId, conversationId, personId, allowCoreMemoryWrite, workspaceRoot)
+	}
 	return {
 		workingMessages,
 		toolDefs: buildOpenAIToolDefs(tools),
@@ -347,7 +351,8 @@ function runAgentLoop(
 	conversationId: string,
 	allowCoreMemoryWrite: boolean = false,
 	enableMemoryManager: boolean = true,
-	workspaceRoot: string = ''
+	workspaceRoot: string = '',
+	disableTools: boolean = false
 ): void {
 	const config = resolveLLMConfig(providerId, model)
 	if (config == null) {
@@ -368,10 +373,13 @@ function runAgentLoop(
 	baseUrl = normalizeBaseUrl(baseUrl)
 
 	// 上下文截断和记忆管理递归开关解耦：管理 Agent 不递归整理，但仍需要正常截断。
-	const prepared = prepareAgentContext(messages, systemPrompt, agentId, conversationId, allowCoreMemoryWrite, true, workspaceRoot)
+	const prepared = prepareAgentContext(messages, systemPrompt, agentId, conversationId, allowCoreMemoryWrite, true, workspaceRoot, disableTools)
 	const workingMessages = prepared.workingMessages
 	const personId = 'default'
-	const tools = createAgentTools(agentId, conversationId, personId, allowCoreMemoryWrite, workspaceRoot)
+	let tools: AgentTool[] = [] as AgentTool[]
+	if (disableTools == false) {
+		tools = createAgentTools(agentId, conversationId, personId, allowCoreMemoryWrite, workspaceRoot)
+	}
 	const toolDefs = prepared.toolDefs
 
 	if (enableMemoryManager == true && getMemoryEnabled() == true && prepared.droppedScore > 0 && prepared.truncateDropScore > 0 && isMemoryCompactionRunning(agentId, conversationId) == false) {
@@ -431,8 +439,7 @@ function runAgentLoop(
 	runLoop = (): void => {
 		if (stream.aborted == true) return
 		if (settings.maxIterations > 0 && iteration >= settings.maxIterations) {
-			stream.push({ type: 'error', error: '（已达到最大迭代次数 ' + settings.maxIterations + '，无法完成请求）' })
-			stream.end()
+			stream.error('（已达到最大迭代次数 ' + settings.maxIterations + '，无法完成请求）')
 			return
 		}
 		iteration++
@@ -466,9 +473,13 @@ function runAgentLoop(
 			// onChunk
 			chunkHandler,
 			// done
-			(text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null) => {
+			(text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null, errorMessage: string | null) => {
 				activeTask = null
 				if (stream.aborted == true) return
+				if (errorMessage != null && errorMessage != '') {
+					stream.error(errorMessage)
+					return
+				}
 				// 思考内容结束
 				if (thinking != null && thinking != '') {
 					stream.push({ type: 'thinking_end', fullThinking: thinking })
@@ -884,8 +895,8 @@ export function chatWithLLM(
 		const settings = getGlobalGenerationSettings()
 
 		// 构建 API 请求并发送
-		callChatAPI(baseUrl, apiKey, mdl, systemPrompt, messages, [], settings, false, (text, toolCalls) => {
-			resolve(text != null ? text : null)
+		callChatAPI(baseUrl, apiKey, mdl, systemPrompt, messages, [], settings, false, (text, toolCalls, errorMessage) => {
+			resolve(errorMessage == null && text != null ? text : null)
 		})
 	})
 }
@@ -911,7 +922,8 @@ export function agentChat(
 	agentId: string,
 	maxIterations: number = 0,
 	conversationId: string = '',
-	workspaceRoot: string = ''
+	workspaceRoot: string = '',
+	isolatedMode: boolean = false
 ): AgentEventStream {
 	const stream = new AgentEventStream()
 	const agent = getAgentById(agentId)
@@ -922,7 +934,7 @@ export function agentChat(
 
 	// 异步执行 Agent 循环
 	setTimeout(() => {
-		runAgentLoop(messages, systemPrompt, providerId, model, agentId, settings, stream, conversationId, false, true, workspaceRoot)
+		runAgentLoop(messages, systemPrompt, providerId, model, agentId, settings, stream, conversationId, false, isolatedMode == false, workspaceRoot, isolatedMode)
 	}, 0)
 
 	return stream

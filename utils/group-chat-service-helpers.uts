@@ -1,5 +1,6 @@
 import { createPlainPart } from '@/utils/chat-models.uts'
 import {
+	GROUP_MESSAGE_AUDIENCE_GROUP,
 	GROUP_MESSAGE_SENDER_REVIEWER,
 	GROUP_MESSAGE_SENDER_SCHEDULER,
 	GROUP_MESSAGE_VISIBILITY_PUBLIC,
@@ -31,6 +32,7 @@ export function createGroupAgentContextRecordPayload(group: GroupChat, session: 
 	const searchInstruction = readActionText(action, 'searchInstruction')
 	const routeReason = readActionText(action, 'routeReason')
 	const environmentFeedback = readActionText(action, 'environmentFeedback')
+	const deliveryMode = readActionText(action, 'deliveryMode')
 	const now = Date.now()
 	return {
 		id: createId('gctx'),
@@ -50,13 +52,14 @@ export function createGroupAgentContextRecordPayload(group: GroupChat, session: 
 		searchInstruction: searchInstruction,
 		routeReason: routeReason,
 		environmentFeedback: environmentFeedback,
+		deliveryMode: deliveryMode,
 		systemPrompt: systemPrompt,
 		runtimeMessages: JSON.parse(JSON.stringify(runtimeMessages)) as UTSJSONObject[],
 		createdAt: now,
 	} as UTSJSONObject
 }
 
-export function decorateGroupMessage(base: UTSJSONObject, groupId: string, sessionId: string, senderType: string, agentId: string, agentName: string, agentAvatar: string, visible: boolean, visibility: string = GROUP_MESSAGE_VISIBILITY_PUBLIC, visibleAgentIds: string[] | null = null): UTSJSONObject {
+export function decorateGroupMessage(base: UTSJSONObject, groupId: string, sessionId: string, senderType: string, agentId: string, agentName: string, agentAvatar: string, visible: boolean, visibility: string = GROUP_MESSAGE_VISIBILITY_PUBLIC, visibleAgentIds: string[] | null = null, audience: string = GROUP_MESSAGE_AUDIENCE_GROUP): UTSJSONObject {
 	base['id'] = createId('gmsg')
 	base['groupId'] = groupId
 	base['sessionId'] = sessionId
@@ -65,6 +68,7 @@ export function decorateGroupMessage(base: UTSJSONObject, groupId: string, sessi
 	base['senderName'] = agentName
 	base['senderAvatar'] = agentAvatar
 	base['visibility'] = visibility
+	base['audience'] = audience
 	base['visibleAgentIds'] = visibleAgentIds != null ? visibleAgentIds : ([] as string[])
 	base['visible'] = visible
 	base['revoked'] = false

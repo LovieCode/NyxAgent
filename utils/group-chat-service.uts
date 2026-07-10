@@ -17,6 +17,11 @@ import {
 } from '@/utils/file-manager.uts'
 import { rememberGroupWorkspaceName, writeGroupWorkspaceNameMetadata } from '@/utils/workspace-name-snapshot.uts'
 import {
+	APP_ERROR_CATEGORY_DATABASE,
+	formatAppErrorForLog,
+	reportAppErrorFromCause,
+} from '@/utils/app-error.uts'
+import {
 	CHAT_ROLE_USER,
 	cloneParts,
 	createAssistantFinalMessage,
@@ -49,11 +54,16 @@ import {
 	ACTIVE_GROUP_CHAT_ID_KEY,
 	ACTIVE_GROUP_SESSION_ID_KEY,
 	GROUP_CHAT_LIST_KEY,
+	GROUP_DELIVERY_MODE_PUBLIC,
+	GROUP_DELIVERY_MODE_USER_PRIVATE,
+	GROUP_MESSAGE_AUDIENCE_GROUP,
+	GROUP_MESSAGE_AUDIENCE_USER,
 	GROUP_MESSAGE_SENDER_AGENT,
 	GROUP_MESSAGE_SENDER_REVIEWER,
 	GROUP_MESSAGE_SENDER_SCHEDULER,
 	GROUP_MESSAGE_SENDER_USER,
 	GROUP_MESSAGE_VISIBILITY_INTERNAL,
+	GROUP_MESSAGE_VISIBILITY_PRIVATE,
 	GROUP_MESSAGE_VISIBILITY_PUBLIC,
 	buildGroupSchedulerAgentId,
 	createId,
@@ -105,6 +115,7 @@ export * from '@/utils/group-chat-scheduler.uts'
 export type GroupSessionDeleteResult = {
 	ok: boolean
 	filesCleared: boolean
+	stateUpdated: boolean
 }
 
 // LEGACY_COMPAT: 旧版曾把群调度提示词存成全局设置；未来清兼容时删除。
@@ -165,12 +176,13 @@ export function getGroupChats(): GroupChat[] {
 	return result
 }
 
-export function saveGroupChats(groups: GroupChat[]): void {
+export function saveGroupChats(groups: GroupChat[]): boolean {
 	for (let i = 0; i < groups.length; i++) {
-		saveGroupChatRow(groupChatToDbRow(groups[i]))
+		if (saveGroupChatRow(groupChatToDbRow(groups[i])) == false) { return false }
 		rememberGroupWorkspaceName(groups[i].id, groups[i].name)
 		syncGroupWorkspaceNameMetadata(groups[i])
 	}
+	return true
 }
 
 export function getGroupChatById(groupId: string): GroupChat | null {
@@ -182,10 +194,11 @@ export function getGroupChatById(groupId: string): GroupChat | null {
 	return null
 }
 
-export function saveGroupChat(group: GroupChat): void {
-	saveGroupChatRow(groupChatToDbRow(group))
+export function saveGroupChat(group: GroupChat): boolean {
+	if (saveGroupChatRow(groupChatToDbRow(group)) == false) { return false }
 	rememberGroupWorkspaceName(group.id, group.name)
 	syncGroupWorkspaceNameMetadata(group)
+	return true
 }
 
 export function buildGroupWorkspaceRoot(): string {
@@ -225,12 +238,12 @@ export function getGroupMembers(groupId: string): GroupChatMember[] {
 	return result
 }
 
-export function saveGroupMembers(groupId: string, members: GroupChatMember[]): void {
+export function saveGroupMembers(groupId: string, members: GroupChatMember[]): boolean {
 	const rows: UTSJSONObject[] = []
 	for (let i = 0; i < members.length; i++) {
 		rows.push(memberToDbRow(members[i]))
 	}
-	saveGroupMemberRows(groupId, rows)
+	return saveGroupMemberRows(groupId, rows)
 }
 
 export function getActiveGroupMembers(groupId: string): GroupChatMember[] {
@@ -262,15 +275,14 @@ export function isAgentInGroup(groupId: string, agentId: string): boolean {
 	return false
 }
 
-export function addGroupMember(groupId: string, agentId: string): void {
-	if (groupId == '' || agentId == '') { return }
+export function addGroupMember(groupId: string, agentId: string): boolean {
+	if (groupId == '' || agentId == '') { return false }
 	const members = getGroupMembers(groupId)
 	for (let i = 0; i < members.length; i++) {
 		if (members[i].agentId == agentId) {
 			members[i].active = true
 			members[i].leftAt = 0
-			saveGroupMembers(groupId, members)
-			return
+			return saveGroupMembers(groupId, members)
 		}
 	}
 	members.push({
@@ -282,19 +294,22 @@ export function addGroupMember(groupId: string, agentId: string): void {
 		leftAt: 0,
 		order: members.length,
 	} as GroupChatMember)
-	saveGroupMembers(groupId, members)
+	return saveGroupMembers(groupId, members)
 }
 
-export function removeGroupMember(groupId: string, agentId: string): void {
+export function removeGroupMember(groupId: string, agentId: string): boolean {
 	const members = getGroupMembers(groupId)
+	let found = false
 	for (let i = 0; i < members.length; i++) {
 		if (members[i].agentId == agentId && members[i].active == true) {
 			members[i].active = false
 			members[i].leftAt = Date.now()
+			found = true
 			break
 		}
 	}
-	saveGroupMembers(groupId, members)
+	if (found == false) { return false }
+	return saveGroupMembers(groupId, members)
 }
 
 export function getGroupSessions(groupId: string): GroupChatSession[] {
@@ -306,12 +321,12 @@ export function getGroupSessions(groupId: string): GroupChatSession[] {
 	return result
 }
 
-export function saveGroupSessions(groupId: string, sessions: GroupChatSession[]): void {
+export function saveGroupSessions(groupId: string, sessions: GroupChatSession[]): boolean {
 	const rows: UTSJSONObject[] = []
 	for (let i = 0; i < sessions.length; i++) {
 		rows.push(sessionToDbRow(sessions[i]))
 	}
-	saveGroupSessionRows(groupId, rows)
+	return saveGroupSessionRows(groupId, rows)
 }
 
 export function getGroupSessionById(groupId: string, sessionId: string): GroupChatSession | null {
@@ -324,7 +339,7 @@ export function getGroupSessionById(groupId: string, sessionId: string): GroupCh
 	return null
 }
 
-export function saveGroupSession(session: GroupChatSession): void {
+export function saveGroupSession(session: GroupChatSession): boolean {
 	const sessions = getGroupSessions(session.groupId)
 	let found = false
 	for (let i = 0; i < sessions.length; i++) {
@@ -337,7 +352,7 @@ export function saveGroupSession(session: GroupChatSession): void {
 	if (found == false) {
 		sessions.push(session)
 	}
-	saveGroupSessions(session.groupId, sessions)
+	return saveGroupSessions(session.groupId, sessions)
 }
 
 export function createGroupSession(groupId: string, title: string = ''): GroupChatSession {
@@ -360,7 +375,9 @@ export function createGroupSession(groupId: string, title: string = ''): GroupCh
 	const sessions = getGroupSessions(groupId)
 	sessions.push(session)
 	try {
-		saveGroupSessions(groupId, sessions)
+		if (saveGroupSessions(groupId, sessions) == false) {
+			throw new Error('群会话保存失败')
+		}
 	} catch (e: any) {
 		if (exists(workspace) == true) {
 			deleteItem(workspace, true)
@@ -383,7 +400,7 @@ export function ensureGroupActiveSession(group: GroupChat): GroupChatSession {
 		session = sessions[0]
 		group.activeSessionId = session.id
 		group.updatedAt = Date.now()
-		saveGroupChat(group)
+		if (saveGroupChat(group) == false) { throw new Error('群聊当前会话保存失败') }
 		if (getGroupSessionWorkspaceDir(group.id, session.id) == '') {
 			throw new Error('群会话工作区不可用')
 		}
@@ -392,20 +409,20 @@ export function ensureGroupActiveSession(group: GroupChat): GroupChatSession {
 	session = createGroupSession(group.id, '故事会话')
 	group.activeSessionId = session.id
 	group.updatedAt = Date.now()
-	saveGroupChat(group)
+	if (saveGroupChat(group) == false) { throw new Error('群聊当前会话保存失败') }
 	return session
 }
 
-export function setActiveGroupSession(groupId: string, sessionId: string): void {
+export function setActiveGroupSession(groupId: string, sessionId: string): boolean {
 	const group = getGroupChatById(groupId)
-	if (group == null) { return }
+	if (group == null) { return false }
 	const session = getGroupSessionById(groupId, sessionId)
-	if (session == null) { return }
+	if (session == null) { return false }
 	group.activeSessionId = sessionId
 	group.updatedAt = Date.now()
-	saveGroupChat(group)
-	setActiveGroupChat(groupId)
-	setActiveGroupSessionId(sessionId)
+	if (saveGroupChat(group) == false) { return false }
+	if (setActiveGroupChat(groupId) == false) { return false }
+	return setActiveGroupSessionId(sessionId)
 }
 
 export function getActiveGroupChatId(): string {
@@ -413,9 +430,9 @@ export function getActiveGroupChatId(): string {
 	return dbValue
 }
 
-export function setActiveGroupChat(groupId: string): void {
-	if (groupId == '') { return }
-	setGroupChatState(ACTIVE_GROUP_CHAT_ID_KEY, groupId)
+export function setActiveGroupChat(groupId: string): boolean {
+	if (groupId == '') { return false }
+	return setGroupChatState(ACTIVE_GROUP_CHAT_ID_KEY, groupId)
 }
 
 export function getActiveGroupSessionId(): string {
@@ -423,32 +440,32 @@ export function getActiveGroupSessionId(): string {
 	return dbValue
 }
 
-export function setActiveGroupSessionId(sessionId: string): void {
-	if (sessionId == '') { return }
-	setGroupChatState(ACTIVE_GROUP_SESSION_ID_KEY, sessionId)
+export function setActiveGroupSessionId(sessionId: string): boolean {
+	if (sessionId == '') { return false }
+	return setGroupChatState(ACTIVE_GROUP_SESSION_ID_KEY, sessionId)
 }
 
-export function updateGroupSessionTitle(groupId: string, sessionId: string, title: string): void {
+export function updateGroupSessionTitle(groupId: string, sessionId: string, title: string): boolean {
 	const session = getGroupSessionById(groupId, sessionId)
-	if (session == null) { return }
+	if (session == null) { return false }
 	const safeTitle = title.trim()
-	if (safeTitle == '') { return }
+	if (safeTitle == '') { return false }
 	session.title = safeTitle
 	session.titleLocked = true
 	session.updatedAt = Date.now()
-	saveGroupSession(session)
+	return saveGroupSession(session)
 }
 
-export function applyGroupSessionTitleSuggestion(groupId: string, sessionId: string, title: string): void {
+export function applyGroupSessionTitleSuggestion(groupId: string, sessionId: string, title: string): boolean {
 	const session = getGroupSessionById(groupId, sessionId)
-	if (session == null) { return }
+	if (session == null) { return false }
 	const safeTitle = title.trim()
-	if (safeTitle == '') { return }
-	if (session.titleLocked == true) { return }
-	if (session.title != '' && session.title != '故事会话' && session.title != '新会话') { return }
+	if (safeTitle == '') { return true }
+	if (session.titleLocked == true) { return true }
+	if (session.title != '' && session.title != '故事会话' && session.title != '新会话') { return true }
 	session.title = safeTitle
 	session.updatedAt = Date.now()
-	saveGroupSession(session)
+	return saveGroupSession(session)
 }
 
 export function getGroupMessages(groupId: string, sessionId: string): UTSJSONObject[] {
@@ -460,18 +477,25 @@ export function getGroupMessages(groupId: string, sessionId: string): UTSJSONObj
 	return result
 }
 
-export function saveGroupMessages(groupId: string, sessionId: string, messages: UTSJSONObject[]): void {
-	saveGroupMessageRows(groupId, sessionId, messages)
-	const session = getGroupSessionById(groupId, sessionId)
-	if (session != null) {
-		session.updatedAt = Date.now()
-		saveGroupSession(session)
+export function saveGroupMessages(groupId: string, sessionId: string, messages: UTSJSONObject[]): boolean {
+	if (saveGroupMessageRows(groupId, sessionId, messages) == false) {
+		return false
+	}
+	try {
+		const session = getGroupSessionById(groupId, sessionId)
+		if (session != null) {
+			session.updatedAt = Date.now()
+			if (saveGroupSession(session) == false) { return false }
+		}
+	} catch (_e: any) {
+		return false
 	}
 	const group = getGroupChatById(groupId)
 	if (group != null) {
 		group.updatedAt = Date.now()
-		saveGroupChat(group)
+		if (saveGroupChat(group) == false) { return false }
 	}
+	return true
 }
 
 export function listGroupAgentContextRecords(agentId: string): UTSJSONObject[] {
@@ -482,7 +506,16 @@ export function listGroupAgentContextRecords(agentId: string): UTSJSONObject[] {
 		try {
 			const record = JSON.parse(payload) as UTSJSONObject
 			records.push(record)
-		} catch (_e: any) {
+		} catch (e: any) {
+			const appError = reportAppErrorFromCause(
+				'GROUP_CONTEXT_RECORD_CORRUPTED',
+				APP_ERROR_CATEGORY_DATABASE,
+				'解析群聊成员上下文记录',
+				'群聊上下文记录已损坏，无法加载',
+				e,
+				true,
+			)
+			throw new Error(formatAppErrorForLog(appError))
 		}
 	}
 	records.sort((a: UTSJSONObject, b: UTSJSONObject): number => {
@@ -505,49 +538,50 @@ export function getGroupAgentContextRecord(agentId: string, recordId: string): U
 	return null
 }
 
-export function deleteGroupAgentContextRecord(agentId: string, recordId: string): void {
-	deleteGroupAgentContextRow(agentId, recordId)
+export function deleteGroupAgentContextRecord(agentId: string, recordId: string): boolean {
+	return deleteGroupAgentContextRow(agentId, recordId)
 }
 
-export function saveGroupAgentContextRecord(record: UTSJSONObject): void {
+export function saveGroupAgentContextRecord(record: UTSJSONObject): boolean {
 	const agentId = record['agentId'] as string | null
-	if (agentId == null || agentId == '') { return }
-	saveGroupAgentContextRow(record)
+	if (agentId == null || agentId == '') { return false }
+	return saveGroupAgentContextRow(record)
 }
 
 export function migrateLegacyGroupChatStorage(storageKeys: string[]): number {
 	let migrated = 0
-	const canMigrateGroups = getGroupChatRows().length == 0
-	const groups: GroupChat[] = canMigrateGroups == true ? legacyGetGroupChats() : []
-	if (canMigrateGroups == true) {
-		if (groups.length > 0) {
-			saveGroupChats(groups)
+	const groups = legacyGetGroupChats()
+	if (groups.length > 0) {
+		if (getGroupChatRows().length == 0) {
+			if (saveGroupChats(groups) == false) { throw new Error('旧群聊迁移失败') }
 			migrated += groups.length
 		}
-
 		for (let i = 0; i < groups.length; i++) {
 			const groupId = groups[i].id
+			if (getGroupChatById(groupId) == null) { continue }
 			const members = legacyGetGroupMembers(groupId)
-			if (members.length > 0) {
-				saveGroupMembers(groupId, members)
+			if (members.length > 0 && getGroupMembers(groupId).length == 0) {
+				if (saveGroupMembers(groupId, members) == false) { throw new Error('旧群成员迁移失败') }
 				migrated += members.length
 			}
 			const sessions = legacyGetGroupSessions(groupId)
-			if (sessions.length > 0) {
-				saveGroupSessions(groupId, sessions)
+			if (sessions.length > 0 && getGroupSessions(groupId).length == 0) {
+				if (saveGroupSessions(groupId, sessions) == false) { throw new Error('旧群会话迁移失败') }
 				migrated += sessions.length
 			}
 			for (let j = 0; j < sessions.length; j++) {
+				if (getGroupSessionById(groupId, sessions[j].id) == null) { continue }
 				const messages = legacyGetGroupMessages(groupId, sessions[j].id)
-				if (messages.length > 0) {
-					saveGroupMessages(groupId, sessions[j].id, messages)
-					migrated += messages.length
+				if (messages.length == 0 || getGroupMessages(groupId, sessions[j].id).length > 0) { continue }
+				if (saveGroupMessages(groupId, sessions[j].id, messages) == false) {
+					throw new Error('旧群消息迁移失败')
 				}
+				migrated += messages.length
 			}
 		}
 	}
 
-	if (canMigrateGroups == true) {
+	if (groups.length > 0) {
 		try {
 			const activeGroupId = uni.getStorageSync(ACTIVE_GROUP_CHAT_ID_KEY) as string | null
 			if (activeGroupId != null && activeGroupId != '' && getGroupChatState(ACTIVE_GROUP_CHAT_ID_KEY) == '') {
@@ -576,7 +610,7 @@ export function migrateLegacyGroupChatStorage(storageKeys: string[]): number {
 		const raw = uni.getStorageSync(key) as string | null
 		const records = parseAgentContextRecords(safeJsonText(raw))
 		for (let r = 0; r < records.length; r++) {
-			saveGroupAgentContextRecord(records[r])
+			if (saveGroupAgentContextRecord(records[r]) == false) { throw new Error('旧群聊上下文迁移失败') }
 			migrated++
 		}
 	}
@@ -587,10 +621,10 @@ export function createGroupAgentContextRecord(group: GroupChat, session: GroupCh
 	return createGroupAgentContextRecordPayload(group, session, agentId, agentName, action, runtimeMessages, systemPrompt)
 }
 
-export function appendGroupMessage(groupId: string, sessionId: string, message: UTSJSONObject): void {
+export function appendGroupMessage(groupId: string, sessionId: string, message: UTSJSONObject): boolean {
 	const messages = getGroupMessages(groupId, sessionId)
 	messages.push(message)
-	saveGroupMessages(groupId, sessionId, messages)
+	return saveGroupMessages(groupId, sessionId, messages)
 }
 
 
@@ -608,17 +642,20 @@ export function createGroupHiddenMessage(groupId: string, sessionId: string, sen
 }
 
 
-export function createGroupAgentStreamingMessage(groupId: string, sessionId: string, agentId: string): UTSJSONObject {
+export function createGroupAgentStreamingMessage(groupId: string, sessionId: string, agentId: string, deliveryMode: string = GROUP_DELIVERY_MODE_PUBLIC): UTSJSONObject {
 	const agent = getAgentById(agentId)
 	const name = readAgentName(agent)
 	const avatar = readAgentAvatar(agent)
 	const base = createAssistantStreamingMessage([] as UTSJSONObject[], Date.now())
 	base['hideThinking'] = readAgentHideThinking(agent)
 	base['msgSegmentation'] = readAgentMsgSegmentation(agent)
-	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
+	const privateDelivery = deliveryMode == GROUP_DELIVERY_MODE_USER_PRIVATE
+	const visibility = privateDelivery == true ? GROUP_MESSAGE_VISIBILITY_PRIVATE : GROUP_MESSAGE_VISIBILITY_PUBLIC
+	const audience = privateDelivery == true ? GROUP_MESSAGE_AUDIENCE_USER : GROUP_MESSAGE_AUDIENCE_GROUP
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true, visibility, [] as string[], audience)
 }
 
-export function createGroupAgentFinalMessage(groupId: string, sessionId: string, agentId: string, parts: UTSJSONObject[], content: string): UTSJSONObject {
+export function createGroupAgentFinalMessage(groupId: string, sessionId: string, agentId: string, parts: UTSJSONObject[], content: string, deliveryMode: string = GROUP_DELIVERY_MODE_PUBLIC): UTSJSONObject {
 	const agent = getAgentById(agentId)
 	const name = readAgentName(agent)
 	const avatar = readAgentAvatar(agent)
@@ -629,7 +666,10 @@ export function createGroupAgentFinalMessage(groupId: string, sessionId: string,
 	base['content'] = cleanContent != '' ? cleanContent : stripGroupAgentSpeakerPrefix(content, name)
 	base['hideThinking'] = readAgentHideThinking(agent)
 	base['msgSegmentation'] = readAgentMsgSegmentation(agent)
-	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
+	const privateDelivery = deliveryMode == GROUP_DELIVERY_MODE_USER_PRIVATE
+	const visibility = privateDelivery == true ? GROUP_MESSAGE_VISIBILITY_PRIVATE : GROUP_MESSAGE_VISIBILITY_PUBLIC
+	const audience = privateDelivery == true ? GROUP_MESSAGE_AUDIENCE_USER : GROUP_MESSAGE_AUDIENCE_GROUP
+	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true, visibility, [] as string[], audience)
 }
 
 export function createGroupUserImageMessage(groupId: string, sessionId: string, imagePath: string, userName: string = ''): UTSJSONObject {
@@ -642,17 +682,20 @@ export function createGroupUserFileMessage(groupId: string, sessionId: string, f
 	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeGroupUserDisplayName(userName), '', true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
 }
 
-export function revokeGroupAgentMessage(groupId: string, sessionId: string, messageId: string): void {
+export function revokeGroupAgentMessage(groupId: string, sessionId: string, messageId: string): boolean {
 	const messages = getGroupMessages(groupId, sessionId)
+	let found = false
 	for (let i = 0; i < messages.length; i++) {
 		const id = messages[i]['id'] as string | null
 		const senderType = messages[i]['senderType'] as string | null
 		if (id == messageId && senderType == GROUP_MESSAGE_SENDER_AGENT) {
 			markGroupMessageRevokedFields(messages[i])
+			found = true
 			break
 		}
 	}
-	saveGroupMessages(groupId, sessionId, messages)
+	if (found == false) { return false }
+	return saveGroupMessages(groupId, sessionId, messages)
 }
 
 export function markGroupAgentMessageRevoked(message: UTSJSONObject): void {
@@ -673,12 +716,12 @@ export function deleteGroupSession(groupId: string, sessionId: string, clearFile
 		}
 	}
 	if (found == false) {
-		return { ok: false, filesCleared: false } as GroupSessionDeleteResult
+		return { ok: false, filesCleared: false, stateUpdated: false } as GroupSessionDeleteResult
 	}
 	try {
 		deleteGroupSessionDbRows(groupId, sessionId)
 	} catch (_e: any) {
-		return { ok: false, filesCleared: false } as GroupSessionDeleteResult
+		return { ok: false, filesCleared: false, stateUpdated: false } as GroupSessionDeleteResult
 	}
 	let filesCleared = true
 	if (clearFiles == true && targetWorkspace != '' && isInsideGroupWorkspace(targetWorkspace) == true && exists(targetWorkspace) == true) {
@@ -686,18 +729,24 @@ export function deleteGroupSession(groupId: string, sessionId: string, clearFile
 		filesCleared = deleteResult.ok
 	}
 	const group = getGroupChatById(groupId)
+	let stateUpdated = true
 	if (group != null && group.activeSessionId == sessionId) {
-		if (next.length > 0) {
-			group.activeSessionId = next[0].id
-		} else {
-			const fresh = createGroupSession(groupId, '故事会话')
-			group.activeSessionId = fresh.id
+		try {
+			if (next.length > 0) {
+				group.activeSessionId = next[0].id
+			} else {
+				const fresh = createGroupSession(groupId, '故事会话')
+				group.activeSessionId = fresh.id
+			}
+			group.updatedAt = Date.now()
+			if (saveGroupChat(group) == false || setActiveGroupSessionId(group.activeSessionId) == false) {
+				stateUpdated = false
+			}
+		} catch (_e: any) {
+			stateUpdated = false
 		}
-		group.updatedAt = Date.now()
-		saveGroupChat(group)
-		setActiveGroupSessionId(group.activeSessionId)
 	}
-	return { ok: true, filesCleared: filesCleared } as GroupSessionDeleteResult
+	return { ok: true, filesCleared: filesCleared, stateUpdated: stateUpdated } as GroupSessionDeleteResult
 }
 
 export function forkGroupSession(groupId: string, sessionId: string): GroupChatSession | null {
@@ -727,10 +776,14 @@ export function forkGroupSession(groupId: string, sessionId: string): GroupChatS
 	const sessions = getGroupSessions(groupId)
 	sessions.push(forked)
 	try {
-		saveGroupSessions(groupId, sessions)
+		if (saveGroupSessions(groupId, sessions) == false) {
+			throw new Error('群会话分支保存失败')
+		}
 		const oldMessages = getGroupMessages(groupId, sessionId)
 		const copiedMessages = cloneGroupMessagesForFork(oldMessages, forkId)
-		saveGroupMessages(groupId, forkId, copiedMessages)
+		if (saveGroupMessages(groupId, forkId, copiedMessages) == false) {
+			throw new Error('群会话消息复制失败')
+		}
 	} catch (_e: any) {
 		try {
 			deleteGroupSessionDbRows(groupId, forkId)
@@ -773,11 +826,11 @@ export function createDefaultWritingGroupChat(): GroupChat {
 		createdAt: Date.now(),
 		updatedAt: Date.now(),
 	}
-	saveGroupChat(group)
-	if (firstMember != '') { addGroupMember(groupId, firstMember) }
-	if (secondMember != '' && secondMember != firstMember) { addGroupMember(groupId, secondMember) }
+	if (saveGroupChat(group) == false) { throw new Error('默认群聊创建失败') }
+	if (firstMember != '' && addGroupMember(groupId, firstMember) == false) { throw new Error('默认群聊成员保存失败') }
+	if (secondMember != '' && secondMember != firstMember && addGroupMember(groupId, secondMember) == false) { throw new Error('默认群聊成员保存失败') }
 	const session = createGroupSession(groupId, '故事会话')
 	group.activeSessionId = session.id
-	saveGroupChat(group)
+	if (saveGroupChat(group) == false) { throw new Error('默认群聊当前会话保存失败') }
 	return group
 }

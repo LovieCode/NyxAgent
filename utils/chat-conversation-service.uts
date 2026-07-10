@@ -57,38 +57,38 @@ export function loadActiveAgentSnapshot(): ChatAgentSnapshot {
 	return snapshot
 }
 
-export function loadInitialConversation(agentId: string): ChatConversationLoadResult {
-	const storedId = consumeActiveConversationRuntimeId()
-	if (storedId != '') {
-		try {
-			return {
-				conversationId: storedId,
-				messages: getMessages(storedId),
-				saved: true,
-			} as ChatConversationLoadResult
-		} catch (_e: any) {
-			return {
-				conversationId: storedId,
-				messages: [] as UTSJSONObject[],
-				saved: true,
-			} as ChatConversationLoadResult
+function findConversationById(conversations: UTSJSONObject[], conversationId: string): UTSJSONObject | null {
+	for (let i = 0; i < conversations.length; i++) {
+		const id = conversations[i]['id'] as string | null
+		if (id == conversationId) {
+			return conversations[i]
 		}
 	}
+	return null
+}
+
+export function loadInitialConversation(agentId: string): ChatConversationLoadResult {
+	let conversations: UTSJSONObject[] = []
 	if (agentId != '') {
-		try {
-			const convs = getConversationsByAgent(agentId)
-			if (convs.length > 0) {
-				const latest = convs[0]
-				const convId = latest['id'] as string | null
-				if (convId != null && convId != '') {
-					return {
-						conversationId: convId,
-						messages: getMessages(convId),
-						saved: true,
-					} as ChatConversationLoadResult
-				}
-			}
-		} catch (_e2: any) {
+		conversations = getConversationsByAgent(agentId)
+	}
+	const storedId = consumeActiveConversationRuntimeId()
+	if (storedId != '' && findConversationById(conversations, storedId) != null) {
+		return {
+			conversationId: storedId,
+			messages: getMessages(storedId),
+			saved: true,
+		} as ChatConversationLoadResult
+	}
+	if (conversations.length > 0) {
+		const latest = conversations[0]
+		const convId = latest['id'] as string | null
+		if (convId != null && convId != '') {
+			return {
+				conversationId: convId,
+				messages: getMessages(convId),
+				saved: true,
+			} as ChatConversationLoadResult
 		}
 	}
 	return {

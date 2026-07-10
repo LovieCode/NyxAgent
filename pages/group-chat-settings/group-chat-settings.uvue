@@ -4,8 +4,22 @@
 		<scroll-view class="settings-scroll" :scroll-y="true">
 
 			<view class="card">
+				<text class="card-title">群头像</text>
+				<view class="group-avatar-row">
+					<view class="group-avatar-preview" @click="pickGroupAvatar">
+						<image v-if="groupAvatar != ''" :src="groupAvatar" class="group-avatar-image" mode="aspectFill" />
+						<oui-icon-unix v-else name="robot" size="25px" color="#FFFFFF" />
+					</view>
+					<view class="group-avatar-actions">
+						<text class="group-avatar-action" @click="pickGroupAvatar">选择图片</text>
+						<text v-if="groupAvatar != ''" class="group-avatar-clear" @click="clearGroupAvatar">移除头像</text>
+					</view>
+				</view>
+			</view>
+
+			<view class="card">
 				<text class="card-title">群名</text>
-				<input class="text-input" v-model="groupName" placeholder="输入群聊名称" placeholder-style="color:var(--rice-text-color-3)" />
+				<input class="text-input" v-model="groupName" placeholder="输入群聊名称" placeholder-style="color:#9CA3AF" />
 			</view>
 
 			<view class="card">
@@ -34,7 +48,7 @@
 					</view>
 					<text class="reset-btn" @click="resetSchedulerPrompt">恢复默认</text>
 				</view>
-				<textarea class="prompt-input" v-model="schedulerPrompt" placeholder="本群调度子代理提示词" placeholder-style="color:var(--rice-text-color-3)" />
+				<textarea class="prompt-input" v-model="schedulerPrompt" placeholder="本群调度子代理提示词" placeholder-style="color:#9CA3AF" />
 			</view>
 
 			<view class="card">
@@ -45,7 +59,7 @@
 					</view>
 					<text class="reset-btn" @click="resetSharedPrompt">恢复默认</text>
 				</view>
-				<textarea class="prompt-input" v-model="sharedPrompt" placeholder="所有成员公开发言共同遵守的提示词" placeholder-style="color:var(--rice-text-color-3)" />
+				<textarea class="prompt-input" v-model="sharedPrompt" placeholder="所有成员公开发言共同遵守的提示词" placeholder-style="color:#9CA3AF" />
 			</view>
 
 			<view class="card save-card">
@@ -58,6 +72,7 @@
 
 <script lang="uts">
 	import { getAgents } from '@/utils/agent.uts'
+	import { chooseAvatarImage, consumeAvatarCropResult, hasAvatarCropRequest, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
 	import {
 		type GroupChat,
 		addGroupMember,
@@ -79,9 +94,11 @@
 				group: null as GroupChat | null,
 				agentList: [] as UTSJSONObject[],
 				groupName: '' as string,
+				groupAvatar: '' as string,
 				schedulerPrompt: '' as string,
 				sharedPrompt: '' as string,
 				savedGroupName: '' as string,
+				savedGroupAvatar: '' as string,
 				savedSchedulerPrompt: '' as string,
 				savedSharedPrompt: '' as string,
 				isConfirmingLeave: false as boolean,
@@ -89,7 +106,22 @@
 			}
 		},
 		onLoad() { this.loadData() },
-		onShow() { this.loadData() },
+		onShow() {
+			const group = this.group
+			if (group == null) {
+				this.loadData()
+				return
+			}
+			const cropTarget = this.groupAvatarCropTarget(group.id)
+			if (hasAvatarCropRequest(cropTarget) == false) {
+				this.loadData()
+				return
+			}
+			const cropResult = consumeAvatarCropResult(cropTarget)
+			if (cropResult != '') {
+				this.groupAvatar = cropResult
+			}
+		},
 		onBackPress(): boolean {
 			if (this.hasUnsavedChanges() == false) {
 				return false
@@ -106,17 +138,20 @@
 				if (group == null) { return }
 				this.group = group
 				this.groupName = group.name
+				this.groupAvatar = group.avatar
 				this.schedulerPrompt = getGroupSchedulerPrompt(group)
 				this.sharedPrompt = group.sharedPrompt != '' ? group.sharedPrompt : buildDefaultSharedPrompt()
 				this.captureSavedState()
 			},
 			captureSavedState(): void {
 				this.savedGroupName = this.groupName.trim()
+				this.savedGroupAvatar = this.groupAvatar
 				this.savedSchedulerPrompt = this.schedulerPrompt.trim()
 				this.savedSharedPrompt = this.sharedPrompt.trim()
 			},
 			hasUnsavedChanges(): boolean {
 				if (this.groupName.trim() != this.savedGroupName) { return true }
+				if (this.groupAvatar != this.savedGroupAvatar) { return true }
 				if (this.schedulerPrompt.trim() != this.savedSchedulerPrompt) { return true }
 				if (this.sharedPrompt.trim() != this.savedSharedPrompt) { return true }
 				return false
@@ -155,6 +190,19 @@
 				const avatar = agent['avatar'] as string | null
 				return avatar != null ? avatar : ''
 			},
+			groupAvatarCropTarget(groupId: string): string {
+				return 'group_avatar:' + groupId
+			},
+			pickGroupAvatar(): void {
+				const group = this.group
+				if (group == null) { return }
+				chooseAvatarImage((path: string) => {
+					openAvatarCrop(path, this.groupAvatarCropTarget(group.id))
+				})
+			},
+			clearGroupAvatar(): void {
+				this.groupAvatar = ''
+			},
 			isMember(agent: UTSJSONObject): boolean {
 				const group = this.group
 				if (group == null) { return false }
@@ -168,15 +216,20 @@
 				if (group == null) { return }
 				const id = agent['id'] as string | null
 				if (id == null || id == '') { return }
+				let saved = false
 				if (this.isMember(agent) == true) {
 					const members = getActiveGroupMembers(group.id)
 					if (members.length <= 1) {
 						uni.showToast({ position: 'bottom', title: '至少保留一个成员', icon: 'none' })
 						return
 					}
-					removeGroupMember(group.id, id)
+					saved = removeGroupMember(group.id, id)
 				} else {
-					addGroupMember(group.id, id)
+					saved = addGroupMember(group.id, id)
+				}
+				if (saved == false) {
+					uni.showToast({ position: 'bottom', title: '成员变更保存失败，请重试', icon: 'none' })
+					return
 				}
 				this.refreshToken++
 			},
@@ -195,6 +248,7 @@
 					return false
 				}
 				group.name = name
+				group.avatar = this.groupAvatar
 				if (group.schedulerAgentId == '' || group.schedulerAgentId == 'scheduler') {
 					// LEGACY_COMPAT: 旧版群调度器 ID 可能是全局 scheduler；保存时落到本群子代理。
 					group.schedulerAgentId = buildGroupSchedulerAgentId(group.id)
@@ -202,7 +256,10 @@
 				group.schedulerPrompt = this.schedulerPrompt.trim() != '' ? this.schedulerPrompt.trim() : buildDefaultSchedulerPrompt()
 				group.sharedPrompt = this.sharedPrompt.trim() != '' ? this.sharedPrompt.trim() : buildDefaultSharedPrompt()
 				group.updatedAt = Date.now()
-				saveGroupChat(group)
+				if (saveGroupChat(group) == false) {
+					uni.showToast({ position: 'bottom', title: '群聊设置保存失败，请重试', icon: 'none' })
+					return false
+				}
 				this.group = group
 				this.groupName = group.name
 				this.schedulerPrompt = getGroupSchedulerPrompt(group)
@@ -221,6 +278,12 @@
 	.save-card { margin-bottom: 20px; }
 	.card-title { font-size: 16px; font-weight: bold; color: var(--rice-text-color); margin-bottom: 9px; }
 	.card-desc { font-size: 12px; color: var(--rice-text-color-3); margin-bottom: 9px; }
+	.group-avatar-row { flex-direction: row; align-items: center; }
+	.group-avatar-preview { width: 64px; height: 64px; border-radius: 18px; background-color: var(--rice-primary-color); align-items: center; justify-content: center; overflow: hidden; }
+	.group-avatar-image { width: 64px; height: 64px; border-radius: 18px; }
+	.group-avatar-actions { margin-left: 14px; flex-direction: column; }
+	.group-avatar-action { color: var(--rice-primary-color); font-size: 14px; font-weight: bold; padding: 4px 0; }
+	.group-avatar-clear { color: #EF4444; font-size: 12px; margin-top: 6px; padding: 4px 0; }
 	.text-input { height: 39px; border-radius: 12px; background-color: var(--rice-background); padding: 0 11px; font-size: 14px; color: var(--rice-text-color); }
 	.prompt-header { flex-direction: row; align-items: flex-start; margin-bottom: 9px; }
 	.prompt-header-left { flex: 1; flex-direction: column; }

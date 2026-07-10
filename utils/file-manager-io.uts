@@ -15,6 +15,7 @@ import {
 	normalizePath,
 	okResult,
 } from '@/utils/file-manager-models.uts'
+import { APP_ERROR_CATEGORY_STORAGE, reportAppErrorFromCause } from '@/utils/app-error.uts'
 
 // #ifdef APP-ANDROID
 import File from 'java.io.File'
@@ -24,6 +25,17 @@ import Charset from 'java.nio.charset.Charset'
 // #ifdef APP-ANDROID
 const UTF8_CHARSET = Charset.forName('UTF-8')
 // #endif
+
+function recordFileIoFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+	reportAppErrorFromCause(
+		code,
+		APP_ERROR_CATEGORY_STORAGE,
+		operation,
+		userMessage,
+		cause,
+		true,
+	)
+}
 
 /**
  * 判断路径是否存在。
@@ -41,7 +53,8 @@ export function exists(path: string): boolean {
 	try {
 		const file = new File(absPath)
 		return file.exists()
-	} catch (_e: any) {
+	} catch (e: any) {
+		recordFileIoFailure('FILE_EXISTS_CHECK_FAILED', 'file_exists', '文件状态读取失败', e)
 		return false
 	}
 	// #endif
@@ -69,7 +82,8 @@ function toAndroidAbsPath(path: string): string {
 	if (path.startsWith('unifile://')) {
 		try {
 			return UTSAndroid.convert2AbsFullPath(path)
-		} catch (_e: any) {
+		} catch (e: any) {
+			recordFileIoFailure('FILE_PATH_RESOLVE_FAILED', 'file_resolve_android_path', '文件路径解析失败', e)
 			return ''
 		}
 	}
@@ -104,6 +118,7 @@ export function listDir(dirPath: string): FileItem[] {
 		}
 		const names = dir.list()
 		if (names == null) {
+			recordFileIoFailure('FILE_LIST_EMPTY_RESULT', 'file_list_directory', '目录内容读取失败', absPath)
 			return []
 		}
 		let idx = 0 as Int
@@ -117,16 +132,21 @@ export function listDir(dirPath: string): FileItem[] {
 			}
 			idx++
 		}
-	} catch (_e: any) {
+	} catch (e: any) {
+		recordFileIoFailure('FILE_LIST_FAILED', 'file_list_directory', '目录内容读取失败', e)
 		return []
 	}
 	// #endif
 	// #ifndef APP-ANDROID
+	if (exists(normalized) == false) {
+		return []
+	}
 	const fm = uni.getFileSystemManager()
 	let names: string[]
 	try {
 		names = fm.readdirSync(normalized) as string[]
-	} catch (_e: any) {
+	} catch (e: any) {
+		recordFileIoFailure('FILE_LIST_FAILED', 'file_list_directory', '目录内容读取失败', e)
 		return []
 	}
 	for (let i = 0; i < names.length; i++) {
@@ -171,7 +191,8 @@ function statItemByAbsPath(absPath: string, displayPath: string): FileItem {
 		const size = isDir ? 0 : file.length()
 		const mtime = file.lastModified()
 		return makeFileItem(file.name, displayPath, isDir, size, mtime)
-	} catch (_e: any) {
+	} catch (e: any) {
+		recordFileIoFailure('FILE_STAT_FAILED', 'file_stat', '文件信息读取失败', e)
 		return makeFileItem(basename(displayPath), displayPath, false, 0, 0)
 	}
 }
@@ -194,6 +215,9 @@ export function statItem(path: string): FileItem {
 	return statItemByAbsPath(absPath, normalized)
 	// #endif
 	// #ifndef APP-ANDROID
+	if (exists(normalized) == false) {
+		return makeFileItem(basename(normalized), normalized, false, 0, 0)
+	}
 	const fm = uni.getFileSystemManager()
 	try {
 		const statsArray = fm.statSync(normalized, false)
@@ -208,14 +232,16 @@ export function statItem(path: string): FileItem {
 		if (stat != null) {
 			try {
 				isDir = stat.isDirectory()
-			} catch (_e: any) {
+			} catch (e: any) {
+				recordFileIoFailure('FILE_STAT_TYPE_FAILED', 'file_stat_type', '文件类型读取失败', e)
 				isDir = false
 			}
 			size = stat.size
 			mtime = stat.lastModifiedTime
 		}
 		return makeFileItem(basename(normalized), normalized, isDir, size, mtime)
-	} catch (_e: any) {
+	} catch (e: any) {
+		recordFileIoFailure('FILE_STAT_FAILED', 'file_stat', '文件信息读取失败', e)
 		return makeFileItem(basename(normalized), normalized, false, 0, 0)
 	}
 	// #endif
@@ -246,8 +272,10 @@ export function createDir(dirPath: string, recursive: boolean = true): FileOpRes
 		if (ok) {
 			return okResult()
 		}
+		recordFileIoFailure('FILE_CREATE_DIR_FAILED', 'file_create_directory', '创建目录失败', normalized)
 		return failResult('创建目录失败')
 	} catch (e: any) {
+		recordFileIoFailure('FILE_CREATE_DIR_FAILED', 'file_create_directory', '创建目录失败', e)
 		const msg = e != null ? ('' + e) : '创建目录失败'
 		return failResult(msg)
 	}
@@ -258,6 +286,7 @@ export function createDir(dirPath: string, recursive: boolean = true): FileOpRes
 		fm.mkdirSync(normalized, recursive)
 		return okResult()
 	} catch (e: any) {
+		recordFileIoFailure('FILE_CREATE_DIR_FAILED', 'file_create_directory', '创建目录失败', e)
 		const msg = e != null ? ('' + e) : '创建目录失败'
 		return failResult(msg)
 	}
@@ -289,6 +318,7 @@ export function createFile(filePath: string): FileOpResult {
 		file.writeText('', UTF8_CHARSET)
 		return okResult()
 	} catch (e: any) {
+		recordFileIoFailure('FILE_CREATE_FAILED', 'file_create', '创建文件失败', e)
 		const msg = e != null ? ('' + e) : '创建文件失败'
 		return failResult(msg)
 	}
@@ -299,6 +329,7 @@ export function createFile(filePath: string): FileOpResult {
 		fm.writeFileSync(normalized, '', 'utf-8')
 		return okResult()
 	} catch (e: any) {
+		recordFileIoFailure('FILE_CREATE_FAILED', 'file_create', '创建文件失败', e)
 		const msg = e != null ? ('' + e) : '创建文件失败'
 		return failResult(msg)
 	}
@@ -327,6 +358,7 @@ export function writeContent(filePath: string, content: string): FileOpResult {
 		file.writeText(content, UTF8_CHARSET)
 		return okResult()
 	} catch (e: any) {
+		recordFileIoFailure('FILE_WRITE_FAILED', 'file_write', '写入文件失败', e)
 		const msg = e != null ? ('' + e) : '写入文件失败'
 		return failResult(msg)
 	}
@@ -337,6 +369,7 @@ export function writeContent(filePath: string, content: string): FileOpResult {
 		fm.writeFileSync(normalized, content, 'utf-8')
 		return okResult()
 	} catch (e: any) {
+		recordFileIoFailure('FILE_WRITE_FAILED', 'file_write', '写入文件失败', e)
 		const msg = e != null ? ('' + e) : '写入文件失败'
 		return failResult(msg)
 	}
@@ -365,11 +398,15 @@ export function readContent(filePath: string): string | null {
 			return null
 		}
 		return file.readText(UTF8_CHARSET)
-	} catch (_e: any) {
+	} catch (e: any) {
+		recordFileIoFailure('FILE_READ_FAILED', 'file_read', '读取文件失败', e)
 		return null
 	}
 	// #endif
 	// #ifndef APP-ANDROID
+	if (exists(normalized) == false) {
+		return null
+	}
 	const fm = uni.getFileSystemManager()
 	try {
 		const data = fm.readFileSync(normalized, 'utf-8')
@@ -377,7 +414,8 @@ export function readContent(filePath: string): string | null {
 			return null
 		}
 		return '' + data
-	} catch (_e: any) {
+	} catch (e: any) {
+		recordFileIoFailure('FILE_READ_FAILED', 'file_read', '读取文件失败', e)
 		return null
 	}
 	// #endif
@@ -409,14 +447,17 @@ export function deleteItem(path: string, recursive: boolean = true): FileOpResul
 			if (ok) {
 				return okResult()
 			}
+			recordFileIoFailure('FILE_DELETE_DIR_FAILED', 'file_delete_directory', '删除目录失败', normalized)
 			return failResult('递归删除目录失败')
 		}
 		const ok = file.delete()
 		if (ok) {
 			return okResult()
 		}
+		recordFileIoFailure('FILE_DELETE_FAILED', 'file_delete', '删除文件失败', normalized)
 		return failResult('删除失败')
 	} catch (e: any) {
+		recordFileIoFailure('FILE_DELETE_FAILED', 'file_delete', '删除文件失败', e)
 		const msg = e != null ? ('' + e) : '删除失败'
 		return failResult(msg)
 	}
@@ -429,6 +470,7 @@ export function deleteItem(path: string, recursive: boolean = true): FileOpResul
 			fm.rmdirSync(normalized, recursive)
 			return okResult()
 		} catch (e: any) {
+			recordFileIoFailure('FILE_DELETE_DIR_FAILED', 'file_delete_directory', '删除目录失败', e)
 			const msg = e != null ? ('' + e) : '删除目录失败'
 			return failResult(msg)
 		}
@@ -437,6 +479,7 @@ export function deleteItem(path: string, recursive: boolean = true): FileOpResul
 			fm.unlinkSync(normalized)
 			return okResult()
 		} catch (e: any) {
+			recordFileIoFailure('FILE_DELETE_FAILED', 'file_delete', '删除文件失败', e)
 			const msg = e != null ? ('' + e) : '删除文件失败'
 			return failResult(msg)
 		}
@@ -498,8 +541,10 @@ export function renameItem(oldPath: string, newPath: string): FileOpResult {
 		if (ok) {
 			return okResult()
 		}
+		recordFileIoFailure('FILE_RENAME_FAILED', 'file_rename', '重命名失败', normalizedOld)
 		return failResult('重命名失败')
 	} catch (e: any) {
+		recordFileIoFailure('FILE_RENAME_FAILED', 'file_rename', '重命名失败', e)
 		const msg = e != null ? ('' + e) : '重命名失败'
 		return failResult(msg)
 	}
@@ -510,6 +555,7 @@ export function renameItem(oldPath: string, newPath: string): FileOpResult {
 		fm.renameSync(normalizedOld, normalizedNew)
 		return okResult()
 	} catch (e: any) {
+		recordFileIoFailure('FILE_RENAME_FAILED', 'file_rename', '重命名失败', e)
 		const msg = e != null ? ('' + e) : '重命名失败'
 		return failResult(msg)
 	}
@@ -554,6 +600,7 @@ export function copyItem(srcPath: string, destPath: string): FileOpResult {
 		srcFile.copyTo(destFile)
 		return okResult()
 	} catch (e: any) {
+		recordFileIoFailure('FILE_COPY_FAILED', 'file_copy', '复制文件失败', e)
 		const msg = e != null ? ('' + e) : '复制文件失败'
 		return failResult(msg)
 	}
@@ -564,6 +611,7 @@ export function copyItem(srcPath: string, destPath: string): FileOpResult {
 		fm.copyFileSync(normalizedSrc, normalizedDest)
 		return okResult()
 	} catch (e: any) {
+		recordFileIoFailure('FILE_COPY_FAILED', 'file_copy', '复制文件失败', e)
 		const msg = e != null ? ('' + e) : '复制文件失败'
 		return failResult(msg)
 	}

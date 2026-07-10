@@ -23,7 +23,8 @@
 			<view class="list-content">
 				<view v-for="(group, index) in groupList" :key="group.id" class="group-item" @click="openGroup(group)">
 					<view class="group-avatar" :class="'avatar-' + ((index % 5) + 1)">
-						<oui-icon-unix name="robot" size="24px" color="#FFFFFF" />
+						<image v-if="group.avatar != ''" :src="group.avatar" class="group-avatar-image" mode="aspectFill" />
+						<oui-icon-unix v-else name="robot" size="24px" color="#FFFFFF" />
 					</view>
 					<view class="group-info">
 						<view class="group-top">
@@ -113,7 +114,8 @@
 	.hero-action { color: #FFFFFF; font-size: 13px; font-weight: bold; margin-left: 9px; }
 	.list-content { flex-direction: column; background-color: var(--rice-background-2); margin: 8px 12px 12px; border-radius: 18px; overflow: hidden; }
 	.group-item { flex-direction: row; align-items: center; padding: 14px 16px; border-bottom-width: 1px; border-bottom-color: var(--rice-border-color); border-bottom-style: solid; }
-	.group-avatar { width: 48px; height: 48px; border-radius: 14px; justify-content: center; align-items: center; margin-right: 14px; }
+	.group-avatar { width: 48px; height: 48px; border-radius: 14px; justify-content: center; align-items: center; margin-right: 14px; overflow: hidden; }
+	.group-avatar-image { width: 48px; height: 48px; border-radius: 14px; }
 	.avatar-1 { background-color: var(--rice-primary-color); }
 	.avatar-2 { background-color: #60A5FA; }
 	.avatar-3 { background-color: #34D399; }

@@ -38,6 +38,7 @@
 
 	import { ref, onMounted } from 'vue'
 	import { getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 
 	const imagePath = ref('' as string)
 	const areaSize = ref(300 as number)
@@ -57,16 +58,37 @@
 	let startImgH = 0 as number
 
 	let loaded = false as boolean
+	let cropping = false as boolean
+
+	function showCropFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+		const error = reportAppErrorFromCause(
+			code,
+			APP_ERROR_CATEGORY_RUNTIME,
+			operation,
+			userMessage,
+			cause,
+			true,
+		)
+		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+	}
 
 	onMounted(() => {
 		const pathRaw = getRuntimeState('crop_image_path')
-		if (pathRaw != '') {
-			imagePath.value = pathRaw
+		if (pathRaw == '') {
+			showCropFailure('CROP_SOURCE_MISSING', 'crop_page_load', '找不到待裁剪图片', 'crop_image_path 为空')
+			uni.navigateBack()
+			return
 		}
-		const win = uni.getWindowInfo()
-		const wwRaw = win['windowWidth']
-		const ww = wwRaw != null ? (wwRaw as number) : 300
-		areaSize.value = ww
+		imagePath.value = pathRaw
+		try {
+			const win = uni.getWindowInfo()
+			const wwRaw = win['windowWidth']
+			const ww = wwRaw != null ? (wwRaw as number) : 300
+			areaSize.value = ww > 0 ? ww : 300
+		} catch (e: any) {
+			areaSize.value = 300
+			showCropFailure('CROP_WINDOW_INFO_FAILED', 'crop_window_info', '无法读取裁剪区域尺寸', e)
+		}
 	})
 
 	function applyImageStyle() {
@@ -86,41 +108,58 @@
 		if (imgTop + imgH < fs) { imgTop = fs - imgH }
 	}
 
+	function applyImageInfo(res: any): void {
+		try {
+			const raw = JSON.stringify(res)
+			if (raw == null || raw == '') {
+				showCropFailure('CROP_IMAGE_INFO_EMPTY', 'crop_get_image_info', '图片信息读取失败', 'getImageInfo 返回为空')
+				return
+			}
+			const parsed = JSON.parse(raw) as UTSJSONObject
+			const wRaw = parsed['width']
+			const hRaw = parsed['height']
+			if (wRaw == null || hRaw == null) {
+				showCropFailure('CROP_IMAGE_SIZE_MISSING', 'crop_get_image_info', '图片尺寸读取失败', raw)
+				return
+			}
+			const nw = wRaw as number
+			const nh = hRaw as number
+			if (nw <= 0 || nh <= 0) {
+				showCropFailure('CROP_IMAGE_SIZE_INVALID', 'crop_get_image_info', '图片尺寸无效', 'width=' + nw + ', height=' + nh)
+				return
+			}
+
+			const fs = areaSize.value
+			const scaleRatio = (nw > nh) ? (fs / nh) : (fs / nw)
+			imgW = nw * scaleRatio
+			imgH = nh * scaleRatio
+			imgLeft = (fs - imgW) / 2
+			imgTop = (fs - imgH) / 2
+			applyImageStyle()
+			loaded = true
+		} catch (e: any) {
+			showCropFailure('CROP_IMAGE_INFO_PARSE_FAILED', 'crop_get_image_info', '图片信息解析失败', e)
+		}
+	}
+
 	function onImageLoad(e: any) {
-		if (loaded) { return }
+		if (loaded == true) { return }
 
 		// 获取 wrapper View 引用
 		imgEl = uni.getElementById('imageWrapper') as UniElement | null
-		if (imgEl == null) { return }
+		if (imgEl == null) {
+			showCropFailure('CROP_IMAGE_ELEMENT_MISSING', 'crop_bind_image_element', '裁剪视图初始化失败', 'imageWrapper 元素不存在')
+			return
+		}
 
 		// @load 事件不携带尺寸，用 getImageInfo 获取
 		uni.getImageInfo({
 			src: imagePath.value,
 			success: (res: any) => {
-				const raw = JSON.stringify(res)
-				if (raw == null || raw == '') { return }
-				const parsed = JSON.parse(raw) as UTSJSONObject
-				if (parsed == null) { return }
-				const wRaw = parsed['width']
-				const hRaw = parsed['height']
-				if (wRaw == null || hRaw == null) { return }
-				const nw = wRaw as number
-				const nh = hRaw as number
-				if (nw == 0 || nh == 0) { return }
-
-				const fs = areaSize.value
-				const scaleRatio = (nw > nh) ? (fs / nw) : (fs / nh)
-				imgW = nw * scaleRatio
-				imgH = nh * scaleRatio
-
-				// 居中
-				imgLeft = (fs - imgW) / 2
-				imgTop = (fs - imgH) / 2
-
-				applyImageStyle()
-				loaded = true
+				applyImageInfo(res)
 			},
-			fail: () => {
+			fail: (err: any) => {
+				showCropFailure('CROP_IMAGE_INFO_FAILED', 'crop_get_image_info', '图片加载失败', err)
 			}
 		})
 	}
@@ -147,14 +186,20 @@
 			const dx = e.touches[1].screenX - e.touches[0].screenX
 			const dy = e.touches[1].screenY - e.touches[0].screenY
 			const dist = Math.sqrt(dx * dx + dy * dy)
-			const ratio = dist / touchDist
+			let ratio = dist / touchDist
+			const fs = areaSize.value
+			const minWidthRatio = fs / startImgW
+			const minHeightRatio = fs / startImgH
+			const minRatio = minWidthRatio > minHeightRatio ? minWidthRatio : minHeightRatio
+			const startMaxSize = startImgW > startImgH ? startImgW : startImgH
+			const maxRatio = (fs * 5) / startMaxSize
+			if (ratio < minRatio) { ratio = minRatio }
+			if (ratio > maxRatio) { ratio = maxRatio }
 			// 以图片中心为基准缩放
 			const cx = imgLeft + imgW / 2
 			const cy = imgTop + imgH / 2
 			imgW = startImgW * ratio
 			imgH = startImgH * ratio
-			if (imgW < 50) { imgW = 50 }
-			if (imgW > areaSize.value * 5) { imgW = areaSize.value * 5 }
 			imgLeft = cx - imgW / 2
 			imgTop = cy - imgH / 2
 			clampPosition()
@@ -172,31 +217,47 @@
 		}
 	}
 
-	function onTouchEnd() {
+	function onTouchEnd(e: UniTouchEvent) {
 		touchDist = 0
+		// 双指缩放后若仍有一根手指停留，重置拖动基点，避免下一帧跳位。
+		if (e.touches.length > 0) {
+			touchStartX = e.touches[0].screenX
+			touchStartY = e.touches[0].screenY
+		}
 	}
 
 	function doCrop() {
-		const target = uni.getElementById('cropArea') as UniElement | null
-		if (target == null) {
-			uni.showToast({ position: 'bottom',  title: '裁剪失败', icon: 'none' })
+		if (loaded == false) {
+			uni.showToast({ position: 'bottom', title: '图片尚未加载完成', icon: 'none' })
 			return
 		}
+		if (cropping == true) { return }
+		const target = uni.getElementById('cropArea') as UniElement | null
+		if (target == null) {
+			showCropFailure('CROP_TARGET_MISSING', 'crop_snapshot_target', '裁剪视图不可用', 'cropArea 元素不存在')
+			return
+		}
+		cropping = true
 		uni.showLoading({ title: '裁剪中...' })
 		target.takeSnapshot({
 			type: 'file',
 			format: 'png',
 			success: (res) => {
 				const path = res.tempFilePath
-				if (path != null && path != '') {
-					setRuntimeState('crop_result', path)
+				if (path == null || path == '') {
+					cropping = false
+					uni.hideLoading()
+					showCropFailure('CROP_SNAPSHOT_EMPTY', 'crop_snapshot', '裁剪结果为空', res)
+					return
 				}
+				setRuntimeState('crop_result', path)
 				uni.hideLoading()
 				uni.navigateBack()
 			},
-			fail: () => {
+			fail: (err: any) => {
+				cropping = false
 				uni.hideLoading()
-				uni.showToast({ position: 'bottom',  title: '裁剪失败', icon: 'none' })
+				showCropFailure('CROP_SNAPSHOT_FAILED', 'crop_snapshot', '裁剪失败', err)
 			}
 		})
 	}

@@ -5,13 +5,73 @@
  */
 
 import { isChooseCancelError, parsePickedImagePath, readPickedImageSelection } from '@/utils/attachment-reader.uts'
+import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
+import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+
+const AVATAR_CROP_RESULT_KEY = 'crop_result'
+const AVATAR_CROP_TARGET_KEY = 'crop_target'
+const AVATAR_CROP_IMAGE_PATH_KEY = 'crop_image_path'
+
+function showAvatarPickerFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+	const error = reportAppErrorFromCause(
+		code,
+		APP_ERROR_CATEGORY_RUNTIME,
+		operation,
+		userMessage,
+		cause,
+		true,
+	)
+	uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+}
 
 function deliverPickedAvatar(path: string, onPicked: (path: string) => void): void {
 	if (path == '') {
-		uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
+		showAvatarPickerFailure('AVATAR_PICKER_EMPTY_RESULT', 'avatar_picker_result', '没有读取到所选图片', '图片选择成功回调未返回路径')
 		return
 	}
 	onPicked(path)
+}
+
+function clearAvatarCropState(): void {
+	deleteRuntimeState(AVATAR_CROP_RESULT_KEY)
+	deleteRuntimeState(AVATAR_CROP_TARGET_KEY)
+	deleteRuntimeState(AVATAR_CROP_IMAGE_PATH_KEY)
+}
+
+/**
+ * 写入裁剪页协议并打开页面。导航失败时只清理本次请求，避免留下脏状态。
+ */
+export function openAvatarCrop(path: string, target: string): void {
+	if (path == '' || target == '') {
+		showAvatarPickerFailure('AVATAR_CROP_INVALID_REQUEST', 'avatar_crop_open', '无法打开头像裁剪', '图片路径或裁剪目标为空')
+		return
+	}
+	clearAvatarCropState()
+	setRuntimeState(AVATAR_CROP_TARGET_KEY, target)
+	setRuntimeState(AVATAR_CROP_IMAGE_PATH_KEY, path)
+	uni.navigateTo({
+		url: '/pages/common/crop/crop',
+		fail: (err: any) => {
+			if (getRuntimeState(AVATAR_CROP_TARGET_KEY) == target) {
+				clearAvatarCropState()
+			}
+			showAvatarPickerFailure('AVATAR_CROP_ROUTE_FAILED', 'avatar_crop_navigate', '无法打开头像裁剪页', err)
+		}
+	})
+}
+
+export function hasAvatarCropRequest(target: string): boolean {
+	return target != '' && getRuntimeState(AVATAR_CROP_TARGET_KEY) == target
+}
+
+/**
+ * 消费指定页面的裁剪结果。即使用户取消裁剪，也会清理本次临时状态。
+ */
+export function consumeAvatarCropResult(target: string): string {
+	if (target == '' || getRuntimeState(AVATAR_CROP_TARGET_KEY) != target) { return '' }
+	const result = getRuntimeState(AVATAR_CROP_RESULT_KEY)
+	clearAvatarCropState()
+	return result
 }
 
 function chooseAvatarFromFile(onPicked: (path: string) => void): void {
@@ -20,14 +80,18 @@ function chooseAvatarFromFile(onPicked: (path: string) => void): void {
 		success: (res: any) => {
 			const picked = readPickedImageSelection(res)
 			if (picked.ok == false) {
-				uni.showToast({ position: 'bottom', title: picked.error, icon: 'none' })
+				if (picked.error == '未选择图片') {
+					showAvatarPickerFailure('AVATAR_FILE_EMPTY_RESULT', 'avatar_picker_file_result', '没有读取到所选图片', picked.error)
+				} else {
+					uni.showToast({ position: 'bottom', title: picked.error, icon: 'none' })
+				}
 				return
 			}
 			onPicked(picked.path)
 		},
 		fail: (err: any) => {
 			if (isChooseCancelError(err) == true) { return }
-			uni.showToast({ position: 'bottom', title: '选择图片失败', icon: 'none' })
+			showAvatarPickerFailure('AVATAR_FILE_PICK_FAILED', 'avatar_picker_choose_file', '选择图片失败', err)
 		}
 	})
 }
@@ -39,14 +103,25 @@ function chooseAvatarFromMedia(onPicked: (path: string) => void): void {
 		success: (res: any) => {
 			const picked = readPickedImageSelection(res)
 			if (picked.ok == false) {
-				uni.showToast({ position: 'bottom', title: picked.error, icon: 'none' })
+				if (picked.error == '未选择图片') {
+					showAvatarPickerFailure('AVATAR_MEDIA_EMPTY_RESULT', 'avatar_picker_media_result', '没有读取到所选图片', picked.error)
+				} else {
+					uni.showToast({ position: 'bottom', title: picked.error, icon: 'none' })
+				}
 				return
 			}
 			onPicked(picked.path)
 		},
 		fail: (err: any) => {
 			if (isChooseCancelError(err) == true) { return }
-			console.log('[AvatarPicker] chooseMedia 相册失败，切换文件选图: ' + JSON.stringify(err))
+			reportAppErrorFromCause(
+				'AVATAR_MEDIA_PICK_FAILED',
+				APP_ERROR_CATEGORY_RUNTIME,
+				'avatar_picker_choose_media',
+				'相册媒体选择失败，已改用文件选择',
+				err,
+				true,
+			)
 			uni.showToast({ position: 'bottom', title: '相册打开失败，请从文件选择图片', icon: 'none' })
 			chooseAvatarFromFile(onPicked)
 		}
@@ -63,7 +138,14 @@ function chooseAvatarFromAlbum(onPicked: (path: string) => void): void {
 		},
 		fail: (err: any) => {
 			if (isChooseCancelError(err) == true) { return }
-			console.log('[AvatarPicker] chooseImage 相册失败，尝试 chooseMedia: ' + JSON.stringify(err))
+			reportAppErrorFromCause(
+				'AVATAR_ALBUM_PICK_FAILED',
+				APP_ERROR_CATEGORY_RUNTIME,
+				'avatar_picker_choose_image',
+				'相册选择失败，正在尝试兼容通道',
+				err,
+				true,
+			)
 			chooseAvatarFromMedia(onPicked)
 		}
 	})
@@ -79,7 +161,7 @@ function chooseAvatarFromCamera(onPicked: (path: string) => void): void {
 		},
 		fail: (err: any) => {
 			if (isChooseCancelError(err) == true) { return }
-			uni.showToast({ position: 'bottom', title: '拍照失败', icon: 'none' })
+			showAvatarPickerFailure('AVATAR_CAMERA_FAILED', 'avatar_picker_camera', '拍照失败', err)
 		}
 	})
 }
@@ -93,6 +175,10 @@ export function chooseAvatarImage(onPicked: (path: string) => void): void {
 			} else if (res.tapIndex == 1) {
 				chooseAvatarFromCamera(onPicked)
 			}
+		},
+		fail: (err: any) => {
+			if (isChooseCancelError(err) == true) { return }
+			showAvatarPickerFailure('AVATAR_SOURCE_MENU_FAILED', 'avatar_picker_source_menu', '无法打开图片来源菜单', err)
 		}
 	})
 }

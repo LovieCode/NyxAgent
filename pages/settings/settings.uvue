@@ -107,6 +107,19 @@
 					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
 				</view>
 				<view class="menu-divider"></view>
+				<view class="menu-item" @click="goSubPage('diagnostics')">
+					<view class="menu-item-left">
+						<view class="menu-icon-wrap">
+							<oui-icon-unix name="info-circle" size="15px" color="#DB6F92" />
+						</view>
+						<view class="menu-text">
+							<text class="menu-title">运行诊断</text>
+							<text class="menu-desc">查看本次运行中的错误记录</text>
+						</view>
+					</view>
+					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />
+				</view>
+				<view class="menu-divider"></view>
 				<view class="menu-item" @click="goSubPage('about')">
 					<view class="menu-item-left">
 						<view class="menu-icon-wrap">
@@ -132,7 +145,7 @@
 	 * 参考 PI Agent models.generated.ts 模型列表
 	 */
 
-	import { getAppSetting, setAppSetting } from '@/utils/database.uts'
+	import { getAppSetting, setAppSettings } from '@/utils/database.uts'
 
 	export default {
 		data() {
@@ -277,12 +290,14 @@
 			},
 
 			saveSettings() {
-				setAppSetting('settings_provider_id', this.selectedProviderId)
-				setAppSetting('settings_api_key', this.apiKey)
-				setAppSetting('settings_base_url', this.baseUrl)
-				setAppSetting('settings_model', this.selectedModel)
-				setAppSetting('settings_gh_proxy_enabled', this.ghProxyEnabled ? 'true' : 'false')
-				setAppSetting('settings_gh_proxy_domain', this.ghProxyDomain)
+				const saved = setAppSettings(
+					['settings_provider_id', 'settings_api_key', 'settings_base_url', 'settings_model', 'settings_gh_proxy_enabled', 'settings_gh_proxy_domain'],
+					[this.selectedProviderId, this.apiKey, this.baseUrl, this.selectedModel, this.ghProxyEnabled ? 'true' : 'false', this.ghProxyDomain],
+				)
+				if (saved == false) {
+					uni.showToast({ position: 'bottom', title: '保存连接设置失败，请重试', icon: 'none' })
+					return
+				}
 				uni.showToast({ position: 'bottom', 
 					title: '已保存',
 					icon: 'success'

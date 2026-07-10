@@ -48,7 +48,8 @@
 				if (url == this.current) {
 					return;
 				}
-				uni.redirectTo({
+				// 一级导航需要清空详情页栈，避免系统返回键回到旧对话。
+				uni.reLaunch({
 					url: '/' + url,
 				});
 			},

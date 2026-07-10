@@ -2,7 +2,7 @@
  * LLM 生成参数设置
  * 全局默认值放在 SQLite app_settings；单个智能体可覆盖。
  */
-import { getAppSetting, setAppSetting } from '@/utils/database.uts'
+import { getAppSetting, setAppSettings } from '@/utils/database.uts'
 
 export type GenerationSettings = {
 	temperature: number
@@ -96,11 +96,16 @@ export function getGlobalGenerationSettings(): GenerationSettings {
 	} as GenerationSettings
 }
 
-export function saveGlobalGenerationSettings(settings: GenerationSettings): void {
-	setAppSetting(GLOBAL_TEMPERATURE_KEY, clampNumber(settings.temperature, 0, 2) + '')
-	setAppSetting(GLOBAL_MAX_TOKENS_KEY, clampNumber(settings.maxTokens, 256, 65536) + '')
-	setAppSetting(GLOBAL_MAX_ITERATIONS_KEY, clampNumber(settings.maxIterations, 0, 100) + '')
-	setAppSetting(GLOBAL_STREAM_ENABLED_KEY, settings.streamEnabled ? 'true' : 'false')
+export function saveGlobalGenerationSettings(settings: GenerationSettings): boolean {
+	return setAppSettings(
+		[GLOBAL_TEMPERATURE_KEY, GLOBAL_MAX_TOKENS_KEY, GLOBAL_MAX_ITERATIONS_KEY, GLOBAL_STREAM_ENABLED_KEY],
+		[
+			clampNumber(settings.temperature, 0, 2) + '',
+			clampNumber(settings.maxTokens, 256, 65536) + '',
+			clampNumber(settings.maxIterations, 0, 100) + '',
+			settings.streamEnabled ? 'true' : 'false',
+		],
+	)
 }
 
 export function getMemoryOrganizerGenerationSettings(): GenerationSettings {
@@ -112,10 +117,39 @@ export function getMemoryOrganizerGenerationSettings(): GenerationSettings {
 	} as GenerationSettings
 }
 
-export function saveMemoryOrganizerGenerationSettings(settings: GenerationSettings): void {
-	setAppSetting(MEMORY_TEMPERATURE_KEY, clampNumber(settings.temperature, 0, 2) + '')
-	setAppSetting(MEMORY_MAX_TOKENS_KEY, clampNumber(settings.maxTokens, 256, 2048) + '')
-	setAppSetting(MEMORY_MAX_ITERATIONS_KEY, clampNumber(settings.maxIterations, 1, 100) + '')
+export function saveMemoryOrganizerGenerationSettings(settings: GenerationSettings): boolean {
+	return setAppSettings(
+		[MEMORY_TEMPERATURE_KEY, MEMORY_MAX_TOKENS_KEY, MEMORY_MAX_ITERATIONS_KEY],
+		[
+			clampNumber(settings.temperature, 0, 2) + '',
+			clampNumber(settings.maxTokens, 256, 2048) + '',
+			clampNumber(settings.maxIterations, 1, 100) + '',
+		],
+	)
+}
+
+/** 同时保存聊天与记忆生成参数，避免两组配置部分成功。 */
+export function saveGenerationSettings(settings: GenerationSettings, memorySettings: GenerationSettings): boolean {
+	return setAppSettings(
+		[
+			GLOBAL_TEMPERATURE_KEY,
+			GLOBAL_MAX_TOKENS_KEY,
+			GLOBAL_MAX_ITERATIONS_KEY,
+			GLOBAL_STREAM_ENABLED_KEY,
+			MEMORY_TEMPERATURE_KEY,
+			MEMORY_MAX_TOKENS_KEY,
+			MEMORY_MAX_ITERATIONS_KEY,
+		],
+		[
+			clampNumber(settings.temperature, 0, 2) + '',
+			clampNumber(settings.maxTokens, 256, 65536) + '',
+			clampNumber(settings.maxIterations, 0, 100) + '',
+			settings.streamEnabled ? 'true' : 'false',
+			clampNumber(memorySettings.temperature, 0, 2) + '',
+			clampNumber(memorySettings.maxTokens, 256, 2048) + '',
+			clampNumber(memorySettings.maxIterations, 1, 100) + '',
+		],
+	)
 }
 
 export function getEffectiveGenerationSettings(agent: UTSJSONObject | null): GenerationSettings {

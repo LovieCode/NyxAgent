@@ -105,16 +105,20 @@
 				if (this.groupId == '') { return }
 				try {
 					const session = createGroupSession(this.groupId, '新会话')
-					setActiveGroupSession(this.groupId, session.id)
+					const activated = setActiveGroupSession(this.groupId, session.id)
 					this.loadData()
-					uni.showToast({ position: 'bottom', title: '新会话已创建', icon: 'success' })
+					uni.showToast({ position: 'bottom', title: activated == true ? '新会话已创建' : '会话已创建，但状态同步失败', icon: activated == true ? 'success' : 'none' })
 				} catch (_e: any) {
 					uni.showToast({ position: 'bottom', title: '新会话创建失败', icon: 'none' })
 				}
 			},
 			switchSession(session: GroupChatSession): void {
-				setActiveGroupSession(this.groupId, session.id)
+				const switched = setActiveGroupSession(this.groupId, session.id)
 				this.loadData()
+				if (switched == false) {
+					uni.showToast({ position: 'bottom', title: '会话状态同步失败，请重试', icon: 'none' })
+					return
+				}
 				uni.showToast({ position: 'bottom', title: '已切换：' + displaySessionTitle(session), icon: 'none' })
 			},
 			showSessionJson(session: GroupChatSession): void {
@@ -129,9 +133,9 @@
 			forkSession(session: GroupChatSession): void {
 				const forked = forkGroupSession(this.groupId, session.id)
 				if (forked != null) {
-					setActiveGroupSession(this.groupId, forked.id)
+					const activated = setActiveGroupSession(this.groupId, forked.id)
 					this.loadData()
-					uni.showToast({ position: 'bottom', title: '分支已创建', icon: 'success' })
+					uni.showToast({ position: 'bottom', title: activated == true ? '分支已创建' : '分支已创建，但状态同步失败', icon: activated == true ? 'success' : 'none' })
 				} else {
 					uni.showToast({ position: 'bottom', title: '分支创建失败', icon: 'none' })
 				}
@@ -152,7 +156,8 @@
 							return
 						}
 						this.loadData()
-						const title = clearFiles == true && deleteResult.filesCleared == false ? '会话已删除，文件清理失败' : (clearFiles ? '会话和文件已删除' : '会话已删除')
+						let title = clearFiles == true && deleteResult.filesCleared == false ? '会话已删除，文件清理失败' : (clearFiles ? '会话和文件已删除' : '会话已删除')
+						if (deleteResult.stateUpdated == false) { title = '会话已删除，但状态同步失败' }
 						uni.showToast({ position: 'bottom', title: title, icon: 'none' })
 					}
 				})

@@ -126,7 +126,12 @@
 				}
 				const id = item['id'] as string
 				const newEnabled = this.switchStates[index]
-				setProviderEnabled(id, newEnabled)
+				const saved = setProviderEnabled(id, newEnabled)
+				if (saved == false) {
+					this.switchStates[index] = !newEnabled
+					uni.showToast({ title: '更新提供商状态失败，请重试', icon: 'none' })
+					return
+				}
 				item['enabled'] = newEnabled ? 1 : 0
 			},
 
@@ -161,7 +166,11 @@
 					content: `确定删除提供商「${item['name']}」吗？`,
 					success: (res) => {
 						if (res.confirm == true) {
-							deleteProvider(id)
+							const deleted = deleteProvider(id)
+							if (deleted == false) {
+								uni.showToast({ title: '删除提供商失败，请重试', icon: 'none' })
+								return
+							}
 							this.loadProviders()
 							uni.showToast({
 								title: '已删除',

@@ -190,8 +190,8 @@
 
 					<view class="dialog-section">
 						<text class="dialog-label">基础信息</text>
-						<input class="dialog-input" v-model="createName" placeholder="昵称，比如：小夜 / 零 / 千夏" placeholder-style="color:var(--rice-text-color-3)" />
-						<input class="dialog-input dialog-input-gap" v-model="createDesc" placeholder="一句话备注它擅长什么" placeholder-style="color:var(--rice-text-color-3)" />
+						<input class="dialog-input" v-model="createName" placeholder="昵称，比如：小夜 / 零 / 千夏" placeholder-style="color:#9CA3AF" />
+						<input class="dialog-input dialog-input-gap" v-model="createDesc" placeholder="一句话备注它擅长什么" placeholder-style="color:#9CA3AF" />
 					</view>
 
 					<view class="dialog-section">
@@ -217,7 +217,7 @@
 							<text class="dialog-label dialog-label-inline">系统提示词</text>
 							<text class="section-action" @click="resetPromptByTemplate">重置模板</text>
 						</view>
-						<textarea class="prompt-input" v-model="createSystemPrompt" placeholder="定义说话风格、能力边界和输出习惯。" placeholder-style="color:var(--rice-text-color-3)" />
+						<textarea class="prompt-input" v-model="createSystemPrompt" placeholder="定义说话风格、能力边界和输出习惯。" placeholder-style="color:#9CA3AF" />
 						<text class="field-tip">创建后还能在聊天设置里继续修改。</text>
 					</view>
 				</scroll-view>
@@ -358,7 +358,7 @@
 		readAgentChatKey,
 		readAgentChatName,
 	} from '@/utils/agent-chat-list.uts'
-	import { chooseAvatarImage } from '@/utils/avatar-image-picker.uts'
+	import { chooseAvatarImage, consumeAvatarCropResult, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
 	import { setActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
 
 	export default {
@@ -612,18 +612,10 @@
 			},
 
 			consumeCreateAvatarCropResult(): void {
-				// 头像裁剪页通过 SQLite runtime_state 传参。
-				const target = getRuntimeState('crop_target')
-				if (target != 'create_agent_avatar') {
-					return
-				}
-				const cropResult = getRuntimeState('crop_result')
-				if (cropResult != null && cropResult != '') {
+				const cropResult = consumeAvatarCropResult('create_agent_avatar')
+				if (cropResult != '') {
 					this.createAvatarPath = cropResult
 				}
-				deleteRuntimeState('crop_result')
-				deleteRuntimeState('crop_target')
-				deleteRuntimeState('crop_image_path')
 			},
 
 			resetCreateData(): void {
@@ -776,13 +768,7 @@
 			/** 为新建私聊选择头像 */
 			pickCreateAvatar(): void {
 				chooseAvatarImage((path: string) => {
-					// 裁剪组件协议走 SQLite runtime_state，避免临时状态写 uni.storage。
-					deleteRuntimeState('crop_result')
-					setRuntimeState('crop_target', 'create_agent_avatar')
-					setRuntimeState('crop_image_path', path)
-					uni.navigateTo({
-						url: '/pages/common/crop/crop'
-					})
+					openAvatarCrop(path, 'create_agent_avatar')
 				})
 			},
 

@@ -343,11 +343,11 @@ export function getSkills(): UTSJSONObject[] {
 	}
 }
 
-export function saveSkills(skills: UTSJSONObject[]): void {
-	setAppSetting(SKILLS_STORAGE_KEY, JSON.stringify(skills))
+export function saveSkills(skills: UTSJSONObject[]): boolean {
+	return setAppSetting(SKILLS_STORAGE_KEY, JSON.stringify(skills))
 }
 
-export function upsertSkill(skill: UTSJSONObject): void {
+export function upsertSkill(skill: UTSJSONObject): boolean {
 	const skills = getSkills()
 	const id = readSkillId(skill)
 	const normalized = normalizeSkillRecord(skill)
@@ -363,18 +363,23 @@ export function upsertSkill(skill: UTSJSONObject): void {
 	if (found == false) {
 		skills.push(normalized)
 	}
-	saveSkills(skills)
+	return saveSkills(skills)
 }
 
-export function deleteSkill(skillId: string): void {
+export function deleteSkill(skillId: string): boolean {
+	if (skillId == '') { return false }
 	const skills = getSkills()
 	const next: UTSJSONObject[] = []
+	let found = false
 	for (let i = 0; i < skills.length; i++) {
 		if (readSkillId(skills[i]) != skillId) {
 			next.push(skills[i])
+		} else {
+			found = true
 		}
 	}
-	saveSkills(next)
+	if (found == false) { return false }
+	return saveSkills(next)
 }
 
 export function getSkillById(skillId: string): UTSJSONObject | null {

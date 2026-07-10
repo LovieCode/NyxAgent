@@ -311,7 +311,7 @@
 	import { getAllProviders, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { deleteRuntimeState, getAppSetting, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings } from '@/utils/generation-settings.uts'
-	import { chooseAvatarImage } from '@/utils/avatar-image-picker.uts'
+	import { chooseAvatarImage, consumeAvatarCropResult, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
 	import { clearActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
 	import { getSkills, getAgentSkillIds, filterExistingSkillIds } from '@/utils/skills.uts'
 	import {
@@ -443,13 +443,9 @@
 				}
 			}
 			// 检查裁剪页面是否有返回结果
-			const cropTarget = getRuntimeState('crop_target')
-			const cropResult = getRuntimeState('crop_result')
-			if (cropTarget == 'agent_avatar' && cropResult != null && cropResult != '') {
+			const cropResult = consumeAvatarCropResult('agent_avatar')
+			if (cropResult != '') {
 				this.agentAvatar = cropResult
-				deleteRuntimeState('crop_result')
-				deleteRuntimeState('crop_target')
-				deleteRuntimeState('crop_image_path')
 				this.hasUnsaved = true
 			}
 		},
@@ -605,12 +601,7 @@
 			/** 上传/更换私聊头像 */
 			pickAvatar() {
 				chooseAvatarImage((path: string) => {
-					deleteRuntimeState('crop_result')
-					setRuntimeState('crop_target', 'agent_avatar')
-					setRuntimeState('crop_image_path', path)
-					uni.navigateTo({
-						url: '/pages/common/crop/crop'
-					})
+					openAvatarCrop(path, 'agent_avatar')
 				})
 			},
 
@@ -736,8 +727,8 @@
 								title: deleteResult.filesCleared == true ? '已删除' : '已删除，文件清理失败',
 								icon: deleteResult.filesCleared == true ? 'success' : 'none'
 							})
-							// 跳转到会话列表页
-							uni.redirectTo({
+							// 删除后清空已失效的私聊详情栈，回到会话列表。
+							uni.reLaunch({
 								url: '/pages/agents/agents'
 							})
 						}

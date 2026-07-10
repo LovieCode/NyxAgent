@@ -5,7 +5,7 @@
  * 未来清兼容或升级为平台适配器时，把 SSE 容错解析集中改这里。
  */
 
-import { getAppSetting, setAppSetting } from '@/utils/database.uts'
+import { getAppSetting, setAppSetting, setAppSettings } from '@/utils/database.uts'
 import { encodeQueryText, parseSseDataEvents, readJsonString, responseDataToText, truncateResponseText } from '@/utils/http-response-helpers.uts'
 
 export const ASTRBOT_ENABLED_KEY = 'settings_astrbot_enabled'
@@ -42,7 +42,7 @@ function trimSlash(text: string): string {
 	return value
 }
 
-function normalizeAstrBotBaseUrl(text: string): string {
+export function normalizeAstrBotBaseUrl(text: string): string {
 	let value = trimSlash(text)
 	if (value.endsWith('/api/v1')) {
 		value = value.substring(0, value.length - 7)
@@ -79,17 +79,22 @@ export function isAstrBotEnabled(): boolean {
 	return config.enabled == true && config.baseUrl.trim() != '' && config.apiKey.trim() != ''
 }
 
-export function saveAstrBotSettings(enabled: boolean, baseUrl: string, apiKey: string, username: string, sessionId: string, configId: string): void {
-	setAppSetting(ASTRBOT_ENABLED_KEY, enabled == true ? 'true' : 'false')
-	setAppSetting(ASTRBOT_BASE_URL_KEY, normalizeAstrBotBaseUrl(baseUrl))
-	setAppSetting(ASTRBOT_API_KEY_KEY, apiKey.trim())
-	setAppSetting(ASTRBOT_USERNAME_KEY, username.trim() != '' ? username.trim() : 'nyx-agent')
-	setAppSetting(ASTRBOT_SESSION_ID_KEY, sessionId.trim())
-	setAppSetting(ASTRBOT_CONFIG_ID_KEY, configId.trim())
+export function saveAstrBotSettings(enabled: boolean, baseUrl: string, apiKey: string, username: string, sessionId: string, configId: string): boolean {
+	return setAppSettings(
+		[ASTRBOT_ENABLED_KEY, ASTRBOT_BASE_URL_KEY, ASTRBOT_API_KEY_KEY, ASTRBOT_USERNAME_KEY, ASTRBOT_SESSION_ID_KEY, ASTRBOT_CONFIG_ID_KEY],
+		[
+			enabled == true ? 'true' : 'false',
+			normalizeAstrBotBaseUrl(baseUrl),
+			apiKey.trim(),
+			username.trim() != '' ? username.trim() : 'nyx-agent',
+			sessionId.trim(),
+			configId.trim(),
+		],
+	)
 }
 
-export function saveAstrBotConfig(config: AstrBotConfig): void {
-	saveAstrBotSettings(config.enabled, config.baseUrl, config.apiKey, config.username, config.sessionId, config.configId)
+export function saveAstrBotConfig(config: AstrBotConfig): boolean {
+	return saveAstrBotSettings(config.enabled, config.baseUrl, config.apiKey, config.username, config.sessionId, config.configId)
 }
 
 function failTask(error: string): AstrBotTaskResult {

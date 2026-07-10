@@ -104,7 +104,7 @@ function pushGroupChatItems(result: UTSJSONObject[], groups: GroupChat[]): void 
 			name: group.name,
 			desc: readGroupListSummary(group),
 			icon: 'robot',
-			avatar: '',
+			avatar: group.avatar,
 			updatedAt: group.updatedAt,
 			favorite: false,
 		} as UTSJSONObject)

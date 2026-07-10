@@ -261,10 +261,12 @@ function syncAgentWorkspaceNameMetadata(agents: UTSJSONObject[]): void {
 }
 
 /** 保存智能体列表 */
-export function saveAgents(agents: UTSJSONObject[]): void {
-	setAppSetting('agent_list', JSON.stringify(agents))
+export function saveAgents(agents: UTSJSONObject[]): boolean {
+	const saved = setAppSetting('agent_list', JSON.stringify(agents))
+	if (saved == false) { return false }
 	rememberAgentWorkspaceNames(agents)
 	syncAgentWorkspaceNameMetadata(agents)
+	return true
 }
 
 /** 获取所有智能体 */
@@ -411,7 +413,7 @@ export function filterKnownAgentToolIds(ids: string[]): string[] {
 	return result
 }
 
-function filterAllowedAgentToolIdsForAgent(ids: string[], agent: UTSJSONObject | null, allowCoreMemoryWrite: boolean): string[] {
+export function filterAllowedAgentToolIdsForAgent(ids: string[], agent: UTSJSONObject | null, allowCoreMemoryWrite: boolean): string[] {
 	const allowed = getDefaultAgentToolIdsForAgent(agent, allowCoreMemoryWrite)
 	const result: string[] = []
 	for (let i = 0; i < ids.length; i++) {
@@ -498,15 +500,18 @@ export function updateAgentInteractionRules(id: string, interactionRules: string
 }
 
 /** 更新智能体使用的模型 */
-export function updateAgentModel(id: string, model: string): void {
+export function updateAgentModel(id: string, model: string): boolean {
 	const agents = getAgents()
+	let found = false
 	for (let i = 0; i < agents.length; i++) {
 		if ((agents[i]['id'] as string) == id) {
 			agents[i]['model'] = model
+			found = true
 			break
 		}
 	}
-	saveAgents(agents)
+	if (found == false) { return false }
+	return saveAgents(agents)
 }
 
 /** 更新智能体生成参数覆盖。 */

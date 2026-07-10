@@ -7,7 +7,14 @@ import {
 
 export const CHAT_MESSAGE_WINDOW_BASE_SIZE = 80
 export const CHAT_MESSAGE_WINDOW_STEP_SIZE = 40
+export const CHAT_MESSAGE_WINDOW_EDGE_THRESHOLD_PX = 160
 const CHAT_MESSAGE_WINDOW_TEXT_CHUNK_SIZE = 1600
+
+export type ChatMessageWindowItem = {
+	sourceIndex: number
+	sourceMessage: UTSJSONObject
+	renderMessage: UTSJSONObject
+}
 
 function readWindowStringField(obj: UTSJSONObject, key: string): string {
 	const raw = obj[key] as string | null
@@ -278,6 +285,53 @@ export function buildChatMessageWindowByUnits(source: UTSJSONObject[], windowUni
 		}
 	}
 	return result
+}
+
+export function buildChatMessageWindowRange(source: UTSJSONObject[], startIndex: number, endIndex: number): ChatMessageWindowItem[] {
+	const result: ChatMessageWindowItem[] = []
+	let start = startIndex
+	let end = endIndex
+	if (start < 0) { start = 0 }
+	if (end < start) { end = start }
+	if (end > source.length) { end = source.length }
+	for (let i = start; i < end; i++) {
+		result.push({
+			sourceIndex: i,
+			sourceMessage: source[i],
+			renderMessage: source[i],
+		} as ChatMessageWindowItem)
+	}
+	return result
+}
+
+export function resolveRecentChatMessageWindowStart(totalCount: number): number {
+	if (totalCount <= CHAT_MESSAGE_WINDOW_BASE_SIZE) { return 0 }
+	return totalCount - CHAT_MESSAGE_WINDOW_BASE_SIZE
+}
+
+export function resolveShiftedChatMessageWindowStart(totalCount: number, currentStart: number, direction: number): number {
+	if (totalCount <= CHAT_MESSAGE_WINDOW_BASE_SIZE) { return 0 }
+	let nextStart = currentStart
+	if (direction < 0) {
+		nextStart = currentStart - CHAT_MESSAGE_WINDOW_STEP_SIZE
+	} else if (direction > 0) {
+		nextStart = currentStart + CHAT_MESSAGE_WINDOW_STEP_SIZE
+	}
+	if (nextStart < 0) { nextStart = 0 }
+	const maxStart = totalCount - CHAT_MESSAGE_WINDOW_BASE_SIZE
+	if (nextStart > maxStart) { nextStart = maxStart }
+	return nextStart
+}
+
+export function resolveChatMessageWindowEnd(totalCount: number, startIndex: number): number {
+	let endIndex = startIndex + CHAT_MESSAGE_WINDOW_BASE_SIZE
+	if (endIndex > totalCount) { endIndex = totalCount }
+	if (endIndex < 0) { return 0 }
+	return endIndex
+}
+
+export function isChatMessageWindowAtRecentEnd(totalCount: number, endIndex: number): boolean {
+	return endIndex >= totalCount
 }
 
 export function countRemainingChatMessageWindowUnits(totalUnits: number, windowUnits: number): number {

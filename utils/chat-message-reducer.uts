@@ -217,6 +217,13 @@ function buildOpenAIToolCallsFromParts(parts: UTSJSONObject[]): UTSJSONObject[] 
 function makeAssistantFromExisting(existing: UTSJSONObject, parts: UTSJSONObject[], streaming: boolean): UTSJSONObject {
 	const timestamp = getMessageTimestamp(existing)
 	const msg = streaming == true ? createAssistantStreamingMessage(parts, timestamp) : createAssistantFinalMessage(parts, timestamp)
+	if ((existing['isError'] as boolean | null) == true) {
+		msg['isError'] = true
+		const errorMessage = existing['errorMessage'] as string | null
+		if (errorMessage != null && errorMessage != '') {
+			msg['errorMessage'] = errorMessage
+		}
+	}
 	const toolCalls = buildOpenAIToolCallsFromParts(parts)
 	if (toolCalls.length > 0) {
 		msg['tool_calls'] = toolCalls
@@ -394,6 +401,9 @@ export function buildRuntimeMessages(messages: UTSJSONObject[], options: ChatRun
 	const runtimeMessages: UTSJSONObject[] = []
 	let lastUserIndex = -1
 	for (let i = 0; i < messages.length; i++) {
+		if ((messages[i]['isError'] as boolean | null) == true && getMessageRole(messages[i]) == CHAT_ROLE_ASSISTANT) {
+			continue
+		}
 		const copied = cloneMessage(messages[i])
 		runtimeMessages.push(copied)
 		if (getMessageRole(copied) == CHAT_ROLE_USER) {
@@ -440,6 +450,19 @@ export function finishAssistantMessage(messages: UTSJSONObject[], response: stri
 	const parts = cloneParts(getMessageParts(existing))
 	ensurePlainPart(parts, response)
 	const next = makeAssistantFromExisting(existing, parts, true)
+	refreshMessagePreview(next)
+	replaceMessage(messages, idx, next)
+}
+
+export function markAssistantMessageError(messages: UTSJSONObject[], errorMessage: string): void {
+	const detail = errorMessage.trim() != '' ? errorMessage.trim() : '未知错误'
+	const idx = ensureStreamingAssistant(messages)
+	const existing = messages[idx]
+	const parts = cloneParts(getMessageParts(existing))
+	parts.push(createPlainPart('请求失败：' + detail))
+	const next = makeAssistantFromExisting(existing, parts, true)
+	next['isError'] = true
+	next['errorMessage'] = detail
 	refreshMessagePreview(next)
 	replaceMessage(messages, idx, next)
 }
@@ -625,7 +648,7 @@ export function reduceAgentEvent(messages: UTSJSONObject[], event: AgentEvent): 
 		return true
 	}
 	if (event.type == 'error') {
-		finishAssistantMessage(messages, event.error != null ? (event.error as string) : '请求失败')
+		markAssistantMessageError(messages, event.error != null ? (event.error as string) : '未知错误')
 		return true
 	}
 	return false

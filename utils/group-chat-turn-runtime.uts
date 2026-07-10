@@ -23,6 +23,7 @@ import {
 	type GroupTextStreamState,
 } from '@/utils/group-chat-page-helpers.uts'
 import {
+	GROUP_DELIVERY_MODE_USER_PRIVATE,
 	GROUP_MESSAGE_SENDER_REVIEWER,
 	GROUP_MESSAGE_SENDER_SCHEDULER,
 	createId,
@@ -45,6 +46,7 @@ import {
 	parseSchedulerReviewDecision,
 	persistGroupReviewEffects,
 	recordGroupAgentSpeak,
+	resolveLatestUserRequestedDeliveryMode,
 } from '@/utils/group-chat-scheduler.uts'
 import {
 	applyGroupSessionTitleSuggestion,
@@ -63,6 +65,7 @@ import {
 	readAgentModel,
 	readAgentMsgSegmentation,
 	readAgentName,
+	resolveGroupDeliveryMode,
 	resolveGroupReviewerAgentId,
 	resolveGroupSchedulerAgentId,
 	saveGroupAgentContextRecord,
@@ -73,6 +76,11 @@ import { createGroupHiddenStreamMessage, saveGroupAgentResponseSnapshot } from '
 
 const GROUP_CHAT_RUNTIME_EVENT_PREFIX = 'group-chat-runtime-update:'
 const GROUP_CHAT_MAX_AUTO_ROUNDS = 2
+
+function readRuntimeEventError(event: AgentEvent): string {
+	const raw = event.error != null ? (event.error as string).trim() : ''
+	return raw != '' ? raw : '未知错误'
+}
 
 export function getGroupChatRuntimeEventName(sessionId: string): string {
 	return GROUP_CHAT_RUNTIME_EVENT_PREFIX + sessionId
@@ -88,6 +96,9 @@ class GroupChatTurnRuntime {
 	loopTurns: number
 	runId: string
 	currentStream: AgentEventStream | null
+	roundPublicSpeakCount: number
+	lastErrorMessage: string
+	errorRevision: number
 
 	constructor(groupId: string, sessionId: string) {
 		this.groupId = groupId
@@ -99,14 +110,23 @@ class GroupChatTurnRuntime {
 		this.loopTurns = 0
 		this.runId = ''
 		this.currentStream = null
+		this.roundPublicSpeakCount = 0
+		this.lastErrorMessage = ''
+		this.errorRevision = 0
 	}
 
 	emitUpdate(): void {
 		eventBus.emit(getGroupChatRuntimeEventName(this.sessionId))
 	}
 
-	saveMessages(): void {
-		saveGroupMessages(this.groupId, this.sessionId, this.messages)
+	reportError(message: string): void {
+		this.lastErrorMessage = message
+		this.errorRevision++
+		this.emitUpdate()
+	}
+
+	saveMessages(): boolean {
+		return saveGroupMessages(this.groupId, this.sessionId, this.messages)
 	}
 
 	isRunActive(runId: string): boolean {
@@ -127,6 +147,11 @@ class GroupChatTurnRuntime {
 
 	start(reason: string, resetLoop: boolean): boolean {
 		if (this.running == true) { return false }
+		if (this.phase == 'save_failed' && this.saveMessages() == false) {
+			this.reportError('消息保存仍然失败，内存内容尚未丢失，请稍后重试')
+			this.emitUpdate()
+			return false
+		}
 		const group = getGroupChatById(this.groupId)
 		const session = getGroupSessionById(this.groupId, this.sessionId)
 		if (group == null || session == null) { return false }
@@ -151,9 +176,13 @@ class GroupChatTurnRuntime {
 		this.finalizeStreamingMessagesOnStop()
 		const note = createGroupHiddenMessage(this.groupId, this.sessionId, 'system', '用户请求暂停本轮讨论。当前队列不再继续发言。')
 		this.messages.push(note)
-		this.saveMessages()
+		const saved = this.saveMessages()
 		const stream = this.currentStream
 		this.currentStream = null
+		if (saved == false) {
+			this.phase = 'save_failed'
+			this.reportError('停止状态保存失败，内存内容尚未丢失，请重试')
+		}
 		this.emitUpdate()
 		if (stream != null) {
 			stream.abort()
@@ -175,9 +204,12 @@ class GroupChatTurnRuntime {
 	finish(): void {
 		this.running = false
 		this.stopped = false
-		this.phase = 'completed'
 		this.currentStream = null
-		this.saveMessages()
+		const saved = this.saveMessages()
+		this.phase = saved == true ? 'completed' : 'save_failed'
+		if (saved == false) {
+			this.reportError('群聊消息保存失败，内容仍保留在本次运行中，请重试')
+		}
 		this.emitUpdate()
 	}
 
@@ -197,6 +229,7 @@ class GroupChatTurnRuntime {
 			return
 		}
 		const schedulerMessages = buildSchedulerRuntimeMessages(group, session, this.messages, reason, this.loopTurns)
+		const requiredDeliveryMode = resolveLatestUserRequestedDeliveryMode(this.messages)
 		const schedulerAgentId = resolveGroupSchedulerAgentId(group)
 		const schedulerState = createGroupTextStreamState()
 		let schedulerFailed = false
@@ -204,12 +237,15 @@ class GroupChatTurnRuntime {
 		this.currentStream = schedulerStream
 		schedulerStream.on((event: AgentEvent) => {
 			if (this.isRunActive(runId) == false) { return }
-			if (event.type == 'error') { schedulerFailed = true }
+			if (event.type == 'error') {
+				schedulerFailed = true
+				this.reportError('群聊调度请求失败，已切换兜底策略：' + readRuntimeEventError(event))
+			}
 			if (reduceGroupTextStreamState(schedulerState, event) == true) { return }
 			if (event.type != 'agent_end') { return }
 			const decision = schedulerFailed == true
-				? buildFallbackSchedulerDecision(group.id)
-				: parseSchedulerDecision(schedulerState.text, group.id)
+				? buildFallbackSchedulerDecision(group.id, requiredDeliveryMode)
+				: parseSchedulerDecision(schedulerState.text, group.id, requiredDeliveryMode)
 			const title = decision['titleSuggestion'] as string | null
 			if (title != null && title.trim() != '') {
 				applyGroupSessionTitleSuggestion(group.id, session.id, title)
@@ -242,6 +278,7 @@ class GroupChatTurnRuntime {
 			return
 		}
 		const shouldContinue = (decision['shouldContinue'] as boolean | null) == true
+		this.roundPublicSpeakCount = 0
 		this.runActionAt(group, session, actions, 0, shouldContinue, runId)
 	}
 
@@ -267,6 +304,10 @@ class GroupChatTurnRuntime {
 		if (this.isRunActive(runId) == false) { return }
 		this.loopTurns++
 		this.saveMessages()
+		if (this.roundPublicSpeakCount == 0) {
+			this.finish()
+			return
+		}
 		this.runGroupReview(group, session, '成员发言结束，进入回合复盘', shouldContinue, runId)
 	}
 
@@ -282,7 +323,10 @@ class GroupChatTurnRuntime {
 		this.currentStream = reviewStream
 		reviewStream.on((event: AgentEvent) => {
 			if (this.isRunActive(runId) == false) { return }
-			if (event.type == 'error') { reviewFailed = true }
+			if (event.type == 'error') {
+				reviewFailed = true
+				this.reportError('群聊复盘失败，本轮将在当前进度结束：' + readRuntimeEventError(event))
+			}
 			if (reduceGroupTextStreamState(reviewState, event) == true) { return }
 			if (event.type != 'agent_end') { return }
 			const review = parseGroupReviewDecision(reviewState.text)
@@ -329,7 +373,9 @@ class GroupChatTurnRuntime {
 			return
 		}
 		this.phase = 'speaking'
-		const streamingMsg = createGroupAgentStreamingMessage(group.id, session.id, agentId)
+		const deliveryMode = resolveGroupDeliveryMode(action)
+		const isPrivateDelivery = deliveryMode == GROUP_DELIVERY_MODE_USER_PRIVATE
+		const streamingMsg = createGroupAgentStreamingMessage(group.id, session.id, agentId, deliveryMode)
 		streamingMsg['revisionAttempt'] = isRevision
 		this.messages.push(streamingMsg)
 		const agentName = readAgentName(agent)
@@ -341,9 +387,10 @@ class GroupChatTurnRuntime {
 		const contextRecord = createGroupAgentContextRecord(group, session, agentId, agentName, action, tempMessages, systemPrompt)
 		saveGroupAgentContextRecord(contextRecord)
 		streamingMsg['contextRecordId'] = contextRecord['id'] as string | null
-		const workspaceRoot = getGroupSessionWorkspaceDir(group.id, session.id)
+		// 私发不能在群共享工作区留下其他成员可见的文件侧信道。
+		const workspaceRoot = isPrivateDelivery == true ? '' : getGroupSessionWorkspaceDir(group.id, session.id)
 		const newMsgStartIndex = tempMessages.length
-		const stream = agentChat(tempMessages, systemPrompt, '', readAgentModel(agent), agentId, 0, session.id, workspaceRoot)
+		const stream = agentChat(tempMessages, systemPrompt, '', readAgentModel(agent), agentId, 0, session.id, workspaceRoot, isPrivateDelivery)
 		this.currentStream = stream
 		const holdSize = getSchedulerLeakHoldSize()
 		let renderTail = ''
@@ -352,17 +399,26 @@ class GroupChatTurnRuntime {
 		let reviewHolding = false
 		let hitKeyword = ''
 		let memberFailed = false
+		let memberErrorMessage = ''
 		this.emitUpdate()
 		stream.on((event: AgentEvent) => {
 			if (this.isRunActive(runId) == false) { return }
-			if (event.type == 'error') { memberFailed = true }
+			if (event.type == 'error') {
+				memberFailed = true
+				memberErrorMessage = readRuntimeEventError(event)
+				this.reportError(agentName + ' 回复失败，可稍后重试：' + memberErrorMessage)
+			}
 			if (event.type == 'agent_end') {
 				finalizeAssistantTurn(tempMessages, msgSegmentation)
 				const lastAssistant = findLastGroupAssistantMessageFrom(tempMessages, newMsgStartIndex)
+				let finalThinking = ''
 				if (lastAssistant != null) {
 					const finalText = getMessageContent(lastAssistant)
-					if (reviewHolding == true && memberFailed == false) {
-						heldText = finalText
+					finalThinking = getMessageThinking(lastAssistant)
+					if (reviewHolding == true) {
+						if (memberFailed == false) {
+							heldText = finalText
+						}
 						const visibleNow = streamingMsg['content'] as string | null
 						if (visibleNow == null || visibleNow == '') {
 							replaceGroupVisiblePlainText(streamingMsg, '正在整理发言...')
@@ -377,27 +433,41 @@ class GroupChatTurnRuntime {
 					const responseText = reviewHolding == true && memberFailed == false
 						? finalText
 						: (streamingMsg['content'] as string | null)
-					saveGroupAgentResponseSnapshot(
-						contextRecord,
-						agentId,
-						session.id,
-						responseText != null ? responseText : '',
-						getMessageThinking(lastAssistant)
-					)
+					if (memberFailed == false && reviewHolding == false) {
+						saveGroupAgentResponseSnapshot(
+							contextRecord,
+							agentId,
+							session.id,
+							responseText != null ? responseText : '',
+							finalThinking
+						)
+						if (isPrivateDelivery == false) {
+							this.roundPublicSpeakCount++
+							recordGroupAgentSpeak(group.id, session.id, agentId)
+						}
+					}
 				} else {
 					streamingMsg['visible'] = false
 				}
 				if (memberFailed == true) {
 					streamingMsg['isError'] = true
-				} else {
-					recordGroupAgentSpeak(group.id, session.id, agentId)
+					streamingMsg['errorMessage'] = memberErrorMessage
+					if (reviewHolding == true) {
+						replaceGroupVisiblePlainText(streamingMsg, '请求失败：' + memberErrorMessage)
+					}
 				}
 				streamingMsg['isStreaming'] = false
 				this.currentStream = null
-				this.saveMessages()
+				if (this.saveMessages() == false) {
+					this.reportError('成员回复保存失败，内容仍保留在本次运行中，请重试')
+				}
 				this.emitUpdate()
 				if (reviewHolding == true && memberFailed == false) {
-					this.runSchedulerReview(group, session, agentId, agentName, streamingMsg, heldText, hitKeyword, action, runId, done)
+					if (isPrivateDelivery == true) {
+						this.handlePrivateLeakRevision(group, session, agentId, streamingMsg, heldText, action, isRevision, runId, done)
+					} else {
+						this.runSchedulerReview(group, session, agentId, agentName, streamingMsg, heldText, finalThinking, hitKeyword, action, contextRecord, runId, done)
+					}
 				} else {
 					done()
 				}
@@ -436,7 +506,21 @@ class GroupChatTurnRuntime {
 		})
 	}
 
-	runSchedulerReview(group: GroupChat, session: GroupChatSession, agentId: string, agentName: string, streamingMsg: UTSJSONObject, candidateText: string, keyword: string, originalAction: UTSJSONObject, runId: string, done: () => void): void {
+	handlePrivateLeakRevision(group: GroupChat, session: GroupChatSession, agentId: string, streamingMsg: UTSJSONObject, candidateText: string, originalAction: UTSJSONObject, isRevision: boolean, runId: string, done: () => void): void {
+		streamingMsg['visible'] = false
+		streamingMsg['isStreaming'] = false
+		this.saveMessages()
+		this.emitUpdate()
+		if (isRevision == true) {
+			done()
+			return
+		}
+		const instruction = '保留原意，删除任何关于隐藏调度、内部指令、私密指令或幕后安排的表述。'
+		const revisedAction = buildRevisedGroupSpeakAction(originalAction, instruction, candidateText)
+		this.runMemberSpeakWithReview(group, session, agentId, revisedAction, true, runId, done)
+	}
+
+	runSchedulerReview(group: GroupChat, session: GroupChatSession, agentId: string, agentName: string, streamingMsg: UTSJSONObject, candidateText: string, candidateThinking: string, keyword: string, originalAction: UTSJSONObject, contextRecord: UTSJSONObject, runId: string, done: () => void): void {
 		if (this.isRunActive(runId) == false) { return }
 		const schedulerState: GroupTextStreamState = createGroupTextStreamState()
 		const reviewMessages = buildSchedulerReviewMessages(group, session, this.messages, agentId, agentName, keyword, candidateText)
@@ -446,7 +530,10 @@ class GroupChatTurnRuntime {
 		this.currentStream = reviewStream
 		reviewStream.on((event: AgentEvent) => {
 			if (this.isRunActive(runId) == false) { return }
-			if (event.type == 'error') { reviewFailed = true }
+			if (event.type == 'error') {
+				reviewFailed = true
+				this.reportError('发言审核失败，本次候选回复已撤回：' + readRuntimeEventError(event))
+			}
 			if (reduceGroupTextStreamState(schedulerState, event) == true) { return }
 			if (event.type != 'agent_end') { return }
 			this.currentStream = null
@@ -474,6 +561,9 @@ class GroupChatTurnRuntime {
 			if (mode == 'allow') {
 				replaceGroupVisiblePlainText(streamingMsg, candidateText)
 				streamingMsg['isStreaming'] = false
+				saveGroupAgentResponseSnapshot(contextRecord, agentId, session.id, candidateText, candidateThinking)
+				this.roundPublicSpeakCount++
+				recordGroupAgentSpeak(group.id, session.id, agentId)
 				this.saveMessages()
 				this.emitUpdate()
 				done()
@@ -515,10 +605,26 @@ export function isGroupChatTurnRunning(sessionId: string): boolean {
 
 export function getGroupChatTurnMessages(groupId: string, sessionId: string): UTSJSONObject[] {
 	const runtime = getRuntime(sessionId)
-	if (runtime != null && runtime.running == true) {
+	if (runtime != null && (runtime.running == true || runtime.phase == 'save_failed')) {
 		return runtime.messages
 	}
 	return getGroupMessages(groupId, sessionId)
+}
+
+export function getGroupChatTurnErrorMessage(sessionId: string): string {
+	const runtime = getRuntime(sessionId)
+	return runtime != null ? runtime.lastErrorMessage : ''
+}
+
+export function getGroupChatTurnErrorRevision(sessionId: string): number {
+	const runtime = getRuntime(sessionId)
+	return runtime != null ? runtime.errorRevision : 0
+}
+
+export function acknowledgeGroupChatTurnError(sessionId: string, revision: number): void {
+	const runtime = getRuntime(sessionId)
+	if (runtime == null || runtime.errorRevision != revision) { return }
+	runtime.lastErrorMessage = ''
 }
 
 export function startGroupChatTurn(groupId: string, sessionId: string, reason: string, resetLoop: boolean = true): boolean {

@@ -307,13 +307,13 @@ export function buildGroupHistoryPreviewPayload(item: UTSJSONObject): HistoryGro
 	return { previewJson: '[]', subtitle: '' } as HistoryGroupPreviewPayload
 }
 
-function deleteSchedulerHistoryById(id: string): void {
+function deleteSchedulerHistoryById(id: string): boolean {
 	const parts = id.split(':')
-	if (parts.length < 4) { return }
+	if (parts.length < 4) { return false }
 	const groupId = parts[1]
 	const sessionId = parts[2]
 	const messageKey = parts[3]
-	if (groupId == '' || sessionId == '' || messageKey == '') { return }
+	if (groupId == '' || sessionId == '' || messageKey == '') { return false }
 	const messages = getGroupMessages(groupId, sessionId)
 	const next: UTSJSONObject[] = []
 	for (let i = 0; i < messages.length; i++) {
@@ -326,15 +326,14 @@ function deleteSchedulerHistoryById(id: string): void {
 		}
 		next.push(msg)
 	}
-	saveGroupMessages(groupId, sessionId, next)
+	return saveGroupMessages(groupId, sessionId, next)
 }
 
-export function deleteGroupHistoryContextById(activeAgentId: string, id: string): void {
-	if (id == '') { return }
+export function deleteGroupHistoryContextById(activeAgentId: string, id: string): boolean {
+	if (id == '') { return false }
 	if (id.startsWith('scheduler:')) {
-		deleteSchedulerHistoryById(id)
-		return
+		return deleteSchedulerHistoryById(id)
 	}
-	if (activeAgentId == '') { return }
-	deleteGroupAgentContextRecord(activeAgentId, id)
+	if (activeAgentId == '') { return false }
+	return deleteGroupAgentContextRecord(activeAgentId, id)
 }

@@ -8,6 +8,10 @@ import { CHAT_PART_PLAIN } from '@/utils/chat-models.uts'
 import {
 	DEFAULT_SCHEDULER_PROMPT_TEXT,
 	DEFAULT_SHARED_PROMPT_TEXT,
+	GROUP_DELIVERY_MODE_PUBLIC,
+	GROUP_DELIVERY_MODE_USER_PRIVATE,
+	GROUP_MESSAGE_AUDIENCE_USER,
+	GROUP_MESSAGE_VISIBILITY_PRIVATE,
 	GROUP_MESSAGE_VISIBILITY_PUBLIC,
 	LEGACY_DIRECTIVE_SCHEDULER_PROMPT_TEXT,
 	LEGACY_ENVIRONMENT_SCHEDULER_PROMPT_TEXT,
@@ -44,6 +48,15 @@ export function displaySessionTitle(session: GroupChatSession | null): string {
 export function readActionText(action: UTSJSONObject, key: string): string {
 	const raw = action[key] as string | null
 	return raw != null ? raw : ''
+}
+
+export function resolveGroupDeliveryMode(action: UTSJSONObject): string {
+	const deliveryMode = readActionText(action, 'deliveryMode')
+	const targetType = readActionText(action, 'targetType')
+	if (deliveryMode == GROUP_DELIVERY_MODE_USER_PRIVATE && targetType == 'user') {
+		return GROUP_DELIVERY_MODE_USER_PRIVATE
+	}
+	return GROUP_DELIVERY_MODE_PUBLIC
 }
 
 export function readAgentName(agent: UTSJSONObject | null): string {
@@ -138,7 +151,7 @@ export function stripGroupAgentSpeakerPrefixFromParts(parts: UTSJSONObject[], ag
 	}
 }
 
-export function getVisibleGroupMessages(messages: UTSJSONObject[]): UTSJSONObject[] {
+export function getPublicGroupMessages(messages: UTSJSONObject[]): UTSJSONObject[] {
 	const result: UTSJSONObject[] = []
 	for (let i = 0; i < messages.length; i++) {
 		const senderType = messages[i]['senderType'] as string | null
@@ -147,6 +160,32 @@ export function getVisibleGroupMessages(messages: UTSJSONObject[]): UTSJSONObjec
 		const visibility = messages[i]['visibility'] as string | null
 		if (visible != false && (visibility == null || visibility == '' || visibility == GROUP_MESSAGE_VISIBILITY_PUBLIC)) {
 			result.push(messages[i])
+		}
+	}
+	return result
+}
+
+/** 兼容旧调用：未指定观察者时只允许公开消息，避免内部消费者误读私发正文。 */
+export function getVisibleGroupMessages(messages: UTSJSONObject[]): UTSJSONObject[] {
+	return getPublicGroupMessages(messages)
+}
+
+export function getGroupMessagesVisibleToUser(messages: UTSJSONObject[]): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const senderType = msg['senderType'] as string | null
+		if (isInternalGroupSenderType(senderType) == true) { continue }
+		const visible = msg['visible'] as boolean | null
+		if (visible == false) { continue }
+		const visibility = msg['visibility'] as string | null
+		if (visibility == null || visibility == '' || visibility == GROUP_MESSAGE_VISIBILITY_PUBLIC) {
+			result.push(msg)
+			continue
+		}
+		const audience = msg['audience'] as string | null
+		if (visibility == GROUP_MESSAGE_VISIBILITY_PRIVATE && audience == GROUP_MESSAGE_AUDIENCE_USER) {
+			result.push(msg)
 		}
 	}
 	return result
