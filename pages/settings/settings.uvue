@@ -1,6 +1,6 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NyxPageHeader title="设置" subtitle="按你的聊天习惯调一调。" />
+		<NyxPageHeader title="设置" />
 		<scroll-view class="container" :scroll-y="true">
 			<view class="profile-card" @click="goSubPage('profile')">
 				<view class="profile-avatar">
@@ -338,10 +338,10 @@
 		flex-direction: row;
 		align-items: center;
 		background-color: #FFFFFF;
-		border-radius: 20px;
-		padding: 14px;
-		margin-top: 4px;
-		margin-bottom: 14px;
+		border-radius: 18px;
+		padding: 18px;
+		margin-top: 6px;
+		margin-bottom: 20px;
 		border-width: 1px;
 		border-style: solid;
 		border-color: rgba(241, 229, 234, 0.92);
@@ -349,20 +349,20 @@
 	}
 
 	.profile-avatar {
-		width: 54px;
-		height: 54px;
-		border-radius: 18px;
+		width: 62px;
+		height: 62px;
+		border-radius: 31px;
 		background-color: #F59AB7;
 		align-items: center;
 		justify-content: center;
-		margin-right: 13px;
+		margin-right: 16px;
 		overflow: hidden;
 	}
 
 	.profile-avatar-img {
-		width: 54px;
-		height: 54px;
-		border-radius: 18px;
+		width: 62px;
+		height: 62px;
+		border-radius: 31px;
 	}
 
 	.profile-avatar-text {
@@ -377,14 +377,14 @@
 	}
 
 	.profile-name {
-		font-size: 16px;
+		font-size: 18px;
 		font-weight: bold;
 		color: #2A2529;
-		margin-bottom: 5px;
+		margin-bottom: 6px;
 	}
 
 	.profile-desc {
-		font-size: 12px;
+		font-size: 13px;
 		color: #8A7B84;
 		line-height: 18px;
 	}
@@ -470,7 +470,7 @@
 	/* 设置菜单 */
 	.settings-menu {
 		background-color: #FFFFFF;
-		border-radius: 20px;
+		border-radius: 18px;
 		overflow: hidden;
 		border-width: 1px;
 		border-style: solid;
@@ -482,7 +482,7 @@
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
-		padding: 13px 14px;
+		padding: 15px 16px;
 	}
 
 	.menu-item-left {
@@ -492,13 +492,11 @@
 	}
 
 	.menu-icon-wrap {
-		width: 36px;
-		height: 36px;
-		border-radius: 13px;
-		background-color: #FFF4F7;
+		width: 38px;
+		height: 38px;
 		align-items: center;
 		justify-content: center;
-		margin-right: 11px;
+		margin-right: 13px;
 	}
 
 	.menu-text {
@@ -507,14 +505,14 @@
 	}
 
 	.menu-title {
-		font-size: 14px;
+		font-size: 15px;
 		font-weight: bold;
 		color: #2A2529;
 		line-height: 19px;
 	}
 
 	.menu-desc {
-		font-size: 11px;
+		font-size: 12px;
 		color: #A79DA4;
 		margin-top: 3px;
 		line-height: 16px;
@@ -529,7 +527,7 @@
 	.menu-divider {
 		height: 1px;
 		background-color: #F4EAEE;
-		margin-left: 61px;
+		margin-left: 67px;
 	}
 
 	.provider-grid {

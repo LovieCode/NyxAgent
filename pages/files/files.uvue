@@ -1,6 +1,15 @@
 <template>
 	<view class="page-shell rice-theme-light">
-		<NyxPageHeader title="文件管理" subtitle="聊天文件、工作区和本地资料都在这。" />
+		<NyxPageHeader title="文件管理">
+			<template #right>
+				<view class="header-action" @click="showSortMenu">
+					<oui-icon-unix name="sort-ascending" size="21px" color="#242129" />
+				</view>
+				<view class="header-action header-action-gap" @click="showPageMenu">
+					<oui-icon-unix name="ellipsis" size="22px" color="#242129" />
+				</view>
+			</template>
+		</NyxPageHeader>
 		<view class="container">
 			<!-- 面包屑导航 -->
 			<scroll-view class="breadcrumb-bar" :scroll-x="true" :show-scrollbar="false">
@@ -18,14 +27,27 @@
 				</view>
 			</scroll-view>
 
+			<view class="file-search">
+				<oui-icon-unix name="search" size="18px" color="#A79DA4" />
+				<input
+					class="file-search-input"
+					v-model="searchQuery"
+					placeholder="搜索当前文件夹"
+					placeholder-style="color:#B7AFB4"
+				/>
+				<view v-if="searchQuery != ''" class="search-clear" @click="searchQuery = ''">
+					<oui-icon-unix name="close" size="14px" color="#8A7B84" />
+				</view>
+			</view>
+
 			<!-- 文件列表 -->
 			<scroll-view class="file-list" :scroll-y="true">
-				<view v-if="items.length == 0" class="empty-state">
-					<text class="empty-text">空目录</text>
-					<text class="empty-hint">点击右下角按钮创建文件或文件夹</text>
+				<view v-if="visibleItems.length == 0" class="empty-state">
+					<text class="empty-text">{{ searchQuery != '' ? '没有匹配文件' : '空目录' }}</text>
+					<text class="empty-hint">{{ searchQuery != '' ? '换个关键词试试' : '点击右下角按钮创建文件或文件夹' }}</text>
 				</view>
 				<view v-else>
-					<template v-for="(item, index) in items" :key="item.path">
+					<template v-for="(item, index) in visibleItems" :key="item.path">
 						<!-- 分组标题：名称包含 [Agent] 时视为 Agent 分组 -->
 						<view v-if="isGroupStart(index, item)" class="section-header">
 							<view class="section-divider" />
@@ -52,8 +74,8 @@
 								<text class="file-meta-time">{{ fmtTime(item.lastModified) }}</text>
 							</view>
 							</view>
-							<view class="file-arrow" v-if="item.isDirectory == true">
-								<oui-icon-unix name="right" size="16px" color="#D1D5DB" />
+							<view class="file-more" @click.stop="onItemMore(item)">
+								<oui-icon-unix name="ellipsis" size="18px" color="#8A7B84" />
 							</view>
 						</view>
 					</template>
@@ -126,6 +148,8 @@
 			return {
 				currentPath: '' as string,
 				items: [] as FileItem[],
+				searchQuery: '' as string,
+				sortMode: 'name' as string,
 
 				// 新建弹窗
 				showCreateDialog: false as boolean,
@@ -145,6 +169,28 @@
 			/** 面包屑路径分段：从叶子向上收集，跳过系统技术前缀 */
 			pathSegments() : PathSegment[] {
 				return buildManagedFilePathSegments(this.currentPath, VIRTUAL_ROOT)
+			},
+
+			visibleItems() : FileItem[] {
+				let result = [] as FileItem[]
+				const keyword = this.searchQuery.trim().toLowerCase()
+				for (let i = 0; i < this.items.length; i++) {
+					const item = this.items[i]
+					if (keyword == '' || this.getDisplayItemName(item).toLowerCase().indexOf(keyword) >= 0) {
+						result.push(item)
+					}
+				}
+
+				for (let i = 1; i < result.length; i++) {
+					const current = result[i]
+					let j = i - 1
+					while (j >= 0 && this.shouldShiftFileItem(result[j], current)) {
+						result[j + 1] = result[j]
+						j--
+					}
+					result[j + 1] = current
+				}
+				return result
 			}
 		},
 		onLoad() {
@@ -174,6 +220,7 @@
 			} else {
 				this.currentPath = parent
 			}
+			this.searchQuery = ''
 			this.refreshList()
 			return true
 		},
@@ -185,6 +232,66 @@
 			}
 		},
 		methods: {
+			shouldShiftFileItem(left : FileItem, right : FileItem) : boolean {
+				if (this.sortMode == 'time') {
+					return left.lastModified < right.lastModified
+				}
+				if (this.sortMode == 'folder') {
+					if (left.isDirectory != right.isDirectory) {
+						return left.isDirectory == false
+					}
+				}
+				return this.getDisplayItemName(left).toLowerCase() > this.getDisplayItemName(right).toLowerCase()
+			},
+
+			showSortMenu() {
+				if (this.actionSheetOpen == true) {
+					return
+				}
+				this.actionSheetOpen = true
+				uni.showActionSheet({
+					itemList: ['按名称排序', '按修改时间排序', '文件夹优先'],
+					success: (res) => {
+						if (res.tapIndex == 0) {
+							this.sortMode = 'name'
+						} else if (res.tapIndex == 1) {
+							this.sortMode = 'time'
+						} else if (res.tapIndex == 2) {
+							this.sortMode = 'folder'
+						}
+					},
+					complete: () => {
+						this.actionSheetOpen = false
+					}
+				})
+			},
+
+			showPageMenu() {
+				if (this.actionSheetOpen == true) {
+					return
+				}
+				this.actionSheetOpen = true
+				uni.showActionSheet({
+					itemList: ['刷新', '回到根目录', '新建文件夹'],
+					success: (res) => {
+						if (res.tapIndex == 0) {
+							this.refreshList()
+						} else if (res.tapIndex == 1) {
+							this.goToRoot()
+						} else if (res.tapIndex == 2) {
+							this.startCreate('dir')
+						}
+					},
+					complete: () => {
+						this.actionSheetOpen = false
+					}
+				})
+			},
+
+			onItemMore(item : FileItem) {
+				this.onItemLongPress(item)
+			},
+
 			/** 刷新当前目录文件列表 */
 			refreshList() {
 				if (this.currentPath == VIRTUAL_ROOT) {
@@ -204,6 +311,7 @@
 					return
 				}
 				this.currentPath = VIRTUAL_ROOT
+				this.searchQuery = ''
 				this.refreshList()
 			},
 
@@ -217,6 +325,7 @@
 					return
 				}
 				this.currentPath = target.path
+				this.searchQuery = ''
 				this.refreshList()
 			},
 
@@ -225,6 +334,7 @@
 				if (item.isDirectory == true) {
 					// 进入子目录
 					this.currentPath = item.path
+					this.searchQuery = ''
 					this.refreshList()
 					return
 				}
@@ -451,7 +561,7 @@
 				if (index == 0) {
 					return true
 				}
-				const prevItem = this.items[index - 1]
+				const prevItem = this.visibleItems[index - 1]
 				if (prevItem == null) {
 					return true
 				}
@@ -494,19 +604,14 @@
 	.breadcrumb-bar {
 		margin-left: 24px;
 		margin-right: 24px;
-		margin-top: 4px;
-		margin-bottom: 10px;
-		background-color: #FFFFFF;
-		border-radius: 18px;
-		border-width: 1px;
-		border-style: solid;
-		border-color: #F1E5EA;
+		margin-top: 0;
+		margin-bottom: 12px;
 	}
 
 	.breadcrumb-row {
 		flex-direction: row;
 		align-items: center;
-		padding: 10px 12px;
+		padding: 6px 0;
 	}
 
 	.breadcrumb-item {
@@ -524,6 +629,45 @@
 	.breadcrumb-text-active {
 		color: #DB6F92;
 		font-weight: bold;
+	}
+
+	.header-action {
+		width: 34px;
+		height: 34px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.header-action-gap {
+		margin-left: 6px;
+	}
+
+	.file-search {
+		height: 44px;
+		margin-left: 24px;
+		margin-right: 24px;
+		margin-bottom: 14px;
+		padding-left: 14px;
+		padding-right: 10px;
+		flex-direction: row;
+		align-items: center;
+		background-color: #F2EDEF;
+		border-radius: 22px;
+	}
+
+	.file-search-input {
+		flex: 1;
+		height: 44px;
+		margin-left: 9px;
+		font-size: 14px;
+		color: #2A2529;
+	}
+
+	.search-clear {
+		width: 30px;
+		height: 30px;
+		align-items: center;
+		justify-content: center;
 	}
 
 	.breadcrumb-segment {
@@ -590,7 +734,7 @@
 		padding: 13px 14px;
 		margin-bottom: 10px;
 		background-color: #FFFFFF;
-		border-radius: 18px;
+		border-radius: 16px;
 		border-width: 1px;
 		border-color: rgba(241, 229, 234, 0.92);
 		border-style: solid;
@@ -636,13 +780,11 @@
 		margin-left: 8px;
 	}
 
-	.file-arrow {
+	.file-more {
 		width: 30px;
 		height: 30px;
-		border-radius: 15px;
 		justify-content: center;
 		align-items: center;
-		background-color: #FFF7FA;
 	}
 
 	/* 弹窗内容 */
