@@ -328,7 +328,7 @@
 				this.todos = all
 			},
 
-			saveTodos() {
+			saveTodos(): boolean {
 				for (let ai = 0; ai < this.agents.length; ai++) {
 					const agentId = this.agents[ai]['id'] as string
 					if (agentId == '') continue
@@ -339,10 +339,15 @@
 						}
 					}
 					const agentDir = this.getOwnerDir(agentId)
-					if (agentDir == '') continue
+					if (agentDir == '') { return false }
 					const markdown = buildTodoMarkdown(agentTodos)
-					writeContent(joinPath(agentDir, 'todo.md'), markdown)
+					const result = writeContent(joinPath(agentDir, 'todo.md'), markdown)
+					if (result.ok == false) {
+						console.log('[Todo] 写入失败: ' + result.error)
+						return false
+					}
 				}
+				return true
 			},
 
 			setFilter(f : string) {
@@ -356,7 +361,10 @@
 						break
 					}
 				}
-				this.saveTodos()
+				if (this.saveTodos() == false) {
+					this.loadTodos()
+					uni.showToast({ position: 'bottom', title: '保存待办失败', icon: 'none' })
+				}
 			},
 
 			deleteTodo(id : string) {
@@ -372,7 +380,10 @@
 								}
 							}
 							this.todos = newTodos
-							this.saveTodos()
+							if (this.saveTodos() == false) {
+								this.loadTodos()
+								uni.showToast({ position: 'bottom', title: '删除待办失败', icon: 'none' })
+							}
 						}
 					}
 				})
@@ -403,6 +414,10 @@
 				}
 				const agentId = targetAgent != null ? (targetAgent['id'] as string) : ''
 				const agentName = targetAgent != null ? (targetAgent['name'] as string) : ''
+				if (agentId == '' || agentName == '') {
+					uni.showToast({ position: 'bottom', title: '请选择所属联系人', icon: 'none' })
+					return
+				}
 				const timeStr = formatTodoCreatedAtNow()
 				let newTodo = {
 					id: '' + Date.now(),
@@ -414,7 +429,11 @@
 					agentName: agentName
 				} as UTSJSONObject
 				this.todos.unshift(newTodo)
-				this.saveTodos()
+				if (this.saveTodos() == false) {
+					this.loadTodos()
+					uni.showToast({ position: 'bottom', title: '添加待办失败', icon: 'none' })
+					return
+				}
 				this.showAddTodo = false
 				uni.showToast({ position: 'bottom',
 					title: '已添加',
@@ -463,7 +482,8 @@
 				this.notes = all
 			},
 
-			saveNotes() {
+			saveNotes(): boolean {
+				// 先完成全部写入，确认成功后再清理旧文件，避免写失败时先丢数据。
 				for (let ai = 0; ai < this.agents.length; ai++) {
 					const agentId = this.agents[ai]['id'] as string
 					if (agentId == '') continue
@@ -475,15 +495,35 @@
 						}
 					}
 					const agentDir = this.getOwnerDir(agentId)
-					if (agentDir == '') continue
+					if (agentDir == '') { return false }
 					const notesDir = joinPath(agentDir, 'notes')
-					// 收集当前笔记 ID
-					const currentIds: string[] = []
 					for (let ni = 0; ni < notes.length; ni++) {
-						currentIds.push(notes[ni]['id'] as string)
+						const note = notes[ni]
+						const noteId = note['id'] as string
+						const title = note['title'] as string
+						const content = note['content'] as string
+						const md = buildNoteMarkdown(title, content, noteId)
+						const filePath = joinPath(notesDir, noteId + '.md')
+						const result = writeContent(filePath, md)
+						if (result.ok == false) {
+							console.log('[Notes] 写入失败: ' + result.error)
+							return false
+						}
 					}
-					// 清理已删除的文件
-					const existingFiles = listDir(notesDir)
+				}
+
+				for (let ai = 0; ai < this.agents.length; ai++) {
+					const agentId = this.agents[ai]['id'] as string
+					if (agentId == '') continue
+					const currentIds: string[] = []
+					for (let ni = 0; ni < this.notes.length; ni++) {
+						if ((this.notes[ni]['agentId'] as string) == agentId) {
+							currentIds.push(this.notes[ni]['id'] as string)
+						}
+					}
+					const agentDir = this.getOwnerDir(agentId)
+					if (agentDir == '') { return false }
+					const existingFiles = listDir(joinPath(agentDir, 'notes'))
 					for (let ei = 0; ei < existingFiles.length; ei++) {
 						const file = existingFiles[ei] as FileItem
 						if (file.isDirectory) continue
@@ -497,20 +537,15 @@
 							}
 						}
 						if (found == false) {
-							deleteItem(file.path, false)
+							const result = deleteItem(file.path, false)
+							if (result.ok == false) {
+								console.log('[Notes] 删除旧文件失败: ' + result.error)
+								return false
+							}
 						}
 					}
-					// 写入当前笔记
-					for (let ni = 0; ni < notes.length; ni++) {
-						const note = notes[ni]
-						const noteId = note['id'] as string
-						const title = note['title'] as string
-						const content = note['content'] as string
-						const md = buildNoteMarkdown(title, content, noteId)
-						const filePath = joinPath(notesDir, noteId + '.md')
-						writeContent(filePath, md)
-					}
 				}
+				return true
 			},
 
 			formatNow() : string {
@@ -538,7 +573,11 @@
 					return
 				}
 				this.notes = applyNoteEditorState(this.notes, payload, this.formatNow())
-				this.saveNotes()
+				if (this.saveNotes() == false) {
+					this.loadNotes()
+					uni.showToast({ position: 'bottom', title: '保存笔记失败', icon: 'none' })
+					return
+				}
 				uni.showToast({ position: 'bottom',
 					title: '已保存',
 					icon: 'success'
@@ -574,7 +613,11 @@
 					}
 				}
 				this.notes = newNotes
-				this.saveNotes()
+				if (this.saveNotes() == false) {
+					this.loadNotes()
+					uni.showToast({ position: 'bottom', title: '删除笔记失败', icon: 'none' })
+					return
+				}
 				uni.showToast({ position: 'bottom',
 					title: '已删除',
 					icon: 'success'
