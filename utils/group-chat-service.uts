@@ -680,11 +680,14 @@ export function forkGroupSession(groupId: string, sessionId: string): GroupChatS
 	const forkId = createId('gsession')
 	const sourceTitle = displaySessionTitle(source)
 	const destWorkspace = buildGroupWorkspacePath(groupId, forkId)
+	if (destWorkspace == '') { return null }
+	let workspaceReady = false
 	if (source.workspacePath != '' && destWorkspace != '' && exists(source.workspacePath) == true && isInsideGroupWorkspace(source.workspacePath) == true && isInsideGroupWorkspace(destWorkspace) == true) {
-		copyItem(source.workspacePath, destWorkspace)
+		workspaceReady = copyItem(source.workspacePath, destWorkspace).ok
 	} else {
-		ensureDirectory(destWorkspace)
+		workspaceReady = createDir(destWorkspace, true).ok
 	}
+	if (workspaceReady == false) { return null }
 	const forked: GroupChatSession = {
 		id: forkId,
 		groupId: groupId,
@@ -697,10 +700,21 @@ export function forkGroupSession(groupId: string, sessionId: string): GroupChatS
 	}
 	const sessions = getGroupSessions(groupId)
 	sessions.push(forked)
-	saveGroupSessions(groupId, sessions)
-	const oldMessages = getGroupMessages(groupId, sessionId)
-	const copiedMessages = cloneGroupMessagesForFork(oldMessages, forkId)
-	saveGroupMessages(groupId, forkId, copiedMessages)
+	try {
+		saveGroupSessions(groupId, sessions)
+		const oldMessages = getGroupMessages(groupId, sessionId)
+		const copiedMessages = cloneGroupMessagesForFork(oldMessages, forkId)
+		saveGroupMessages(groupId, forkId, copiedMessages)
+	} catch (_e: any) {
+		try {
+			deleteGroupSessionDbRows(groupId, forkId)
+		} catch (_cleanupError: any) {
+		}
+		if (exists(destWorkspace) == true) {
+			deleteItem(destWorkspace, true)
+		}
+		return null
+	}
 	return forked
 }
 

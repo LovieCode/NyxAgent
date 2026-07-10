@@ -128,6 +128,8 @@
 					setActiveGroupSession(this.groupId, forked.id)
 					this.loadData()
 					uni.showToast({ position: 'bottom', title: '分支已创建', icon: 'success' })
+				} else {
+					uni.showToast({ position: 'bottom', title: '分支创建失败', icon: 'none' })
 				}
 			},
 			askDeleteSession(session: GroupChatSession): void {
