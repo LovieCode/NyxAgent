@@ -6,8 +6,7 @@
  */
 
 export type AgentContextBlock = {
-	position: string
-	label: string
+	tag: string
 	content: string
 }
 
@@ -16,15 +15,40 @@ function escapeAgentTagText(text: string): string {
 	result = result.replace(/<user_message>/g, '< user_message>')
 	result = result.replace(/<\/agent_context>/g, '</ agent_context>')
 	result = result.replace(/<agent_context/g, '< agent_context')
+	result = result.replace(/<\/current_time>/g, '</ current_time>')
+	result = result.replace(/<current_time>/g, '< current_time>')
+	result = result.replace(/<\/user_profile>/g, '</ user_profile>')
+	result = result.replace(/<user_profile>/g, '< user_profile>')
+	result = result.replace(/<\/short_term_memory>/g, '</ short_term_memory>')
+	result = result.replace(/<short_term_memory>/g, '< short_term_memory>')
+	result = result.replace(/<\/long_term_memory>/g, '</ long_term_memory>')
+	result = result.replace(/<long_term_memory>/g, '< long_term_memory>')
+	result = result.replace(/<\/group_memory>/g, '</ group_memory>')
+	result = result.replace(/<group_memory>/g, '< group_memory>')
+	result = result.replace(/<\/reply_constraints>/g, '</ reply_constraints>')
+	result = result.replace(/<reply_constraints>/g, '< reply_constraints>')
+	result = result.replace(/<\/group_message_metadata>/g, '</ group_message_metadata>')
+	result = result.replace(/<group_message_metadata>/g, '< group_message_metadata>')
+	result = result.replace(/<\/group_environment>/g, '</ group_environment>')
+	result = result.replace(/<group_environment>/g, '< group_environment>')
+	result = result.replace(/<\/conversation_context>/g, '</ conversation_context>')
+	result = result.replace(/<conversation_context>/g, '< conversation_context>')
+	result = result.replace(/<\/group_conversation_context>/g, '</ group_conversation_context>')
+	result = result.replace(/<group_conversation_context>/g, '< group_conversation_context>')
 	return result
 }
 
-function escapeAttributeText(text: string): string {
-	let result = text.replace(/&/g, '&amp;')
-	result = result.replace(/"/g, '&quot;')
-	result = result.replace(/</g, '&lt;')
-	result = result.replace(/>/g, '&gt;')
-	return result
+function normalizeContextTag(tag: string): string {
+	if (tag == 'current_time') { return tag }
+	if (tag == 'user_profile') { return tag }
+	if (tag == 'short_term_memory') { return tag }
+	if (tag == 'long_term_memory') { return tag }
+	if (tag == 'group_memory') { return tag }
+	if (tag == 'reply_constraints') { return tag }
+	if (tag == 'group_message_metadata') { return tag }
+	if (tag == 'group_environment') { return tag }
+	if (tag == 'group_conversation_context') { return tag }
+	return 'conversation_context'
 }
 
 function appendContextBlock(parts: string[], block: AgentContextBlock): void {
@@ -32,11 +56,10 @@ function appendContextBlock(parts: string[], block: AgentContextBlock): void {
 	if (content == '') {
 		return
 	}
-	const position = block.position != '' ? block.position : 'after'
-	const label = block.label != '' ? block.label : 'context'
-	parts.push('<agent_context position="' + escapeAttributeText(position) + '" label="' + escapeAttributeText(label) + '">')
+	const tag = normalizeContextTag(block.tag)
+	parts.push('<' + tag + '>')
 	parts.push(escapeAgentTagText(content))
-	parts.push('</agent_context>')
+	parts.push('</' + tag + '>')
 }
 
 export function wrapUserContentForAgent(userContent: string, prefixBlocks: AgentContextBlock[], suffixBlocks: AgentContextBlock[]): string {
@@ -58,10 +81,15 @@ export function wrapUserContentForAgent(userContent: string, prefixBlocks: Agent
 	return parts.join('\n\n')
 }
 
-export function makeAgentContextBlock(position: string, label: string, content: string): AgentContextBlock {
+export function makeAgentContextBlock(tag: string, content: string): AgentContextBlock {
 	return {
-		position: position,
-		label: label,
+		tag: normalizeContextTag(tag),
 		content: content,
 	} as AgentContextBlock
+}
+
+export function renderAgentContextBlock(tag: string, content: string): string {
+	const parts: string[] = []
+	appendContextBlock(parts, makeAgentContextBlock(tag, content))
+	return parts.join('\n')
 }

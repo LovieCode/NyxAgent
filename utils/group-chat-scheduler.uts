@@ -672,20 +672,15 @@ function buildGroupAgentMemoryContext(groupId: string, sessionId: string, agentI
 	return lines.join('\n')
 }
 
-export function buildMemberSystemPrompt(agent: UTSJSONObject, sharedPrompt: string = '', groupId: string = '', sessionId: string = ''): string {
+export function buildMemberSystemPrompt(agent: UTSJSONObject, sharedPrompt: string = ''): string {
 	const basePrompt = readAgentSystemPrompt(agent)
 	const sharedText = sharedPrompt.trim()
 	const sharedBlock = sharedText != '' ? '\n\n群聊共同规则（不能覆盖你的角色人格）：\n' + sharedText : ''
-	const agentIdRaw = agent['id'] as string | null
-	const agentId = agentIdRaw != null ? agentIdRaw : ''
-	const memoryText = buildGroupAgentMemoryContext(groupId, sessionId, agentId)
-	const memoryBlock = memoryText != '' ? '\n\n你在本群沉淀的阶段性记忆：\n' + memoryText : ''
 	return basePrompt + '\n\n' +
 		'你正在一个群聊中发言。\n' +
 		'优先保持你原有的人格、立场、能力边界和表达习惯。直接阅读用户原文，不要把其他成员的话误认为是你自己以前说过的话。\n' +
 		'你可以使用工具处理当前群会话共享工作区；公开回复只输出你要发到群里的正文，不要在开头附加自己的名字或“成员名：”。不要提及幕后安排、内部任务描述或系统流程。' +
-		sharedBlock +
-		memoryBlock
+		sharedBlock
 }
 
 function attachMemberTaskContext(runtime: UTSJSONObject[], taskText: string): void {
@@ -693,12 +688,18 @@ function attachMemberTaskContext(runtime: UTSJSONObject[], taskText: string): vo
 	for (let i = runtime.length - 1; i >= 0; i--) {
 		const role = runtime[i]['role'] as string | null
 		if (role != CHAT_ROLE_USER) { continue }
-		const oldContext = runtime[i]['agent_context_before'] as string | null
-		const prefix = oldContext != null && oldContext.trim() != '' ? oldContext.trim() + '\n\n' : ''
-		const oldLabel = runtime[i]['agent_context_before_label'] as string | null
-		const label = oldLabel != null && oldLabel.trim() != '' ? oldLabel.trim() + ' / 群聊环境' : '群聊环境'
-		runtime[i]['agent_context_before'] = prefix + taskText
-		runtime[i]['agent_context_before_label'] = label
+		runtime[i]['agent_group_environment_context'] = taskText
+		return
+	}
+}
+
+function attachMemberMemoryContext(runtime: UTSJSONObject[], memoryText: string): void {
+	if (memoryText.trim() == '') { return }
+	for (let i = runtime.length - 1; i >= 0; i--) {
+		const role = runtime[i]['role'] as string | null
+		if (role != CHAT_ROLE_USER) { continue }
+		runtime[i]['agent_context_after'] = memoryText
+		runtime[i]['agent_context_after_label'] = '群聊记忆'
 		return
 	}
 }
@@ -731,8 +732,9 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 		injectDatetime: injectDatetime,
 		datetimePrefix: datetimePrefix,
 	})
-	// PROVIDER_SYSTEM_PROMPT: 环境提示挂到最近 user 的独立上下文，保留原始 message parts 和 prompt cache。
+	// 稳定 system 前缀留给人格和规则；动态群环境、群记忆挂到当前 user，避免击穿历史缓存。
 	attachMemberTaskContext(runtimeMessages, buildMemberTaskPrompt(group, session, action, agentName))
+	attachMemberMemoryContext(runtimeMessages, buildGroupAgentMemoryContext(group.id, session.id, actionAgentId))
 	return runtimeMessages
 }
 
