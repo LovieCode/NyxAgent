@@ -3,7 +3,7 @@
  * 使用 SQLite app_settings 持久化智能体列表
  */
 
-import { getAgentDir, deleteItem } from '@/utils/file-manager.uts'
+import { deleteItem, exists, getAgentDir, getAgentsRoot, joinPath } from '@/utils/file-manager.uts'
 import { getAppSetting, setAppSetting } from '@/utils/database.uts'
 import { isAstrBotEnabled } from '@/utils/astrbot-service.uts'
 
@@ -20,6 +20,11 @@ export const AGENT_TOOL_ASTRBOT_TASK = 'astrbot_task'
 export const AGENT_TOOL_MEMORY_CORE_LIST = 'memory_core_list'
 export const AGENT_TOOL_MEMORY_CORE_SAVE = 'memory_core_save'
 export const AGENT_TOOL_MEMORY_CORE_FORGET = 'memory_core_forget'
+
+export type AgentDeleteResult = {
+	ok: boolean
+	filesCleared: boolean
+}
 
 const ALL_AGENT_TOOL_IDS: string[] = [
 	AGENT_TOOL_APP_GUIDE,
@@ -516,22 +521,39 @@ export function updateAgentAvatar(id: string, avatarPath: string): void {
 }
 
 /** 删除智能体（同时清理文件目录） */
-export function deleteAgent(id: string): void {
-	if (id == NYX_ADMIN_AGENT_ID) {
-		return
+export function deleteAgent(id: string): AgentDeleteResult {
+	if (id == NYX_ADMIN_AGENT_ID || id == '' || id.indexOf('/') >= 0 || id.indexOf('\\') >= 0 || id.indexOf('..') >= 0) {
+		return { ok: false, filesCleared: false } as AgentDeleteResult
 	}
-	// 清理文件沙箱
-	getAgentDir(id) // 确保目录存在
-	deleteItem(getAgentDir(id))
-	// 移除列表
 	const agents = getAgents()
 	const newAgents = [] as UTSJSONObject[]
+	let found = false
 	for (let i = 0; i < agents.length; i++) {
 		if ((agents[i]['id'] as string) != id) {
 			newAgents.push(agents[i])
+		} else {
+			found = true
 		}
 	}
+	if (found == false) {
+		return { ok: false, filesCleared: false } as AgentDeleteResult
+	}
+	const serialized = JSON.stringify(newAgents)
 	saveAgents(newAgents)
+	if (getAppSetting('agent_list') != serialized) {
+		return { ok: false, filesCleared: false } as AgentDeleteResult
+	}
+	let filesCleared = true
+	const agentsRoot = getAgentsRoot()
+	if (agentsRoot == '') {
+		filesCleared = false
+	} else {
+		const agentDir = joinPath(agentsRoot, id)
+		if (exists(agentDir) == true) {
+			filesCleared = deleteItem(agentDir, true).ok
+		}
+	}
+	return { ok: true, filesCleared: filesCleared } as AgentDeleteResult
 }
 
 /** 更新智能体截断设置 */

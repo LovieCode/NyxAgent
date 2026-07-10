@@ -722,15 +722,19 @@
 					content: '确定要删除「' + this.agentName + '」吗？此操作无法撤销。',
 					success: (res) => {
 						if (res.confirm == true) {
-							deleteAgent(this.agentId)
+							const deleteResult = deleteAgent(this.agentId)
+							if (deleteResult.ok == false) {
+								uni.showToast({ position: 'bottom', title: '删除失败', icon: 'none' })
+								return
+							}
 							// 如果删除的是当前选中的私聊，清除 active_agent_id
 							const activeId = getRuntimeState('active_agent_id')
 							if (activeId == this.agentId) {
 								clearActiveAgentRuntimeId()
 							}
 							uni.showToast({ position: 'bottom',
-								title: '已删除',
-								icon: 'success'
+								title: deleteResult.filesCleared == true ? '已删除' : '已删除，文件清理失败',
+								icon: deleteResult.filesCleared == true ? 'success' : 'none'
 							})
 							// 跳转到会话列表页
 							uni.redirectTo({
