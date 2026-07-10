@@ -6,7 +6,7 @@
 import { importDatabaseTables, importSettingsTables, setAppSetting, setRuntimeState } from '@/utils/database.uts'
 import { saveAgents } from '@/utils/agent.uts'
 import { getAgentDir, joinPath, exists, createDir, writeContent } from '@/utils/file-manager.uts'
-import { readImportManifest, importAgentWorkspaceFiles, importBackupAssets, importGroupWorkspaceFiles } from '@/utssdk/app-data-export/index.uts'
+import { readImportManifest, importAgentWorkspaceFiles, importBackupAssets, importGroupWorkspaceFiles, importUserWorkspaceFiles } from '@/utssdk/app-data-export/index.uts'
 
 export type ImportBackupSummary = {
 	ok: boolean
@@ -202,7 +202,7 @@ function isSettingsOnlyStorageKey(key: string): boolean {
 	if (key.startsWith('profile_')) {
 		return true
 	}
-	if (key == 'agent_list' || key == 'active_agent_id' || key == 'skills_list' || key == 'notes_list' || key == 'todo_list') {
+	if (key == 'agent_list' || key == 'active_agent_id' || key == 'skills_list') {
 		return true
 	}
 	return false
@@ -413,7 +413,7 @@ export function previewImportBackup(zipPath: string): ImportBackupSummary {
 	}
 }
 
-/** 仅恢复设置、提供商、个人资料、Agent、Skills、笔记和待办，不覆盖聊天记录。 */
+/** 仅恢复设置、提供商、个人资料、Agent 和 Skills，不覆盖聊天记录或工作区文件。 */
 export function importSettingsOnlyFromZip(zipPath: string): string {
 	const manifestJson = readImportManifest(zipPath)
 	if (manifestJson == '') {
@@ -429,8 +429,6 @@ export function importSettingsOnlyFromZip(zipPath: string): string {
 		const appSettings = readObjectArray(data, 'appSettings')
 		const agents = readObjectArray(data, 'agents')
 		const skills = readObjectArray(data, 'skills')
-		const notes = readObjectArray(data, 'notes')
-		const todos = readObjectArray(data, 'todos')
 		const storage = data['storage'] as UTSJSONObject | null
 		let storageKeys = buildSettingsOnlyStorageKeys(readStringArray(data, 'storageKeys'))
 		const assets = filterSettingsAssets(readObjectArray(data, 'assets'))
@@ -446,8 +444,6 @@ export function importSettingsOnlyFromZip(zipPath: string): string {
 			if (skills.length > 0) {
 				storage['skills_list'] = JSON.stringify(skills)
 			}
-			storage['notes_list'] = JSON.stringify(notes)
-			storage['todo_list'] = JSON.stringify(todos)
 		}
 
 		if (providers.length > 0 || appSettings.length > 0) {
@@ -456,12 +452,10 @@ export function importSettingsOnlyFromZip(zipPath: string): string {
 		if (agents.length > 0) {
 			saveAgents(agents)
 		}
-		restoreListStorage('notes_list', notes)
-		restoreListStorage('todo_list', todos)
 		if (storage != null) {
 			writeStorageObject(storage, storageKeys)
 		}
-		return '已恢复设置：提供商 ' + providers.length + ' 个，Agent ' + agents.length + ' 个，Skills ' + skills.length + ' 个，笔记 ' + notes.length + ' 条，待办 ' + todos.length + ' 条，资源 ' + assets.length + ' 个。聊天记录未覆盖。'
+		return '已恢复设置：提供商 ' + providers.length + ' 个，Agent ' + agents.length + ' 个，Skills ' + skills.length + ' 个，资源 ' + assets.length + ' 个。聊天记录和工作区文件未覆盖。'
 	} catch (_e: any) {
 		return ''
 	}
@@ -523,7 +517,8 @@ export function importAllDataFromZip(zipPath: string): string {
 		}
 		const workspaceCount = importAgentWorkspaceFiles(zipPath)
 		const groupWorkspaceCount = importGroupWorkspaceFiles(zipPath)
-		return '已导入：提供商 ' + providers.length + ' 个，对话 ' + conversations.length + ' 条，消息 ' + messages.length + ' 条，记忆 ' + memoryCore.length + ' 条，Skills ' + skills.length + ' 个，资源 ' + assets.length + ' 个，Agent 文件 ' + workspaceCount + ' 个，群聊文件 ' + groupWorkspaceCount + ' 个。'
+		const userWorkspaceCount = importUserWorkspaceFiles(zipPath)
+		return '已导入：提供商 ' + providers.length + ' 个，对话 ' + conversations.length + ' 条，消息 ' + messages.length + ' 条，记忆 ' + memoryCore.length + ' 条，Skills ' + skills.length + ' 个，资源 ' + assets.length + ' 个，用户文件 ' + userWorkspaceCount + ' 个，Agent 文件 ' + workspaceCount + ' 个，群聊文件 ' + groupWorkspaceCount + ' 个。'
 	} catch (_e: any) {
 		return ''
 	}

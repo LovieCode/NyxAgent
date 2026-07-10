@@ -237,7 +237,7 @@
 				}
 				uni.showModal({
 					title: '仅恢复设置',
-					content: '会覆盖提供商、默认模型、用户资料、Agent、Skills、笔记和待办，不会覆盖聊天记录。建议先备份当前数据。继续？',
+					content: '会覆盖提供商、默认模型、用户资料、Agent 和 Skills，不会覆盖聊天记录或工作区文件。建议先备份当前数据。继续？',
 					success: (res) => {
 						if (res.confirm == true) {
 							this.importSettingsOnly()

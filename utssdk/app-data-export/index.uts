@@ -472,6 +472,18 @@ function cleanDirectory(dir: File): void {
 	}
 }
 
+function zipContainsPrefix(zip: ZipFile, prefix: string): boolean {
+	const entries = zip.entries()
+	while (entries.hasMoreElements()) {
+		const entry = entries.nextElement() as ZipEntry
+		const name = entry.name as string
+		if (name.startsWith(prefix) && isSafeExtractPath(name)) {
+			return true
+		}
+	}
+	return false
+}
+
 function getImportedAssetsRoot(): File | null {
 	const context = UTSAndroid.getAppContext()
 	if (context == null) {
@@ -562,6 +574,37 @@ function extractGroupWorkspaceEntry(zip: ZipFile, entry: ZipEntry, groupRoot: Fi
 	input.close()
 	return 1
 }
+
+function extractUserWorkspaceEntry(zip: ZipFile, entry: ZipEntry, userRoot: File): number {
+	const name = entry.name as string
+	const prefix = 'user-files/'
+	if (!name.startsWith(prefix)) {
+		return 0
+	}
+	if (!isSafeExtractPath(name)) {
+		return 0
+	}
+	const rel = name.substring(prefix.length)
+	if (rel == '') {
+		return 0
+	}
+	const target = new File(userRoot.absolutePath + '/' + rel)
+	if (entry.isDirectory()) {
+		ensureDirectory(target)
+		return 0
+	}
+	const parent = target.parentFile
+	if (parent != null) {
+		ensureDirectory(parent)
+	}
+	const input = zip.getInputStream(entry)
+	const output = new FileOutputStream(target)
+	output.write(input.readBytes())
+	output.flush()
+	output.close()
+	input.close()
+	return 1
+}
 // #endif
 
 /** 读取导入 ZIP 的 export.json 清单。 */
@@ -607,14 +650,18 @@ export function importAgentWorkspaceFiles(zipPath: string): number {
 		if (importRoot == null || context == null) {
 			return 0
 		}
-		const agentsRoot = new File((context.filesDir as File).absolutePath + '/agents')
-		ensureDirectory(agentsRoot)
-		cleanDirectory(agentsRoot)
 		const zipFile = prepareImportZipFile(zipPath)
 		if (zipFile == null) {
 			return 0
 		}
 		const zip = new ZipFile(zipFile)
+		if (zipContainsPrefix(zip, 'agent-workspaces/') == false) {
+			zip.close()
+			return 0
+		}
+		const agentsRoot = new File((context.filesDir as File).absolutePath + '/agents')
+		ensureDirectory(agentsRoot)
+		cleanDirectory(agentsRoot)
 		let count = 0
 		const entries = zip.entries()
 		while (entries.hasMoreElements()) {
@@ -639,19 +686,59 @@ export function importGroupWorkspaceFiles(zipPath: string): number {
 		if (importRoot == null || context == null) {
 			return 0
 		}
-		const groupRoot = new File((context.filesDir as File).absolutePath + '/group-workspaces')
-		ensureDirectory(groupRoot)
-		cleanDirectory(groupRoot)
 		const zipFile = prepareImportZipFile(zipPath)
 		if (zipFile == null) {
 			return 0
 		}
 		const zip = new ZipFile(zipFile)
+		if (zipContainsPrefix(zip, 'group-workspaces/') == false) {
+			zip.close()
+			return 0
+		}
+		const groupRoot = new File((context.filesDir as File).absolutePath + '/group-workspaces')
+		ensureDirectory(groupRoot)
+		cleanDirectory(groupRoot)
 		let count = 0
 		const entries = zip.entries()
 		while (entries.hasMoreElements()) {
 			const entry = entries.nextElement() as ZipEntry
 			count = count + extractGroupWorkspaceEntry(zip, entry, groupRoot)
+		}
+		zip.close()
+		return count
+	} catch (_e: any) {
+		return 0
+	}
+	// #endif
+	return 0
+}
+
+/** 解压导入 ZIP 中的用户工作区文件。 */
+export function importUserWorkspaceFiles(zipPath: string): number {
+	// #ifdef APP-ANDROID
+	try {
+		const importRoot = getImportRoot()
+		const context = UTSAndroid.getAppContext()
+		if (importRoot == null || context == null) {
+			return 0
+		}
+		const zipFile = prepareImportZipFile(zipPath)
+		if (zipFile == null) {
+			return 0
+		}
+		const zip = new ZipFile(zipFile)
+		if (zipContainsPrefix(zip, 'user-files/') == false) {
+			zip.close()
+			return 0
+		}
+		const userRoot = new File((context.filesDir as File).absolutePath + '/user')
+		ensureDirectory(userRoot)
+		cleanDirectory(userRoot)
+		let count = 0
+		const entries = zip.entries()
+		while (entries.hasMoreElements()) {
+			const entry = entries.nextElement() as ZipEntry
+			count = count + extractUserWorkspaceEntry(zip, entry, userRoot)
 		}
 		zip.close()
 		return count
