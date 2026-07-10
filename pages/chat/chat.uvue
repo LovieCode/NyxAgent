@@ -321,6 +321,10 @@
 				messageActionSheetOpen: false as boolean,
 				/** 软键盘高度（>0 表示键盘弹出） */
 				keyboardHeight: 0 as number,
+				/** 软键盘监听 ID，卸载时只移除本页监听 */
+				keyboardHeightListenerId: -1 as number,
+				/** 页面不可见时仍消费事件，但不再触发 UI 副作用 */
+				pageVisible: true as boolean,
 			}
 		},
 		computed: {
@@ -369,13 +373,14 @@
 				this.conversationId = '' + Date.now()
 			}
 			// 监听软键盘高度变化：键盘弹出时自动收起工具栏面板，避免遮挡消息列表
-			uni.onKeyboardHeightChange((res: OnKeyboardHeightChangeCallbackResult) => {
+			this.keyboardHeightListenerId = uni.onKeyboardHeightChange((res: OnKeyboardHeightChangeCallbackResult) => {
 				const keepBottom = this.isAtBottom
 				this.keyboardHeight = res.height
 				if (res.height > 0 && this.showToolPanel == true) {
 					this.showToolPanel = false
 				}
 				setTimeout(() => {
+					if (this.pageVisible == false) { return }
 					this.scheduleMeasureMessageScroll()
 					if (keepBottom == true) {
 						this.scrollToBottom()
@@ -392,6 +397,7 @@
 		},
 
 		onShow() {
+			this.pageVisible = true
 			// 每次显示页面时刷新智能体信息和用户昵称
 			this.loadUserNickname()
 			this.loadCurrentAgent()
@@ -407,6 +413,7 @@
 
 		onHide() {
 			// 离开页面时保存当前对话，并停止后台朗读。
+			this.pageVisible = false
 			this.flushStreamEvents()
 			this.clearStreamScrollTimer()
 			this.stopSpeechPlayback()
@@ -416,11 +423,15 @@
 
 		onUnload() {
 			// 页面卸载时移除软键盘高度监听，防止内存泄漏
+			this.pageVisible = false
 			this.flushStreamEvents()
 			this.clearStreamFlushTimer()
 			this.clearStreamScrollTimer()
 			this.stopSpeechPlayback()
-			uni.offKeyboardHeightChange()
+			if (this.keyboardHeightListenerId != -1) {
+				uni.offKeyboardHeightChange(this.keyboardHeightListenerId)
+				this.keyboardHeightListenerId = -1
+			}
 			const callback = chatNyxFloatVoiceCallback
 			if (callback != null) {
 				eventBus.off(NYX_FLOAT_VOICE_EVENT, callback)
@@ -1218,8 +1229,11 @@
 				const result = flushBufferedChatStreamEvents(this.messages, this.streamEventQueue)
 				this.streamEventQueue = result.nextQueue
 				if (result.messageChanged == true) {
-					this.refreshMessagesView()
-					this.scrollToBottomIfPinned()
+					this.savedFlag = false
+					if (this.pageVisible == true) {
+						this.refreshMessagesView()
+						this.scrollToBottomIfPinned()
+					}
 				}
 			},
 
@@ -1311,8 +1325,8 @@
 				this.resetMessageWindowToRecent()
 			},
 
-			saveCurrentConversation() {
-				if (this.messages.length == 0 || this.savedFlag) {
+			saveCurrentConversation(force: boolean = false) {
+				if (this.messages.length == 0 || (this.savedFlag == true && force == false)) {
 					return
 				}
 				this.savedFlag = true
@@ -1377,26 +1391,36 @@
 			handleAgentEvent(event: AgentEvent) {
 				const messageChanged = reduceAgentEvent(this.messages, event)
 				if (messageChanged == true) {
-					this.refreshMessagesView()
-					this.scrollToBottomIfPinned()
+					this.savedFlag = false
+					if (this.pageVisible == true) {
+						this.refreshMessagesView()
+						this.scrollToBottomIfPinned()
+					}
 					return
 				}
 				if (event.type == 'memory_organize_start') {
-					uni.showToast({ position: 'bottom',
-						title: event.message != null ? (event.message as string) : '记忆整理已开始',
-						icon: 'none'
-					})
+					if (this.pageVisible == true) {
+						uni.showToast({ position: 'bottom',
+							title: event.message != null ? (event.message as string) : '记忆整理已开始',
+							icon: 'none'
+						})
+					}
 				} else if (event.type == 'agent_end') {
 					finalizeAssistantTurn(this.messages, this.msgSegmentation)
 					appendLatestChatResponseSnapshot(this.messages, this.currentAgentId, this.conversationId)
-					this.refreshMessagesView()
 					this.isGenerating = false
 					this.currentStream = null
 					this.clearStreamFlushTimer()
 					this.clearStreamScrollTimer()
-					this.scrollToBottomIfPinned()
-					this.saveCurrentConversation()
-					this.maybeSynthesizeLatestAssistantSpeech()
+					this.savedFlag = false
+					if (this.pageVisible == true) {
+						this.refreshMessagesView()
+						this.scrollToBottomIfPinned()
+					}
+					this.saveCurrentConversation(true)
+					if (this.pageVisible == true) {
+						this.maybeSynthesizeLatestAssistantSpeech()
+					}
 				}
 			},
 			simulateAIResponse(_userText: string) {

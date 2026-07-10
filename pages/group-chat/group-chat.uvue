@@ -252,6 +252,7 @@
 				userNickname: '' as string,
 				userAvatar: '' as string,
 				imageCaptionTaskId: 0 as number,
+				keyboardHeightListenerId: -1 as number,
 			}
 		},
 		computed: {
@@ -300,7 +301,7 @@
 		onLoad() {
 			this.loadUserProfile()
 			this.loadGroup()
-			uni.onKeyboardHeightChange((res: OnKeyboardHeightChangeCallbackResult) => {
+			this.keyboardHeightListenerId = uni.onKeyboardHeightChange((res: OnKeyboardHeightChangeCallbackResult) => {
 				const keepBottom = this.isAtBottom
 				this.keyboardHeight = res.height
 				if (res.height > 0 && this.showToolPanel == true) {
@@ -335,7 +336,10 @@
 			deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
 		},
 		onUnload() {
-			uni.offKeyboardHeightChange()
+			if (this.keyboardHeightListenerId != -1) {
+				uni.offKeyboardHeightChange(this.keyboardHeightListenerId)
+				this.keyboardHeightListenerId = -1
+			}
 			const callback = groupNyxFloatVoiceCallback
 			if (callback != null) {
 				eventBus.off(NYX_FLOAT_VOICE_EVENT, callback)
