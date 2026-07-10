@@ -160,6 +160,18 @@ class GroupChatTurnRuntime {
 		}
 	}
 
+	dispose(): void {
+		this.stopped = true
+		this.running = false
+		this.phase = 'disposed'
+		this.runId = ''
+		const stream = this.currentStream
+		this.currentStream = null
+		if (stream != null) {
+			stream.abort()
+		}
+	}
+
 	finish(): void {
 		this.running = false
 		this.stopped = false
@@ -523,5 +535,16 @@ export function stopGroupChatTurn(sessionId: string): void {
 	const runtime = getRuntime(sessionId)
 	if (runtime != null) {
 		runtime.stop()
+	}
+}
+
+export function disposeGroupChatTurn(sessionId: string): void {
+	if (sessionId == '') { return }
+	for (let i = 0; i < groupTurnRuntimes.length; i++) {
+		const runtime = groupTurnRuntimes[i]
+		if (runtime.sessionId != sessionId) { continue }
+		groupTurnRuntimes.splice(i, 1)
+		runtime.dispose()
+		return
 	}
 }

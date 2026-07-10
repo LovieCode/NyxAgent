@@ -65,6 +65,7 @@
 		getGroupSessions,
 		setActiveGroupSession,
 	} from '@/utils/group-chat-service.uts'
+	import { disposeGroupChatTurn } from '@/utils/group-chat-turn-runtime.uts'
 
 	export default {
 		data() {
@@ -138,6 +139,7 @@
 					itemList: ['只删除记录', '删除记录并清空文件'],
 					success: (res) => {
 						const clearFiles = res.tapIndex == 1
+						disposeGroupChatTurn(session.id)
 						deleteGroupSession(this.groupId, session.id, clearFiles)
 						this.loadData()
 						uni.showToast({ position: 'bottom', title: clearFiles ? '会话和文件已删除' : '会话已删除', icon: 'none' })
