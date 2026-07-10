@@ -436,30 +436,6 @@ export function listRootContents(): FileItem[] {
 }
 
 /**
- * 递归合并源目录中目标目录缺失的文件，目标已有内容不覆盖。
- */
-function mergeMissingItems(srcDir: string, destDir: string, depth: number): void {
-	if (depth > 8) {
-		return
-	}
-	const items = listDir(srcDir)
-	for (let i = 0; i < items.length; i++) {
-		const item = items[i]
-		const targetPath = joinPath(destDir, item.name)
-		if (exists(targetPath)) {
-			if (item.isDirectory) {
-				const targetStat = statItem(targetPath)
-				if (targetStat.isDirectory) {
-					mergeMissingItems(item.path, targetPath, depth + 1)
-				}
-			}
-			continue
-		}
-		copyItem(item.path, targetPath)
-	}
-}
-
-/**
  * 无损迁移旧版 `agents/__user__` 目录到新的用户目录。
  * 已存在的同名文件不会覆盖，避免误伤用户手动整理过的数据。
  */
@@ -487,7 +463,12 @@ export function migrateLegacyUserDir(): void {
 		setAppSetting(LEGACY_USER_DIR_MIGRATED_KEY, '1')
 		return
 	}
-	createDir(userDir, true)
-	mergeMissingItems(legacyDir, userDir, 0)
+	const copyResult = copyItem(legacyDir, userDir)
+	if (copyResult.ok == false) {
+		if (exists(userDir) == true) {
+			deleteItem(userDir, true)
+		}
+		return
+	}
 	setAppSetting(LEGACY_USER_DIR_MIGRATED_KEY, '1')
 }
