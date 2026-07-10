@@ -117,21 +117,29 @@ export function getGroupMemberRows(groupId: string): UTSJSONObject[] {
 export function saveGroupMemberRows(groupId: string, rows: UTSJSONObject[]): void {
 	const db = getDb()
 	ensureGroupChatTables(db)
-	db.run('DELETE FROM group_chat_members WHERE group_id = ? AND ? = ?', [groupId, 1, 1])
-	for (let i = 0; i < rows.length; i++) {
-		const row = rows[i]
-		db.run(
-			'INSERT OR REPLACE INTO group_chat_members (id, group_id, agent_id, active, joined_at, left_at, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)',
-			[
-				readStringField(row, 'id'),
-				groupId,
-				readStringField(row, 'agent_id') != '' ? readStringField(row, 'agent_id') : readStringField(row, 'agentId'),
-				readNumberField(row, 'active'),
-				readNumberField(row, 'joined_at') > 0 ? readNumberField(row, 'joined_at') : readNumberField(row, 'joinedAt'),
-				readNumberField(row, 'left_at') > 0 ? readNumberField(row, 'left_at') : readNumberField(row, 'leftAt'),
-				readNumberField(row, 'order_index') > 0 ? readNumberField(row, 'order_index') : readNumberField(row, 'order'),
-			]
-		)
+	try {
+		assertSqlSuccess(db.beginTransaction(), '无法开始群成员保存事务')
+		runSqlOrThrow(db, 'DELETE FROM group_chat_members WHERE group_id = ? AND ? = ?', [groupId, 1, 1])
+		for (let i = 0; i < rows.length; i++) {
+			const row = rows[i]
+			runSqlOrThrow(db,
+				'INSERT OR REPLACE INTO group_chat_members (id, group_id, agent_id, active, joined_at, left_at, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)',
+				[
+					readStringField(row, 'id'),
+					groupId,
+					readStringField(row, 'agent_id') != '' ? readStringField(row, 'agent_id') : readStringField(row, 'agentId'),
+					readNumberField(row, 'active'),
+					readNumberField(row, 'joined_at') > 0 ? readNumberField(row, 'joined_at') : readNumberField(row, 'joinedAt'),
+					readNumberField(row, 'left_at') > 0 ? readNumberField(row, 'left_at') : readNumberField(row, 'leftAt'),
+					readNumberField(row, 'order_index') > 0 ? readNumberField(row, 'order_index') : readNumberField(row, 'order'),
+				]
+			)
+		}
+		assertSqlSuccess(db.commit(), '无法提交群成员保存事务')
+	} catch (e: any) {
+		db.rollback()
+		db.close()
+		throw e
 	}
 	db.close()
 }
@@ -147,22 +155,30 @@ export function getGroupSessionRows(groupId: string): UTSJSONObject[] {
 export function saveGroupSessionRows(groupId: string, rows: UTSJSONObject[]): void {
 	const db = getDb()
 	ensureGroupChatTables(db)
-	db.run('DELETE FROM group_chat_sessions WHERE group_id = ? AND ? = ?', [groupId, 1, 1])
-	for (let i = 0; i < rows.length; i++) {
-		const row = rows[i]
-		db.run(
-			'INSERT OR REPLACE INTO group_chat_sessions (id, group_id, title, workspace_path, forked_from_session_id, title_locked, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-			[
-				readStringField(row, 'id'),
-				groupId,
-				readStringField(row, 'title'),
-				readStringField(row, 'workspace_path') != '' ? readStringField(row, 'workspace_path') : readStringField(row, 'workspacePath'),
-				readStringField(row, 'forked_from_session_id') != '' ? readStringField(row, 'forked_from_session_id') : readStringField(row, 'forkedFromSessionId'),
-				readNumberField(row, 'title_locked') > 0 ? readNumberField(row, 'title_locked') : readNumberField(row, 'titleLocked'),
-				readNumberField(row, 'created_at') > 0 ? readNumberField(row, 'created_at') : readNumberField(row, 'createdAt'),
-				readNumberField(row, 'updated_at') > 0 ? readNumberField(row, 'updated_at') : readNumberField(row, 'updatedAt'),
-			]
-		)
+	try {
+		assertSqlSuccess(db.beginTransaction(), '无法开始群会话保存事务')
+		runSqlOrThrow(db, 'DELETE FROM group_chat_sessions WHERE group_id = ? AND ? = ?', [groupId, 1, 1])
+		for (let i = 0; i < rows.length; i++) {
+			const row = rows[i]
+			runSqlOrThrow(db,
+				'INSERT OR REPLACE INTO group_chat_sessions (id, group_id, title, workspace_path, forked_from_session_id, title_locked, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+				[
+					readStringField(row, 'id'),
+					groupId,
+					readStringField(row, 'title'),
+					readStringField(row, 'workspace_path') != '' ? readStringField(row, 'workspace_path') : readStringField(row, 'workspacePath'),
+					readStringField(row, 'forked_from_session_id') != '' ? readStringField(row, 'forked_from_session_id') : readStringField(row, 'forkedFromSessionId'),
+					readNumberField(row, 'title_locked') > 0 ? readNumberField(row, 'title_locked') : readNumberField(row, 'titleLocked'),
+					readNumberField(row, 'created_at') > 0 ? readNumberField(row, 'created_at') : readNumberField(row, 'createdAt'),
+					readNumberField(row, 'updated_at') > 0 ? readNumberField(row, 'updated_at') : readNumberField(row, 'updatedAt'),
+				]
+			)
+		}
+		assertSqlSuccess(db.commit(), '无法提交群会话保存事务')
+	} catch (e: any) {
+		db.rollback()
+		db.close()
+		throw e
 	}
 	db.close()
 }
@@ -179,34 +195,42 @@ export function saveGroupMessageRows(groupId: string, sessionId: string, message
 	const now = Date.now()
 	const db = getDb()
 	ensureGroupChatTables(db)
-	db.run('DELETE FROM group_chat_messages WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
-	for (let i = 0; i < messages.length; i++) {
-		const msg = messages[i]
-		const visibleRaw = msg['visible'] as boolean | null
-		const visible = visibleRaw == false ? 0 : 1
-		const visibilityRaw = msg['visibility'] as string | null
-		const visibility = visibilityRaw != null && visibilityRaw != '' ? visibilityRaw : (visible == 1 ? 'public' : 'internal')
-		const timestampRaw = msg['timestamp'] as number | null
-		const timestamp = timestampRaw != null && timestampRaw > 0 ? timestampRaw : now
-		const visibleAgentIdsRaw = msg['visibleAgentIds'] as string[] | null
-		const visibleAgentIds = visibleAgentIdsRaw != null ? visibleAgentIdsRaw : ([] as string[])
-		db.run(
-			'INSERT OR REPLACE INTO group_chat_messages (id, group_id, session_id, role, sender_type, sender_agent_id, visibility, visible_agent_ids_json, visible, timestamp, payload_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-			[
-				readStringField(msg, 'id'),
-				groupId,
-				sessionId,
-				readStringField(msg, 'role'),
-				readStringField(msg, 'senderType'),
-				readStringField(msg, 'senderAgentId'),
-				visibility,
-				safeJsonArrayForDb(visibleAgentIds),
-				visible,
-				timestamp,
-				safeJsonForDb(msg),
-				now,
-			]
-		)
+	try {
+		assertSqlSuccess(db.beginTransaction(), '无法开始群消息保存事务')
+		runSqlOrThrow(db, 'DELETE FROM group_chat_messages WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+		for (let i = 0; i < messages.length; i++) {
+			const msg = messages[i]
+			const visibleRaw = msg['visible'] as boolean | null
+			const visible = visibleRaw == false ? 0 : 1
+			const visibilityRaw = msg['visibility'] as string | null
+			const visibility = visibilityRaw != null && visibilityRaw != '' ? visibilityRaw : (visible == 1 ? 'public' : 'internal')
+			const timestampRaw = msg['timestamp'] as number | null
+			const timestamp = timestampRaw != null && timestampRaw > 0 ? timestampRaw : now
+			const visibleAgentIdsRaw = msg['visibleAgentIds'] as string[] | null
+			const visibleAgentIds = visibleAgentIdsRaw != null ? visibleAgentIdsRaw : ([] as string[])
+			runSqlOrThrow(db,
+				'INSERT OR REPLACE INTO group_chat_messages (id, group_id, session_id, role, sender_type, sender_agent_id, visibility, visible_agent_ids_json, visible, timestamp, payload_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+				[
+					readStringField(msg, 'id'),
+					groupId,
+					sessionId,
+					readStringField(msg, 'role'),
+					readStringField(msg, 'senderType'),
+					readStringField(msg, 'senderAgentId'),
+					visibility,
+					safeJsonArrayForDb(visibleAgentIds),
+					visible,
+					timestamp,
+					safeJsonForDb(msg),
+					now,
+				]
+			)
+		}
+		assertSqlSuccess(db.commit(), '无法提交群消息保存事务')
+	} catch (e: any) {
+		db.rollback()
+		db.close()
+		throw e
 	}
 	db.close()
 }
