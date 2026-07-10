@@ -27,7 +27,6 @@ import {
 } from '@/utils/chat-models.uts'
 import {
 	deleteGroupAgentContextRow,
-	deleteGroupMessageRows,
 	deleteGroupSessionDbRows,
 	getAppSetting,
 	getGroupAgentContextRows,
@@ -101,6 +100,11 @@ import {
 export * from '@/utils/group-chat-models.uts'
 export * from '@/utils/group-chat-runtime.uts'
 export * from '@/utils/group-chat-scheduler.uts'
+
+export type GroupSessionDeleteResult = {
+	ok: boolean
+	filesCleared: boolean
+}
 
 // LEGACY_COMPAT: 旧版曾把群调度提示词存成全局设置；未来清兼容时删除。
 const LEGACY_GLOBAL_SCHEDULER_PROMPT_SETTING_KEY = 'global_scheduler_prompt'
@@ -629,23 +633,32 @@ export function markGroupAgentMessageRevoked(message: UTSJSONObject): void {
 	markGroupMessageRevokedFields(message)
 }
 
-export function deleteGroupSession(groupId: string, sessionId: string, clearFiles: boolean): void {
+export function deleteGroupSession(groupId: string, sessionId: string, clearFiles: boolean): GroupSessionDeleteResult {
 	const sessions = getGroupSessions(groupId)
 	const next: GroupChatSession[] = []
 	let targetWorkspace = ''
+	let found = false
 	for (let i = 0; i < sessions.length; i++) {
 		if (sessions[i].id == sessionId) {
 			targetWorkspace = sessions[i].workspacePath
+			found = true
 		} else {
 			next.push(sessions[i])
 		}
 	}
-	deleteGroupMessageRows(groupId, sessionId)
-	deleteGroupSessionDbRows(groupId, sessionId)
-	if (clearFiles == true && targetWorkspace != '' && isInsideGroupWorkspace(targetWorkspace) == true && exists(targetWorkspace) == true) {
-		deleteItem(targetWorkspace, true)
+	if (found == false) {
+		return { ok: false, filesCleared: false } as GroupSessionDeleteResult
 	}
-	saveGroupSessions(groupId, next)
+	try {
+		deleteGroupSessionDbRows(groupId, sessionId)
+	} catch (_e: any) {
+		return { ok: false, filesCleared: false } as GroupSessionDeleteResult
+	}
+	let filesCleared = true
+	if (clearFiles == true && targetWorkspace != '' && isInsideGroupWorkspace(targetWorkspace) == true && exists(targetWorkspace) == true) {
+		const deleteResult = deleteItem(targetWorkspace, true)
+		filesCleared = deleteResult.ok
+	}
 	const group = getGroupChatById(groupId)
 	if (group != null && group.activeSessionId == sessionId) {
 		if (next.length > 0) {
@@ -658,6 +671,7 @@ export function deleteGroupSession(groupId: string, sessionId: string, clearFile
 		saveGroupChat(group)
 		setActiveGroupSessionId(group.activeSessionId)
 	}
+	return { ok: true, filesCleared: filesCleared } as GroupSessionDeleteResult
 }
 
 export function forkGroupSession(groupId: string, sessionId: string): GroupChatSession | null {

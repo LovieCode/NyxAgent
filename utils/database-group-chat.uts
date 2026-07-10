@@ -5,12 +5,14 @@
  */
 
 import {
+	assertSqlSuccess,
 	ensureAppRuntimeStateTable,
 	ensureGroupChatTables,
 	getDb,
 	readNumberField,
 	readStringField,
 	rowsToObjects,
+	runSqlOrThrow,
 	safeJsonArrayForDb,
 	safeJsonForDb,
 } from '@/utils/database-core.uts'
@@ -389,11 +391,20 @@ export function getGroupChatState(key: string): string {
 export function deleteGroupSessionDbRows(groupId: string, sessionId: string): void {
 	const db = getDb()
 	ensureGroupChatTables(db)
-	db.run('DELETE FROM group_chat_messages WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
-	db.run('DELETE FROM group_agent_context_records WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
-	db.run('DELETE FROM group_chat_reviews WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
-	db.run('DELETE FROM group_chat_tasks WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
-	db.run('DELETE FROM group_agent_memories WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
-	db.run('DELETE FROM group_agent_metrics WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+	try {
+		assertSqlSuccess(db.beginTransaction(), '无法开始群会话删除事务')
+		runSqlOrThrow(db, 'DELETE FROM group_chat_messages WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+		runSqlOrThrow(db, 'DELETE FROM group_agent_context_records WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+		runSqlOrThrow(db, 'DELETE FROM group_chat_reviews WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+		runSqlOrThrow(db, 'DELETE FROM group_chat_tasks WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+		runSqlOrThrow(db, 'DELETE FROM group_agent_memories WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+		runSqlOrThrow(db, 'DELETE FROM group_agent_metrics WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+		runSqlOrThrow(db, 'DELETE FROM group_chat_sessions WHERE group_id = ? AND id = ?', [groupId, sessionId])
+		assertSqlSuccess(db.commit(), '无法提交群会话删除事务')
+	} catch (e: any) {
+		db.rollback()
+		db.close()
+		throw e
+	}
 	db.close()
 }

@@ -243,19 +243,22 @@
 					content: '确定要删除选中的 ' + this.selectedIds.length +  ' 条记录吗？',
 					success: (res) => {
 						if (res.confirm == true) {
+							let failedCount = 0
 							for (let i = 0; i < this.selectedIds.length; i++) {
 								if (this.activeTab == 'group') {
 									this.deleteGroupHistoryById(this.selectedIds[i])
 								} else {
-									deleteConversation(this.selectedIds[i])
+									if (deleteConversation(this.selectedIds[i]) == false) {
+										failedCount++
+									}
 								}
 							}
 							this.selectedIds = []
 							this.editMode = false
 							this.loadHistory()
 							uni.showToast({ position: 'bottom',
-								title: '已删除',
-								icon: 'success'
+								title: failedCount > 0 ? '部分记录删除失败' : '已删除',
+								icon: failedCount > 0 ? 'none' : 'success'
 							})
 						}
 					}
@@ -411,18 +414,21 @@
 					success: (res) => {
 						if (res.confirm == true) {
 							const list = this.currentHistoryList
+							let failedCount = 0
 							for (let i = 0; i < list.length; i++) {
 								const id = list[i]['id'] as string
 								if (this.activeTab == 'group') {
 									this.deleteGroupHistoryById(id)
 								} else {
-									deleteConversation(id)
+									if (deleteConversation(id) == false) {
+										failedCount++
+									}
 								}
 							}
 							this.loadHistory()
 							uni.showToast({ position: 'bottom',
-								title: '已清空',
-								icon: 'success'
+								title: failedCount > 0 ? '部分记录删除失败' : '已清空',
+								icon: failedCount > 0 ? 'none' : 'success'
 							})
 						}
 					}

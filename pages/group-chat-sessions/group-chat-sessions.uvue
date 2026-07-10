@@ -140,9 +140,14 @@
 					success: (res) => {
 						const clearFiles = res.tapIndex == 1
 						disposeGroupChatTurn(session.id)
-						deleteGroupSession(this.groupId, session.id, clearFiles)
+						const deleteResult = deleteGroupSession(this.groupId, session.id, clearFiles)
+						if (deleteResult.ok == false) {
+							uni.showToast({ position: 'bottom', title: '会话删除失败', icon: 'none' })
+							return
+						}
 						this.loadData()
-						uni.showToast({ position: 'bottom', title: clearFiles ? '会话和文件已删除' : '会话已删除', icon: 'none' })
+						const title = clearFiles == true && deleteResult.filesCleared == false ? '会话已删除，文件清理失败' : (clearFiles ? '会话和文件已删除' : '会话已删除')
+						uni.showToast({ position: 'bottom', title: title, icon: 'none' })
 					}
 				})
 			},

@@ -5,9 +5,11 @@
  */
 
 import {
+	assertSqlSuccess,
 	ensureConversationTokenUsageStatsTable,
 	ensureMemoryCompactionStateTable,
 	getDb,
+	runSqlOrThrow,
 	rowsToObjects,
 } from '@/utils/database-core.uts'
 
@@ -257,17 +259,29 @@ export function getAllMessagesForExport(): UTSJSONObject[] {
 	return rowsToObjects(result)
 }
 
-export function deleteConversation(id: string): void {
+export function deleteConversation(id: string): boolean {
+	if (id == '') {
+		return false
+	}
 	const db = getDb()
 	ensureConversationTokenUsageStatsTable(db)
 	ensureMemoryCompactionStateTable(db)
-	db.run('DELETE FROM messages WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
-	db.run('DELETE FROM conversations WHERE id = ? AND ? = ?', [id, 1, 1])
-	db.run('DELETE FROM memory_buffer WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
-	db.run('DELETE FROM conversation_token_usage_stats WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
-	db.run('DELETE FROM agent_memory_compaction_state WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
-	db.run('UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE conversation_id = ?', [Date.now(), id])
+	try {
+		assertSqlSuccess(db.beginTransaction(), '无法开始对话删除事务')
+		runSqlOrThrow(db, 'DELETE FROM messages WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
+		runSqlOrThrow(db, 'DELETE FROM conversations WHERE id = ? AND ? = ?', [id, 1, 1])
+		runSqlOrThrow(db, 'DELETE FROM memory_buffer WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
+		runSqlOrThrow(db, 'DELETE FROM conversation_token_usage_stats WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
+		runSqlOrThrow(db, 'DELETE FROM agent_memory_compaction_state WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
+		runSqlOrThrow(db, 'UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE conversation_id = ?', [Date.now(), id])
+		assertSqlSuccess(db.commit(), '无法提交对话删除事务')
+	} catch (_e: any) {
+		db.rollback()
+		db.close()
+		return false
+	}
 	db.close()
+	return true
 }
 
 /**
