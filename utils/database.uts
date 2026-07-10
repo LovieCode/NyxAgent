@@ -4,6 +4,7 @@
  * 管理 providers（提供商）、conversations（对话列表）和 messages（消息）三张表
  */
 import {
+	assertSqlSuccess,
 	ensureAppRuntimeStateTable,
 	ensureConversationTokenUsageStatsTable,
 	ensureGroupChatTables,
@@ -13,6 +14,7 @@ import {
 	readNumberField,
 	readObjectArrayField,
 	readStringField,
+	runSqlOrThrow,
 	rowsToObjects,
 } from '@/utils/database-core.uts'
 export * from '@/utils/database-group-chat.uts'
@@ -143,28 +145,30 @@ export function importDatabaseTables(
 	initDatabase()
 	const db = getDb()
 	ensureGroupChatTables(db)
-	db.run('DELETE FROM messages')
-	db.run('DELETE FROM conversations')
-	db.run('DELETE FROM providers')
-	db.run('DELETE FROM app_settings')
-	db.run('DELETE FROM memory_buffer')
-	db.run('DELETE FROM agent_memory_core')
-	db.run('DELETE FROM conversation_token_usage_stats')
-	db.run('DELETE FROM agent_memory_compaction_state')
-	db.run('DELETE FROM group_chats')
-	db.run('DELETE FROM group_chat_members')
-	db.run('DELETE FROM group_chat_sessions')
-	db.run('DELETE FROM group_chat_messages')
-	db.run('DELETE FROM group_agent_context_records')
-	db.run('DELETE FROM group_chat_reviews')
-	db.run('DELETE FROM group_chat_tasks')
-	db.run('DELETE FROM group_agent_memories')
-	db.run('DELETE FROM group_agent_metrics')
-	db.run('DELETE FROM group_chat_state')
+	try {
+		assertSqlSuccess(db.beginTransaction(), '无法开始全量导入事务')
+		runSqlOrThrow(db, 'DELETE FROM messages')
+		runSqlOrThrow(db, 'DELETE FROM conversations')
+		runSqlOrThrow(db, 'DELETE FROM providers')
+		runSqlOrThrow(db, 'DELETE FROM app_settings')
+		runSqlOrThrow(db, 'DELETE FROM memory_buffer')
+		runSqlOrThrow(db, 'DELETE FROM agent_memory_core')
+		runSqlOrThrow(db, 'DELETE FROM conversation_token_usage_stats')
+		runSqlOrThrow(db, 'DELETE FROM agent_memory_compaction_state')
+		runSqlOrThrow(db, 'DELETE FROM group_chats')
+		runSqlOrThrow(db, 'DELETE FROM group_chat_members')
+		runSqlOrThrow(db, 'DELETE FROM group_chat_sessions')
+		runSqlOrThrow(db, 'DELETE FROM group_chat_messages')
+		runSqlOrThrow(db, 'DELETE FROM group_agent_context_records')
+		runSqlOrThrow(db, 'DELETE FROM group_chat_reviews')
+		runSqlOrThrow(db, 'DELETE FROM group_chat_tasks')
+		runSqlOrThrow(db, 'DELETE FROM group_agent_memories')
+		runSqlOrThrow(db, 'DELETE FROM group_agent_metrics')
+		runSqlOrThrow(db, 'DELETE FROM group_chat_state')
 
 	for (let i = 0; i < providers.length; i++) {
 		const item = providers[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'id'),
@@ -181,7 +185,7 @@ export function importDatabaseTables(
 
 	for (let i = 0; i < conversations.length; i++) {
 		const item = conversations[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO conversations (id, title, model, agent_id, system_prompt, created_at, updated_at, message_count, preview) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'id'),
@@ -199,7 +203,7 @@ export function importDatabaseTables(
 
 	for (let i = 0; i < messages.length; i++) {
 		const item = messages[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT INTO messages (conversation_id, role, content, timestamp, extra) VALUES (?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'conversation_id'),
@@ -213,7 +217,7 @@ export function importDatabaseTables(
 
 	for (let i = 0; i < appSettings.length; i++) {
 		const item = appSettings[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
 			[readStringField(item, 'key'), readStringField(item, 'value')]
 		)
@@ -221,7 +225,7 @@ export function importDatabaseTables(
 
 	for (let i = 0; i < memoryBuffers.length; i++) {
 		const item = memoryBuffers[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO memory_buffer (id, agent_id, person_id, conversation_id, content, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'id'),
@@ -236,7 +240,7 @@ export function importDatabaseTables(
 
 	for (let i = 0; i < memoryCore.length; i++) {
 		const item = memoryCore[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO agent_memory_core (id, agent_id, person_id, conversation_id, category, scope, content, priority, confidence, pinned, archived, created_at, updated_at, last_used_at, use_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'id'),
@@ -259,7 +263,7 @@ export function importDatabaseTables(
 	}
 	for (let i = 0; i < conversationTokenUsageStats.length; i++) {
 		const item = conversationTokenUsageStats[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO conversation_token_usage_stats (conversation_id, prompt_tokens, prompt_cache_hit_tokens, call_count, updated_at) VALUES (?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'conversation_id'),
@@ -272,7 +276,7 @@ export function importDatabaseTables(
 	}
 	for (let i = 0; i < memoryCompactionStates.length; i++) {
 		const item = memoryCompactionStates[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO agent_memory_compaction_state (id, agent_id, conversation_id, last_message_key, last_message_timestamp, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'id'),
@@ -288,7 +292,7 @@ export function importDatabaseTables(
 	const groupChats = readObjectArrayField(groupChatData, 'groupChats')
 	for (let i = 0; i < groupChats.length; i++) {
 		const item = groupChats[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO group_chats (id, name, avatar, scheduler_agent_id, scheduler_prompt, shared_prompt, active_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'id'),
@@ -306,7 +310,7 @@ export function importDatabaseTables(
 	const groupMembers = readObjectArrayField(groupChatData, 'groupMembers')
 	for (let i = 0; i < groupMembers.length; i++) {
 		const item = groupMembers[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO group_chat_members (id, group_id, agent_id, active, joined_at, left_at, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'id'),
@@ -322,7 +326,7 @@ export function importDatabaseTables(
 	const groupSessions = readObjectArrayField(groupChatData, 'groupSessions')
 	for (let i = 0; i < groupSessions.length; i++) {
 		const item = groupSessions[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO group_chat_sessions (id, group_id, title, workspace_path, forked_from_session_id, title_locked, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'id'),
@@ -339,7 +343,7 @@ export function importDatabaseTables(
 	const groupMessages = readObjectArrayField(groupChatData, 'groupMessages')
 	for (let i = 0; i < groupMessages.length; i++) {
 		const item = groupMessages[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO group_chat_messages (id, group_id, session_id, role, sender_type, sender_agent_id, visibility, visible_agent_ids_json, visible, timestamp, payload_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'id'),
@@ -360,7 +364,7 @@ export function importDatabaseTables(
 	const groupContextRecords = readObjectArrayField(groupChatData, 'groupContextRecords')
 	for (let i = 0; i < groupContextRecords.length; i++) {
 		const item = groupContextRecords[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO group_agent_context_records (id, agent_id, group_id, session_id, created_at, payload_json) VALUES (?, ?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'id'),
@@ -375,7 +379,7 @@ export function importDatabaseTables(
 	const groupReviews = readObjectArrayField(groupChatData, 'groupReviews')
 	for (let i = 0; i < groupReviews.length; i++) {
 		const item = groupReviews[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO group_chat_reviews (id, group_id, session_id, message_id, summary, continue_advice, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'id'),
@@ -392,7 +396,7 @@ export function importDatabaseTables(
 	const groupTasks = readObjectArrayField(groupChatData, 'groupTasks')
 	for (let i = 0; i < groupTasks.length; i++) {
 		const item = groupTasks[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO group_chat_tasks (id, group_id, session_id, title, owner_agent_id, participants_json, status, source_review_id, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'id'),
@@ -412,7 +416,7 @@ export function importDatabaseTables(
 	const groupMemories = readObjectArrayField(groupChatData, 'groupMemories')
 	for (let i = 0; i < groupMemories.length; i++) {
 		const item = groupMemories[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO group_agent_memories (id, group_id, session_id, agent_id, category, visibility, content, source_review_id, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'id'),
@@ -432,7 +436,7 @@ export function importDatabaseTables(
 	const groupMetrics = readObjectArrayField(groupChatData, 'groupMetrics')
 	for (let i = 0; i < groupMetrics.length; i++) {
 		const item = groupMetrics[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO group_agent_metrics (id, group_id, session_id, agent_id, speak_count, useful_count, issue_count, memory_count, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 			[
 				readStringField(item, 'id'),
@@ -450,7 +454,7 @@ export function importDatabaseTables(
 	const groupState = readObjectArrayField(groupChatData, 'groupState')
 	for (let i = 0; i < groupState.length; i++) {
 		const item = groupState[i]
-		db.run(
+		runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO group_chat_state (key, value, updated_at) VALUES (?, ?, ?)',
 			[
 				readStringField(item, 'key'),
@@ -458,6 +462,12 @@ export function importDatabaseTables(
 				readNumberField(item, 'updated_at'),
 			]
 		)
+	}
+		assertSqlSuccess(db.commit(), '无法提交全量导入事务')
+	} catch (e: any) {
+		db.rollback()
+		db.close()
+		throw e
 	}
 	db.close()
 }

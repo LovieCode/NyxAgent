@@ -44,6 +44,17 @@ export function rowsToObjects(result: SQLiteResult): UTSJSONObject[] {
 	return list
 }
 
+export function assertSqlSuccess(result: SQLiteResult, operation: string): void {
+	const error = result.error
+	if (error != null && error != '') {
+		throw new Error(operation + ': ' + error)
+	}
+}
+
+export function runSqlOrThrow(db: xSqlite, sql: string, params: any[] = []): void {
+	assertSqlSuccess(db.run(sql, params), 'SQLite 导入失败')
+}
+
 export function ensureConversationTokenUsageStatsTable(db: xSqlite): void {
 	db.run(
 		'CREATE TABLE IF NOT EXISTS conversation_token_usage_stats (' +

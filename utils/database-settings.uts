@@ -5,11 +5,13 @@
  */
 
 import {
+	assertSqlSuccess,
 	ensureAppSettingsTable,
 	ensureProvidersTable,
 	getDb,
 	readNumberField,
 	readStringField,
+	runSqlOrThrow,
 	rowsToObjects,
 } from '@/utils/database-core.uts'
 
@@ -56,17 +58,19 @@ export function importSettingsTables(providers: UTSJSONObject[], appSettings: UT
 		oldProviderKeys = rowsToObjects(db.query('SELECT id, api_key FROM providers'))
 		oldApiSettings = rowsToObjects(db.query('SELECT key, value FROM app_settings WHERE key = ?', ['settings_api_key']))
 	}
-	db.run('DELETE FROM providers')
-	db.run('DELETE FROM app_settings')
+	try {
+		assertSqlSuccess(db.beginTransaction(), '无法开始设置导入事务')
+		runSqlOrThrow(db, 'DELETE FROM providers')
+		runSqlOrThrow(db, 'DELETE FROM app_settings')
 
-	for (let i = 0; i < providers.length; i++) {
-		const item = providers[i]
-		const providerId = readStringField(item, 'id')
-		let apiKey = readStringField(item, 'api_key')
-		if (preserveEmptyApiKeys == true && apiKey == '') {
-			apiKey = findProviderApiKeyInRows(oldProviderKeys, providerId)
-		}
-		db.run(
+		for (let i = 0; i < providers.length; i++) {
+			const item = providers[i]
+			const providerId = readStringField(item, 'id')
+			let apiKey = readStringField(item, 'api_key')
+			if (preserveEmptyApiKeys == true && apiKey == '') {
+				apiKey = findProviderApiKeyInRows(oldProviderKeys, providerId)
+			}
+			runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
 			[
 				providerId,
@@ -78,20 +82,27 @@ export function importSettingsTables(providers: UTSJSONObject[], appSettings: UT
 				readNumberField(item, 'created_at'),
 				readNumberField(item, 'updated_at'),
 			]
-		)
-	}
-
-	for (let i = 0; i < appSettings.length; i++) {
-		const item = appSettings[i]
-		const key = readStringField(item, 'key')
-		let value = readStringField(item, 'value')
-		if (preserveEmptyApiKeys == true && key == 'settings_api_key' && value == '') {
-			value = findSettingValueInRows(oldApiSettings, key)
+			)
 		}
-		db.run(
+
+		for (let i = 0; i < appSettings.length; i++) {
+			const item = appSettings[i]
+			const key = readStringField(item, 'key')
+			let value = readStringField(item, 'value')
+			if (preserveEmptyApiKeys == true && key == 'settings_api_key' && value == '') {
+				value = findSettingValueInRows(oldApiSettings, key)
+			}
+			runSqlOrThrow(db,
 			'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
 			[key, value]
-		)
+			)
+		}
+
+		assertSqlSuccess(db.commit(), '无法提交设置导入事务')
+	} catch (e: any) {
+		db.rollback()
+		db.close()
+		throw e
 	}
 
 	db.close()

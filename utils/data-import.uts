@@ -8,6 +8,8 @@ import { saveAgents } from '@/utils/agent.uts'
 import { getAgentDir, joinPath, exists, createDir, writeContent } from '@/utils/file-manager.uts'
 import { readImportManifest, importAgentWorkspaceFiles, importBackupAssets, importGroupWorkspaceFiles, importUserWorkspaceFiles } from '@/utssdk/app-data-export/index.uts'
 
+const IMPORT_SCHEMA_VERSION = 1
+
 export type ImportBackupSummary = {
 	ok: boolean
 	path: string
@@ -121,6 +123,22 @@ function buildImportBackupError(path: string, error: string): ImportBackupSummar
 		summary: '',
 		error: error,
 	} as ImportBackupSummary
+}
+
+function validateBackupRoot(root: UTSJSONObject): string {
+	const app = root['app'] as string | null
+	if (app != 'agent') {
+		return '不是 NyxAgent 备份包'
+	}
+	const schemaVersion = root['schemaVersion'] as number | null
+	if (schemaVersion == null || schemaVersion != IMPORT_SCHEMA_VERSION) {
+		return '不支持的备份 Schema'
+	}
+	const data = root['data'] as UTSJSONObject | null
+	if (data == null) {
+		return '备份包缺少 data 字段'
+	}
+	return ''
 }
 
 function hasProviderApiKeys(providers: UTSJSONObject[]): boolean {
@@ -370,10 +388,12 @@ export function previewImportBackup(zipPath: string): ImportBackupSummary {
 	}
 	try {
 		const root = JSON.parse(manifestJson) as UTSJSONObject
-		const data = root['data'] as UTSJSONObject | null
-		if (data == null) {
-			return buildImportBackupError(zipPath, '备份包缺少 data 字段')
+		const validationError = validateBackupRoot(root)
+		if (validationError != '') {
+			return buildImportBackupError(zipPath, validationError)
 		}
+		const data = root['data'] as UTSJSONObject | null
+		if (data == null) { return buildImportBackupError(zipPath, '备份包缺少 data 字段') }
 		const providers = readObjectArray(data, 'providers')
 		const conversations = readObjectArray(data, 'conversations')
 		const messages = readObjectArray(data, 'messages')
@@ -421,6 +441,7 @@ export function importSettingsOnlyFromZip(zipPath: string): string {
 	}
 	try {
 		const root = JSON.parse(manifestJson) as UTSJSONObject
+		if (validateBackupRoot(root) != '') { return '' }
 		const data = root['data'] as UTSJSONObject | null
 		if (data == null) {
 			return ''
@@ -469,6 +490,7 @@ export function importAllDataFromZip(zipPath: string): string {
 	}
 	try {
 		const root = JSON.parse(manifestJson) as UTSJSONObject
+		if (validateBackupRoot(root) != '') { return '' }
 		const data = root['data'] as UTSJSONObject | null
 		if (data == null) {
 			return ''
