@@ -100,7 +100,7 @@ class GroupChatTurnRuntime {
 		this.currentStream = null
 	}
 
-	notify(): void {
+	emitUpdate(): void {
 		eventBus.emit(getGroupChatRuntimeEventName(this.sessionId))
 	}
 
@@ -137,7 +137,7 @@ class GroupChatTurnRuntime {
 		this.phase = 'routing'
 		this.runId = createId('grun')
 		this.currentStream = null
-		this.notify()
+		this.emitUpdate()
 		this.runScheduler(group, session, reason, this.runId)
 		return true
 	}
@@ -153,7 +153,7 @@ class GroupChatTurnRuntime {
 		this.saveMessages()
 		const stream = this.currentStream
 		this.currentStream = null
-		this.notify()
+		this.emitUpdate()
 		if (stream != null) {
 			stream.abort()
 		}
@@ -165,13 +165,13 @@ class GroupChatTurnRuntime {
 		this.phase = 'completed'
 		this.currentStream = null
 		this.saveMessages()
-		this.notify()
+		this.emitUpdate()
 	}
 
 	runScheduler(group: GroupChat, session: GroupChatSession, reason: string, runId: string): void {
 		if (this.isRunActive(runId) == false) { return }
 		this.phase = 'routing'
-		this.notify()
+		this.emitUpdate()
 		const directDecision = buildDeterministicSchedulerDecision(group.id, this.messages)
 		if (directDecision != null) {
 			const hidden = createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, JSON.stringify(directDecision))
@@ -179,7 +179,7 @@ class GroupChatTurnRuntime {
 			hidden['decision'] = directDecision
 			this.messages.push(hidden)
 			this.saveMessages()
-			this.notify()
+			this.emitUpdate()
 			this.runDecisionActions(group, session, directDecision, runId)
 			return
 		}
@@ -217,7 +217,7 @@ class GroupChatTurnRuntime {
 			this.messages.push(hidden)
 			this.saveMessages()
 			this.currentStream = null
-			this.notify()
+			this.emitUpdate()
 			this.runDecisionActions(group, session, decision, runId)
 		})
 	}
@@ -260,7 +260,7 @@ class GroupChatTurnRuntime {
 	runGroupReview(group: GroupChat, session: GroupChatSession, reason: string, schedulerShouldContinue: boolean, runId: string): void {
 		if (this.isRunActive(runId) == false) { return }
 		this.phase = 'reviewing'
-		this.notify()
+		this.emitUpdate()
 		const reviewMessages = buildGroupReviewMessages(group, session, this.messages, reason, this.loopTurns)
 		const reviewerAgentId = resolveGroupReviewerAgentId(group)
 		const reviewState = createGroupTextStreamState()
@@ -293,7 +293,7 @@ class GroupChatTurnRuntime {
 			}
 			this.saveMessages()
 			this.currentStream = null
-			this.notify()
+			this.emitUpdate()
 			if (reviewFailed == true) {
 				this.finish()
 				return
@@ -338,7 +338,7 @@ class GroupChatTurnRuntime {
 		let reviewHolding = false
 		let hitKeyword = ''
 		let memberFailed = false
-		this.notify()
+		this.emitUpdate()
 		stream.on((event: AgentEvent) => {
 			if (this.isRunActive(runId) == false) { return }
 			if (event.type == 'error') { memberFailed = true }
@@ -381,7 +381,7 @@ class GroupChatTurnRuntime {
 				streamingMsg['isStreaming'] = false
 				this.currentStream = null
 				this.saveMessages()
-				this.notify()
+				this.emitUpdate()
 				if (reviewHolding == true && memberFailed == false) {
 					this.runSchedulerReview(group, session, agentId, agentName, streamingMsg, heldText, hitKeyword, action, runId, done)
 				} else {
@@ -418,7 +418,7 @@ class GroupChatTurnRuntime {
 					}
 				}
 			}
-			this.notify()
+			this.emitUpdate()
 		})
 	}
 
@@ -451,7 +451,7 @@ class GroupChatTurnRuntime {
 			if (reviewFailed == true) {
 				markGroupAgentMessageRevoked(streamingMsg)
 				this.saveMessages()
-				this.notify()
+				this.emitUpdate()
 				done()
 				return
 			}
@@ -461,20 +461,20 @@ class GroupChatTurnRuntime {
 				replaceGroupVisiblePlainText(streamingMsg, candidateText)
 				streamingMsg['isStreaming'] = false
 				this.saveMessages()
-				this.notify()
+				this.emitUpdate()
 				done()
 				return
 			}
 			if (mode == 'revoke' || (streamingMsg['revisionAttempt'] as boolean | null) == true) {
 				markGroupAgentMessageRevoked(streamingMsg)
 				this.saveMessages()
-				this.notify()
+				this.emitUpdate()
 				done()
 				return
 			}
 			markGroupAgentMessageRevoked(streamingMsg)
 			this.saveMessages()
-			this.notify()
+			this.emitUpdate()
 			const instructionRaw = decision['revisionInstruction'] as string | null
 			const revisedAction = buildRevisedGroupSpeakAction(originalAction, instructionRaw, candidateText)
 			this.runMemberSpeakWithReview(group, session, agentId, revisedAction, true, runId, done)
