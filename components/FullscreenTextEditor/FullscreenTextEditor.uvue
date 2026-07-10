@@ -17,6 +17,7 @@
 				:placeholder="placeholder"
 				placeholder-style="color:#D1D5DB;font-size:15px;"
 				:auto-height="false"
+				:adjust-position="false"
 				@input="handleInput"
 			/>
 			<view class="editor-footer">

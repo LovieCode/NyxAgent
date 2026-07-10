@@ -58,7 +58,7 @@
 					<oui-icon-unix name="plus" size="18px" color="#FFFFFF" />
 				</view>
 				<view class="input-wrap">
-					<textarea class="text-input" v-model="inputText" :style="{ height: inputHeight + 'px' }" placeholder="给群里发消息..." placeholder-style="color:var(--rice-text-color-3)" @linechange="onInputLineChange" :disabled="isGenerating == true" />
+					<textarea class="text-input" v-model="inputText" :style="{ height: inputHeight + 'px' }" :adjust-position="false" placeholder="给群里发消息..." placeholder-style="color:var(--rice-text-color-3)" @linechange="onInputLineChange" :disabled="isGenerating == true" />
 				</view>
 				<view v-if="isGenerating == false" class="send-chip" @click="sendMessage">
 					<text class="send-chip-text">发送</text>
@@ -231,6 +231,7 @@
 				toolbarPageIndex: 0 as number,
 				toolbarTouchStartX: 0 as number,
 				toolbarTouchStartY: 0 as number,
+				keyboardHeight: 0 as number,
 				toolbarTouchCurrentX: 0 as number,
 				toolbarDragOffset: 0 as number,
 				toolbarViewportWidth: 0 as number,
@@ -299,6 +300,19 @@
 		onLoad() {
 			this.loadUserProfile()
 			this.loadGroup()
+			uni.onKeyboardHeightChange((res: OnKeyboardHeightChangeCallbackResult) => {
+				const keepBottom = this.isAtBottom
+				this.keyboardHeight = res.height
+				if (res.height > 0 && this.showToolPanel == true) {
+					this.showToolPanel = false
+				}
+				setTimeout(() => {
+					this.scheduleMeasureMessageScroll()
+					if (keepBottom == true) {
+						this.scrollToBottom()
+					}
+				}, 120)
+			})
 			groupNyxFloatVoiceCallback = () => {
 				this.consumeNyxFloatVoiceText()
 			}
@@ -321,6 +335,7 @@
 			deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
 		},
 		onUnload() {
+			uni.offKeyboardHeightChange()
 			const callback = groupNyxFloatVoiceCallback
 			if (callback != null) {
 				eventBus.off(NYX_FLOAT_VOICE_EVENT, callback)
@@ -1216,8 +1231,8 @@
 		max-height: 200px;
 		padding-left: 4px;
 		padding-right: 2px;
-		padding-top: 4px;
-		padding-bottom: 2px;
+		padding-top: 6px;
+		padding-bottom: 6px;
 		font-size: 15px;
 		color: var(--rice-text-color);
 		background-color: transparent;

@@ -10,7 +10,7 @@
 	>
 		<template #header>
 			<view class="note-title-field">
-				<input class="title-input" v-model="noteTitle" placeholder="未命名笔记" placeholder-style="color:#D1D5DB;font-size:17px;" @input="markDirty" />
+				<input class="title-input" v-model="noteTitle" :adjust-position="false" placeholder="未命名笔记" placeholder-style="color:#D1D5DB;font-size:17px;" @input="markDirty" />
 			</view>
 		</template>
 	</FullscreenTextEditor>

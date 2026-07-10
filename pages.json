@@ -52,7 +52,8 @@
 		{
 			"path": "pages/note-editor/note-editor",
 			"style": {
-				"navigationStyle": "custom"
+				"navigationStyle": "custom",
+				"softinputMode": "adjustResize"
 			}
 		},
 		{
@@ -155,7 +156,8 @@
 		{
 			"path": "pages/common/editor/editor",
 			"style": {
-				"navigationStyle": "custom"
+				"navigationStyle": "custom",
+				"softinputMode": "adjustResize"
 			}
 		},
 		{
