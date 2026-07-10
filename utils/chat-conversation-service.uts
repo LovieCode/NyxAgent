@@ -155,11 +155,11 @@ export function getCurrentAgentSystemPrompt(agentId: string): string {
 	return ''
 }
 
-export function saveChatConversation(conversationId: string, agentId: string, systemPrompt: string, messages: UTSJSONObject[]): void {
+export function saveChatConversation(conversationId: string, agentId: string, systemPrompt: string, messages: UTSJSONObject[]): boolean {
 	if (messages.length == 0) {
-		return
+		return true
 	}
-	saveConversation(
+	return saveConversation(
 		conversationId,
 		buildConversationTitle(messages),
 		resolveConversationModel(agentId),

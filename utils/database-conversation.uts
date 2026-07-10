@@ -89,7 +89,7 @@ export function saveConversation(
 	agentId: string,
 	systemPrompt: string,
 	messages: UTSJSONObject[]
-): void {
+): boolean {
 	const db = getDb()
 
 	// 取最后一条消息的内容作为预览
@@ -102,65 +102,69 @@ export function saveConversation(
 		}
 	}
 
-	// UPSERT 对话
 	const now = Date.now()
-	db.run(
-		'INSERT OR REPLACE INTO conversations (id, title, model, agent_id, system_prompt, created_at, updated_at, message_count, preview) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-		[id, title, model, agentId, systemPrompt, now, now, messages.length, preview]
-	)
-
-	// 先删该对话的旧消息
-	db.run('DELETE FROM messages WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
-
-	// 逐条插入消息
-	for (let i = 0; i < messages.length; i++) {
-		const msg = messages[i]
-		const rawRole = msg['role'] as string | null
-		const rawContent = msg['content'] as string | null
-		const rawTimestamp = msg['timestamp'] as number | null
-		const role = rawRole != null ? rawRole : ''
-		const content = rawContent != null ? rawContent : ''
-		const timestamp = rawTimestamp != null ? rawTimestamp : now
-
-		// parts 是消息唯一内容真相；extra 只保存运行状态和 message parts。
-		const extra: UTSJSONObject = {}
-		const messageParts = msg['message']
-		if (messageParts != null) {
-			extra['message'] = messageParts
-		}
-		const isStreaming = msg['isStreaming']
-		if (isStreaming != null) {
-			extra['isStreaming'] = isStreaming
-		}
-		const isError = msg['isError']
-		if (isError != null) {
-			extra['isError'] = isError
-		}
-		const toolCallId = msg['tool_call_id']
-		if (toolCallId != null) {
-			extra['tool_call_id'] = toolCallId
-		}
-		const camelToolCallId = msg['toolCallId']
-		if (camelToolCallId != null) {
-			extra['toolCallId'] = camelToolCallId
-		}
-		const toolName = msg['toolName']
-		if (toolName != null) {
-			extra['toolName'] = toolName
-		}
-		const ttsAudioPath = msg['ttsAudioPath']
-		if (ttsAudioPath != null) {
-			extra['ttsAudioPath'] = ttsAudioPath
-		}
-		const extraStr = JSON.stringify(extra)
-
-		db.run(
-			'INSERT INTO messages (conversation_id, role, content, timestamp, extra) VALUES (?, ?, ?, ?, ?)',
-			[id, role, content, timestamp, extraStr]
+	try {
+		assertSqlSuccess(db.beginTransaction(), '无法开始对话保存事务')
+		runSqlOrThrow(db,
+			'INSERT OR REPLACE INTO conversations (id, title, model, agent_id, system_prompt, created_at, updated_at, message_count, preview) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM conversations WHERE id = ?), ?), ?, ?, ?)',
+			[id, title, model, agentId, systemPrompt, id, now, now, messages.length, preview]
 		)
-	}
+		runSqlOrThrow(db, 'DELETE FROM messages WHERE conversation_id = ? AND ? = ?', [id, 1, 1])
 
+		for (let i = 0; i < messages.length; i++) {
+			const msg = messages[i]
+			const rawRole = msg['role'] as string | null
+			const rawContent = msg['content'] as string | null
+			const rawTimestamp = msg['timestamp'] as number | null
+			const role = rawRole != null ? rawRole : ''
+			const content = rawContent != null ? rawContent : ''
+			const timestamp = rawTimestamp != null ? rawTimestamp : now
+
+			// parts 是消息唯一内容真相；extra 只保存运行状态和 message parts。
+			const extra: UTSJSONObject = {}
+			const messageParts = msg['message']
+			if (messageParts != null) {
+				extra['message'] = messageParts
+			}
+			const isStreaming = msg['isStreaming']
+			if (isStreaming != null) {
+				extra['isStreaming'] = isStreaming
+			}
+			const isError = msg['isError']
+			if (isError != null) {
+				extra['isError'] = isError
+			}
+			const toolCallId = msg['tool_call_id']
+			if (toolCallId != null) {
+				extra['tool_call_id'] = toolCallId
+			}
+			const camelToolCallId = msg['toolCallId']
+			if (camelToolCallId != null) {
+				extra['toolCallId'] = camelToolCallId
+			}
+			const toolName = msg['toolName']
+			if (toolName != null) {
+				extra['toolName'] = toolName
+			}
+			const ttsAudioPath = msg['ttsAudioPath']
+			if (ttsAudioPath != null) {
+				extra['ttsAudioPath'] = ttsAudioPath
+			}
+			const extraStr = JSON.stringify(extra)
+
+			runSqlOrThrow(db,
+				'INSERT INTO messages (conversation_id, role, content, timestamp, extra) VALUES (?, ?, ?, ?, ?)',
+				[id, role, content, timestamp, extraStr]
+			)
+		}
+		assertSqlSuccess(db.commit(), '无法提交对话保存事务')
+	} catch (_e: any) {
+		db.rollback()
+		db.close()
+		return false
+	}
 	db.close()
+	return true
 }
 
 /**

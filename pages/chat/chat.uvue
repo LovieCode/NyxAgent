@@ -1310,7 +1310,10 @@
 					return
 				}
 				// 先保存当前对话
-				this.saveCurrentConversation()
+				if (this.saveCurrentConversation() == false) {
+					uni.showToast({ position: 'bottom', title: '保存失败，请重试', icon: 'none' })
+					return
+				}
 				// 清空消息
 				this.messages = [] as UTSJSONObject[]
 				// 新对话 ID
@@ -1325,12 +1328,13 @@
 				this.resetMessageWindowToRecent()
 			},
 
-			saveCurrentConversation(force: boolean = false) {
+			saveCurrentConversation(force: boolean = false): boolean {
 				if (this.messages.length == 0 || (this.savedFlag == true && force == false)) {
-					return
+					return true
 				}
-				this.savedFlag = true
-				saveChatConversation(this.conversationId, this.currentAgentId, this.getCurrentSystemPrompt(), this.messages)
+				const saved = saveChatConversation(this.conversationId, this.currentAgentId, this.getCurrentSystemPrompt(), this.messages)
+				this.savedFlag = saved
+				return saved
 			},
 
 			performStreamScrollToBottom() {
