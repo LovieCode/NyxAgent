@@ -442,34 +442,52 @@ function prepareImportZipFile(zipPath: string): File | null {
 	}
 }
 
-function deleteRecursive(file: File): void {
+function deleteRecursive(file: File): boolean {
+	if (!file.exists()) {
+		return true
+	}
 	if (file.isDirectory()) {
 		const names = file.list()
 		if (names != null) {
 			const dirPath = file.absolutePath
 			let idx = 0 as Int
 			while (idx < names.size) {
-				deleteRecursive(new File(dirPath + '/' + names[idx]))
+				if (deleteRecursive(new File(dirPath + '/' + names[idx])) == false) {
+					return false
+				}
 				idx++
 			}
 		}
 	}
-	file.delete()
+	return file.delete() || !file.exists()
 }
 
-function cleanDirectory(dir: File): void {
-	if (!dir.exists()) {
-		dir.mkdirs()
-		return
+function resetDirectory(dir: File): boolean {
+	if (dir.exists() && deleteRecursive(dir) == false) {
+		return false
 	}
-	const names = dir.list()
-	if (names != null) {
-		let idx = 0 as Int
-		while (idx < names.size) {
-			deleteRecursive(new File(dir.absolutePath + '/' + names[idx]))
-			idx++
+	return ensureDirectory(dir) != null
+}
+
+/** 解压完成后再替换正式目录，避免失败时留下半份工作区。 */
+function replaceDirectoryFromStage(stage: File, target: File, backup: File): boolean {
+	if (backup.exists() && deleteRecursive(backup) == false) {
+		return false
+	}
+	const hadTarget = target.exists()
+	if (hadTarget && target.renameTo(backup) == false) {
+		return false
+	}
+	if (stage.renameTo(target)) {
+		if (backup.exists()) {
+			deleteRecursive(backup)
 		}
+		return true
 	}
+	if (hadTarget && backup.exists()) {
+		backup.renameTo(target)
+	}
+	return false
 }
 
 function zipContainsPrefix(zip: ZipFile, prefix: string): boolean {
@@ -644,15 +662,16 @@ export function readImportManifest(zipPath: string): string {
 /** 解压导入 ZIP 中的 Agent 工作区文件。 */
 export function importAgentWorkspaceFiles(zipPath: string): number {
 	// #ifdef APP-ANDROID
+	let stageRoot: File | null = null
 	try {
 		const importRoot = getImportRoot()
 		const context = UTSAndroid.getAppContext()
 		if (importRoot == null || context == null) {
-			return 0
+			return -1
 		}
 		const zipFile = prepareImportZipFile(zipPath)
 		if (zipFile == null) {
-			return 0
+			return -1
 		}
 		const zip = new ZipFile(zipFile)
 		if (zipContainsPrefix(zip, 'agent-workspaces/') == false) {
@@ -660,18 +679,30 @@ export function importAgentWorkspaceFiles(zipPath: string): number {
 			return 0
 		}
 		const agentsRoot = new File((context.filesDir as File).absolutePath + '/agents')
-		ensureDirectory(agentsRoot)
-		cleanDirectory(agentsRoot)
+		const stage = new File(importRoot.absolutePath + '/agent-workspaces-stage')
+		stageRoot = stage
+		const backupRoot = new File(importRoot.absolutePath + '/agent-workspaces-backup')
+		if (resetDirectory(stage) == false) {
+			zip.close()
+			return -1
+		}
 		let count = 0
 		const entries = zip.entries()
 		while (entries.hasMoreElements()) {
 			const entry = entries.nextElement() as ZipEntry
-			count = count + extractAgentWorkspaceEntry(zip, entry, agentsRoot)
+			count = count + extractAgentWorkspaceEntry(zip, entry, stage)
 		}
 		zip.close()
+		if (replaceDirectoryFromStage(stage, agentsRoot, backupRoot) == false) {
+			deleteRecursive(stage)
+			return -1
+		}
 		return count
 	} catch (_e: any) {
-		return 0
+		if (stageRoot != null) {
+			deleteRecursive(stageRoot)
+		}
+		return -1
 	}
 	// #endif
 	return 0
@@ -680,15 +711,16 @@ export function importAgentWorkspaceFiles(zipPath: string): number {
 /** 解压导入 ZIP 中的群聊工作区文件。 */
 export function importGroupWorkspaceFiles(zipPath: string): number {
 	// #ifdef APP-ANDROID
+	let stageRoot: File | null = null
 	try {
 		const importRoot = getImportRoot()
 		const context = UTSAndroid.getAppContext()
 		if (importRoot == null || context == null) {
-			return 0
+			return -1
 		}
 		const zipFile = prepareImportZipFile(zipPath)
 		if (zipFile == null) {
-			return 0
+			return -1
 		}
 		const zip = new ZipFile(zipFile)
 		if (zipContainsPrefix(zip, 'group-workspaces/') == false) {
@@ -696,18 +728,30 @@ export function importGroupWorkspaceFiles(zipPath: string): number {
 			return 0
 		}
 		const groupRoot = new File((context.filesDir as File).absolutePath + '/group-workspaces')
-		ensureDirectory(groupRoot)
-		cleanDirectory(groupRoot)
+		const stage = new File(importRoot.absolutePath + '/group-workspaces-stage')
+		stageRoot = stage
+		const backupRoot = new File(importRoot.absolutePath + '/group-workspaces-backup')
+		if (resetDirectory(stage) == false) {
+			zip.close()
+			return -1
+		}
 		let count = 0
 		const entries = zip.entries()
 		while (entries.hasMoreElements()) {
 			const entry = entries.nextElement() as ZipEntry
-			count = count + extractGroupWorkspaceEntry(zip, entry, groupRoot)
+			count = count + extractGroupWorkspaceEntry(zip, entry, stage)
 		}
 		zip.close()
+		if (replaceDirectoryFromStage(stage, groupRoot, backupRoot) == false) {
+			deleteRecursive(stage)
+			return -1
+		}
 		return count
 	} catch (_e: any) {
-		return 0
+		if (stageRoot != null) {
+			deleteRecursive(stageRoot)
+		}
+		return -1
 	}
 	// #endif
 	return 0
@@ -716,15 +760,16 @@ export function importGroupWorkspaceFiles(zipPath: string): number {
 /** 解压导入 ZIP 中的用户工作区文件。 */
 export function importUserWorkspaceFiles(zipPath: string): number {
 	// #ifdef APP-ANDROID
+	let stageRoot: File | null = null
 	try {
 		const importRoot = getImportRoot()
 		const context = UTSAndroid.getAppContext()
 		if (importRoot == null || context == null) {
-			return 0
+			return -1
 		}
 		const zipFile = prepareImportZipFile(zipPath)
 		if (zipFile == null) {
-			return 0
+			return -1
 		}
 		const zip = new ZipFile(zipFile)
 		if (zipContainsPrefix(zip, 'user-files/') == false) {
@@ -732,18 +777,30 @@ export function importUserWorkspaceFiles(zipPath: string): number {
 			return 0
 		}
 		const userRoot = new File((context.filesDir as File).absolutePath + '/user')
-		ensureDirectory(userRoot)
-		cleanDirectory(userRoot)
+		const stage = new File(importRoot.absolutePath + '/user-files-stage')
+		stageRoot = stage
+		const backupRoot = new File(importRoot.absolutePath + '/user-files-backup')
+		if (resetDirectory(stage) == false) {
+			zip.close()
+			return -1
+		}
 		let count = 0
 		const entries = zip.entries()
 		while (entries.hasMoreElements()) {
 			const entry = entries.nextElement() as ZipEntry
-			count = count + extractUserWorkspaceEntry(zip, entry, userRoot)
+			count = count + extractUserWorkspaceEntry(zip, entry, stage)
 		}
 		zip.close()
+		if (replaceDirectoryFromStage(stage, userRoot, backupRoot) == false) {
+			deleteRecursive(stage)
+			return -1
+		}
 		return count
 	} catch (_e: any) {
-		return 0
+		if (stageRoot != null) {
+			deleteRecursive(stageRoot)
+		}
+		return -1
 	}
 	// #endif
 	return 0

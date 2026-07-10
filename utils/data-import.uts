@@ -540,6 +540,9 @@ export function importAllDataFromZip(zipPath: string): string {
 		const workspaceCount = importAgentWorkspaceFiles(zipPath)
 		const groupWorkspaceCount = importGroupWorkspaceFiles(zipPath)
 		const userWorkspaceCount = importUserWorkspaceFiles(zipPath)
+		if (workspaceCount < 0 || groupWorkspaceCount < 0 || userWorkspaceCount < 0) {
+			throw new Error('工作区文件恢复失败')
+		}
 		return '已导入：提供商 ' + providers.length + ' 个，对话 ' + conversations.length + ' 条，消息 ' + messages.length + ' 条，记忆 ' + memoryCore.length + ' 条，Skills ' + skills.length + ' 个，资源 ' + assets.length + ' 个，用户文件 ' + userWorkspaceCount + ' 个，Agent 文件 ' + workspaceCount + ' 个，群聊文件 ' + groupWorkspaceCount + ' 个。'
 	} catch (_e: any) {
 		return ''
