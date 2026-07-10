@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NyxAgent Home UI Concept</title>
+  <style>
+    :root {
+      --ink: #17171c;
+      --muted: #74737d;
+      --soft: #a19fa8;
+      --line: #e7e2e5;
+      --canvas: #f7f4f5;
+      --surface: #fffdfd;
+      --pink: #ed6f96;
+      --pink-soft: #fde8ef;
+      --teal: #168f7a;
+      --teal-soft: #e3f4ef;
+      --indigo: #6062c8;
+      --amber: #d99b30;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      background: #d9d5d7;
+      font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif;
+      color: var(--ink);
+      letter-spacing: 0;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+    }
+
+    .device {
+      position: relative;
+      width: 360px;
+      height: 640px;
+      overflow: hidden;
+      background: var(--canvas);
+    }
+
+    .status-bar {
+      height: 24px;
+      padding: 7px 18px 0;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .status-icons {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .signal {
+      display: flex;
+      align-items: flex-end;
+      gap: 1px;
+      height: 8px;
+    }
+
+    .signal i {
+      display: block;
+      width: 2px;
+      border-radius: 1px;
+      background: var(--ink);
+    }
+
+    .signal i:nth-child(1) { height: 3px; }
+    .signal i:nth-child(2) { height: 5px; }
+    .signal i:nth-child(3) { height: 7px; }
+    .signal i:nth-child(4) { height: 8px; }
+
+    .wifi {
+      width: 10px;
+      height: 7px;
+      border-top: 2px solid var(--ink);
+      border-radius: 50% 50% 0 0;
+      position: relative;
+    }
+
+    .wifi::after {
+      content: "";
+      position: absolute;
+      left: 4px;
+      bottom: 0;
+      width: 2px;
+      height: 2px;
+      border-radius: 50%;
+      background: var(--ink);
+    }
+
+    .battery {
+      width: 16px;
+      height: 8px;
+      padding: 1px;
+      border: 1px solid var(--ink);
+      border-radius: 2px;
+      position: relative;
+    }
+
+    .battery::after {
+      content: "";
+      position: absolute;
+      right: -3px;
+      top: 2px;
+      width: 2px;
+      height: 4px;
+      border-radius: 0 1px 1px 0;
+      background: var(--ink);
+    }
+
+    .battery span {
+      display: block;
+      width: 10px;
+      height: 4px;
+      background: var(--ink);
+      border-radius: 1px;
+    }
+
+    header {
+      height: 70px;
+      padding: 11px 18px 8px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+
+    .brand {
+      min-width: 0;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 28px;
+      font-weight: 800;
+    }
+
+    .brand p {
+      margin: 4px 0 0;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .online-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      margin: 0 5px 1px 0;
+      border-radius: 50%;
+      background: var(--teal);
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .icon-button {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 253, 253, 0.86);
+      color: var(--ink);
+    }
+
+    .icon-button.primary {
+      border-color: var(--pink);
+      background: var(--pink);
+      color: white;
+    }
+
+    svg {
+      width: 17px;
+      height: 17px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    main {
+      padding: 0 18px 68px;
+    }
+
+    .section-kicker {
+      margin: 4px 0 10px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+    }
+
+    .section-kicker h2 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 23px;
+      font-weight: 800;
+    }
+
+    .section-kicker span {
+      font-size: 10px;
+      color: var(--soft);
+    }
+
+    .continue-panel {
+      position: relative;
+      height: 82px;
+      overflow: hidden;
+      padding: 13px 14px;
+      display: flex;
+      align-items: center;
+      border-radius: 8px;
+      background: #202126;
+      color: white;
+    }
+
+    .continue-panel::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--pink);
+    }
+
+    .avatar {
+      position: relative;
+      flex: 0 0 auto;
+      width: 44px;
+      height: 44px;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #eee8eb;
+      color: #57545c;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .avatar img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+    }
+
+    .avatar .presence {
+      position: absolute;
+      right: 0;
+      bottom: 1px;
+      width: 10px;
+      height: 10px;
+      border: 2px solid white;
+      border-radius: 50%;
+      background: var(--teal);
+    }
+
+    .continue-copy {
+      min-width: 0;
+      margin-left: 11px;
+      flex: 1;
+    }
+
+    .continue-meta {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 10px;
+      color: #bdbcc2;
+    }
+
+    .continue-meta strong {
+      color: white;
+      font-size: 12px;
+    }
+
+    .continue-copy p {
+      margin: 6px 0 0;
+      overflow: hidden;
+      color: #e7e5e8;
+      font-size: 11px;
+      line-height: 16px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .continue-go {
+      width: 32px;
+      height: 32px;
+      margin-left: 8px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--pink);
+      color: white;
+    }
+
+    .filters {
+      margin: 12px 0 13px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+
+    .filter {
+      height: 29px;
+      display: grid;
+      place-items: center;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .filter.active {
+      border-color: #f3b2c7;
+      background: var(--pink-soft);
+      color: #bd3e68;
+    }
+
+    .list-heading {
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .list-heading h3 {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .list-heading span {
+      color: var(--soft);
+      font-size: 10px;
+    }
+
+    .conversation-list {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    .conversation {
+      position: relative;
+      min-height: 72px;
+      padding: 11px 12px;
+      display: flex;
+      align-items: center;
+    }
+
+    .conversation + .conversation::before {
+      content: "";
+      position: absolute;
+      left: 68px;
+      right: 12px;
+      top: 0;
+      height: 1px;
+      background: var(--line);
+    }
+
+    .avatar.ink {
+      background: #ebeaf8;
+      color: var(--indigo);
+    }
+
+    .avatar.warm {
+      background: #fbefd9;
+      color: #a76b12;
+    }
+
+    .avatar.group {
+      background: #e8f2f0;
+    }
+
+    .avatar-stack {
+      position: relative;
+      width: 36px;
+      height: 36px;
+    }
+
+    .avatar-stack span {
+      position: absolute;
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      border: 2px solid white;
+      border-radius: 50%;
+      font-size: 8px;
+      font-weight: 800;
+    }
+
+    .avatar-stack span:first-child {
+      left: 0;
+      top: 0;
+      background: #dcdcf7;
+      color: var(--indigo);
+    }
+
+    .avatar-stack span:last-child {
+      right: 0;
+      bottom: 0;
+      background: #d9efe9;
+      color: var(--teal);
+    }
+
+    .conversation-copy {
+      min-width: 0;
+      margin-left: 11px;
+      flex: 1;
+    }
+
+    .conversation-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .conversation-title strong {
+      overflow: hidden;
+      font-size: 12px;
+      line-height: 17px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .role {
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: #f0eef0;
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 700;
+    }
+
+    .role.group-role {
+      background: var(--teal-soft);
+      color: #147563;
+    }
+
+    .conversation-copy p {
+      margin: 5px 0 0;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 14px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .conversation-side {
+      align-self: stretch;
+      margin-left: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      justify-content: space-between;
+      color: var(--soft);
+      font-size: 8px;
+    }
+
+    .unread {
+      min-width: 17px;
+      height: 17px;
+      padding: 0 5px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      background: var(--pink);
+      color: white;
+      font-size: 8px;
+      font-weight: 800;
+    }
+
+    .typing {
+      color: var(--teal);
+      font-weight: 700;
+    }
+
+    .daily-strip {
+      height: 48px;
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid var(--line);
+    }
+
+    .daily-item {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+    }
+
+    .daily-item + .daily-item {
+      border-left: 1px solid var(--line);
+    }
+
+    .daily-mark {
+      width: 7px;
+      height: 7px;
+      border-radius: 2px;
+      background: var(--pink);
+    }
+
+    .daily-mark.teal { background: var(--teal); }
+    .daily-mark.indigo { background: var(--indigo); }
+
+    .daily-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .daily-copy strong {
+      font-size: 11px;
+      line-height: 14px;
+    }
+
+    .daily-copy span {
+      color: var(--soft);
+      font-size: 8px;
+      line-height: 11px;
+    }
+
+    nav {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 62px;
+      padding: 6px 14px 8px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border-top: 1px solid var(--line);
+      background: rgba(255, 253, 253, 0.96);
+    }
+
+    .nav-item {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      color: #8d8b93;
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .nav-item.active {
+      color: var(--pink);
+    }
+
+    .nav-item.active::before {
+      content: "";
+      position: absolute;
+      top: -6px;
+      width: 22px;
+      height: 2px;
+      border-radius: 0 0 2px 2px;
+      background: var(--pink);
+    }
+
+    .nav-item svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .nav-badge {
+      position: absolute;
+      top: 2px;
+      right: 21px;
+      width: 6px;
+      height: 6px;
+      border: 1px solid white;
+      border-radius: 50%;
+      background: var(--amber);
+    }
+  </style>
+</head>
+<body>
+  <section class="device" aria-label="NyxAgent Android 主界面设计稿">
+    <div class="status-bar">
+      <span>13:40</span>
+      <div class="status-icons" aria-hidden="true">
+        <span class="signal"><i></i><i></i><i></i><i></i></span>
+        <span class="wifi"></span>
+        <span class="battery"><span></span></span>
+      </div>
+    </div>
+
+    <header>
+      <div class="brand">
+        <h1>NyxAgent</h1>
+        <p><span class="online-dot"></span>4 位联系人在线</p>
+      </div>
+      <div class="header-actions">
+        <button class="icon-button" title="搜索" aria-label="搜索">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        </button>
+        <button class="icon-button primary" title="新建会话" aria-label="新建会话">
+          <svg viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <div class="section-kicker">
+        <h2>今天想和谁聊？</h2>
+        <span>最近活跃</span>
+      </div>
+
+      <section class="continue-panel" aria-label="继续对话">
+        <div class="avatar">
+          <img src="../static/希娜-original.png" alt="眠汐头像" />
+          <span class="presence"></span>
+        </div>
+        <div class="continue-copy">
+          <div class="continue-meta"><strong>眠汐</strong><span>3 分钟前</span></div>
+          <p>顺手翻了几条待办，没什么特别的。</p>
+        </div>
+        <div class="continue-go" title="打开对话">
+          <svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg>
+        </div>
+      </section>
+
+      <div class="filters" aria-label="会话筛选">
+        <div class="filter active">全部</div>
+        <div class="filter">私聊</div>
+        <div class="filter">群聊</div>
+        <div class="filter">收藏</div>
+      </div>
+
+      <div class="list-heading">
+        <h3>最近会话</h3>
+        <span>按活跃时间</span>
+      </div>
+
+      <section class="conversation-list">
+        <article class="conversation">
+          <div class="avatar ink">千夏<span class="presence"></span></div>
+          <div class="conversation-copy">
+            <div class="conversation-title"><strong>千夏</strong><span class="role">写作搭档</span></div>
+            <p>稿子我看完了，第三段需要重写。</p>
+          </div>
+          <div class="conversation-side"><span>13:32</span><span class="unread">2</span></div>
+        </article>
+
+        <article class="conversation">
+          <div class="avatar group">
+            <div class="avatar-stack"><span>汐</span><span>夏</span></div>
+          </div>
+          <div class="conversation-copy">
+            <div class="conversation-title"><strong>写作讨论组</strong><span class="role group-role">3 位成员</span></div>
+            <p class="typing">2 人正在讨论</p>
+          </div>
+          <div class="conversation-side"><span>13:18</span><span class="unread">5</span></div>
+        </article>
+
+        <article class="conversation">
+          <div class="avatar warm">弥生</div>
+          <div class="conversation-copy">
+            <div class="conversation-title"><strong>弥生</strong><span class="role">生活助手</span></div>
+            <p>明天 9:30 的提醒已经放进待办。</p>
+          </div>
+          <div class="conversation-side"><span>昨天</span><span></span></div>
+        </article>
+      </section>
+
+      <section class="daily-strip" aria-label="今日概览">
+        <div class="daily-item">
+          <span class="daily-mark"></span>
+          <span class="daily-copy"><strong>3 项</strong><span>今日待办</span></span>
+        </div>
+        <div class="daily-item">
+          <span class="daily-mark teal"></span>
+          <span class="daily-copy"><strong>8 个</strong><span>最近文件</span></span>
+        </div>
+        <div class="daily-item">
+          <span class="daily-mark indigo"></span>
+          <span class="daily-copy"><strong>12 条</strong><span>有效记忆</span></span>
+        </div>
+      </section>
+    </main>
+
+    <nav aria-label="主导航">
+      <div class="nav-item active">
+        <svg viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path></svg>
+        <span>聊天</span>
+      </div>
+      <div class="nav-item">
+        <span class="nav-badge"></span>
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 2.5 2.5L16 9"></path></svg>
+        <span>待办</span>
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+        <span>文件</span>
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z"></path></svg>
+        <span>设置</span>
+      </div>
+    </nav>
+  </section>
+</body>
+</html>
