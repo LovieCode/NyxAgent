@@ -132,10 +132,10 @@
 | 16 | 统一错误链 | 结构化诊断、LLM transport error、失败气泡、设置事务与文件操作错误提示 | HBuilderX 5.15 Android class 全量及多轮热编译通过；ADB 冷启动日志通过 | `1603d00` |
 | 17 | 页面错误与生命周期复审 | Agent、历史、文件、头像裁剪、资料、诊断、Provider、Skill 和导入流程补齐状态写入检查、统一提示与离页保护 | UTS 静态扫描、HBuilderX 5.15 `--cleanCache` 全量编译通过；ADB 主页面与诊断入口通过 | `997e7b1` |
 | 18 | 群聊回滚、持久化与 ABI 复审 | 群聊创建失败回滚数据库和工作区；调度副作用写入失败可见；恢复既有导出函数 JVM 签名 | SQLite 注入回滚验证、28 页面 Android class 干净编译、ADB 群聊/会话/设置入口通过 | `997e7b1` |
-| 19 | 设置、Provider 与导入复审 | Provider 删除引用清理、默认模型原子保存、禁用 Provider 过滤、不完整备份和资源缺失拒绝 | HBuilderX Android 差量编译、UTS 扫描、ADB 设置页与安全导出通过 | 本轮提交 |
-| 20 | 历史、记忆、Todo 与编辑器复审 | 修复 Todo 双切换、定向文件更新、短期记忆清空、历史恢复、物理返回确认 | HBuilderX Android 差量编译；ADB Todo/Note CRUD、Memory 清空、历史恢复和物理返回通过 | 本轮提交 |
-| 21 | 头像与 Agent 生命周期复审 | 相册返回竞态、内部头像持久化、取消/不保存回收、Agent 创建删除与未保存状态保护 | 28 页面 Android class 干净编译；ADB 相册、裁剪、取消、完成和临时文件回收通过 | 本轮提交 |
-| 22 | 独立代码审查追加轮 | 检查 JVM ABI/DCE、跨介质数据一致性、页面生命周期、长消息滑窗和键盘延迟回调 | 三个独立审查代理 + `javap` + `git diff --check` + ADB | 本轮提交 |
+| 19 | 设置、Provider 与导入复审 | Provider 删除引用清理、默认模型原子保存、禁用 Provider 过滤、不完整备份和资源缺失拒绝 | HBuilderX Android 差量编译、UTS 扫描、ADB 设置页与安全导出通过 | `5923efc` |
+| 20 | 历史、记忆、Todo 与编辑器复审 | 修复 Todo 双切换、定向文件更新、短期记忆清空、历史恢复、物理返回确认 | HBuilderX Android 差量编译；ADB Todo/Note CRUD、Memory 清空、历史恢复和物理返回通过 | `5923efc` |
+| 21 | 头像与 Agent 生命周期复审 | 相册返回竞态、内部头像持久化、取消/不保存回收、Agent 创建删除与未保存状态保护 | 28 页面 Android class 干净编译；ADB 相册、裁剪、取消、完成和临时文件回收通过 | `5923efc` |
+| 22 | 独立代码审查追加轮 | 检查 JVM ABI/DCE、跨介质数据一致性、页面生命周期、长消息滑窗和键盘延迟回调 | 三个独立审查代理 + `javap` + `git diff --check` + ADB | `5923efc` |
 
 ## 执行日志
 
