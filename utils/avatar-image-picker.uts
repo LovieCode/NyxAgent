@@ -1,0 +1,98 @@
+/**
+ * 头像图片选择入口。
+ *
+ * 相册能力与聊天附件保持一致：系统图片选择失败时依次回退到媒体选择和文件选择。
+ */
+
+import { isChooseCancelError, parsePickedImagePath, readPickedImageSelection } from '@/utils/attachment-reader.uts'
+
+function deliverPickedAvatar(path: string, onPicked: (path: string) => void): void {
+	if (path == '') {
+		uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
+		return
+	}
+	onPicked(path)
+}
+
+function chooseAvatarFromFile(onPicked: (path: string) => void): void {
+	uni.chooseFile({
+		count: 1,
+		success: (res: any) => {
+			const picked = readPickedImageSelection(res)
+			if (picked.ok == false) {
+				uni.showToast({ position: 'bottom', title: picked.error, icon: 'none' })
+				return
+			}
+			onPicked(picked.path)
+		},
+		fail: (err: any) => {
+			if (isChooseCancelError(err) == true) { return }
+			uni.showToast({ position: 'bottom', title: '选择图片失败', icon: 'none' })
+		}
+	})
+}
+
+function chooseAvatarFromMedia(onPicked: (path: string) => void): void {
+	uni.chooseMedia({
+		count: 1,
+		sourceType: ['album'],
+		success: (res: any) => {
+			const picked = readPickedImageSelection(res)
+			if (picked.ok == false) {
+				uni.showToast({ position: 'bottom', title: picked.error, icon: 'none' })
+				return
+			}
+			onPicked(picked.path)
+		},
+		fail: (err: any) => {
+			if (isChooseCancelError(err) == true) { return }
+			console.log('[AvatarPicker] chooseMedia 相册失败，切换文件选图: ' + JSON.stringify(err))
+			uni.showToast({ position: 'bottom', title: '相册打开失败，请从文件选择图片', icon: 'none' })
+			chooseAvatarFromFile(onPicked)
+		}
+	})
+}
+
+function chooseAvatarFromAlbum(onPicked: (path: string) => void): void {
+	uni.chooseImage({
+		count: 1,
+		sourceType: ['album'],
+		sizeType: ['compressed'],
+		success: (res: any) => {
+			deliverPickedAvatar(parsePickedImagePath(res), onPicked)
+		},
+		fail: (err: any) => {
+			if (isChooseCancelError(err) == true) { return }
+			console.log('[AvatarPicker] chooseImage 相册失败，尝试 chooseMedia: ' + JSON.stringify(err))
+			chooseAvatarFromMedia(onPicked)
+		}
+	})
+}
+
+function chooseAvatarFromCamera(onPicked: (path: string) => void): void {
+	uni.chooseImage({
+		count: 1,
+		sourceType: ['camera'],
+		sizeType: ['compressed'],
+		success: (res: any) => {
+			deliverPickedAvatar(parsePickedImagePath(res), onPicked)
+		},
+		fail: (err: any) => {
+			if (isChooseCancelError(err) == true) { return }
+			uni.showToast({ position: 'bottom', title: '拍照失败', icon: 'none' })
+		}
+	})
+}
+
+export function chooseAvatarImage(onPicked: (path: string) => void): void {
+	uni.showActionSheet({
+		itemList: ['从相册选择', '拍照'],
+		success: (res) => {
+			if (res.tapIndex == 0) {
+				chooseAvatarFromAlbum(onPicked)
+			} else if (res.tapIndex == 1) {
+				chooseAvatarFromCamera(onPicked)
+			}
+		}
+	})
+}

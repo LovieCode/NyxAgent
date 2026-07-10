@@ -1472,8 +1472,8 @@
 	.chat-custom-scrollbar {
 		position: absolute;
 		right: 3px;
-		top: 6px;
-		bottom: 6px;
+		top: 0;
+		bottom: 0;
 		width: 14px;
 		border-radius: 7px;
 		background-color: transparent;

@@ -336,7 +336,6 @@
 		buildFirstRunProviderCardClass,
 		createAgentFromCreateData,
 		hasReadyChatProviderInList,
-		parseAgentCreateImagePath,
 		providerExistsInList,
 		readAgentCreateName,
 		readAgentCreateAvatar,
@@ -359,6 +358,7 @@
 		readAgentChatKey,
 		readAgentChatName,
 	} from '@/utils/agent-chat-list.uts'
+	import { chooseAvatarImage } from '@/utils/avatar-image-picker.uts'
 	import { setActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
 
 	export default {
@@ -775,27 +775,14 @@
 
 			/** 为新建私聊选择头像 */
 			pickCreateAvatar(): void {
-				uni.chooseImage({
-					count: 1,
-					sourceType: ['album', 'camera'],
-					sizeType: ['compressed'],
-					success: (res: any) => {
-						const path = parseAgentCreateImagePath(res)
-						if (path == '') {
-							uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
-							return
-						}
-						// 裁剪组件协议走 SQLite runtime_state，避免临时状态写 uni.storage。
-						deleteRuntimeState('crop_result')
-						setRuntimeState('crop_target', 'create_agent_avatar')
-						setRuntimeState('crop_image_path', path)
-						uni.navigateTo({
-							url: '/pages/common/crop/crop'
-						})
-					},
-					fail: () => {
-						uni.showToast({ position: 'bottom', title: '选择图片失败', icon: 'none' })
-					}
+				chooseAvatarImage((path: string) => {
+					// 裁剪组件协议走 SQLite runtime_state，避免临时状态写 uni.storage。
+					deleteRuntimeState('crop_result')
+					setRuntimeState('crop_target', 'create_agent_avatar')
+					setRuntimeState('crop_image_path', path)
+					uni.navigateTo({
+						url: '/pages/common/crop/crop'
+					})
 				})
 			},
 

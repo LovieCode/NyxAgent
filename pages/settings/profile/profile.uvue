@@ -52,7 +52,7 @@
 
 <script lang="uts">
 	import { deleteRuntimeState, getAppSetting, getRuntimeState, setAppSetting, setRuntimeState } from '@/utils/database.uts'
-	import { isChooseCancelError, parsePickedImagePath } from '@/utils/attachment-reader.uts'
+	import { chooseAvatarImage } from '@/utils/avatar-image-picker.uts'
 
 	/**
 	 * 用户资料页面 - 扁平化粉白主题
@@ -176,27 +176,13 @@
 			},
 			/** 弹出选择头像（拍照或从相册选取）*/
 			pickAvatar() {
-				uni.chooseImage({
-					count: 1,
-					sourceType: ['album', 'camera'],
-					sizeType: ['compressed'],
-					success: (res: any) => {
-						const path = parsePickedImagePath(res)
-						if (path == '') {
-							uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
-							return
-						}
-						deleteRuntimeState('crop_result')
-						setRuntimeState('crop_target', 'profile_avatar')
-						setRuntimeState('crop_image_path', path)
-						uni.navigateTo({
-							url: '/pages/common/crop/crop'
-						})
-					},
-					fail: (err: any) => {
-						if (isChooseCancelError(err) == true) { return }
-						uni.showToast({ position: 'bottom', title: '打开相册失败', icon: 'none' })
-					}
+				chooseAvatarImage((path: string) => {
+					deleteRuntimeState('crop_result')
+					setRuntimeState('crop_target', 'profile_avatar')
+					setRuntimeState('crop_image_path', path)
+					uni.navigateTo({
+						url: '/pages/common/crop/crop'
+					})
 				})
 			},
 			/** 打开全屏编辑器 */

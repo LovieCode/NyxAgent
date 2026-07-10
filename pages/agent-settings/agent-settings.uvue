@@ -298,6 +298,7 @@
 	import { getAllProviders, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { deleteRuntimeState, getAppSetting, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings } from '@/utils/generation-settings.uts'
+	import { chooseAvatarImage } from '@/utils/avatar-image-picker.uts'
 	import { clearActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
 	import { getSkills, getAgentSkillIds, filterExistingSkillIds } from '@/utils/skills.uts'
 	import {
@@ -327,7 +328,6 @@
 		readAgentSettingsSkillMeta,
 		readAgentSettingsSkillId,
 		readAgentSettingsSkillName,
-		readChooseImageFirstPath,
 		isAgentSettingsSkillSelected,
 		toggleAgentSettingsSkillSelection,
 	} from '@/utils/agent-settings-page-helpers.uts'
@@ -587,20 +587,13 @@
 
 			/** 上传/更换私聊头像 */
 			pickAvatar() {
-				uni.chooseImage({
-					count: 1,
-					sourceType: ['album', 'camera'],
-					sizeType: ['compressed'],
-					success: (res: any) => {
-						const path = readChooseImageFirstPath(res)
-						if (path == '') { return }
-						deleteRuntimeState('crop_result')
-						setRuntimeState('crop_target', 'agent_avatar')
-						setRuntimeState('crop_image_path', path)
-						uni.navigateTo({
-							url: '/pages/common/crop/crop'
-						})
-					}
+				chooseAvatarImage((path: string) => {
+					deleteRuntimeState('crop_result')
+					setRuntimeState('crop_target', 'agent_avatar')
+					setRuntimeState('crop_image_path', path)
+					uni.navigateTo({
+						url: '/pages/common/crop/crop'
+					})
 				})
 			},
 
