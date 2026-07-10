@@ -113,6 +113,7 @@ function buildUserPrefixContextBlocks(msg: UTSJSONObject): AgentContextBlock[] {
 		blocks.push(storedBlocks[i])
 	}
 	appendDirectContextBlock(blocks, msg, 'agent_group_environment_context', 'group_environment')
+	appendDirectContextBlock(blocks, msg, 'agent_interaction_rules_context', 'interaction_rules')
 	return blocks
 }
 

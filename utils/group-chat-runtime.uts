@@ -65,6 +65,12 @@ export function readAgentSystemPrompt(agent: UTSJSONObject | null): string {
 	return raw != null ? raw : ''
 }
 
+export function readAgentInteractionRules(agent: UTSJSONObject | null): string {
+	if (agent == null) { return '' }
+	const raw = agent['interactionRules'] as string | null
+	return raw != null ? raw : ''
+}
+
 export function readAgentHideThinking(agent: UTSJSONObject | null): boolean {
 	if (agent == null) { return false }
 	const raw = agent['hideThinking'] as boolean | null

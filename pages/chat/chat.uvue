@@ -272,6 +272,8 @@
 				currentAgentModel: '' as string,
 				/** 当前智能体系统提示词 */
 				currentSystemPrompt: '' as string,
+				/** 每轮临时注入到最新用户消息前的对话规则 */
+				currentInteractionRules: '' as string,
 				/** 用户昵称（用于消息气泡头像） */
 				userNickname: '' as string,
 				/** 用户头像路径 */
@@ -451,6 +453,7 @@
 				this.currentAgentAvatar = agent.avatar
 				this.currentAgentModel = agent.model
 				this.currentSystemPrompt = agent.systemPrompt
+				this.currentInteractionRules = agent.interactionRules
 				this.hideThinking = agent.hideThinking
 				this.injectDatetime = agent.injectDatetime
 				this.msgSegmentation = agent.msgSegmentation
@@ -632,11 +635,12 @@
 				return buildChatDatetimePrefix()
 			},
 
-			/** 构建运行时消息副本：日期时间只临时注入给 Agent，不写入消息列表/数据库/UI。 */
+			/** 构建运行时消息副本：日期时间和对话规则只临时注入给 Agent，不写入消息列表/数据库/UI。 */
 			buildRuntimeMessages(): UTSJSONObject[] {
 				return buildRuntimeChatMessages(this.messages, {
 					injectDatetime: this.injectDatetime,
 					datetimePrefix: this.buildDatetimePrefix(),
+					interactionRules: this.currentInteractionRules,
 				})
 			},
 

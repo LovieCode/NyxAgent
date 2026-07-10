@@ -1,10 +1,12 @@
 import { deleteRuntimeState, setRuntimeState } from '@/utils/database.uts'
+import { DEFAULT_AGENT_INTERACTION_RULES } from '@/utils/agent.uts'
 import { getSkillDocumentCount, readSkillDescription, readSkillEnabled, readSkillId, readSkillName, skillIdListContains } from '@/utils/skills.uts'
 
 export type AgentSettingsProfileForm = {
 	name: string
 	desc: string
 	systemPrompt: string
+	interactionRules: string
 	avatar: string
 	model: string
 	ttsVoice: string
@@ -16,6 +18,7 @@ export function readAgentSettingsProfileForm(agent: UTSJSONObject, fallbackModel
 	const rawName = agent['name'] as string | null
 	const rawDesc = agent['desc'] as string | null
 	const rawPrompt = agent['systemPrompt'] as string | null
+	const rawInteractionRules = agent['interactionRules'] as string | null
 	const rawAvatar = agent['avatar'] as string | null
 	const rawModel = agent['model'] as string | null
 	const rawTtsVoice = agent['ttsVoice'] as string | null
@@ -25,6 +28,7 @@ export function readAgentSettingsProfileForm(agent: UTSJSONObject, fallbackModel
 		name: rawName != null ? rawName : '',
 		desc: rawDesc != null ? rawDesc : '',
 		systemPrompt: rawPrompt != null ? rawPrompt : '',
+		interactionRules: rawInteractionRules != null ? rawInteractionRules : DEFAULT_AGENT_INTERACTION_RULES,
 		avatar: rawAvatar != null ? rawAvatar : '',
 		model: rawModel != null && rawModel != '' ? rawModel : fallbackModel,
 		ttsVoice: rawTtsVoice != null ? rawTtsVoice : '',

@@ -59,6 +59,7 @@ import {
 	isAgentInGroup,
 	markGroupAgentMessageRevoked,
 	readAgentInjectDatetime,
+	readAgentInteractionRules,
 	readAgentModel,
 	readAgentMsgSegmentation,
 	readAgentName,
@@ -321,9 +322,10 @@ class GroupChatTurnRuntime {
 		this.messages.push(streamingMsg)
 		const agentName = readAgentName(agent)
 		const injectDatetime = readAgentInjectDatetime(agent)
+		const interactionRules = readAgentInteractionRules(agent)
 		const msgSegmentation = readAgentMsgSegmentation(agent)
 		const systemPrompt = buildMemberSystemPrompt(agent, group.sharedPrompt)
-		const tempMessages = buildMemberRuntimeMessages(group, session, this.messages, action, agentName, injectDatetime, buildChatDatetimePrefix())
+		const tempMessages = buildMemberRuntimeMessages(group, session, this.messages, action, agentName, injectDatetime, buildChatDatetimePrefix(), interactionRules)
 		const contextRecord = createGroupAgentContextRecord(group, session, agentId, agentName, action, tempMessages, systemPrompt)
 		saveGroupAgentContextRecord(contextRecord)
 		streamingMsg['contextRecordId'] = contextRecord['id'] as string | null

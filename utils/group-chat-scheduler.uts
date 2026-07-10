@@ -704,7 +704,7 @@ function attachMemberMemoryContext(runtime: UTSJSONObject[], memoryText: string)
 	}
 }
 
-export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], action: UTSJSONObject, agentName: string, injectDatetime: boolean, datetimePrefix: string): UTSJSONObject[] {
+export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatSession, messages: UTSJSONObject[], action: UTSJSONObject, agentName: string, injectDatetime: boolean, datetimePrefix: string, interactionRules: string): UTSJSONObject[] {
 	const runtime: UTSJSONObject[] = []
 	const actionAgentId = readActionText(action, 'agentId')
 	const visible = getGroupMessagesVisibleToAgent(messages, actionAgentId)
@@ -731,8 +731,9 @@ export function buildMemberRuntimeMessages(group: GroupChat, session: GroupChatS
 	const runtimeMessages = buildRuntimeChatMessages(runtime, {
 		injectDatetime: injectDatetime,
 		datetimePrefix: datetimePrefix,
+		interactionRules: interactionRules,
 	})
-	// 稳定 system 前缀留给人格和规则；动态群环境、群记忆挂到当前 user，避免击穿历史缓存。
+	// 稳定 system 前缀只留给人格；对话规则、群环境和群记忆挂到当前 user，避免击穿历史缓存。
 	attachMemberTaskContext(runtimeMessages, buildMemberTaskPrompt(group, session, action, agentName))
 	attachMemberMemoryContext(runtimeMessages, buildGroupAgentMemoryContext(group.id, session.id, actionAgentId))
 	return runtimeMessages

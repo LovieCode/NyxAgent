@@ -52,6 +52,19 @@
 					</view>
 				</view>
 
+				<view class="card-header" style="margin-top:10px;">
+					<oui-icon-unix name="file-text" size="11px" color="#6B7280" style="margin-right:5px" />
+					<text class="card-label">对话规则</text>
+				</view>
+				<view class="desc-wrap" @click="openInteractionRulesEditor">
+					<scroll-view class="prompt-scroll" :scroll-y="true">
+						<text class="desc-preview">{{agentInteractionRules}}</text>
+					</scroll-view>
+					<view class="desc-edit-btn">
+						<text class="desc-edit-text">全屏编辑</text>
+					</view>
+				</view>
+
 				<!-- 模型 -->
 				<view class="model-row" style="margin-top:10px;" @click="toggleModelPanel">
 					<view class="card-header" style="margin-bottom:0;">
@@ -339,6 +352,7 @@
 				agentName: '' as string,
 				agentDesc: '' as string,
 				agentSystemPrompt: '' as string,
+				agentInteractionRules: '' as string,
 				agentAvatar: '' as string,
 				currentModel: 'deepseek-v4-flash',
 				allProviders: [] as UTSJSONObject[],
@@ -407,10 +421,12 @@
 			const result = getRuntimeState('editor_result')
 			if (ready == 'true' || (result != null && result != '')) {
 				const target = getRuntimeState('editor_target')
-				if (target == 'systemPrompt' || target == 'desc' || target == null || target == '') {
+				if (target == 'systemPrompt' || target == 'interactionRules' || target == 'desc' || target == null || target == '') {
 					const safeResult = result != null ? result : ''
 					if (target == 'systemPrompt') {
 						this.agentSystemPrompt = safeResult
+					} else if (target == 'interactionRules') {
+						this.agentInteractionRules = safeResult
 					} else {
 						this.agentDesc = safeResult
 					}
@@ -466,6 +482,7 @@
 					this.agentName = profile.name
 					this.agentDesc = profile.desc
 					this.agentSystemPrompt = profile.systemPrompt
+					this.agentInteractionRules = profile.interactionRules
 					this.agentAvatar = profile.avatar
 					this.currentModel = profile.model
 					this.ttsVoice = profile.ttsVoice
@@ -613,6 +630,14 @@
 				})
 			},
 
+			/** 打开每轮临时注入规则的全屏编辑器。 */
+			openInteractionRulesEditor() {
+				prepareAgentSettingsTextEditor(this.agentInteractionRules, '编辑对话规则', 'interactionRules', '定义距离感、回复长度、知识边界和对话习惯')
+				uni.navigateTo({
+					url: '/pages/common/editor/editor'
+				})
+			},
+
 			loadModel() {
 				const model = getAppSetting('settings_model')
 				if (model != null && model != '') {
@@ -635,6 +660,7 @@
 					desc: this.agentDesc,
 					avatar: this.agentAvatar,
 					systemPrompt: this.agentSystemPrompt,
+					interactionRules: this.agentInteractionRules,
 					model: this.currentModel,
 					ttsVoice: this.ttsVoice,
 					ttsVolume: this.ttsVolume,

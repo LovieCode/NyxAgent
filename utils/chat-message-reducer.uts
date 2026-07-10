@@ -400,10 +400,21 @@ export function buildRuntimeMessages(messages: UTSJSONObject[], options: ChatRun
 			lastUserIndex = i
 		}
 	}
-	if (options.injectDatetime == true && lastUserIndex >= 0 && lastUserIndex < runtimeMessages.length) {
+	if (lastUserIndex >= 0 && lastUserIndex < runtimeMessages.length) {
 		const target = runtimeMessages[lastUserIndex]
-		target['agent_current_time_context'] = options.datetimePrefix
-		runtimeMessages.splice(lastUserIndex, 1, target)
+		let changed = false
+		if (options.injectDatetime == true) {
+			target['agent_current_time_context'] = options.datetimePrefix
+			changed = true
+		}
+		const interactionRules = options.interactionRules.trim()
+		if (interactionRules != '') {
+			target['agent_interaction_rules_context'] = interactionRules
+			changed = true
+		}
+		if (changed == true) {
+			runtimeMessages.splice(lastUserIndex, 1, target)
+		}
 	}
 	return runtimeMessages
 }

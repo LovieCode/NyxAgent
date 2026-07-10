@@ -6,6 +6,7 @@
 
 import {
 	updateAgent,
+	updateAgentInteractionRules,
 	updateAgentModel,
 	updateAgentGenerationSettings,
 	updateAgentTruncation,
@@ -28,6 +29,7 @@ export type AgentSettingsSaveInput = {
 	desc: string
 	avatar: string
 	systemPrompt: string
+	interactionRules: string
 	model: string
 	ttsVoice: string
 	ttsVolume: string
@@ -76,6 +78,7 @@ export function saveAgentSettings(input: AgentSettingsSaveInput, global: Generat
 	if (name == '') { return failSave('昵称不能为空') }
 	const desc = input.desc.trim()
 	updateAgent(agentId, name, desc, input.avatar, input.systemPrompt)
+	updateAgentInteractionRules(agentId, input.interactionRules.trim())
 	updateAgentModel(agentId, input.model)
 	updateAgentTTSSettings(agentId, input.ttsVoice, input.ttsVolume, input.ttsPitch)
 	const generation = buildAgentGenerationSaveState(

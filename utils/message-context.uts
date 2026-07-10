@@ -19,6 +19,8 @@ function escapeAgentTagText(text: string): string {
 	result = result.replace(/<current_time>/g, '< current_time>')
 	result = result.replace(/<\/user_profile>/g, '</ user_profile>')
 	result = result.replace(/<user_profile>/g, '< user_profile>')
+	result = result.replace(/<\/interaction_rules>/g, '</ interaction_rules>')
+	result = result.replace(/<interaction_rules>/g, '< interaction_rules>')
 	result = result.replace(/<\/short_term_memory>/g, '</ short_term_memory>')
 	result = result.replace(/<short_term_memory>/g, '< short_term_memory>')
 	result = result.replace(/<\/long_term_memory>/g, '</ long_term_memory>')
@@ -41,6 +43,7 @@ function escapeAgentTagText(text: string): string {
 function normalizeContextTag(tag: string): string {
 	if (tag == 'current_time') { return tag }
 	if (tag == 'user_profile') { return tag }
+	if (tag == 'interaction_rules') { return tag }
 	if (tag == 'short_term_memory') { return tag }
 	if (tag == 'long_term_memory') { return tag }
 	if (tag == 'group_memory') { return tag }

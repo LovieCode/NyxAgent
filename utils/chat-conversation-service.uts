@@ -41,6 +41,7 @@ export function loadActiveAgentSnapshot(): ChatAgentSnapshot {
 	const rawName = agent['name'] as string | null
 	const rawAvatar = agent['avatar'] as string | null
 	const rawPrompt = agent['systemPrompt'] as string | null
+	const rawInteractionRules = agent['interactionRules'] as string | null
 	const rawModel = agent['model'] as string | null
 	const rawHideThinking = agent['hideThinking'] as boolean | null
 	const rawInjectDatetime = agent['injectDatetime'] as boolean | null
@@ -48,6 +49,7 @@ export function loadActiveAgentSnapshot(): ChatAgentSnapshot {
 	snapshot.name = rawName != null ? rawName : ''
 	snapshot.avatar = rawAvatar != null ? rawAvatar : ''
 	snapshot.systemPrompt = rawPrompt != null ? rawPrompt : ''
+	snapshot.interactionRules = rawInteractionRules != null ? rawInteractionRules : ''
 	snapshot.model = rawModel != null ? rawModel : ''
 	snapshot.hideThinking = rawHideThinking != null ? rawHideThinking : false
 	snapshot.injectDatetime = rawInjectDatetime != null ? rawInjectDatetime : true

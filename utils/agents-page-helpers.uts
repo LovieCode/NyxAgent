@@ -13,7 +13,7 @@ import {
 	readCreateTemplateName,
 	readCreateTemplatePrompt,
 } from '@/utils/agent-create-presets.uts'
-import { getAgents, saveAgents } from '@/utils/agent.uts'
+import { DEFAULT_AGENT_INTERACTION_RULES, getAgents, saveAgents } from '@/utils/agent.uts'
 import { getAgentDir } from '@/utils/file-manager.uts'
 
 export type AgentCreateForm = {
@@ -144,6 +144,7 @@ function buildCreatedAgentPayload(id: string, data: AgentCreateForm, defaultMode
 		name: name,
 		desc: finalDesc,
 		systemPrompt: finalPrompt,
+		interactionRules: DEFAULT_AGENT_INTERACTION_RULES,
 		model: model,
 		time: '刚刚',
 	} as UTSJSONObject

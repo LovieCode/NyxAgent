@@ -44,6 +44,7 @@ export type ChatAgentSnapshot = {
 	name: string
 	avatar: string
 	systemPrompt: string
+	interactionRules: string
 	model: string
 	hideThinking: boolean
 	injectDatetime: boolean
@@ -59,6 +60,7 @@ export type ChatConversationLoadResult = {
 export type ChatRuntimeContextOptions = {
 	injectDatetime: boolean
 	datetimePrefix: string
+	interactionRules: string
 }
 
 export function createEmptyAgentSnapshot(): ChatAgentSnapshot {
@@ -67,6 +69,7 @@ export function createEmptyAgentSnapshot(): ChatAgentSnapshot {
 		name: '',
 		avatar: '',
 		systemPrompt: '',
+		interactionRules: '',
 		model: '',
 		hideThinking: false,
 		injectDatetime: true,
