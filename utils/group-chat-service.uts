@@ -141,11 +141,10 @@ function isSafeId(id: string): boolean {
 	return true
 }
 
-function ensureDirectory(path: string): void {
-	if (path == '') { return }
-	if (exists(path) == false) {
-		createDir(path, true)
-	}
+function ensureDirectory(path: string): boolean {
+	if (path == '') { return false }
+	if (exists(path) == true) { return true }
+	return createDir(path, true).ok
 }
 
 export function getGroupChats(): GroupChat[] {
@@ -180,7 +179,7 @@ export function buildGroupWorkspaceRoot(): string {
 	const filesDir = getInternalFilesDir()
 	if (filesDir == '') { return '' }
 	const root = joinPath(filesDir, 'group-workspaces')
-	ensureDirectory(root)
+	if (ensureDirectory(root) == false) { return '' }
 	return root
 }
 
@@ -193,7 +192,7 @@ export function buildGroupWorkspacePath(groupId: string, sessionId: string): str
 
 export function getGroupSessionWorkspaceDir(groupId: string, sessionId: string): string {
 	const dir = buildGroupWorkspacePath(groupId, sessionId)
-	ensureDirectory(dir)
+	if (ensureDirectory(dir) == false) { return '' }
 	return dir
 }
 
@@ -332,6 +331,9 @@ export function createGroupSession(groupId: string, title: string = ''): GroupCh
 	const sessionId = createId('gsession')
 	const sessionTitle = title.trim() != '' ? title.trim() : '故事会话'
 	const workspace = getGroupSessionWorkspaceDir(groupId, sessionId)
+	if (workspace == '') {
+		throw new Error('群会话工作区创建失败')
+	}
 	const session: GroupChatSession = {
 		id: sessionId,
 		groupId: groupId,
@@ -344,14 +346,23 @@ export function createGroupSession(groupId: string, title: string = ''): GroupCh
 	}
 	const sessions = getGroupSessions(groupId)
 	sessions.push(session)
-	saveGroupSessions(groupId, sessions)
+	try {
+		saveGroupSessions(groupId, sessions)
+	} catch (e: any) {
+		if (exists(workspace) == true) {
+			deleteItem(workspace, true)
+		}
+		throw e
+	}
 	return session
 }
 
 export function ensureGroupActiveSession(group: GroupChat): GroupChatSession {
 	let session = getGroupSessionById(group.id, group.activeSessionId)
 	if (session != null) {
-		getGroupSessionWorkspaceDir(group.id, session.id)
+		if (getGroupSessionWorkspaceDir(group.id, session.id) == '') {
+			throw new Error('群会话工作区不可用')
+		}
 		return session
 	}
 	const sessions = getGroupSessions(group.id)
@@ -360,7 +371,9 @@ export function ensureGroupActiveSession(group: GroupChat): GroupChatSession {
 		group.activeSessionId = session.id
 		group.updatedAt = Date.now()
 		saveGroupChat(group)
-		getGroupSessionWorkspaceDir(group.id, session.id)
+		if (getGroupSessionWorkspaceDir(group.id, session.id) == '') {
+			throw new Error('群会话工作区不可用')
+		}
 		return session
 	}
 	session = createGroupSession(group.id, '故事会话')

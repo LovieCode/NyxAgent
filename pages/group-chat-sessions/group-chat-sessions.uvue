@@ -103,10 +103,14 @@
 			displayTitle(session: GroupChatSession): string { return displaySessionTitle(session) },
 			createSession(): void {
 				if (this.groupId == '') { return }
-				const session = createGroupSession(this.groupId, '新会话')
-				setActiveGroupSession(this.groupId, session.id)
-				this.loadData()
-				uni.showToast({ position: 'bottom', title: '新会话已创建', icon: 'success' })
+				try {
+					const session = createGroupSession(this.groupId, '新会话')
+					setActiveGroupSession(this.groupId, session.id)
+					this.loadData()
+					uni.showToast({ position: 'bottom', title: '新会话已创建', icon: 'success' })
+				} catch (_e: any) {
+					uni.showToast({ position: 'bottom', title: '新会话创建失败', icon: 'none' })
+				}
 			},
 			switchSession(session: GroupChatSession): void {
 				setActiveGroupSession(this.groupId, session.id)
