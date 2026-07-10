@@ -9,6 +9,8 @@ import {
 	DEFAULT_SCHEDULER_PROMPT_TEXT,
 	DEFAULT_SHARED_PROMPT_TEXT,
 	GROUP_MESSAGE_VISIBILITY_PUBLIC,
+	LEGACY_DIRECTIVE_SCHEDULER_PROMPT_TEXT,
+	LEGACY_ENVIRONMENT_SCHEDULER_PROMPT_TEXT,
 	isInternalGroupSenderType,
 	isInternalGroupVisibility,
 	type GroupChat,
@@ -21,6 +23,9 @@ export function buildDefaultSchedulerPrompt(): string {
 
 export function getGroupSchedulerPrompt(group: GroupChat): string {
 	const text = group.schedulerPrompt.trim()
+	if (text == LEGACY_DIRECTIVE_SCHEDULER_PROMPT_TEXT || text == LEGACY_ENVIRONMENT_SCHEDULER_PROMPT_TEXT) {
+		return buildDefaultSchedulerPrompt()
+	}
 	if (text != '') { return text }
 	return buildDefaultSchedulerPrompt()
 }
