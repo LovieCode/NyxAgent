@@ -176,7 +176,7 @@
 </template>
 
 <script lang="uts">
-	import { saveProvider, fetchProviderModels, parseModels, ModelInfo, getDefaultTaskModel, getProviderById, getDefaultProviderApiBase, setActiveProvider, setDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { saveProvider, fetchProviderModels, parseModels, ModelInfo, getDefaultTaskModel, getProviderById, getDefaultProviderApiBase, setActiveProvider, setDefaultChatTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { refreshMetadataCache, isMetadataCacheStale, ensureMetadataCache } from '@/uni_modules/agent-core/utssdk/llm-metadata.uts'
 	import { consumeRuntimeState, setAppSetting } from '@/utils/database.uts'
 	import {
@@ -452,12 +452,9 @@
 				if (this.fromFirstRunGuide == true) {
 					const defaultModel = validModels[0].id
 					const activeSaved = setActiveProvider(this.editId)
-					const defaultSaved = setDefaultTaskModel('chat', this.editId, defaultModel)
-					// LEGACY_MODEL_SETTINGS: 旧聊天创建逻辑还读 settings_*；默认模型页统一后可清空。
-					const legacyProviderSaved = setAppSetting('settings_provider_id', this.editId)
-					const legacyModelSaved = setAppSetting('settings_model', defaultModel)
+					const defaultSaved = setDefaultChatTaskModel(this.editId, defaultModel)
 					const guideSaved = setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true')
-					if (activeSaved == false || defaultSaved == false || legacyProviderSaved == false || legacyModelSaved == false || guideSaved == false) {
+					if (activeSaved == false || defaultSaved == false || guideSaved == false) {
 						uni.showToast({ position: 'bottom', title: '模型配置保存不完整，请重试', icon: 'none' })
 						return false
 					}

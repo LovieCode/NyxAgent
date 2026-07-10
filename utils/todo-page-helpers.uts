@@ -161,10 +161,18 @@ export function clearNoteEditorRuntimeState(): void {
 
 export function prepareNoteEditorRuntimeState(noteId: string, title: string, content: string, agentId: string): void {
 	clearNoteEditorRuntimeState()
-	setRuntimeState('note_editor_id', noteId)
-	setRuntimeState('note_editor_title', title)
-	setRuntimeState('note_editor_content', content)
-	setRuntimeState('note_editor_agent_id', agentId)
+	const idSaved = setRuntimeState('note_editor_id', noteId)
+	const titleSaved = setRuntimeState('note_editor_title', title)
+	const contentSaved = setRuntimeState('note_editor_content', content)
+	const agentSaved = setRuntimeState('note_editor_agent_id', agentId)
+	if (idSaved == false || titleSaved == false || contentSaved == false || agentSaved == false) {
+		clearNoteEditorRuntimeState()
+		throw new Error('笔记编辑状态保存失败')
+	}
+}
+
+export function clearNoteEditorResultRuntimeState(): boolean {
+	return deleteRuntimeState('note_editor_result')
 }
 
 function readStringFromPayload(payload: UTSJSONObject, key: string): string {
@@ -175,7 +183,6 @@ function readStringFromPayload(payload: UTSJSONObject, key: string): string {
 export function consumeNoteEditorRuntimeState(): NoteEditorState | null {
 	const raw = getRuntimeState('note_editor_result')
 	if (raw == null || raw == '') { return null }
-	deleteRuntimeState('note_editor_result')
 	try {
 		const payload = JSON.parse(raw) as UTSJSONObject
 		const noteId = readStringFromPayload(payload, 'id')
@@ -195,6 +202,7 @@ export function consumeNoteEditorRuntimeState(): NoteEditorState | null {
 			agentName: agentName,
 		} as NoteEditorState
 	} catch (_e: any) {
+		deleteRuntimeState('note_editor_result')
 		return null
 	}
 }

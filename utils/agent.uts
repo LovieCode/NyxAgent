@@ -562,14 +562,13 @@ export function deleteAgent(id: string): AgentDeleteResult {
 	if (found == false) {
 		return { ok: false, filesCleared: false } as AgentDeleteResult
 	}
+	const serialized = JSON.stringify(newAgents)
+	if (saveAgents(newAgents) == false || getAppSetting('agent_list') != serialized) {
+		return { ok: false, filesCleared: false } as AgentDeleteResult
+	}
 	if (deletedName != '') {
 		rememberAgentWorkspaceName(id, deletedName)
 		writeAgentWorkspaceNameMetadata(getInternalFilesDir(), id, deletedName)
-	}
-	const serialized = JSON.stringify(newAgents)
-	saveAgents(newAgents)
-	if (getAppSetting('agent_list') != serialized) {
-		return { ok: false, filesCleared: false } as AgentDeleteResult
 	}
 	let filesCleared = true
 	const agentsRoot = getAgentsRoot()

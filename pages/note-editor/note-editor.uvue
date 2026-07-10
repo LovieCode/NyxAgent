@@ -30,8 +30,9 @@
 				initialContent: '' as string,
 				initialAgentId: '' as string,
 				agents: [] as UTSJSONObject[],
-				selectedAgentIndex: 0 as number,
-				dirty: false as boolean,
+					selectedAgentIndex: 0 as number,
+					dirty: false as boolean,
+					allowBackNavigation: false as boolean,
 			}
 		},
 		computed: {
@@ -42,6 +43,14 @@
 		onLoad() {
 			this.loadAgents()
 			this.loadEditorPayload()
+		},
+		onUnload() {
+			this.clearEditorPayload()
+		},
+		onBackPress(): boolean {
+			if (this.allowBackNavigation == true) { return false }
+			this.onBack()
+			return true
 		},
 		methods: {
 			getUserDisplayName(): string {
@@ -120,7 +129,8 @@
 
 			onBack() {
 				if (this.dirty == false) {
-					uni.navigateBack()
+					this.clearEditorPayload()
+					this.navigateBackSafely()
 					return
 				}
 				uni.showModal({
@@ -131,8 +141,13 @@
 					confirmColor: '#EF4444',
 					success: (res) => {
 						if (res.confirm == true) {
-							uni.navigateBack()
+							this.clearEditorPayload()
+							this.dirty = false
+							this.navigateBackSafely()
 						}
+					},
+					fail: () => {
+						uni.showToast({ position: 'bottom', title: '无法打开确认框', icon: 'none' })
 					}
 				})
 			},
@@ -147,17 +162,31 @@
 					uni.showToast({ position: 'bottom', title: '请输入内容', icon: 'none' })
 					return
 				}
+				const resultId = this.noteId != '' ? this.noteId : '' + Date.now()
 				const payload: UTSJSONObject = {
-					id: this.noteId,
+					id: resultId,
 					title: title,
 					content: this.noteContent,
 					agentId: this.getSelectedAgentId(),
 					agentName: this.getSelectedAgentName(),
 				} as UTSJSONObject
-				setRuntimeState('note_editor_result', JSON.stringify(payload))
+				if (setRuntimeState('note_editor_result', JSON.stringify(payload)) == false) {
+					uni.showToast({ position: 'bottom', title: '保存编辑结果失败，请重试', icon: 'none' })
+					return
+				}
 				this.clearEditorPayload()
 				this.dirty = false
-				uni.navigateBack()
+				this.navigateBackSafely()
+			},
+
+			navigateBackSafely() {
+				this.allowBackNavigation = true
+				uni.navigateBack({
+					fail: () => {
+						this.allowBackNavigation = false
+						uni.showToast({ position: 'bottom', title: '无法返回上一页', icon: 'none' })
+					}
+				})
 			},
 
 			clearEditorPayload() {

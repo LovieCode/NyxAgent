@@ -7,6 +7,7 @@
 import { isChooseCancelError, parsePickedImagePath, readPickedImageSelection } from '@/utils/attachment-reader.uts'
 import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+import { copyItem, createDir, deleteItem, exists, getInternalFilesDir, joinPath } from '@/utils/file-manager.uts'
 
 const AVATAR_CROP_RESULT_KEY = 'crop_result'
 const AVATAR_CROP_TARGET_KEY = 'crop_target'
@@ -36,6 +37,60 @@ function clearAvatarCropState(): void {
 	deleteRuntimeState(AVATAR_CROP_RESULT_KEY)
 	deleteRuntimeState(AVATAR_CROP_TARGET_KEY)
 	deleteRuntimeState(AVATAR_CROP_IMAGE_PATH_KEY)
+}
+
+/**
+ * 取消当前裁剪请求。target 为空时用于清理无法识别的损坏状态。
+ */
+export function cancelAvatarCropRequest(target: string): void {
+	if (target != '' && getRuntimeState(AVATAR_CROP_TARGET_KEY) != target) { return }
+	clearAvatarCropState()
+}
+
+function buildPersistedAvatarPath(target: string): string {
+	const filesDir = getInternalFilesDir()
+	if (filesDir == '') { return '' }
+	const avatarDir = joinPath(filesDir, 'avatars')
+	if (exists(avatarDir) == false && createDir(avatarDir, true).ok == false) { return '' }
+	let prefix = 'avatar'
+	if (target == 'profile_avatar') {
+		prefix = 'profile'
+	} else if (target == 'agent_avatar') {
+		prefix = 'agent'
+	} else if (target == 'create_agent_avatar') {
+		prefix = 'agent-create'
+	}
+	return joinPath(avatarDir, prefix + '-' + Date.now() + '-' + Math.floor(Math.random() * 100000) + '.png')
+}
+
+function persistAvatarCropResult(path: string, target: string): string {
+	if (path == '') { return '' }
+	const filesDir = getInternalFilesDir()
+	if (filesDir != '' && path.startsWith(joinPath(filesDir, 'avatars') + '/')) {
+		return path
+	}
+	const persistedPath = buildPersistedAvatarPath(target)
+	if (persistedPath == '') {
+		showAvatarPickerFailure('AVATAR_CROP_STORAGE_FAILED', 'avatar_crop_persist', '头像文件保存失败', '无法创建头像存储目录')
+		return ''
+	}
+	const copied = copyItem(path, persistedPath)
+	if (copied.ok == false) {
+		showAvatarPickerFailure('AVATAR_CROP_COPY_FAILED', 'avatar_crop_persist', '头像文件保存失败', copied.error)
+		return ''
+	}
+	return persistedPath
+}
+
+export function discardManagedAvatarFile(path: string): void {
+	if (path == '') { return }
+	const filesDir = getInternalFilesDir()
+	if (filesDir == '') { return }
+	const avatarPrefix = joinPath(filesDir, 'avatars') + '/'
+	if (path.startsWith(avatarPrefix) == false) { return }
+	if (exists(path) == true) {
+		deleteItem(path, false)
+	}
 }
 
 /**
@@ -69,14 +124,14 @@ export function hasAvatarCropRequest(target: string): boolean {
 	return target != '' && getRuntimeState(AVATAR_CROP_TARGET_KEY) == target
 }
 
-/**
- * 消费指定页面的裁剪结果。即使用户取消裁剪，也会清理本次临时状态。
- */
+/** 消费指定页面已经生成的裁剪结果。空结果仍是进行中的请求，不做清理。 */
 export function consumeAvatarCropResult(target: string): string {
 	if (target == '' || getRuntimeState(AVATAR_CROP_TARGET_KEY) != target) { return '' }
 	const result = getRuntimeState(AVATAR_CROP_RESULT_KEY)
+	if (result == '') { return '' }
+	const persisted = persistAvatarCropResult(result, target)
 	clearAvatarCropState()
-	return result
+	return persisted
 }
 
 function chooseAvatarFromFile(onPicked: (path: string) => void): void {

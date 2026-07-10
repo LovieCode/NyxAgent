@@ -1526,11 +1526,12 @@
 				}, CHAT_STREAM_SCROLL_DELAY_MS)
 			},
 
-			scrollToBottom() {
-				this.streamFollowBottom = true
-				this.resetMessageWindowToRecent()
-				this.isAtBottom = true
-				// 真机流式阶段 scroll-view 高频 scrollTop 会抖；生成中只按帧节流滚动。
+				scrollToBottom() {
+					this.streamFollowBottom = true
+					this.resetMessageWindowToRecent()
+					this.isAtBottom = true
+					this.messageWindowShiftLockUntil = Date.now() + 240
+					// 真机流式阶段 scroll-view 高频 scrollTop 会抖；生成中只按帧节流滚动。
 				if (this.isGenerating == true) {
 					this.scheduleStreamScroll()
 					return

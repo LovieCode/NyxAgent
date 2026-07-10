@@ -366,6 +366,7 @@ function appendAgentFileEntries(agentId: string, dirPath: string, result: UTSJSO
 
 function collectAgentFiles(agents: UTSJSONObject[], specs: UTSJSONObject[]): UTSJSONObject[] {
 	const result: UTSJSONObject[] = []
+	appendDirectorySpec(specs, 'agent-workspaces/')
 	for (let i = 0; i < agents.length; i++) {
 		const rawId = agents[i]['id'] as string | null
 		if (rawId != null && rawId != '') {

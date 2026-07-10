@@ -52,7 +52,7 @@
 
 <script lang="uts">
 	import { deleteRuntimeState, getAppSetting, getRuntimeState, setAppSettings, setRuntimeState } from '@/utils/database.uts'
-	import { chooseAvatarImage, consumeAvatarCropResult, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
+	import { chooseAvatarImage, consumeAvatarCropResult, discardManagedAvatarFile, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
 	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 
 	function showProfileFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
@@ -103,6 +103,7 @@
 				description: '' as string,
 				/** 头像路径（空字符串表示使用默认文字头像） */
 				avatarPath: '' as string,
+				savedAvatarPath: '' as string,
 				hasUnsaved: false as boolean,
 				isConfirmingLeave: false as boolean,
 			}
@@ -133,7 +134,7 @@
 					const result = getRuntimeState('editor_result')
 					if (ready == 'true' || result != '') {
 						const target = getRuntimeState('editor_target')
-						if (target == 'profile-description' || target == '') {
+						if (target == 'profile-description') {
 							this.description = result
 							clearProfileEditorRuntimeState()
 							this.hasUnsaved = true
@@ -142,6 +143,9 @@
 					// 检查裁剪页面是否有返回结果
 					const cropResult = consumeAvatarCropResult('profile_avatar')
 					if (cropResult != '') {
+						if (this.avatarPath != this.savedAvatarPath) {
+							discardManagedAvatarFile(this.avatarPath)
+						}
 						this.avatarPath = cropResult
 						this.hasUnsaved = true
 					}
@@ -162,19 +166,30 @@
 					this.description = (v4 != null && v4 != '') ? v4 : ''
 					const avatar = getAppSetting('profile_avatar')
 					this.avatarPath = (avatar != null) ? avatar : ''
+					this.savedAvatarPath = this.avatarPath
 					this.hasUnsaved = false
 				} catch (e: any) {
 					showProfileFailure('PROFILE_LOAD_FAILED', 'profile_load', '个人资料加载失败', e)
 				}
 			},
 			saveProfile(): boolean {
-				const saved = setAppSettings(
-					['profile_nickname', 'profile_bio', 'profile_email', 'profile_description', 'profile_avatar'],
-					[this.nickname, this.bio, this.email, this.description, this.avatarPath],
-				)
+				let saved = false
+				try {
+					saved = setAppSettings(
+						['profile_nickname', 'profile_bio', 'profile_email', 'profile_description', 'profile_avatar'],
+						[this.nickname, this.bio, this.email, this.description, this.avatarPath],
+					)
+				} catch (e: any) {
+					showProfileFailure('PROFILE_SAVE_FAILED', 'profile_save', '保存个人资料失败', e)
+					return false
+				}
 				if (saved == false) {
 					showProfileFailure('PROFILE_SAVE_FAILED', 'profile_save', '保存个人资料失败', 'setAppSettings 返回 false')
 					return false
+				}
+				if (this.savedAvatarPath != this.avatarPath) {
+					discardManagedAvatarFile(this.savedAvatarPath)
+					this.savedAvatarPath = this.avatarPath
 				}
 				this.hasUnsaved = false
 				uni.showToast({ position: 'bottom', 
@@ -198,6 +213,10 @@
 								navigateProfileBack()
 							}
 						} else {
+							if (this.avatarPath != this.savedAvatarPath) {
+								discardManagedAvatarFile(this.avatarPath)
+								this.avatarPath = this.savedAvatarPath
+							}
 							this.hasUnsaved = false
 							navigateProfileBack()
 						}

@@ -307,11 +307,11 @@
 	/**
 	 * 私聊设置页面 - 编辑昵称/备注/头像/删除私聊
 	 */
-	import { getAgentById, deleteAgent, getAgentEnabledToolIds, NYX_ADMIN_AGENT_ID } from '@/utils/agent.uts'
+	import { getAgentById, deleteAgent, getAgentEnabledToolIds, NYX_ADMIN_AGENT_ID, type AgentDeleteResult } from '@/utils/agent.uts'
 	import { getAllProviders, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
-	import { deleteRuntimeState, getAppSetting, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+	import { getAppSetting, getRuntimeState } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings } from '@/utils/generation-settings.uts'
-	import { chooseAvatarImage, consumeAvatarCropResult, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
+	import { chooseAvatarImage, consumeAvatarCropResult, discardManagedAvatarFile, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
 	import { clearActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
 	import { getSkills, getAgentSkillIds, filterExistingSkillIds } from '@/utils/skills.uts'
 	import {
@@ -322,7 +322,8 @@
 		readAgentProviderModels,
 		resolveAgentModelSelection,
 	} from '@/utils/agent-settings-models.uts'
-	import { saveAgentSettings, type AgentSettingsSaveInput } from '@/utils/agent-settings-save-service.uts'
+	import { saveAgentSettings, type AgentSettingsSaveInput, type AgentSettingsSaveResult } from '@/utils/agent-settings-save-service.uts'
+	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 	import {
 		buildAgentSettingsToolOptions,
 		getAgentSettingsToolCardClass,
@@ -335,7 +336,7 @@
 		toggleAgentSettingsToolSelection,
 	} from '@/utils/agent-settings-tools.uts'
 	import {
-		prepareAgentSettingsTextEditor,
+		clearAgentSettingsEditorRuntime,
 		readAgentSettingsProfileForm,
 		readAgentSettingsSkillDesc,
 		readAgentSettingsSkillMeta,
@@ -343,7 +344,20 @@
 		readAgentSettingsSkillName,
 		isAgentSettingsSkillSelected,
 		toggleAgentSettingsSkillSelection,
+		tryPrepareAgentSettingsTextEditor,
 	} from '@/utils/agent-settings-page-helpers.uts'
+
+	function showAgentSettingsFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+		const error = reportAppErrorFromCause(
+			code,
+			APP_ERROR_CATEGORY_RUNTIME,
+			operation,
+			userMessage,
+			cause,
+			true,
+		)
+		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+	}
 
 	export default {
 		data() {
@@ -354,6 +368,7 @@
 				agentSystemPrompt: '' as string,
 				agentInteractionRules: '' as string,
 				agentAvatar: '' as string,
+				savedAvatarPath: '' as string,
 				currentModel: 'deepseek-v4-flash',
 				allProviders: [] as UTSJSONObject[],
 				allSkills: [] as UTSJSONObject[],
@@ -388,6 +403,8 @@
 				hasUnsaved: false as boolean,
 				/** 防止重复弹出确认离开对话框 */
 				isConfirmingLeave: false as boolean,
+				/** 系统相册或全屏编辑器返回时保留当前页尚未保存的其他字段。 */
+				loadedOnce: false as boolean,
 			}
 		},
 		computed: {
@@ -410,43 +427,41 @@
 				return this.agentId != NYX_ADMIN_AGENT_ID
 			}
 		},
-		onLoad() {
-			this.loadAgent()
-		},
 		onShow() {
-			// 先从数据库加载（避免后续被覆盖）
-			this.loadAgent()
-			// 检查全屏编辑器是否有返回结果
-			const ready = getRuntimeState('editor_result_ready')
-			const result = getRuntimeState('editor_result')
-			if (ready == 'true' || (result != null && result != '')) {
-				const target = getRuntimeState('editor_target')
-				if (target == 'systemPrompt' || target == 'interactionRules' || target == 'desc' || target == null || target == '') {
-					const safeResult = result != null ? result : ''
-					if (target == 'systemPrompt') {
-						this.agentSystemPrompt = safeResult
-					} else if (target == 'interactionRules') {
-						this.agentInteractionRules = safeResult
-					} else {
-						this.agentDesc = safeResult
+			try {
+				if (this.loadedOnce == false) {
+					this.loadAgent()
+					if (this.agentId == '') { return }
+					this.loadedOnce = true
+				}
+				// 检查全屏编辑器是否有返回结果
+				const ready = getRuntimeState('editor_result_ready')
+				const result = getRuntimeState('editor_result')
+				if (ready == 'true' || result != '') {
+					const target = getRuntimeState('editor_target')
+					if (target == 'systemPrompt' || target == 'interactionRules' || target == 'desc') {
+						if (target == 'systemPrompt') {
+							this.agentSystemPrompt = result
+						} else if (target == 'interactionRules') {
+							this.agentInteractionRules = result
+						} else {
+							this.agentDesc = result
+						}
+						clearAgentSettingsEditorRuntime()
+						this.hasUnsaved = true
 					}
-					deleteRuntimeState('editor_result')
-					deleteRuntimeState('editor_result_ready')
-					deleteRuntimeState('editor_target')
-					deleteRuntimeState('editor_mode')
-					deleteRuntimeState('editor_content')
-					deleteRuntimeState('editor_title')
-					deleteRuntimeState('editor_placeholder')
-					deleteRuntimeState('editor_readonly')
-					// 标记有未保存的更改
+				}
+				// 检查裁剪页面是否有返回结果
+				const cropResult = consumeAvatarCropResult('agent_avatar')
+				if (cropResult != '') {
+					if (this.agentAvatar != this.savedAvatarPath) {
+						discardManagedAvatarFile(this.agentAvatar)
+					}
+					this.agentAvatar = cropResult
 					this.hasUnsaved = true
 				}
-			}
-			// 检查裁剪页面是否有返回结果
-			const cropResult = consumeAvatarCropResult('agent_avatar')
-			if (cropResult != '') {
-				this.agentAvatar = cropResult
-				this.hasUnsaved = true
+			} catch (e: any) {
+				showAgentSettingsFailure('AGENT_SETTINGS_RETURN_STATE_FAILED', 'agent_settings_consume_page_result', '页面返回结果读取失败', e)
 			}
 		},
 		/** Android 系统返回键 / iOS 滑动返回 */
@@ -459,27 +474,29 @@
 		},
 		methods: {
 			loadAgent() {
-				const id = getRuntimeState('active_agent_id')
-				if (id == null || id == '') {
-					uni.showToast({ position: 'bottom',
-						title: '未选择联系人',
-						icon: 'none'
-					})
-					return
-				}
-				this.agentId = id
-				this.hasUnsaved = false
-				this.allProviders = getAllProviders()
-				this.allSkills = getSkills()
-				this.availableTools = this.buildToolOptions()
-				const agent = getAgentById(id)
-				if (agent != null) {
+				try {
+					const id = getRuntimeState('active_agent_id')
+					if (id == '') {
+						showAgentSettingsFailure('AGENT_SETTINGS_ID_MISSING', 'agent_settings_load', '未选择联系人', 'active_agent_id 为空')
+						return
+					}
+					const agent = getAgentById(id)
+					if (agent == null) {
+						showAgentSettingsFailure('AGENT_SETTINGS_AGENT_MISSING', 'agent_settings_load', '联系人不存在或已被删除', id)
+						return
+					}
+					this.agentId = id
+					this.hasUnsaved = false
+					this.allProviders = getAllProviders()
+					this.allSkills = getSkills()
+					this.availableTools = this.buildToolOptions()
 					const profile = readAgentSettingsProfileForm(agent, this.currentModel)
 					this.agentName = profile.name
 					this.agentDesc = profile.desc
 					this.agentSystemPrompt = profile.systemPrompt
 					this.agentInteractionRules = profile.interactionRules
 					this.agentAvatar = profile.avatar
+					this.savedAvatarPath = profile.avatar
 					this.currentModel = profile.model
 					this.ttsVoice = profile.ttsVoice
 					this.ttsVolume = profile.ttsVolume
@@ -487,8 +504,10 @@
 					this.selectedSkillIds = filterExistingSkillIds(getAgentSkillIds(agent))
 					this.selectedToolIds = getAgentEnabledToolIds(agent, false)
 					this.loadGenerationSettings(agent)
+					this.initModelSelection()
+				} catch (e: any) {
+					showAgentSettingsFailure('AGENT_SETTINGS_LOAD_FAILED', 'agent_settings_load', '联系人设置加载失败', e)
 				}
-				this.initModelSelection()
 			},
 
 			loadGenerationSettings(agent: UTSJSONObject) {
@@ -607,25 +626,30 @@
 
 			/** 打开全屏编辑器编辑联系人备注 */
 			openDescEditor() {
-				prepareAgentSettingsTextEditor(this.agentDesc, '编辑描述', 'desc', '写一下这个联系人的人设、用途或备注')
-				uni.navigateTo({
-					url: '/pages/common/editor/editor'
-				})
+				this.openTextEditor(this.agentDesc, '编辑描述', 'desc', '写一下这个联系人的人设、用途或备注')
 			},
 
 			/** 打开全屏编辑器编辑系统提示词 */
 			openSystemPromptEditor() {
-				prepareAgentSettingsTextEditor(this.agentSystemPrompt, '编辑提示词', 'systemPrompt', '定义说话风格、能力边界和输出习惯')
-				uni.navigateTo({
-					url: '/pages/common/editor/editor'
-				})
+				this.openTextEditor(this.agentSystemPrompt, '编辑提示词', 'systemPrompt', '定义说话风格、能力边界和输出习惯')
 			},
 
 			/** 打开每轮临时注入规则的全屏编辑器。 */
 			openInteractionRulesEditor() {
-				prepareAgentSettingsTextEditor(this.agentInteractionRules, '编辑对话规则', 'interactionRules', '定义距离感、回复长度、知识边界和对话习惯')
+				this.openTextEditor(this.agentInteractionRules, '编辑对话规则', 'interactionRules', '定义距离感、回复长度、知识边界和对话习惯')
+			},
+
+			openTextEditor(content: string, title: string, target: string, placeholder: string): void {
+				if (tryPrepareAgentSettingsTextEditor(content, title, target, placeholder) == false) {
+					showAgentSettingsFailure('AGENT_SETTINGS_EDITOR_STATE_FAILED', 'agent_settings_editor_prepare', '无法准备全屏编辑器', '编辑器临时状态保存失败')
+					return
+				}
 				uni.navigateTo({
-					url: '/pages/common/editor/editor'
+					url: '/pages/common/editor/editor',
+					fail: (err: any) => {
+						clearAgentSettingsEditorRuntime()
+						showAgentSettingsFailure('AGENT_SETTINGS_EDITOR_ROUTE_FAILED', 'agent_settings_editor_navigate', '无法打开全屏编辑器', err)
+					}
 				})
 			},
 
@@ -670,12 +694,19 @@
 					selectedSkillIds: this.selectedSkillIds,
 					selectedToolIds: this.selectedToolIds,
 				} as AgentSettingsSaveInput
-				const result = saveAgentSettings(input, getGlobalGenerationSettings())
+				let result = null as AgentSettingsSaveResult | null
+				try {
+					result = saveAgentSettings(input, getGlobalGenerationSettings())
+				} catch (e: any) {
+					showAgentSettingsFailure('AGENT_SETTINGS_SAVE_FAILED', 'agent_settings_save', '联系人设置保存失败', e)
+					return false
+				}
+				if (result == null) {
+					showAgentSettingsFailure('AGENT_SETTINGS_SAVE_EMPTY', 'agent_settings_save', '联系人设置保存失败', '保存服务未返回结果')
+					return false
+				}
 				if (result.ok == false) {
-					uni.showToast({ position: 'bottom',
-						title: result.error,
-						icon: 'none'
-					})
+					showAgentSettingsFailure('AGENT_SETTINGS_SAVE_REJECTED', 'agent_settings_save', result.error, result.error)
 					return false
 				}
 				const generation = result.generation
@@ -687,6 +718,10 @@
 					this.temperatureStr = generation.temperatureStr
 					this.maxTokensStr = generation.maxTokensStr
 					this.maxIterationsStr = generation.maxIterationsStr
+				}
+				if (this.savedAvatarPath != this.agentAvatar) {
+					discardManagedAvatarFile(this.savedAvatarPath)
+					this.savedAvatarPath = this.agentAvatar
 				}
 				this.hasUnsaved = false
 				uni.showToast({ position: 'bottom',
@@ -700,7 +735,11 @@
 				if (this.saveSettingsOnly() == false) {
 					return
 				}
-				uni.navigateBack()
+				uni.navigateBack({
+					fail: (err: any) => {
+						showAgentSettingsFailure('AGENT_SETTINGS_BACK_FAILED', 'agent_settings_save_back', '设置已保存，但无法返回上一页', err)
+					}
+				})
 			},
 
 			confirmDelete() {
@@ -713,10 +752,24 @@
 					content: '确定要删除「' + this.agentName + '」吗？此操作无法撤销。',
 					success: (res) => {
 						if (res.confirm == true) {
-							const deleteResult = deleteAgent(this.agentId)
-							if (deleteResult.ok == false) {
-								uni.showToast({ position: 'bottom', title: '删除失败', icon: 'none' })
+							let deleteResult = null as AgentDeleteResult | null
+							try {
+								deleteResult = deleteAgent(this.agentId)
+							} catch (e: any) {
+								showAgentSettingsFailure('AGENT_DELETE_FAILED', 'agent_delete', '删除联系人失败', e)
 								return
+							}
+							if (deleteResult == null) {
+								showAgentSettingsFailure('AGENT_DELETE_EMPTY', 'agent_delete', '删除联系人失败', '删除服务未返回结果')
+								return
+							}
+							if (deleteResult.ok == false) {
+								showAgentSettingsFailure('AGENT_DELETE_REJECTED', 'agent_delete', '删除联系人失败', 'deleteAgent 返回失败')
+								return
+							}
+							discardManagedAvatarFile(this.agentAvatar)
+							if (this.savedAvatarPath != this.agentAvatar) {
+								discardManagedAvatarFile(this.savedAvatarPath)
 							}
 							// 如果删除的是当前选中的私聊，清除 active_agent_id
 							const activeId = getRuntimeState('active_agent_id')
@@ -729,9 +782,15 @@
 							})
 							// 删除后清空已失效的私聊详情栈，回到会话列表。
 							uni.reLaunch({
-								url: '/pages/agents/agents'
+								url: '/pages/agents/agents',
+								fail: (err: any) => {
+									showAgentSettingsFailure('AGENT_DELETE_ROUTE_FAILED', 'agent_delete_relaunch', '联系人已删除，但无法返回会话列表', err)
+								}
 							})
 						}
+					},
+					fail: (err: any) => {
+						showAgentSettingsFailure('AGENT_DELETE_CONFIRM_FAILED', 'agent_delete_confirm', '无法打开删除确认框', err)
 					}
 				})
 			},
@@ -739,7 +798,11 @@
 			/** 弹出确认离开对话框，供 goBack / onBackPress 共用 */
 			confirmLeave() {
 				if (this.hasUnsaved == false) {
-					uni.navigateBack()
+					uni.navigateBack({
+						fail: (err: any) => {
+							showAgentSettingsFailure('AGENT_SETTINGS_BACK_FAILED', 'agent_settings_back', '无法返回上一页', err)
+						}
+					})
 					return
 				}
 				if (this.isConfirmingLeave == true) {
@@ -755,12 +818,28 @@
 						this.isConfirmingLeave = false
 						if (res.confirm == true) {
 							if (this.saveSettingsOnly() == true) {
-								uni.navigateBack()
+								uni.navigateBack({
+									fail: (err: any) => {
+										showAgentSettingsFailure('AGENT_SETTINGS_BACK_FAILED', 'agent_settings_confirm_save_back', '设置已保存，但无法返回上一页', err)
+									}
+								})
 							}
 						} else {
+							if (this.agentAvatar != this.savedAvatarPath) {
+								discardManagedAvatarFile(this.agentAvatar)
+								this.agentAvatar = this.savedAvatarPath
+							}
 							this.hasUnsaved = false
-							uni.navigateBack()
+							uni.navigateBack({
+								fail: (err: any) => {
+									showAgentSettingsFailure('AGENT_SETTINGS_BACK_FAILED', 'agent_settings_discard_back', '无法返回上一页', err)
+								}
+							})
 						}
+					},
+					fail: (err: any) => {
+						this.isConfirmingLeave = false
+						showAgentSettingsFailure('AGENT_SETTINGS_LEAVE_CONFIRM_FAILED', 'agent_settings_leave_confirm', '无法打开退出确认框', err)
 					}
 				})
 			},

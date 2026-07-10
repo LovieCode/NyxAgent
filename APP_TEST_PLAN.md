@@ -25,23 +25,23 @@
 
 | 区域 | 页面 / 功能 | 核心检查 | 状态 | 证据 / 备注 |
 | --- | --- | --- | --- | --- |
-| 主导航 | `pages/agents/agents` | 筛选、私聊/群聊入口、新建 Agent、新建群聊、头像选择、首次引导 | 测试中 | ADB 已通过私聊/群聊筛选与会话入口；创建、头像和首次引导待测 |
-| 主导航 | `pages/todo/todo` | 待办新增/完成/筛选/删除、笔记搜索/新增/编辑 | 测试中 | ADB 已通过页面进入、列表与筛选布局；写操作待测 |
+| 主导航 | `pages/agents/agents` | 筛选、私聊/群聊入口、新建 Agent、新建群聊、头像选择、首次引导 | 测试中 | ADB 已通过私聊/群聊筛选与会话入口、Agent 新建/删除；首次引导待测 |
+| 主导航 | `pages/todo/todo` | 待办新增/完成/筛选/删除、笔记搜索/新增/编辑 | ADB 通过 | 已实测待办新增、单击完成、筛选、删除，以及笔记新增、编辑、保存、删除；测试数据已清理 |
 | 主导航 | `pages/files/files` | 根目录、面包屑、搜索、排序、导入、新建文件/目录、打开、重命名、删除 | 测试中 | ADB 已通过根目录、名称回退与主导航；导入和写操作待测 |
 | 主导航 | `pages/settings/settings` | 所有设置入口、资料摘要、状态展示 | 测试中 | ADB 已通过设置列表与运行诊断入口；各设置写操作继续回归 |
 | 设置 | `pages/settings/diagnostics/diagnostics` | 错误记录、诊断编号、技术详情、清空、空状态 | 测试中 | ADB 已通过入口与空状态；错误注入、详情和清空待测 |
 | 私聊 | `pages/chat/chat` | 文本发送、流式状态、停止/续跑、工具栏、图片/拍照/文件、滚动、重进恢复 | 测试中 | 已完成进入、历史渲染、输入框焦点基线；键盘修复待回归 |
-| 私聊 | `pages/agent-settings/agent-settings` | 名称/备注/头像/Prompt/规则/模型/语音/生成参数/Skills/工具/截断/删除 | 待测 | 键盘遮挡问题优先 |
+| 私聊 | `pages/agent-settings/agent-settings` | 名称/备注/头像/Prompt/规则/模型/语音/生成参数/Skills/工具/截断/删除 | 测试中 | ADB 已通过临时改名、全屏编辑往返保留未保存状态、不保存退出、Agent 删除；其余设置继续覆盖 |
 | 群聊 | `pages/group-chat/group-chat` | 文本/媒体、调度、暂停、后台续流、成员消息、上下文/文件/记忆入口 | 测试中 | 干净编译后 ADB 已通过历史渲染与页面进入；发送、后台流和键盘待测 |
 | 群聊 | `pages/group-chat-settings/group-chat-settings` | 群名、成员、调度 Prompt、共享 Prompt、未保存退出 | 测试中 | ADB 已通过页面进入和成员列表；编辑、保存与退出保护待测 |
 | 群聊 | `pages/group-chat-sessions/group-chat-sessions` | 会话新增、切换、重命名、删除 | 测试中 | ADB 已通过页面进入和当前会话展示；写操作待测 |
-| 历史 | `pages/history/history` | 私聊/群上下文切换、预览、恢复、批量删除、清空 | 待测 | |
-| 编辑器 | `pages/note-editor/note-editor` | 新建/编辑/保存/返回保护 | 测试中 | 已统一为页面 resize，关闭固定编辑区的控件级上推；待回归 |
-| 编辑器 | `pages/common/editor/editor` | 全屏编辑、保存、取消、空内容、长文本 | 测试中 | 已统一为页面 resize，关闭固定编辑区的控件级上推；待回归 |
-| 媒体 | `pages/common/crop/crop` | 图片加载、缩放/移动、裁剪、取消 | 测试中 | 设置头像已成功打开系统 Picker 并显示测试 PNG；选择、裁剪、保存与取消路径继续执行 |
-| 上下文 | `pages/context-preview/context-preview` | 请求快照、标签顺序、空状态、长内容滚动 | 待测 | |
-| 记忆 | `pages/memory/memory` | 分类/目标切换、新增/编辑/删除、搜索、记忆整理状态 | 待测 | |
-| 设置 | `pages/settings/profile/profile` | 用户名、简介、详细介绍、头像、保存与私聊注入 | 测试中 | 设置头像相册入口已在 emulator-5554 打开；裁剪保存和权限分支继续执行 |
+| 历史 | `pages/history/history` | 私聊/群上下文切换、预览、恢复、批量删除、清空 | 测试中 | ADB 已通过历史预览、切换到对话和管理模式选择；未对用户数据执行批量删除 |
+| 编辑器 | `pages/note-editor/note-editor` | 新建/编辑/保存/返回保护 | ADB 通过 | 新建、保存、删除及 Android 物理返回放弃确认均通过 |
+| 编辑器 | `pages/common/editor/editor` | 全屏编辑、保存、取消、空内容、长文本 | 测试中 | 跨页保留未保存内容已通过；补齐 Android 物理返回确认，文件读写和长文本继续覆盖 |
+| 媒体 | `pages/common/crop/crop` | 图片加载、缩放/移动、裁剪、取消 | ADB 通过 | 系统 Picker -> 裁剪页、返回取消、完成裁剪均通过；无 `CROP_SOURCE_MISSING` |
+| 上下文 | `pages/context-preview/context-preview` | 请求快照、标签顺序、空状态、长内容滚动 | 测试中 | ADB 已通过原始上下文展示、长内容滚动与复制入口 |
+| 记忆 | `pages/memory/memory` | 分类/目标切换、新增/编辑/删除、搜索、记忆整理状态 | 测试中 | 短期缓存保存、清空确认和重进持久化已通过；重要信息 CRUD 继续覆盖 |
+| 设置 | `pages/settings/profile/profile` | 用户名、简介、详细介绍、头像、保存与私聊注入 | 测试中 | 相册选择、裁剪、内部文件落盘和“不保存”临时文件回收已通过；权限拒绝和资料保存继续覆盖 |
 | 设置 | `pages/settings/basic/basic` | 提供商列表、启停、默认配置入口 | 待测 | |
 | 设置 | `pages/settings/basic/provider-edit` | 新增/编辑提供商、URL/API Key/模型、校验、删除 | 待测 | 键盘遮挡问题优先 |
 | 设置 | `pages/settings/model/model` | 旧模型设置兼容与跳转 | 待测 | |
@@ -49,7 +49,7 @@
 | 设置 | `pages/settings/generation/generation` | 温度、Token、迭代、流式配置与边界值 | 待测 | |
 | 设置 | `pages/settings/plugin/plugin` | 插件配置、启停、输入校验、错误态 | 待测 | |
 | 设置 | `pages/settings/skills/skills` | Skill 新增/编辑/删除、Agent 绑定、长文本编辑 | 待测 | |
-| 设置 | `pages/settings/data/data` | 导出、导入、取消、无效文件、覆盖确认 | 测试中 | 已完成清单校验、SQLite 事务、工作区 staging 恢复与用户目录恢复；ADB 文件选择/真实 ZIP 回归待执行 |
+| 设置 | `pages/settings/data/data` | 导出、导入、取消、无效文件、覆盖确认 | 测试中 | ADB 安全备份生成与 Android 分享选择器通过；导入增加字段/资源完整性拒绝，真实覆盖恢复仍待隔离数据回归 |
 | 设置 | `pages/settings/about/about` | 版本信息、外链打开 | 待测 | |
 | 通用组件 | `rice-ui/action-sheet` | 展示、选择、取消、遮罩关闭 | 待测 | 通过业务入口覆盖 |
 | 通用组件 | `rice-ui/dialog` | 确认、取消、输入校验、遮罩行为 | 待测 | 通过业务入口覆盖 |
@@ -92,6 +92,14 @@
 | ERROR-003 | P2 | App 每次启动尝试重复 `ALTER TABLE`，logcat 持续输出 `duplicate column` | 已修复，ADB 通过 | 迁移前使用 `PRAGMA table_info` 检查字段；冷启动清空 logcat 后无重复字段错误 | `utils/database-core.uts`、`utils/database.uts` |
 | RUNTIME-002 | P0 | 修改导出 UTS 函数返回值后，Android 增量缓存混用旧调用方与新实现，进入群聊触发 `NoSuchMethodError` | 已修复，ADB 通过 | 恢复既有公共函数 JVM 签名；需要结果的页面改用已有底层状态写入；`--cleanCache true` 重编 28 页面后群聊入口正常 | Agent/历史/文件/群聊页面与 runtime state helpers |
 | DATA-008 | P1 | 默认群聊创建或调度持久化中途失败时可能残留数据库行、目录，部分失败只写日志 | 已修复，ADB 入口通过 | 创建失败事务清理 9 张关联表并回收工作区；复盘、任务、记忆、指标、上下文和快照写入失败进入统一诊断 | `utils/database-group-chat.uts`、`utils/group-chat-service.uts`、`utils/group-chat-scheduler.uts` 等 |
+| DATA-009 | P0 | 同 Schema 的不完整备份缺少数组/资源条目时仍可预览并把现有数据覆盖为空，ZIP 漏文件也会假成功 | 已修复，编译通过 | 导入前强制校验全部消费字段和资源映射；ZIP 任一清单条目写失败即删除失败包；0 Agent 备份也包含空工作区根目录 | `utils/data-import.uts`、`utils/data-export.uts`、`utssdk/app-data-export/index.uts` |
+| DATA-010 | P1 | 全量/设置导入跨 SQLite、storage、Agent/Skill 文件和工作区，后半段失败无法统一回滚 | 待重构 | 当前已阻止不完整包和资源缺失进入写阶段，但跨介质提交仍不是单一原子事务 | 后续需要 staged import + 快照回滚协议 |
+| DATA-011 | P1 | Todo/Note/文件编辑使用覆盖写，进程中断或磁盘异常可能留下空文件或半文件 | 待重构 | 页面已检查写入结果并显示失败，但底层 `File.writeText` 不具备崩溃原子性 | 后续需要同目录临时文件、落盘同步和原子替换 |
+| DATA-012 | P1 | 安全备份仅恢复设置时会把现有 AstrBot API Key 用空值覆盖 | 已修复，编译通过 | 空的 `settings_api_key` 与 `settings_astrbot_api_key` 均保留本机旧值 | `utils/database-settings.uts` |
+| MEDIA-001 | P1 | 系统相册返回会先触发来源页 `onShow`，空裁剪结果被误消费，裁剪页随后报 `CROP_SOURCE_MISSING` | 已修复，ADB 通过 | 空结果保留请求；裁剪取消显式清理；完成结果持久化到内部 avatars，放弃保存会回收临时文件 | `utils/avatar-image-picker.uts`、裁剪/资料/Agent 页面 |
+| UI-003 | P1 | 笔记和通用全屏编辑器的 Android 物理返回绕过放弃确认 | 已修复，ADB 通过 | `onBackPress` 统一进入确认逻辑，放弃前清 dirty 防止重复确认循环 | `pages/note-editor/note-editor.uvue`、`pages/common/editor/editor.uvue` |
+| PERF-002 | P1 | 长消息滚到底部先写 `scrollTop=0`，误触双向滑窗向旧消息换窗，造成底部位置错误 | 已修复，长历史待回归 | 程序化滚底期间锁定窗口换页，避免 0 脉冲参与边缘检测 | 私聊/群聊页面 |
+| RUNTIME-003 | P1 | 兼容旧页面保留的 void 包装器因无可达调用被 DCE 删除，热更新仍可能 `NoSuchMethodError` | 已修复，字节码验证通过 | 新 boolean 入口真实调用旧 void ABI；`javap` 确认两个 JVM 签名同时存在 | `utils/agent-settings-page-helpers.uts` |
 
 ## 修改记录
 
@@ -124,6 +132,10 @@
 | 16 | 统一错误链 | 结构化诊断、LLM transport error、失败气泡、设置事务与文件操作错误提示 | HBuilderX 5.15 Android class 全量及多轮热编译通过；ADB 冷启动日志通过 | `1603d00` |
 | 17 | 页面错误与生命周期复审 | Agent、历史、文件、头像裁剪、资料、诊断、Provider、Skill 和导入流程补齐状态写入检查、统一提示与离页保护 | UTS 静态扫描、HBuilderX 5.15 `--cleanCache` 全量编译通过；ADB 主页面与诊断入口通过 | `997e7b1` |
 | 18 | 群聊回滚、持久化与 ABI 复审 | 群聊创建失败回滚数据库和工作区；调度副作用写入失败可见；恢复既有导出函数 JVM 签名 | SQLite 注入回滚验证、28 页面 Android class 干净编译、ADB 群聊/会话/设置入口通过 | `997e7b1` |
+| 19 | 设置、Provider 与导入复审 | Provider 删除引用清理、默认模型原子保存、禁用 Provider 过滤、不完整备份和资源缺失拒绝 | HBuilderX Android 差量编译、UTS 扫描、ADB 设置页与安全导出通过 | 本轮提交 |
+| 20 | 历史、记忆、Todo 与编辑器复审 | 修复 Todo 双切换、定向文件更新、短期记忆清空、历史恢复、物理返回确认 | HBuilderX Android 差量编译；ADB Todo/Note CRUD、Memory 清空、历史恢复和物理返回通过 | 本轮提交 |
+| 21 | 头像与 Agent 生命周期复审 | 相册返回竞态、内部头像持久化、取消/不保存回收、Agent 创建删除与未保存状态保护 | 28 页面 Android class 干净编译；ADB 相册、裁剪、取消、完成和临时文件回收通过 | 本轮提交 |
+| 22 | 独立代码审查追加轮 | 检查 JVM ABI/DCE、跨介质数据一致性、页面生命周期、长消息滑窗和键盘延迟回调 | 三个独立审查代理 + `javap` + `git diff --check` + ADB | 本轮提交 |
 
 ## 执行日志
 
@@ -147,6 +159,14 @@
 | 2026-07-11 03:45 | ADB 进入群聊时发现 Android ABI 错配 | `setActiveGroupChat(String): void` 调用方与增量缓存中的 boolean 实现混用，触发 `NoSuchMethodError`；恢复公共签名并改用原子 runtime state 写入 |
 | 2026-07-11 04:12 | HBuilderX CLI `--cleanCache true` 全量部署 | 28 页面重新编译为 Android class 成功，同步并启动 `emulator-5554` |
 | 2026-07-11 04:13 | ADB 主要页面回归 | 群聊、群会话、群设置、私聊、待办、文件、设置和运行诊断均可进入；logcat 无 Java fatal、ABI 错误或未捕获 UTS 异常 |
+| 2026-07-11 04:25 | ADB Todo / Note CRUD | 新增、完成、筛选、删除待办；新增、编辑、保存、删除笔记均通过，测试数据已清理 |
+| 2026-07-11 04:35 | ADB 历史、记忆与上下文 | 历史预览并恢复对话通过；短期缓存清空问题复现后修复，重进仍为 0/64；原始上下文展示和复制入口通过 |
+| 2026-07-11 04:55 | ADB Agent 生命周期 | 临时改名进入全屏编辑后仍保留，选择不保存恢复原名；新建并删除测试 Agent，未残留测试数据 |
+| 2026-07-11 05:07 | ADB 头像相册竞态复现 | 系统 Picker 返回后来源页误清请求，裁剪页报 `CROP_SOURCE_MISSING` |
+| 2026-07-11 05:08 | ADB 头像修复回归 | 系统 Picker 正常进入裁剪；取消无错误；完成生成内部 `files/avatars/profile-*.png`，资料页不保存后文件被回收 |
+| 2026-07-11 05:15 | 三轮独立代码审查 | 发现旧 ABI 被 DCE、备份字段/资源假成功、物理返回绕过确认、滚底触发旧窗口、键盘延迟离页执行等问题并修复 |
+| 2026-07-11 05:20 | ADB Android 物理返回 | 未保存笔记按系统返回弹出放弃确认；修复 dirty 清理后选择放弃可正常返回且不产生笔记 |
+| 2026-07-11 05:26 | 最终 HBuilderX CLI `--cleanCache true` 部署 | 28 页面 Android class 全量编译成功并同步模拟器；物理返回复测无 `StackOverflowError`、Java fatal、ABI 或 UTS 未捕获异常 |
 
 ## 手动真机回归
 

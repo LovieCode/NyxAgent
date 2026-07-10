@@ -510,6 +510,7 @@ export function getAllMemoryBuffersForExport(): UTSJSONObject[] {
 	const db = getDb()
 	const result = db.query('SELECT * FROM memory_buffer ORDER BY updated_at DESC')
 	db.close()
+	assertSqlSuccess(result, '导出短记忆缓存失败')
 	return rowsToObjects(result)
 }
 
@@ -518,6 +519,7 @@ export function getAllMemoryCoreForExport(): UTSJSONObject[] {
 	const db = getDb()
 	const result = db.query('SELECT * FROM agent_memory_core ORDER BY updated_at DESC')
 	db.close()
+	assertSqlSuccess(result, '导出重要记忆失败')
 	return rowsToObjects(result)
 }
 
@@ -527,6 +529,7 @@ export function getAllConversationTokenUsageStatsForExport(): UTSJSONObject[] {
 	ensureConversationTokenUsageStatsTable(db)
 	const result = db.query('SELECT * FROM conversation_token_usage_stats ORDER BY updated_at DESC')
 	db.close()
+	assertSqlSuccess(result, '导出会话统计失败')
 	return rowsToObjects(result)
 }
 
@@ -536,23 +539,44 @@ export function getAllMemoryCompactionStatesForExport(): UTSJSONObject[] {
 	ensureMemoryCompactionStateTable(db)
 	const result = db.query('SELECT * FROM agent_memory_compaction_state ORDER BY updated_at DESC')
 	db.close()
+	assertSqlSuccess(result, '导出记忆整理状态失败')
 	return rowsToObjects(result)
 }
 
 export function getAllGroupChatDataForExport(): UTSJSONObject {
 	const db = getDb()
 	ensureGroupChatTables(db)
-	const groupChats = rowsToObjects(db.query('SELECT * FROM group_chats ORDER BY updated_at DESC'))
-	const groupMembers = rowsToObjects(db.query('SELECT * FROM group_chat_members ORDER BY group_id ASC, order_index ASC'))
-	const groupSessions = rowsToObjects(db.query('SELECT * FROM group_chat_sessions ORDER BY updated_at DESC'))
-	const groupMessages = rowsToObjects(db.query('SELECT * FROM group_chat_messages ORDER BY group_id ASC, session_id ASC, timestamp ASC, updated_at ASC'))
-	const groupContextRecords = rowsToObjects(db.query('SELECT * FROM group_agent_context_records ORDER BY created_at DESC'))
-	const groupReviews = rowsToObjects(db.query('SELECT * FROM group_chat_reviews ORDER BY created_at DESC'))
-	const groupTasks = rowsToObjects(db.query('SELECT * FROM group_chat_tasks ORDER BY updated_at DESC'))
-	const groupMemories = rowsToObjects(db.query('SELECT * FROM group_agent_memories ORDER BY updated_at DESC'))
-	const groupMetrics = rowsToObjects(db.query('SELECT * FROM group_agent_metrics ORDER BY updated_at DESC'))
-	const groupState = rowsToObjects(db.query('SELECT * FROM group_chat_state ORDER BY updated_at DESC'))
+	const groupChatsResult = db.query('SELECT * FROM group_chats ORDER BY updated_at DESC')
+	const groupMembersResult = db.query('SELECT * FROM group_chat_members ORDER BY group_id ASC, order_index ASC')
+	const groupSessionsResult = db.query('SELECT * FROM group_chat_sessions ORDER BY updated_at DESC')
+	const groupMessagesResult = db.query('SELECT * FROM group_chat_messages ORDER BY group_id ASC, session_id ASC, timestamp ASC, updated_at ASC')
+	const groupContextRecordsResult = db.query('SELECT * FROM group_agent_context_records ORDER BY created_at DESC')
+	const groupReviewsResult = db.query('SELECT * FROM group_chat_reviews ORDER BY created_at DESC')
+	const groupTasksResult = db.query('SELECT * FROM group_chat_tasks ORDER BY updated_at DESC')
+	const groupMemoriesResult = db.query('SELECT * FROM group_agent_memories ORDER BY updated_at DESC')
+	const groupMetricsResult = db.query('SELECT * FROM group_agent_metrics ORDER BY updated_at DESC')
+	const groupStateResult = db.query('SELECT * FROM group_chat_state ORDER BY updated_at DESC')
 	db.close()
+	assertSqlSuccess(groupChatsResult, '导出群聊列表失败')
+	assertSqlSuccess(groupMembersResult, '导出群聊成员失败')
+	assertSqlSuccess(groupSessionsResult, '导出群聊会话失败')
+	assertSqlSuccess(groupMessagesResult, '导出群聊消息失败')
+	assertSqlSuccess(groupContextRecordsResult, '导出群聊上下文失败')
+	assertSqlSuccess(groupReviewsResult, '导出群聊复盘失败')
+	assertSqlSuccess(groupTasksResult, '导出群聊任务失败')
+	assertSqlSuccess(groupMemoriesResult, '导出群聊记忆失败')
+	assertSqlSuccess(groupMetricsResult, '导出群聊指标失败')
+	assertSqlSuccess(groupStateResult, '导出群聊状态失败')
+	const groupChats = rowsToObjects(groupChatsResult)
+	const groupMembers = rowsToObjects(groupMembersResult)
+	const groupSessions = rowsToObjects(groupSessionsResult)
+	const groupMessages = rowsToObjects(groupMessagesResult)
+	const groupContextRecords = rowsToObjects(groupContextRecordsResult)
+	const groupReviews = rowsToObjects(groupReviewsResult)
+	const groupTasks = rowsToObjects(groupTasksResult)
+	const groupMemories = rowsToObjects(groupMemoriesResult)
+	const groupMetrics = rowsToObjects(groupMetricsResult)
+	const groupState = rowsToObjects(groupStateResult)
 	return {
 		groupChats: groupChats,
 		groupMembers: groupMembers,

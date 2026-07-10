@@ -248,7 +248,6 @@
 		readMemoryAgentId,
 		readMemoryAgentName,
 		readMemoryItemId,
-		readUniModalConfirm,
 		resolveMemoryTargetId,
 	} from '@/utils/memory-page-helpers.uts'
 	import { consumeMemoryRouteAgentId, consumeMemoryRouteConversationId, getActiveAgentRuntimeId, getActiveConversationRuntimeId } from '@/utils/runtime-state.uts'
@@ -310,6 +309,10 @@
 			this.loadManagerLogs()
 		},
 		methods: {
+			showMemoryFailure(message: string): void {
+				uni.showToast({ position: 'bottom', title: message, icon: 'none' })
+			},
+
 			readAgentId(agent: UTSJSONObject): string {
 				return readMemoryAgentId(agent)
 			},
@@ -375,14 +378,18 @@
 			},
 
 			loadMemory() {
-				this.memoryEnabled = getMemoryEnabled()
-				const viewPersonId = this.buildViewTargetPersonId()
-				this.bufferContent = getMemoryBuffer(this.agentId, this.personId, this.conversationId)
-				// 有搜索关键词时执行内容搜索，否则使用普通列表
-				if (this.searchQuery.trim() != '') {
-					this.doSearch(viewPersonId)
-				} else {
-					this.memoryList = listCoreMemory(this.agentId, viewPersonId, this.conversationId, true)
+				try {
+					this.memoryEnabled = getMemoryEnabled()
+					const viewPersonId = this.buildViewTargetPersonId()
+					this.bufferContent = getMemoryBuffer(this.agentId, this.personId, this.conversationId)
+					// 有搜索关键词时执行内容搜索，否则使用普通列表
+					if (this.searchQuery.trim() != '') {
+						this.doSearch(viewPersonId)
+					} else {
+						this.memoryList = listCoreMemory(this.agentId, viewPersonId, this.conversationId, true)
+					}
+				} catch (_e: any) {
+					this.showMemoryFailure('记忆加载失败')
 				}
 			},
 
@@ -404,13 +411,24 @@
 			},
 
 			saveMemoryEnabled() {
-				setMemoryEnabled(this.memoryEnabled)
+				try {
+					setMemoryEnabled(this.memoryEnabled)
+				} catch (_e: any) {
+					this.memoryEnabled = this.memoryEnabled == false
+					this.showMemoryFailure('记忆开关保存失败')
+					return
+				}
 				uni.showToast({ position: 'bottom',  title: '已保存', icon: 'success' })
 			},
 
 			saveBuffer() {
-				const finalContent = updateMemoryBuffer(this.agentId, this.personId, this.conversationId, this.bufferContent)
-				this.bufferContent = finalContent
+				try {
+					const finalContent = updateMemoryBuffer(this.agentId, this.personId, this.conversationId, this.bufferContent)
+					this.bufferContent = finalContent
+				} catch (_e: any) {
+					this.showMemoryFailure('短缓存保存失败')
+					return
+				}
 				uni.showToast({ position: 'bottom',  title: '短缓存已保存', icon: 'success' })
 			},
 
@@ -418,13 +436,19 @@
 				uni.showModal({
 					title: '清空短缓存',
 					content: '确认清空 64 字短缓存？',
-					success: (res: any) => {
-						if (readUniModalConfirm(res) == true) {
-							clearMemoryBuffer(this.agentId, this.personId, this.conversationId)
+					success: (res) => {
+						if (res.confirm == true) {
+							try {
+								clearMemoryBuffer(this.agentId, this.personId, this.conversationId)
+							} catch (_e: any) {
+								this.showMemoryFailure('短缓存清空失败')
+								return
+							}
 							this.bufferContent = ''
 							uni.showToast({ position: 'bottom',  title: '已清空', icon: 'none' })
 						}
-					}
+					},
+					fail: () => { this.showMemoryFailure('无法打开清空确认框') }
 				})
 			},
 
@@ -438,7 +462,13 @@
 					targetPersonId = this.buildNewTargetPersonId()
 				}
 				const input = buildMemoryCoreInput(this.newScope, this.newCategory, this.newContent, this.newPriority, this.newPinned)
-				const id = saveCoreMemory(this.agentId, targetPersonId, this.conversationId, input)
+				let id = ''
+				try {
+					id = saveCoreMemory(this.agentId, targetPersonId, this.conversationId, input)
+				} catch (_e: any) {
+					this.showMemoryFailure('保存失败')
+					return
+				}
 				if (id == '') {
 					uni.showToast({ position: 'bottom',  title: '保存失败', icon: 'none' })
 					return
@@ -451,7 +481,10 @@
 			},
 
 			forgetMemory(id: string) {
-				archiveCoreMemory(id)
+				if (archiveCoreMemory(id) == false) {
+					this.showMemoryFailure('遗忘记忆失败')
+					return
+				}
 				this.loadMemory()
 				uni.showToast({ position: 'bottom',  title: '已遗忘', icon: 'none' })
 			},
@@ -467,11 +500,12 @@
 				uni.showModal({
 					title: '遗忘记忆',
 					content: '确认遗忘这条重要记忆？\n' + preview,
-					success: (res: any) => {
-						if (readUniModalConfirm(res) == true) {
+					success: (res) => {
+						if (res.confirm == true) {
 							this.forgetMemory(memoryId)
 						}
-					}
+					},
+					fail: () => { this.showMemoryFailure('无法打开遗忘确认框') }
 				})
 			},
 
@@ -479,20 +513,30 @@
 				uni.showModal({
 					title: '清空记忆',
 					content: '确认清空当前联系人面向当前查看对象的可见重要记忆？',
-					success: (res: any) => {
-						if (readUniModalConfirm(res) == true) {
-							clearCoreMemoryForTarget(this.agentId, this.buildViewTargetPersonId(), this.conversationId)
+					success: (res) => {
+						if (res.confirm == true) {
+							try {
+								clearCoreMemoryForTarget(this.agentId, this.buildViewTargetPersonId(), this.conversationId)
+							} catch (_e: any) {
+								this.showMemoryFailure('清空记忆失败')
+								return
+							}
 							this.loadMemory()
 							uni.showToast({ position: 'bottom',  title: '已清空', icon: 'none' })
 						}
-					}
+					},
+					fail: () => { this.showMemoryFailure('无法打开清空确认框') }
 				})
 			},
 
 			// ===== 记忆整理日志 =====
 
 			loadManagerLogs() {
-				this.managerLogs = listMemoryManagerLogs(this.agentId, this.conversationId)
+				try {
+					this.managerLogs = listMemoryManagerLogs(this.agentId, this.conversationId)
+				} catch (_e: any) {
+					this.showMemoryFailure('整理记录加载失败')
+				}
 			},
 
 			formatLogTime(log: UTSJSONObject): string {

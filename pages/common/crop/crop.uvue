@@ -37,7 +37,8 @@
 	 * 绑定可能不会重新求值。
 	 */
 
-	import { ref, onMounted } from 'vue'
+	import { ref, onMounted, onUnmounted } from 'vue'
+	import { cancelAvatarCropRequest } from '@/utils/avatar-image-picker.uts'
 	import { getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 
@@ -61,6 +62,9 @@
 	let loaded = false as boolean
 	let cropping = false as boolean
 	let imageErrorReported = false as boolean
+	let pageActive = true as boolean
+	let cropTarget = '' as string
+	let cropRequestClosed = false as boolean
 
 	function showCropFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
 		const error = reportAppErrorFromCause(
@@ -74,8 +78,14 @@
 		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
 	}
 
-	function navigateCropBack(operation: string): void {
+	function navigateCropBack(operation: string, cancelRequestOnSuccess: boolean): void {
 		uni.navigateBack({
+			success: () => {
+				if (cancelRequestOnSuccess == true && cropRequestClosed == false) {
+					cancelAvatarCropRequest(cropTarget)
+					cropRequestClosed = true
+				}
+			},
 			fail: (err: any) => {
 				cropping = false
 				showCropFailure('CROP_BACK_FAILED', operation, '无法返回上一页', err)
@@ -87,13 +97,18 @@
 		let pathRaw = ''
 		try {
 			pathRaw = getRuntimeState('crop_image_path')
+			cropTarget = getRuntimeState('crop_target')
 		} catch (e: any) {
+			cancelAvatarCropRequest('')
+			cropRequestClosed = true
 			showCropFailure('CROP_SOURCE_READ_FAILED', 'crop_page_load', '待裁剪图片读取失败', e)
 			return
 		}
-		if (pathRaw == '') {
-			showCropFailure('CROP_SOURCE_MISSING', 'crop_page_load', '找不到待裁剪图片', 'crop_image_path 为空')
-			navigateCropBack('crop_source_missing_back')
+		if (pathRaw == '' || cropTarget == '') {
+			cancelAvatarCropRequest(cropTarget)
+			cropRequestClosed = true
+			showCropFailure('CROP_SOURCE_MISSING', 'crop_page_load', '找不到待裁剪图片', 'crop_image_path 或 crop_target 为空')
+			navigateCropBack('crop_source_missing_back', false)
 			return
 		}
 		imagePath.value = pathRaw
@@ -106,6 +121,16 @@
 			areaSize.value = 300
 			showCropFailure('CROP_WINDOW_INFO_FAILED', 'crop_window_info', '无法读取裁剪区域尺寸', e)
 		}
+	})
+
+	onUnmounted(() => {
+		pageActive = false
+		cropping = false
+		if (cropRequestClosed == false) {
+			cancelAvatarCropRequest(cropTarget)
+			cropRequestClosed = true
+		}
+		uni.hideLoading()
 	})
 
 	function applyImageStyle() {
@@ -267,6 +292,11 @@
 			type: 'file',
 			format: 'png',
 			success: (res) => {
+				if (pageActive == false) {
+					cropping = false
+					uni.hideLoading()
+					return
+				}
 				const path = res.tempFilePath
 				if (path == null || path == '') {
 					cropping = false
@@ -274,25 +304,44 @@
 					showCropFailure('CROP_SNAPSHOT_EMPTY', 'crop_snapshot', '裁剪结果为空', res)
 					return
 				}
-				if (setRuntimeState('crop_result', path) == false) {
+				let resultSaved = false
+				try {
+					if (getRuntimeState('crop_target') != cropTarget) {
+						cropping = false
+						uni.hideLoading()
+						showCropFailure('CROP_REQUEST_STALE', 'crop_result_save', '裁剪请求已失效，请重新选择图片', cropTarget)
+						return
+					}
+					resultSaved = setRuntimeState('crop_result', path)
+				} catch (e: any) {
+					cropping = false
+					uni.hideLoading()
+					showCropFailure('CROP_RESULT_SAVE_FAILED', 'crop_result_save', '裁剪结果保存失败', e)
+					return
+				}
+				if (resultSaved == false) {
 					cropping = false
 					uni.hideLoading()
 					showCropFailure('CROP_RESULT_SAVE_FAILED', 'crop_result_save', '裁剪结果保存失败', 'crop_result 写入失败')
 					return
 				}
+				cropRequestClosed = true
 				uni.hideLoading()
-				navigateCropBack('crop_result_back')
+				navigateCropBack('crop_result_back', false)
 			},
 			fail: (err: any) => {
 				cropping = false
 				uni.hideLoading()
+				if (pageActive == false) { return }
 				showCropFailure('CROP_SNAPSHOT_FAILED', 'crop_snapshot', '裁剪失败', err)
 			}
 		})
 	}
 
 	function goBack() {
-		navigateCropBack('crop_cancel_back')
+		if (cropping == true) { return }
+		cropping = true
+		navigateCropBack('crop_cancel_back', true)
 	}
 </script>
 

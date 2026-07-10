@@ -43,13 +43,12 @@
 								class="todo-item"
 								@click="toggleTodo(todo['id'] as string)"
 							>
-								<view class="todo-left">
+								<view class="todo-left" @click.stop="toggleTodo(todo['id'] as string)">
 									<rice-checkbox
 										:model-value="(todo['completed'] as boolean)"
 										shape="round"
 										checked-color="#FB8FAB"
 										icon-size="20px"
-										@change="toggleTodo(todo['id'] as string)"
 									/>
 								</view>
 								<view class="todo-content">
@@ -194,6 +193,8 @@
 		buildFilteredNoteList,
 		buildFilteredTodoList,
 		buildNotePreviewBlocks,
+		clearNoteEditorResultRuntimeState,
+		clearNoteEditorRuntimeState,
 		consumeNoteEditorRuntimeState,
 		countNoteInlineTodos,
 		filterKnowledgeItemsByAgent,
@@ -328,26 +329,21 @@
 				this.todos = all
 			},
 
-			saveTodos(): boolean {
-				for (let ai = 0; ai < this.agents.length; ai++) {
-					const agentId = this.agents[ai]['id'] as string
-					if (agentId == '') continue
-					const agentTodos: UTSJSONObject[] = []
-					for (let j = 0; j < this.todos.length; j++) {
-						if ((this.todos[j]['agentId'] as string) == agentId) {
-							agentTodos.push(this.todos[j])
-						}
-					}
-					const agentDir = this.getOwnerDir(agentId)
-					if (agentDir == '') { return false }
-					const markdown = buildTodoMarkdown(agentTodos)
-					const result = writeContent(joinPath(agentDir, 'todo.md'), markdown)
-					if (result.ok == false) {
-						console.log('[Todo] 写入失败: ' + result.error)
-						return false
+			saveTodosForAgent(agentId: string): boolean {
+				if (agentId == '') { return false }
+				const agentTodos: UTSJSONObject[] = []
+				for (let i = 0; i < this.todos.length; i++) {
+					if ((this.todos[i]['agentId'] as string) == agentId) {
+						agentTodos.push(this.todos[i])
 					}
 				}
-				return true
+				const agentDir = this.getOwnerDir(agentId)
+				if (agentDir == '') { return false }
+				const result = writeContent(joinPath(agentDir, 'todo.md'), buildTodoMarkdown(agentTodos))
+				if (result.ok == false) {
+					console.log('[Todo] 写入失败: ' + result.error)
+				}
+				return result.ok
 			},
 
 			setFilter(f : string) {
@@ -355,13 +351,16 @@
 			},
 
 			toggleTodo(id : string) {
+				let agentId = ''
 				for (let i = 0; i < this.todos.length; i++) {
 					if ((this.todos[i]['id'] as string) == id) {
+						agentId = this.todos[i]['agentId'] as string
 						this.todos[i]['completed'] = !((this.todos[i]['completed'] as boolean))
 						break
 					}
 				}
-				if (this.saveTodos() == false) {
+				if (agentId == '') { return }
+				if (this.saveTodosForAgent(agentId) == false) {
 					this.loadTodos()
 					uni.showToast({ position: 'bottom', title: '保存待办失败', icon: 'none' })
 				}
@@ -373,18 +372,25 @@
 					content: '确定要删除这个待办事项吗？',
 					success: (res) => {
 						if (res.confirm == true) {
-							let newTodos = [] as UTSJSONObject[]
+							let agentId = ''
+							const newTodos = [] as UTSJSONObject[]
 							for (let i = 0; i < this.todos.length; i++) {
 								if ((this.todos[i]['id'] as string) != id) {
 									newTodos.push(this.todos[i])
+								} else {
+									agentId = this.todos[i]['agentId'] as string
 								}
 							}
+							if (agentId == '') { return }
 							this.todos = newTodos
-							if (this.saveTodos() == false) {
+							if (this.saveTodosForAgent(agentId) == false) {
 								this.loadTodos()
 								uni.showToast({ position: 'bottom', title: '删除待办失败', icon: 'none' })
 							}
 						}
+					},
+					fail: () => {
+						uni.showToast({ position: 'bottom', title: '无法打开删除确认框', icon: 'none' })
 					}
 				})
 			},
@@ -419,7 +425,7 @@
 					return
 				}
 				const timeStr = formatTodoCreatedAtNow()
-				let newTodo = {
+				const newTodo = {
 					id: '' + Date.now(),
 					title: this.newTodoTitle.trim(),
 					priority: this.newTodoPriority,
@@ -429,7 +435,7 @@
 					agentName: agentName
 				} as UTSJSONObject
 				this.todos.unshift(newTodo)
-				if (this.saveTodos() == false) {
+				if (this.saveTodosForAgent(agentId) == false) {
 					this.loadTodos()
 					uni.showToast({ position: 'bottom', title: '添加待办失败', icon: 'none' })
 					return
@@ -482,70 +488,19 @@
 				this.notes = all
 			},
 
-			saveNotes(): boolean {
-				// 先完成全部写入，确认成功后再清理旧文件，避免写失败时先丢数据。
-				for (let ai = 0; ai < this.agents.length; ai++) {
-					const agentId = this.agents[ai]['id'] as string
-					if (agentId == '') continue
-					// 筛选此 agent 的笔记
-					const notes: UTSJSONObject[] = []
-					for (let ni = 0; ni < this.notes.length; ni++) {
-						if ((this.notes[ni]['agentId'] as string) == agentId) {
-							notes.push(this.notes[ni])
-						}
-					}
-					const agentDir = this.getOwnerDir(agentId)
-					if (agentDir == '') { return false }
-					const notesDir = joinPath(agentDir, 'notes')
-					for (let ni = 0; ni < notes.length; ni++) {
-						const note = notes[ni]
-						const noteId = note['id'] as string
-						const title = note['title'] as string
-						const content = note['content'] as string
-						const md = buildNoteMarkdown(title, content, noteId)
-						const filePath = joinPath(notesDir, noteId + '.md')
-						const result = writeContent(filePath, md)
-						if (result.ok == false) {
-							console.log('[Notes] 写入失败: ' + result.error)
-							return false
-						}
-					}
+			writeNote(note: UTSJSONObject): boolean {
+				const noteId = note['id'] as string
+				const agentId = note['agentId'] as string
+				if (noteId == '' || agentId == '') { return false }
+				const agentDir = this.getOwnerDir(agentId)
+				if (agentDir == '') { return false }
+				const title = note['title'] as string
+				const content = note['content'] as string
+				const result = writeContent(joinPath(joinPath(agentDir, 'notes'), noteId + '.md'), buildNoteMarkdown(title, content, noteId))
+				if (result.ok == false) {
+					console.log('[Notes] 写入失败: ' + result.error)
 				}
-
-				for (let ai = 0; ai < this.agents.length; ai++) {
-					const agentId = this.agents[ai]['id'] as string
-					if (agentId == '') continue
-					const currentIds: string[] = []
-					for (let ni = 0; ni < this.notes.length; ni++) {
-						if ((this.notes[ni]['agentId'] as string) == agentId) {
-							currentIds.push(this.notes[ni]['id'] as string)
-						}
-					}
-					const agentDir = this.getOwnerDir(agentId)
-					if (agentDir == '') { return false }
-					const existingFiles = listDir(joinPath(agentDir, 'notes'))
-					for (let ei = 0; ei < existingFiles.length; ei++) {
-						const file = existingFiles[ei] as FileItem
-						if (file.isDirectory) continue
-						if (file.name.endsWith('.md') == false) { continue }
-						const noteId = file.name.substring(0, file.name.length - 3)
-						let found = false
-						for (let ci = 0; ci < currentIds.length; ci++) {
-							if (currentIds[ci] == noteId) {
-								found = true
-								break
-							}
-						}
-						if (found == false) {
-							const result = deleteItem(file.path, false)
-							if (result.ok == false) {
-								console.log('[Notes] 删除旧文件失败: ' + result.error)
-								return false
-							}
-						}
-					}
-				}
-				return true
+				return result.ok
 			},
 
 			formatNow() : string {
@@ -561,9 +516,18 @@
 			},
 
 			openNoteEditor(noteId: string, title: string, content: string, agentId: string) {
-				prepareNoteEditorRuntimeState(noteId, title, content, agentId)
+				try {
+					prepareNoteEditorRuntimeState(noteId, title, content, agentId)
+				} catch (_e: any) {
+					uni.showToast({ position: 'bottom', title: '无法准备笔记编辑页面', icon: 'none' })
+					return
+				}
 				uni.navigateTo({
-					url: '/pages/note-editor/note-editor'
+					url: '/pages/note-editor/note-editor',
+					fail: () => {
+						clearNoteEditorRuntimeState()
+						uni.showToast({ position: 'bottom', title: '无法打开笔记编辑页面', icon: 'none' })
+					}
 				})
 			},
 
@@ -573,9 +537,20 @@
 					return
 				}
 				this.notes = applyNoteEditorState(this.notes, payload, this.formatNow())
-				if (this.saveNotes() == false) {
+				let savedNote: UTSJSONObject | null = null
+				for (let i = 0; i < this.notes.length; i++) {
+					if ((this.notes[i]['id'] as string) == payload.noteId) {
+						savedNote = this.notes[i]
+						break
+					}
+				}
+				if (savedNote == null || this.writeNote(savedNote) == false) {
 					this.loadNotes()
 					uni.showToast({ position: 'bottom', title: '保存笔记失败', icon: 'none' })
+					return
+				}
+				if (clearNoteEditorResultRuntimeState() == false) {
+					uni.showToast({ position: 'bottom', title: '笔记已保存，但编辑状态清理失败', icon: 'none' })
 					return
 				}
 				uni.showToast({ position: 'bottom',
@@ -601,23 +576,34 @@
 						if (res.confirm == true) {
 							this.deleteNote(id)
 						}
+					},
+					fail: () => {
+						uni.showToast({ position: 'bottom', title: '无法打开删除确认框', icon: 'none' })
 					}
 				})
 			},
 
 			deleteNote(id : string) {
-				let newNotes = [] as UTSJSONObject[]
+				let target: UTSJSONObject | null = null
 				for (let i = 0; i < this.notes.length; i++) {
-					if ((this.notes[i]['id'] as string) != id) {
-						newNotes.push(this.notes[i])
+					if ((this.notes[i]['id'] as string) == id) {
+						target = this.notes[i]
+						break
 					}
 				}
-				this.notes = newNotes
-				if (this.saveNotes() == false) {
-					this.loadNotes()
+				if (target == null) { return }
+				const agentId = target['agentId'] as string
+				const agentDir = this.getOwnerDir(agentId)
+				if (agentDir == '') {
 					uni.showToast({ position: 'bottom', title: '删除笔记失败', icon: 'none' })
 					return
 				}
+				const result = deleteItem(joinPath(joinPath(agentDir, 'notes'), id + '.md'), false)
+				if (result.ok == false) {
+					uni.showToast({ position: 'bottom', title: '删除笔记失败: ' + result.error, icon: 'none' })
+					return
+				}
+				this.loadNotes()
 				uni.showToast({ position: 'bottom',
 					title: '已删除',
 					icon: 'success'

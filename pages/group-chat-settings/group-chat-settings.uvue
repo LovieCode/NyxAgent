@@ -72,7 +72,7 @@
 
 <script lang="uts">
 	import { getAgents } from '@/utils/agent.uts'
-	import { chooseAvatarImage, consumeAvatarCropResult, hasAvatarCropRequest, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
+		import { chooseAvatarImage, consumeAvatarCropResult, discardManagedAvatarFile, hasAvatarCropRequest, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
 	import {
 		type GroupChat,
 		addGroupMember,
@@ -117,10 +117,14 @@
 				this.loadData()
 				return
 			}
-			const cropResult = consumeAvatarCropResult(cropTarget)
-			if (cropResult != '') {
-				this.groupAvatar = cropResult
-			}
+				const cropResult = consumeAvatarCropResult(cropTarget)
+				if (cropResult != '') {
+					const previousAvatar = this.groupAvatar
+					this.groupAvatar = cropResult
+					if (previousAvatar != this.savedGroupAvatar && previousAvatar != cropResult) {
+						discardManagedAvatarFile(previousAvatar)
+					}
+				}
 		},
 		onBackPress(): boolean {
 			if (this.hasUnsavedChanges() == false) {
@@ -177,9 +181,10 @@
 							if (this.saveSettings() == true) {
 								uni.navigateBack()
 							}
-							return
-						}
-						uni.navigateBack()
+								return
+							}
+							this.discardUnsavedGroupAvatar()
+							uni.navigateBack()
 					},
 					fail: () => {
 						this.isConfirmingLeave = false
@@ -200,9 +205,17 @@
 					openAvatarCrop(path, this.groupAvatarCropTarget(group.id))
 				})
 			},
-			clearGroupAvatar(): void {
-				this.groupAvatar = ''
-			},
+				clearGroupAvatar(): void {
+					if (this.groupAvatar != this.savedGroupAvatar) {
+						discardManagedAvatarFile(this.groupAvatar)
+					}
+					this.groupAvatar = ''
+				},
+				discardUnsavedGroupAvatar(): void {
+					if (this.groupAvatar != this.savedGroupAvatar) {
+						discardManagedAvatarFile(this.groupAvatar)
+					}
+				},
 			isMember(agent: UTSJSONObject): boolean {
 				const group = this.group
 				if (group == null) { return false }
@@ -245,9 +258,15 @@
 				const name = this.groupName.trim()
 				if (name == '') {
 					uni.showToast({ position: 'bottom', title: '群名不能为空', icon: 'none' })
-					return false
-				}
-				group.name = name
+						return false
+					}
+					const oldName = group.name
+					const oldAvatar = group.avatar
+					const oldSchedulerAgentId = group.schedulerAgentId
+					const oldSchedulerPrompt = group.schedulerPrompt
+					const oldSharedPrompt = group.sharedPrompt
+					const oldUpdatedAt = group.updatedAt
+					group.name = name
 				group.avatar = this.groupAvatar
 				if (group.schedulerAgentId == '' || group.schedulerAgentId == 'scheduler') {
 					// LEGACY_COMPAT: 旧版群调度器 ID 可能是全局 scheduler；保存时落到本群子代理。
@@ -255,11 +274,20 @@
 				}
 				group.schedulerPrompt = this.schedulerPrompt.trim() != '' ? this.schedulerPrompt.trim() : buildDefaultSchedulerPrompt()
 				group.sharedPrompt = this.sharedPrompt.trim() != '' ? this.sharedPrompt.trim() : buildDefaultSharedPrompt()
-				group.updatedAt = Date.now()
-				if (saveGroupChat(group) == false) {
-					uni.showToast({ position: 'bottom', title: '群聊设置保存失败，请重试', icon: 'none' })
-					return false
-				}
+					group.updatedAt = Date.now()
+					if (saveGroupChat(group) == false) {
+						group.name = oldName
+						group.avatar = oldAvatar
+						group.schedulerAgentId = oldSchedulerAgentId
+						group.schedulerPrompt = oldSchedulerPrompt
+						group.sharedPrompt = oldSharedPrompt
+						group.updatedAt = oldUpdatedAt
+						uni.showToast({ position: 'bottom', title: '群聊设置保存失败，请重试', icon: 'none' })
+						return false
+					}
+					if (this.savedGroupAvatar != group.avatar) {
+						discardManagedAvatarFile(this.savedGroupAvatar)
+					}
 				this.group = group
 				this.groupName = group.name
 				this.schedulerPrompt = getGroupSchedulerPrompt(group)

@@ -55,8 +55,8 @@
 
 <script lang="uts">
 	import { getAgentById, updateAgentModel } from '@/utils/agent.uts'
-	import { getAllProviders, getProviderModels, setDefaultTaskModel, getDefaultTaskModel, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
-	import { consumeRuntimeState, getAppSetting, setAppSetting } from '@/utils/database.uts'
+	import { getAllProviders, getProviderModels, setDefaultChatTaskModel, getDefaultTaskModel, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { consumeRuntimeState, getAppSetting } from '@/utils/database.uts'
 
 	export default {
 		data() {
@@ -146,10 +146,25 @@
 					}
 					if (found == false && enabled.length > 0) {
 						providerId = enabled[0]['id'] as string
+						modelId = ''
 					}
 				} else {
 					if (this.enabledProviders.length > 0) {
 						providerId = this.enabledProviders[0]['id'] as string
+					}
+				}
+
+				if (providerId != '') {
+					const models = getProviderModels(providerId)
+					let modelFound = false
+					for (let i = 0; i < models.length; i++) {
+						if (models[i].id == modelId) {
+							modelFound = true
+							break
+						}
+					}
+					if (modelFound == false) {
+						modelId = ''
 					}
 				}
 
@@ -204,9 +219,8 @@
 						return false
 					}
 				} else {
-					const defaultSaved = setDefaultTaskModel('chat', this.selectedProvider, this.selectedModel)
-					const legacySaved = setAppSetting('settings_model', this.selectedModel)
-					if (defaultSaved == false || legacySaved == false) {
+					const defaultSaved = setDefaultChatTaskModel(this.selectedProvider, this.selectedModel)
+					if (defaultSaved == false) {
 						uni.showToast({ title: '保存默认模型失败，请重试', icon: 'none' })
 						return false
 					}

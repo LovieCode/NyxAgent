@@ -14,7 +14,7 @@ import {
 	readCreateTemplatePrompt,
 } from '@/utils/agent-create-presets.uts'
 import { DEFAULT_AGENT_INTERACTION_RULES, getAgents, saveAgents } from '@/utils/agent.uts'
-import { getAgentDir } from '@/utils/file-manager.uts'
+import { deleteItem, exists, getAgentDir } from '@/utils/file-manager.uts'
 import { getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
 
 export type AgentCreateForm = {
@@ -166,9 +166,17 @@ function buildCreatedAgentPayload(id: string, data: AgentCreateForm, defaultMode
 export function createAgentFromCreateData(data: AgentCreateForm, defaultModel: string | null): string {
 	const id = 'custom-' + Date.now() + '-' + Math.floor(Math.random() * 1000)
 	const agent = buildCreatedAgentPayload(id, data, defaultModel)
-	getAgentDir(id)
-	const agents = getAgents()
-	agents.push(agent)
-	if (saveAgents(agents) == false) { return '' }
-	return id
+	let agentDir = ''
+	try {
+		agentDir = getAgentDir(id)
+		if (agentDir == '') { return '' }
+		const agents = getAgents()
+		agents.push(agent)
+		if (saveAgents(agents) == true) { return id }
+	} catch (_e: any) {
+	}
+	if (agentDir != '' && exists(agentDir) == true) {
+		deleteItem(agentDir, true)
+	}
+	return ''
 }

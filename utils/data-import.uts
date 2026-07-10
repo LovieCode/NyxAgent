@@ -48,6 +48,40 @@ function readObjectArray(obj: UTSJSONObject, key: string): UTSJSONObject[] {
 	return value
 }
 
+function validateRequiredObjectArray(data: UTSJSONObject, key: string): string {
+	const value = data[key] as UTSJSONObject[] | null
+	return value == null ? '备份包缺少 ' + key + ' 数组' : ''
+}
+
+function validateBackupData(data: UTSJSONObject): string {
+	const arrayKeys: string[] = [
+		'providers',
+		'appSettings',
+		'agents',
+		'skills',
+		'assets',
+		'conversations',
+		'messages',
+		'memoryBuffers',
+		'memoryCore',
+		'conversationTokenUsageStats',
+		'memoryCompactionStates',
+		'notes',
+		'todos',
+	]
+	for (let i = 0; i < arrayKeys.length; i++) {
+		const error = validateRequiredObjectArray(data, arrayKeys[i])
+		if (error != '') { return error }
+	}
+	const storageKeys = data['storageKeys'] as string[] | null
+	if (storageKeys == null) { return '备份包缺少 storageKeys 数组' }
+	const storage = data['storage'] as UTSJSONObject | null
+	if (storage == null) { return '备份包缺少 storage 对象' }
+	const groupChatData = data['groupChatData'] as UTSJSONObject | null
+	if (groupChatData == null) { return '备份包缺少 groupChatData 对象' }
+	return ''
+}
+
 function buildFallbackStorageKeys(): string[] {
 	return [
 		'agent_list',
@@ -149,6 +183,21 @@ function validateBackupRoot(root: UTSJSONObject): string {
 	const data = root['data'] as UTSJSONObject | null
 	if (data == null) {
 		return '备份包缺少 data 字段'
+	}
+	return validateBackupData(data)
+}
+
+function validateImportedAssets(assets: UTSJSONObject[], assetMap: UTSJSONObject): string {
+	for (let i = 0; i < assets.length; i++) {
+		const ref = assets[i]['ref'] as string | null
+		const zipPath = assets[i]['zipPath'] as string | null
+		if (ref == null || ref == '' || zipPath == null || zipPath == '') {
+			return '备份资源清单不完整'
+		}
+		const mapped = assetMap[ref] as string | null
+		if (mapped == null || mapped == '') {
+			return '备份资源缺失：' + zipPath
+		}
 	}
 	return ''
 }
@@ -489,27 +538,26 @@ export function importSettingsOnlyFromZip(zipPath: string): string {
 		let storageKeys = buildSettingsOnlyStorageKeys(readStringArray(data, 'storageKeys'))
 		const assets = filterSettingsAssets(readObjectArray(data, 'assets'))
 		const assetMap = importBackupAssets(zipPath, assets)
+		const assetError = validateImportedAssets(assets, assetMap)
+		if (assetError != '') { throw new Error(assetError) }
 
 		if (storage != null) {
 			storageKeys = filterEmptySensitiveStorageKeys(storageKeys, storage)
 			updateMappedStorageAssets(storage, assetMap)
 		}
 		updateMappedAgentAssets(agents, assetMap)
-		if (storage != null) {
-			storage['agent_list'] = JSON.stringify(agents)
-			if (skills.length > 0) {
+			if (storage != null) {
+				storage['agent_list'] = JSON.stringify(agents)
 				storage['skills_list'] = JSON.stringify(skills)
 			}
-		}
 
-		if (providers.length > 0 || appSettings.length > 0) {
 			importSettingsTables(providers, appSettings, true)
-		}
-		if (agents.length > 0) {
 			if (saveAgents(agents) == false) {
 				throw new Error('Agent 设置恢复失败')
 			}
-		}
+			if (restoreListStorage('skills_list', skills) == false) {
+				throw new Error('Skill 设置恢复失败')
+			}
 		if (storage != null) {
 			if (writeStorageObject(storage, storageKeys) == false) {
 				throw new Error('应用设置恢复失败')
@@ -559,27 +607,28 @@ export function importAllDataFromZip(zipPath: string): string {
 		const storageKeys = readStringArray(data, 'storageKeys')
 		const assets = readObjectArray(data, 'assets')
 		const assetMap = importBackupAssets(zipPath, assets)
+		const assetError = validateImportedAssets(assets, assetMap)
+		if (assetError != '') { throw new Error(assetError) }
 
 		if (storage != null) {
 			updateMappedStorageAssets(storage, assetMap)
 		}
 		updateMappedAgentAssets(agents, assetMap)
 		updateMappedMessageAssets(messages, assetMap)
-		if (storage != null) {
-			storage['agent_list'] = JSON.stringify(agents)
-			if (skills.length > 0) {
+			if (storage != null) {
+				storage['agent_list'] = JSON.stringify(agents)
 				storage['skills_list'] = JSON.stringify(skills)
-			}
 			storage['notes_list'] = JSON.stringify(notes)
 			storage['todo_list'] = JSON.stringify(todos)
 		}
 
 		importDatabaseTables(providers, conversations, messages, appSettings, memoryBuffers, memoryCore, conversationTokenUsageStats, memoryCompactionStates, groupChatData != null ? groupChatData : ({} as UTSJSONObject))
-		if (agents.length > 0) {
 			if (saveAgents(agents) == false) {
 				throw new Error('Agent 数据恢复失败')
 			}
-		}
+			if (restoreListStorage('skills_list', skills) == false) {
+				throw new Error('Skill 数据恢复失败')
+			}
 		if (restoreListStorage('notes_list', notes) == false) {
 			throw new Error('笔记数据恢复失败')
 		}

@@ -7,6 +7,7 @@
  */
 import { xSqlite, SQLiteResult } from '@/uni_modules/laoqianjunzi-sqlite'
 import { getAppSetting, setAppSetting } from '@/utils/database.uts'
+import { assertSqlSuccess } from '@/utils/database-core.uts'
 
 const DB_NAME = 'agent_chat.db'
 const MEMORY_ENABLED_KEY = 'settings_memory_enabled'
@@ -137,7 +138,9 @@ export function getMemoryEnabled(): boolean {
 }
 
 export function setMemoryEnabled(enabled: boolean): void {
-	setAppSetting(MEMORY_ENABLED_KEY, enabled ? 'true' : 'false')
+	if (setAppSetting(MEMORY_ENABLED_KEY, enabled ? 'true' : 'false') == false) {
+		throw new Error('保存记忆开关失败')
+	}
 }
 
 export function normalizeMemoryPersonId(personId: string): string {
@@ -343,6 +346,7 @@ export function getMemoryBuffer(agentId: string, personId: string, conversationI
 	const id = makeBufferId(agentId, personId, conversationId)
 	const result = db.query('SELECT content FROM memory_buffer WHERE id = ? AND ? = ? LIMIT 1', [id, 1, 1])
 	db.close()
+	assertSqlSuccess(result, '读取记忆短缓存')
 	const rows = rowsToObjects(result)
 	if (rows.length == 0) {
 		return ''
@@ -356,19 +360,21 @@ export function updateMemoryBuffer(agentId: string, personId: string, conversati
 	const id = makeBufferId(agentId, personId, conversationId)
 	const now = Date.now()
 	const db = getDb()
-	db.run(
+	const result = db.run(
 		'INSERT OR REPLACE INTO memory_buffer (id, agent_id, person_id, conversation_id, content, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
 		[id, normalizeAgentId(agentId), normalizeMemoryPersonId(personId), normalizeConversationId(conversationId), finalContent, now]
 	)
 	db.close()
+	assertSqlSuccess(result, '保存记忆短缓存')
 	return finalContent
 }
 
 export function clearMemoryBuffer(agentId: string, personId: string, conversationId: string): void {
 	initMemoryTables()
 	const db = getDb()
-	db.run('DELETE FROM memory_buffer WHERE id = ? AND ? = ?', [makeBufferId(agentId, personId, conversationId), 1, 1])
+	const result = db.run('DELETE FROM memory_buffer WHERE id = ? AND ? = ?', [makeBufferId(agentId, personId, conversationId), 1, 1])
 	db.close()
+	assertSqlSuccess(result, '清空记忆短缓存')
 }
 
 function buildLimitRows(db: xSqlite, agentId: string, personId: string, conversationId: string, scope: string): UTSJSONObject[] {
@@ -380,18 +386,21 @@ function buildLimitRows(db: xSqlite, agentId: string, personId: string, conversa
 			'SELECT id FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND scope = ? ORDER BY pinned DESC, priority DESC, updated_at DESC',
 			[aid, scope]
 		)
+		assertSqlSuccess(result, '读取重要记忆数量')
 		return rowsToObjects(result)
 	} else if (scope == 'conversation_only') {
 		const result = db.query(
 			'SELECT id FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND conversation_id = ? AND scope = ? ORDER BY pinned DESC, priority DESC, updated_at DESC',
 			[aid, cid, scope]
 		)
+		assertSqlSuccess(result, '读取重要记忆数量')
 		return rowsToObjects(result)
 	}
 	const result = db.query(
 		'SELECT id FROM agent_memory_core WHERE archived = 0 AND agent_id = ? AND person_id = ? AND scope = ? ORDER BY pinned DESC, priority DESC, updated_at DESC',
 		[aid, pid, scope]
 	)
+	assertSqlSuccess(result, '读取重要记忆数量')
 	return rowsToObjects(result)
 }
 
@@ -405,7 +414,7 @@ function enforceCoreLimit(db: xSqlite, agentId: string, personId: string, conver
 	for (let i = limit; i < rows.length; i++) {
 		const id = readStringField(rows[i], 'id')
 		if (id != '') {
-			db.run('UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE id = ?', [now, id])
+			assertSqlSuccess(db.run('UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE id = ?', [now, id]), '归档超限记忆')
 		}
 	}
 }
@@ -427,11 +436,22 @@ export function saveCoreMemory(agentId: string, personId: string, conversationId
 	const randomPart = Math.floor(Math.random() * 1000000)
 	const id = 'mem_' + now + '_' + randomPart + '_' + content.length + '_' + priority
 	const db = getDb()
-	db.run(
-		'INSERT OR REPLACE INTO agent_memory_core (id, agent_id, person_id, conversation_id, category, scope, content, priority, confidence, pinned, archived, created_at, updated_at, last_used_at, use_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, 0)',
-		[id, aid, pid, cid, category, scope, content, priority, 80, pinned, now, now]
-	)
-	enforceCoreLimit(db, aid, pid, cid, scope)
+	try {
+		assertSqlSuccess(db.beginTransaction(), '开始保存重要记忆')
+		assertSqlSuccess(
+			db.run(
+				'INSERT OR REPLACE INTO agent_memory_core (id, agent_id, person_id, conversation_id, category, scope, content, priority, confidence, pinned, archived, created_at, updated_at, last_used_at, use_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, 0)',
+				[id, aid, pid, cid, category, scope, content, priority, 80, pinned, now, now]
+			),
+			'保存重要记忆',
+		)
+		enforceCoreLimit(db, aid, pid, cid, scope)
+		assertSqlSuccess(db.commit(), '提交重要记忆')
+	} catch (_e: any) {
+		db.rollback()
+		db.close()
+		return ''
+	}
 	db.close()
 	return id
 }
@@ -440,8 +460,13 @@ export function archiveCoreMemory(id: string): boolean {
 	if (id == '') return false
 	initMemoryTables()
 	const db = getDb()
-	db.run('UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE id = ?', [Date.now(), id])
+	const result = db.run('UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE id = ?', [Date.now(), id])
 	db.close()
+	try {
+		assertSqlSuccess(result, '归档重要记忆')
+	} catch (_e: any) {
+		return false
+	}
 	return true
 }
 
@@ -450,11 +475,12 @@ export function clearCoreMemoryForAgent(agentId: string, personId: string): void
 	const aid = normalizeAgentId(agentId)
 	const pid = normalizeMemoryPersonId(personId)
 	const db = getDb()
-	db.run(
+	const result = db.run(
 		'UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE agent_id = ? AND (person_id = ? OR scope = \'always\' OR scope = \'rule\')',
 		[Date.now(), aid, pid]
 	)
 	db.close()
+	assertSqlSuccess(result, '清空联系人重要记忆')
 }
 
 export function clearCoreMemoryForTarget(agentId: string, personId: string, conversationId: string): void {
@@ -463,11 +489,12 @@ export function clearCoreMemoryForTarget(agentId: string, personId: string, conv
 	const pid = normalizeMemoryPersonId(personId)
 	const cid = normalizeConversationId(conversationId)
 	const db = getDb()
-	db.run(
+	const result = db.run(
 		'UPDATE agent_memory_core SET archived = 1, updated_at = ? WHERE agent_id = ? AND ((person_id = ? AND (scope = \'person_only\' OR scope = \'manual_only\')) OR (conversation_id = ? AND scope = \'conversation_only\'))',
 		[Date.now(), aid, pid, cid]
 	)
 	db.close()
+	assertSqlSuccess(result, '清空目标重要记忆')
 }
 
 export function listCoreMemory(agentId: string, personId: string, conversationId: string, includeManual: boolean): UTSJSONObject[] {
@@ -482,6 +509,7 @@ export function listCoreMemory(agentId: string, personId: string, conversationId
 			[aid, pid, cid]
 		)
 		db.close()
+		assertSqlSuccess(result, '读取重要记忆列表')
 		return rowsToObjects(result)
 	}
 	const result = db.query(
@@ -489,6 +517,7 @@ export function listCoreMemory(agentId: string, personId: string, conversationId
 		[aid, pid, cid]
 	)
 	db.close()
+	assertSqlSuccess(result, '读取重要记忆列表')
 	return rowsToObjects(result)
 }
 
@@ -664,6 +693,7 @@ export function searchCoreMemoryAdvanced(agentId: string, personId: string, conv
 
 	const result = db.query(sql, params)
 	db.close()
+	assertSqlSuccess(result, '搜索重要记忆')
 
 	let rows = rowsToObjects(result)
 
@@ -830,6 +860,7 @@ export function listMemoryManagerLogs(agentId: string, conversationId: string): 
 		[aid, cid]
 	)
 	db.close()
+	assertSqlSuccess(result, '读取记忆整理记录')
 	return rowsToObjects(result)
 }
 

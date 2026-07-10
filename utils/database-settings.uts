@@ -14,6 +14,7 @@ import {
 	runSqlOrThrow,
 	rowsToObjects,
 } from '@/utils/database-core.uts'
+import { xSqlite } from '@/uni_modules/laoqianjunzi-sqlite'
 
 function findProviderApiKeyInRows(rows: UTSJSONObject[], id: string): string {
 	if (id == '') {
@@ -47,6 +48,73 @@ function findSettingValueInRows(rows: UTSJSONObject[], key: string): string {
 	return ''
 }
 
+function parseSettingObject(value: string): UTSJSONObject | null {
+	try {
+		return JSON.parse(value) as UTSJSONObject
+	} catch (_e: any) {
+		return null
+	}
+}
+
+function clearDeletedProviderTaskSettings(db: xSqlite, providerId: string): void {
+	const taskKeys = [
+		'default_task_chat',
+		'default_task_memory_organize',
+		'default_task_vision',
+		'default_task_stt',
+		'default_task_tts',
+	]
+	for (let i = 0; i < taskKeys.length; i++) {
+		const key = taskKeys[i]
+		const queryResult = db.query('SELECT value FROM app_settings WHERE key = ? LIMIT 1', [key])
+		assertSqlSuccess(queryResult, '读取默认任务模型')
+		const rows = rowsToObjects(queryResult)
+		if (rows.length == 0) { continue }
+		const value = rows[0]['value'] as string | null
+		if (value == null || value == '') { continue }
+		const config = parseSettingObject(value)
+		if (config == null) {
+			// 无法解析的脏设置不应阻止删除；仅在明确引用当前 Provider 时清理。
+			continue
+		}
+		const currentProviderId = config['providerId'] as string | null
+		if (currentProviderId != providerId) { continue }
+		if (key == 'default_task_tts') {
+			// TTS 的音色、格式等参数仍然有效，只清除失效的模型引用。
+			config['providerId'] = ''
+			config['model'] = ''
+			runSqlOrThrow(db, 'UPDATE app_settings SET value = ? WHERE key = ?', [JSON.stringify(config), key])
+		} else {
+			runSqlOrThrow(db, 'UPDATE app_settings SET value = ? WHERE key = ?', ['', key])
+		}
+	}
+}
+
+function clearDeletedProviderFlatSettings(db: xSqlite, providerId: string): void {
+	const legacyResult = db.query('SELECT value FROM app_settings WHERE key = ? LIMIT 1', ['settings_provider_id'])
+	assertSqlSuccess(legacyResult, '读取旧版默认模型提供商')
+	const legacyRows = rowsToObjects(legacyResult)
+	if (legacyRows.length > 0) {
+		const legacyProviderId = legacyRows[0]['value'] as string | null
+		if (legacyProviderId == providerId) {
+			runSqlOrThrow(
+				db,
+				'UPDATE app_settings SET value = ? WHERE key IN (?, ?, ?, ?)',
+				['', 'settings_provider_id', 'settings_model', 'settings_api_key', 'settings_base_url'],
+			)
+		}
+	}
+	const searchResult = db.query('SELECT value FROM app_settings WHERE key = ? LIMIT 1', ['settings_web_search_provider_id'])
+	assertSqlSuccess(searchResult, '读取联网搜索模型提供商')
+	const searchRows = rowsToObjects(searchResult)
+	if (searchRows.length > 0) {
+		const searchProviderId = searchRows[0]['value'] as string | null
+		if (searchProviderId == providerId) {
+			runSqlOrThrow(db, 'UPDATE app_settings SET value = ? WHERE key IN (?, ?)', ['', 'settings_web_search_provider_id', 'settings_web_search_model'])
+		}
+	}
+}
+
 /** 仅覆盖导入配置类表，不触碰对话、消息、记忆和群聊数据。 */
 export function importSettingsTables(providers: UTSJSONObject[], appSettings: UTSJSONObject[], preserveEmptyApiKeys: boolean): void {
 	const db = getDb()
@@ -56,7 +124,7 @@ export function importSettingsTables(providers: UTSJSONObject[], appSettings: UT
 	let oldApiSettings: UTSJSONObject[] = []
 	if (preserveEmptyApiKeys == true) {
 		oldProviderKeys = rowsToObjects(db.query('SELECT id, api_key FROM providers'))
-		oldApiSettings = rowsToObjects(db.query('SELECT key, value FROM app_settings WHERE key = ?', ['settings_api_key']))
+		oldApiSettings = rowsToObjects(db.query('SELECT key, value FROM app_settings WHERE key IN (?, ?)', ['settings_api_key', 'settings_astrbot_api_key']))
 	}
 	try {
 		assertSqlSuccess(db.beginTransaction(), '无法开始设置导入事务')
@@ -89,7 +157,7 @@ export function importSettingsTables(providers: UTSJSONObject[], appSettings: UT
 			const item = appSettings[i]
 			const key = readStringField(item, 'key')
 			let value = readStringField(item, 'value')
-			if (preserveEmptyApiKeys == true && key == 'settings_api_key' && value == '') {
+			if (preserveEmptyApiKeys == true && (key == 'settings_api_key' || key == 'settings_astrbot_api_key') && value == '') {
 				value = findSettingValueInRows(oldApiSettings, key)
 			}
 			runSqlOrThrow(db,
@@ -217,14 +285,24 @@ export function saveProvider(
  * 删除提供商
  */
 export function deleteProvider(id: string): boolean {
+	if (id == '') { return false }
 	const db = getDb()
+	ensureProvidersTable(db)
+	ensureAppSettingsTable(db)
 	let success = true
 	try {
+		assertSqlSuccess(db.beginTransaction(), '开始删除提供商')
 		const result = db.run('DELETE FROM providers WHERE id = ? AND ? = ?', [id, 1, 1])
 		assertSqlSuccess(result, '删除提供商')
 		const changes = result.changes
-		success = changes != null && changes > 0
+		if (changes == null || changes <= 0) {
+			throw new Error('提供商不存在')
+		}
+		clearDeletedProviderTaskSettings(db, id)
+		clearDeletedProviderFlatSettings(db, id)
+		assertSqlSuccess(db.commit(), '提交删除提供商事务')
 	} catch (_e: any) {
+		db.rollback()
 		success = false
 	}
 	db.close()
@@ -360,5 +438,6 @@ export function getAllAppSettings(): UTSJSONObject[] {
 	ensureAppSettingsTable(db)
 	const result = db.query('SELECT key, value FROM app_settings ORDER BY key ASC')
 	db.close()
+	assertSqlSuccess(result, '导出应用设置失败')
 	return rowsToObjects(result)
 }

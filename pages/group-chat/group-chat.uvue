@@ -344,8 +344,9 @@ let groupTurnRuntimeSyncTimer: number = -1
 				if (res.height > 0 && this.showToolPanel == true) {
 					this.showToolPanel = false
 				}
-				setTimeout(() => {
-					this.scheduleMeasureMessageScroll()
+					setTimeout(() => {
+						if (this.pageVisible == false) { return }
+						this.scheduleMeasureMessageScroll()
 					if (keepBottom == true) {
 						this.scrollToBottom()
 					}
@@ -879,11 +880,12 @@ let groupTurnRuntimeSyncTimer: number = -1
 						}
 					}, CHAT_STREAM_SCROLL_DELAY_MS)
 				},
-				scrollToBottom(): void {
-					this.streamFollowBottom = true
-					this.resetMessageWindowToRecent()
-					this.isAtBottom = true
-					if (this.isGenerating == true) {
+					scrollToBottom(): void {
+						this.streamFollowBottom = true
+						this.resetMessageWindowToRecent()
+						this.isAtBottom = true
+						this.messageWindowShiftLockUntil = Date.now() + 280
+						if (this.isGenerating == true) {
 						this.scheduleGroupStreamScroll()
 						return
 					}

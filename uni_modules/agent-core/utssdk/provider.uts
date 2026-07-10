@@ -14,6 +14,7 @@ import {
 	activateProvider as dbActivateProvider,
 	getAppSetting,
 	setAppSetting,
+	setAppSettings,
 } from '@/utils/database.uts'
 
 // ==================== 模型数据结构 ====================
@@ -316,10 +317,13 @@ export function getProviderApiConfig(id: string): UTSJSONObject | null {
 	if (p == null) {
 		return null
 	}
+	const enabled = p['enabled'] as number | null
+	if (enabled == null || enabled != 1) {
+		return null
+	}
 	const apiBase = p['api_base'] as string | null
 	const apiKey = p['api_key'] as string | null
 	const models = p['models'] as string | null
-	const enabled = p['enabled'] as number | null
 	return {
 		api_base: apiBase != null ? apiBase : '',
 		api_key: apiKey != null ? apiKey : '',
@@ -569,6 +573,15 @@ export function setDefaultTaskModel(type: string, providerId: string, model: str
 	return setAppSetting(key, JSON.stringify(next))
 }
 
+/** 原子保存默认对话模型及旧版兼容字段，避免任一写入失败后配置互相矛盾。 */
+export function setDefaultChatTaskModel(providerId: string, model: string): boolean {
+	if (providerId == '' || model == '') { return false }
+	return setAppSettings(
+		['default_task_chat', 'settings_provider_id', 'settings_model'],
+		[JSON.stringify({ providerId: providerId, model: model }), providerId, model],
+	)
+}
+
 export function getMemoryOrganizeTaskModel(): UTSJSONObject | null {
 	const config = getDefaultTaskModel('memory_organize')
 	if (config == null) return null
@@ -665,6 +678,10 @@ export function resolveLLMConfig(providerId: string, model: string): LLMConfig |
 
 	const provider = getProviderById(pid)
 	if (provider != null) {
+		const enabledRaw = provider['enabled'] as number | null
+		if (enabledRaw == null || enabledRaw != 1) {
+			return null
+		}
 		const apiKeyRaw = provider['api_key'] as string | null
 		const baseUrlRaw = provider['api_base'] as string | null
 		const apiKey = apiKeyRaw != null ? apiKeyRaw : ''
@@ -681,6 +698,10 @@ export function resolveLLMConfig(providerId: string, model: string): LLMConfig |
 			baseUrl: baseUrl,
 			model: mdl,
 		} as LLMConfig
+	}
+	// 已有结构化 Provider 时，缺失 ID 代表引用已失效，不能串用旧版全局 API Key。
+	if (getAllProviders().length > 0) {
+		return null
 	}
 
 	const storageApiKey = getAppSetting('settings_api_key')

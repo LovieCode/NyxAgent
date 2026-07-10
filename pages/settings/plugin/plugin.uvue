@@ -189,10 +189,15 @@
 				astrBotTesting: false as boolean,
 				providers: [] as UTSJSONObject[],
 				searchProviderModels: [] as UTSJSONObject[],
+				pageActive: false as boolean,
 			}
 		},
 		onLoad() {
+			this.pageActive = true
 			this.loadSettings()
+		},
+		onUnload() {
+			this.pageActive = false
 		},
 		methods: {
 			loadSettings() {
@@ -217,7 +222,24 @@
 				this.astrBotUsername = astrBot.username
 				this.astrBotSessionId = astrBot.sessionId
 				this.astrBotConfigId = astrBot.configId
-				this.providers = getAllProviders()
+				const allProviders = getAllProviders()
+				this.providers = []
+				let selectedProviderEnabled = false
+				for (let i = 0; i < allProviders.length; i++) {
+					const provider = allProviders[i]
+					const enabled = provider['enabled'] as number | null
+					if (enabled == 1) {
+						this.providers.push(provider)
+						const id = provider['id'] as string | null
+						if (id != null && id == this.webSearchProviderId) {
+							selectedProviderEnabled = true
+						}
+					}
+				}
+				if (this.webSearchProviderId != '' && selectedProviderEnabled == false) {
+					this.webSearchProviderId = ''
+					this.webSearchModel = ''
+				}
 				this.loadSearchProviderModels()
 			},
 
@@ -246,6 +268,7 @@
 				if (this.saveSettings() == false) { return }
 				this.astrBotTesting = true
 				testAstrBotConnection().then((result) => {
+					if (this.pageActive == false) { return }
 					this.astrBotTesting = false
 					if (result.ok == true) {
 						uni.showToast({ position: 'bottom', title: 'AstrBot 连接成功', icon: 'success' })

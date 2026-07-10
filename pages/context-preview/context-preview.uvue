@@ -184,6 +184,7 @@
 		data() {
 			return {
 				previewText: '' as string,
+				pageActive: true as boolean,
 				previewDisplayText: '' as string,
 				scrollTop: 0 as number,
 				scrollRequestSeq: 0 as number,
@@ -240,6 +241,7 @@
 			},
 		},
 		onLoad() {
+			this.pageActive = true
 			const raw = consumeContextPreviewPayload()
 			if (raw == '') {
 				this.previewText = '（没有可展示的上下文）'
@@ -252,8 +254,8 @@
 			const trimmed = raw.trim()
 			if (trimmed.startsWith('{') == false) {
 				this.scheduleLayoutCache()
-				setTimeout(() => { this.measureScrollSize() }, 300)
-				setTimeout(() => { this.measureScrollSize() }, 800)
+				setTimeout(() => { if (this.pageActive == true) { this.measureScrollSize() } }, 300)
+				setTimeout(() => { if (this.pageActive == true) { this.measureScrollSize() } }, 800)
 				return
 			}
 			try {
@@ -318,8 +320,12 @@
 			} catch (_e: any) {
 			}
 			this.scheduleLayoutCache()
-			setTimeout(() => { this.measureScrollSize() }, 300)
-			setTimeout(() => { this.measureScrollSize() }, 800)
+			setTimeout(() => { if (this.pageActive == true) { this.measureScrollSize() } }, 300)
+			setTimeout(() => { if (this.pageActive == true) { this.measureScrollSize() } }, 800)
+		},
+		onUnload() {
+			this.pageActive = false
+			this.scrollRequestSeq = this.scrollRequestSeq + 1
 		},
 		methods: {
 			applyContextSize(bodyText: string): void {
@@ -360,14 +366,15 @@
 
 			scheduleLayoutCache(): void {
 				setTimeout(() => {
-					this.cacheLayoutMetrics()
+					if (this.pageActive == true) { this.cacheLayoutMetrics() }
 				}, 80)
 				setTimeout(() => {
-					this.cacheLayoutMetrics()
+					if (this.pageActive == true) { this.cacheLayoutMetrics() }
 				}, 240)
 			},
 
 			cacheLayoutMetrics(): void {
+				if (this.pageActive == false) { return }
 				const ids: string[] = ['context-scroll', 'anchor-top', 'anchor-bottom', 'section-response', 'section-summary', 'section-full-json']
 				const query = uni.createSelectorQuery().in(this)
 				for (let i = 0; i < ids.length; i++) {
@@ -377,6 +384,7 @@
 					}
 				}
 				query.exec((res: any) => {
+					if (this.pageActive == false) { return }
 					const rows = res as UTSArray<any> | null
 					if (rows == null || rows.length == 0) {
 						return
@@ -472,10 +480,12 @@
 
 			/** 测量滚动尺寸 */
 			measureScrollSize() {
+				if (this.pageActive == false) { return }
 				const query = uni.createSelectorQuery().in(this)
 				query.select('#context-scroll').boundingClientRect()
 				query.select('#anchor-bottom').boundingClientRect()
 				query.exec((res: any) => {
+					if (this.pageActive == false) { return }
 					const rows = res as UTSArray<any> | null
 					if (rows == null || rows.length < 2) return
 					const viewRect = rows[0] as NodeInfo | null
@@ -508,7 +518,7 @@
 				this.scrollRequestSeq = this.scrollRequestSeq + 1
 				const requestId = this.scrollRequestSeq
 				setTimeout(() => {
-					if (requestId != this.scrollRequestSeq) {
+					if (this.pageActive == false || requestId != this.scrollRequestSeq) {
 						return
 					}
 					this.scrollTop = safeTop
@@ -531,6 +541,7 @@
 				}
 				this.scheduleLayoutCache()
 				setTimeout(() => {
+					if (this.pageActive == false) { return }
 					const retryTop = this.layoutTopMap[id] as number | null
 					if (retryTop != null) {
 						this.commitScrollTop(retryTop + offsetTop - 24)
@@ -588,12 +599,19 @@
 							title: '已复制',
 							icon: 'none'
 						})
+					},
+					fail: () => {
+						uni.showToast({ position: 'bottom', title: '复制失败', icon: 'none' })
 					}
 				})
 			},
 
 			goBack() {
-				uni.navigateBack()
+				uni.navigateBack({
+					fail: () => {
+						uni.showToast({ position: 'bottom', title: '无法返回上一页', icon: 'none' })
+					}
+				})
 			},
 		}
 	}

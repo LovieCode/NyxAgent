@@ -316,16 +316,47 @@ function deleteSchedulerHistoryById(id: string): boolean {
 	if (groupId == '' || sessionId == '' || messageKey == '') { return false }
 	const messages = getGroupMessages(groupId, sessionId)
 	const next: UTSJSONObject[] = []
+	let removed = false
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i]
 		const senderType = msg['senderType'] as string | null
 		const rawId = msg['id'] as string | null
 		const fallbackId = 'index-' + i.toString()
 		if ((senderType == GROUP_MESSAGE_SENDER_SCHEDULER || senderType == GROUP_MESSAGE_SENDER_REVIEWER) && (rawId == messageKey || fallbackId == messageKey)) {
+			removed = true
 			continue
 		}
 		next.push(msg)
 	}
+	if (removed == false) { return false }
+	return saveGroupMessages(groupId, sessionId, next)
+}
+
+function deleteLegacyHistoryById(activeAgentId: string, id: string): boolean {
+	const parts = id.split(':')
+	if (parts.length < 4) { return false }
+	const groupId = parts[1]
+	const sessionId = parts[2]
+	const messageKey = parts[3]
+	if (activeAgentId == '' || groupId == '' || sessionId == '' || messageKey == '') { return false }
+	const messages = getGroupMessages(groupId, sessionId)
+	const next: UTSJSONObject[] = []
+	let removed = false
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const senderAgentId = msg['senderAgentId'] as string | null
+		const role = msg['role'] as string | null
+		const contextRecordId = msg['contextRecordId'] as string | null
+		const rawId = msg['id'] as string | null
+		const fallbackId = 'legacy-' + i.toString()
+		const isLegacyCandidate = senderAgentId == activeAgentId && role == 'assistant' && (contextRecordId == null || contextRecordId == '')
+		if (removed == false && isLegacyCandidate == true && (rawId == messageKey || fallbackId == messageKey)) {
+			removed = true
+			continue
+		}
+		next.push(msg)
+	}
+	if (removed == false) { return false }
 	return saveGroupMessages(groupId, sessionId, next)
 }
 
@@ -333,6 +364,9 @@ export function deleteGroupHistoryContextById(activeAgentId: string, id: string)
 	if (id == '') { return false }
 	if (id.startsWith('scheduler:')) {
 		return deleteSchedulerHistoryById(id)
+	}
+	if (id.startsWith('legacy:')) {
+		return deleteLegacyHistoryById(activeAgentId, id)
 	}
 	if (activeAgentId == '') { return false }
 	return deleteGroupAgentContextRecord(activeAgentId, id)

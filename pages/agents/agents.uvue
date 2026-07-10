@@ -358,7 +358,7 @@
 		readAgentChatKey,
 		readAgentChatName,
 	} from '@/utils/agent-chat-list.uts'
-	import { chooseAvatarImage, consumeAvatarCropResult, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
+	import { chooseAvatarImage, consumeAvatarCropResult, discardManagedAvatarFile, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
 	import { RUNTIME_ACTIVE_AGENT_ID_KEY } from '@/utils/runtime-state.uts'
 
 	export default {
@@ -646,6 +646,7 @@
 			consumeCreateAvatarCropResult(): void {
 				const cropResult = consumeAvatarCropResult('create_agent_avatar')
 				if (cropResult != '') {
+					discardManagedAvatarFile(this.createAvatarPath)
 					this.createAvatarPath = cropResult
 				}
 			},
@@ -655,6 +656,7 @@
 			},
 
 			openCreateDialog(): void {
+				discardManagedAvatarFile(this.createAvatarPath)
 				this.resetCreateData()
 				this.showCreateDialog = true
 			},
@@ -822,6 +824,8 @@
 
 			/** 关闭创建弹窗 */
 			closeCreateDialog() {
+				discardManagedAvatarFile(this.createAvatarPath)
+				this.resetCreateData()
 				this.showCreateDialog = false
 			},
 
@@ -834,6 +838,7 @@
 			},
 
 			clearCreateAvatar(): void {
+				discardManagedAvatarFile(this.createAvatarPath)
 				this.createAvatarPath = ''
 			},
 
@@ -857,8 +862,14 @@
 				}
 
 				// 默认模型从 SQLite app_settings 读取，缺省时回退内置模型。
-				const defaultModel = getAppSetting('settings_model')
-				const id = createAgentFromCreateData(data, defaultModel)
+				let id = ''
+				try {
+					const defaultModel = getAppSetting('settings_model')
+					id = createAgentFromCreateData(data, defaultModel)
+				} catch (e: any) {
+					this.showAgentPageFailure('AGENT_CREATE_SAVE_FAILED', 'agent_create_save', '创建私聊失败', e)
+					return
+				}
 				if (id == '') {
 					this.showAgentPageFailure('AGENT_CREATE_SAVE_FAILED', 'agent_create_save', '创建私聊失败', '智能体列表保存失败')
 					return

@@ -33,11 +33,18 @@
 				filePath: '' as string,
 				draftKey: 'editor_draft' as string,
 				readOnly: false as boolean,
-				dirty: false as boolean,
+					dirty: false as boolean,
+					draftSaveFailed: false as boolean,
+					allowBackNavigation: false as boolean,
 			}
 		},
 		onLoad() {
 			this.loadEditorConfig()
+		},
+		onBackPress(): boolean {
+			if (this.allowBackNavigation == true) { return false }
+			this.onBack()
+			return true
 		},
 		methods: {
 			loadEditorConfig() {
@@ -71,7 +78,12 @@
 						uni.showToast({ position: 'bottom', title: '文件路径为空', icon: 'none' })
 					} else {
 						const fileContent = readContent(this.filePath)
-						content = fileContent != null ? fileContent : ''
+						if (fileContent == null) {
+							this.readOnly = true
+							uni.showToast({ position: 'bottom', title: '文件读取失败，已禁止覆盖保存', icon: 'none' })
+						} else {
+							content = fileContent
+						}
 					}
 				} else {
 					content = getRuntimeState('editor_content')
@@ -163,12 +175,14 @@
 				this.saveDraft()
 			},
 
-			saveDraft() {
+			saveDraft(): boolean {
 				if (this.readOnly == true) {
-					return
+					return true
 				}
-				setRuntimeState(this.draftKey, this.editText)
-				setRuntimeState('editor_draft', this.editText)
+				const scopedSaved = setRuntimeState(this.draftKey, this.editText)
+				const legacySaved = setRuntimeState('editor_draft', this.editText)
+				this.draftSaveFailed = scopedSaved == false || legacySaved == false
+				return this.draftSaveFailed == false
 			},
 
 			clearDraft() {
@@ -178,10 +192,12 @@
 
 			onBack() {
 				if (this.readOnly == true || this.editText == this.initialText) {
-					uni.navigateBack()
+					this.navigateBackSafely()
 					return
 				}
-				this.saveDraft()
+				if (this.saveDraft() == false) {
+					uni.showToast({ position: 'bottom', title: '草稿保存失败，请先复制重要内容', icon: 'none' })
+				}
 				uni.showModal({
 					title: '放弃编辑？',
 					content: '内容尚未保存',
@@ -191,7 +207,8 @@
 					success: (res) => {
 						if (res.confirm == true) {
 							this.clearDraft()
-							uni.navigateBack()
+							this.dirty = false
+							this.navigateBackSafely()
 						}
 					}
 				})
@@ -200,7 +217,7 @@
 			saveAndBack(value: string) {
 				this.editText = value
 				if (this.readOnly == true) {
-					uni.navigateBack()
+					this.navigateBackSafely()
 					return
 				}
 				if (this.mode == 'file') {
@@ -211,12 +228,18 @@
 			},
 
 			saveTextAndBack() {
-				setRuntimeState('editor_result', this.editText)
-				setRuntimeState('editor_result_ready', 'true')
+				if (setRuntimeState('editor_result', this.editText) == false) {
+					uni.showToast({ position: 'bottom', title: '保存编辑结果失败，请重试', icon: 'none' })
+					return
+				}
+				if (setRuntimeState('editor_result_ready', 'true') == false) {
+					uni.showToast({ position: 'bottom', title: '编辑结果通知失败，请重试', icon: 'none' })
+					return
+				}
 				this.initialText = this.editText
 				this.dirty = false
 				this.clearDraft()
-				uni.navigateBack()
+				this.navigateBackSafely()
 			},
 
 			saveFileAndBack() {
@@ -226,16 +249,30 @@
 				}
 				const result = writeContent(this.filePath, this.editText)
 				if (result.ok == true) {
-					setRuntimeState('editor_saved', 'true')
-					setRuntimeState('editor_saved_path', this.filePath)
+					const savedState = setRuntimeState('editor_saved', 'true')
+					const pathState = setRuntimeState('editor_saved_path', this.filePath)
 					this.initialText = this.editText
 					this.dirty = false
 					this.clearDraft()
-					uni.showToast({ position: 'bottom', title: '已保存', icon: 'success' })
-					uni.navigateBack()
+					uni.showToast({
+						position: 'bottom',
+						title: savedState == true && pathState == true ? '已保存' : '文件已保存，页面状态通知失败',
+						icon: savedState == true && pathState == true ? 'success' : 'none'
+					})
+					this.navigateBackSafely()
 				} else {
 					uni.showToast({ position: 'bottom', title: '保存失败: ' + result.error, icon: 'none' })
 				}
+			},
+
+			navigateBackSafely() {
+				this.allowBackNavigation = true
+				uni.navigateBack({
+					fail: () => {
+						this.allowBackNavigation = false
+						uni.showToast({ position: 'bottom', title: '无法返回上一页', icon: 'none' })
+					}
+				})
 			},
 		}
 	}

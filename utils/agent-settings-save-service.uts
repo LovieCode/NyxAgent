@@ -62,6 +62,15 @@ function okSave(generation: AgentSettingsGenerationSaveState): AgentSettingsSave
 	} as AgentSettingsSaveResult
 }
 
+function restoreAgentSettingsSnapshot(snapshot: string): boolean {
+	try {
+		const agents = JSON.parse(snapshot) as UTSJSONObject[]
+		return saveAgents(agents)
+	} catch (_e: any) {
+		return false
+	}
+}
+
 export function saveAgentSettings(input: AgentSettingsSaveInput, global: GenerationSettings): AgentSettingsSaveResult {
 	const agentId = input.agentId.trim()
 	if (agentId == '') { return failSave('未选择联系人') }
@@ -79,6 +88,7 @@ export function saveAgentSettings(input: AgentSettingsSaveInput, global: Generat
 		global
 	)
 	const agents = getAgents()
+	const previousAgentsSnapshot = JSON.stringify(agents)
 	let target: UTSJSONObject | null = null
 	for (let i = 0; i < agents.length; i++) {
 		const id = agents[i]['id'] as string | null
@@ -116,7 +126,10 @@ export function saveAgentSettings(input: AgentSettingsSaveInput, global: Generat
 		return failSave('保存联系人设置失败，请重试')
 	}
 	if (updateSystemPromptForAgent(agentId, input.systemPrompt) == false) {
-		return failSave('联系人已保存，但历史对话提示词同步失败，请重试')
+		if (restoreAgentSettingsSnapshot(previousAgentsSnapshot) == false) {
+			return failSave('历史对话提示词同步失败，且联系人设置回滚失败，请立即重试')
+		}
+		return failSave('历史对话提示词同步失败，本次修改已回滚，请重试')
 	}
 	return okSave(generation)
 }

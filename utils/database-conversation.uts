@@ -193,6 +193,7 @@ export function getAllConversationsForExport(): UTSJSONObject[] {
 	const db = getDb()
 	const result = db.query('SELECT * FROM conversations ORDER BY updated_at DESC')
 	db.close()
+	assertSqlSuccess(result, '导出对话列表失败')
 	return rowsToObjects(result)
 }
 
@@ -276,6 +277,7 @@ export function getAllMessagesForExport(): UTSJSONObject[] {
 	const db = getDb()
 	const result = db.query('SELECT * FROM messages ORDER BY conversation_id ASC, timestamp ASC, id ASC')
 	db.close()
+	assertSqlSuccess(result, '导出对话消息失败')
 	return rowsToObjects(result)
 }
 
