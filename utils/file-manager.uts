@@ -20,6 +20,14 @@ import {
 	normalizePath,
 } from '@/utils/file-manager-models.uts'
 import { copyItem, createDir, deleteItem, exists, listDir, statItem } from '@/utils/file-manager-io.uts'
+import {
+	rememberAgentWorkspaceNames,
+	rememberGroupWorkspaceNames,
+	resolveAgentWorkspaceName,
+	resolveGroupWorkspaceName,
+	writeAgentWorkspaceNameMetadata,
+	writeGroupWorkspaceNameMetadata,
+} from '@/utils/workspace-name-snapshot.uts'
 export * from '@/utils/file-manager-models.uts'
 export * from '@/utils/file-manager-io.uts'
 
@@ -329,12 +337,14 @@ export function listRootContents(): FileItem[] {
 		// 直接读 SQLite，避免和 group-chat-service.uts 形成循环引用。
 		const groupDisplayNames: Map<string, string> = new Map<string, string>()
 		const groupRows = getGroupChatRows()
+		rememberGroupWorkspaceNames(groupRows)
 		for (let j = 0; j < groupRows.length; j++) {
 			const item = groupRows[j]
 			const gid = item['id'] as string
 			const gname = item['name'] as string
 			if (gid != null && gid != '' && gname != null && gname != '') {
 				groupDisplayNames.set(gid, gname)
+				writeGroupWorkspaceNameMetadata(filesDir, gid, gname)
 			}
 		}
 		const groupWorkspaceRoot = filesDir + '/group-workspaces'
@@ -344,7 +354,11 @@ export function listRootContents(): FileItem[] {
 			if (group.isDirectory) {
 				const groupId = group.name
 				const displayName = groupDisplayNames.get(groupId)
-				const label = displayName != null ? displayName : groupId
+				let label = displayName != null ? displayName : ''
+				if (label == '') {
+					const preservedName = resolveGroupWorkspaceName(filesDir, groupId)
+					label = preservedName != '' ? preservedName : '已删除的群聊'
+				}
 				groupItems.push({
 					name: '[Group] ' + label,
 					path: group.path,
@@ -362,12 +376,14 @@ export function listRootContents(): FileItem[] {
 		if (agentListJson != null && agentListJson != '') {
 			try {
 				const agentList = JSON.parse(agentListJson) as UTSJSONObject[]
+				rememberAgentWorkspaceNames(agentList)
 				for (let j = 0; j < (agentList as any[]).length; j++) {
 					const item = agentList[j] as UTSJSONObject
 					const aid = item['id'] as string
 					const aname = item['name'] as string
 					if (aid != null && aid != '' && aname != null && aname != '') {
 						agentDisplayNames.set(aid, aname)
+						writeAgentWorkspaceNameMetadata(filesDir, aid, aname)
 					}
 				}
 			} catch (_e: any) { /* 解析失败则用文件夹名 */ }
@@ -382,7 +398,11 @@ export function listRootContents(): FileItem[] {
 					continue
 				}
 				const displayName = agentDisplayNames.get(agentId)
-				const label = displayName != null ? displayName : agentId
+				let label = displayName != null ? displayName : ''
+				if (label == '') {
+					const preservedName = resolveAgentWorkspaceName(filesDir, agentId)
+					label = preservedName != '' ? preservedName : '已删除的智能体'
+				}
 				agentItems.push({
 					name: '[Agent] ' + label,
 					path: agent.path,

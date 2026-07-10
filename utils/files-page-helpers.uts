@@ -1,6 +1,7 @@
 import { deleteRuntimeState, getConversationsByAgent, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 import { getAgents } from '@/utils/agent.uts'
 import { displaySessionTitle, getGroupChats, getGroupSessions } from '@/utils/group-chat-service.uts'
+import { resolveAgentWorkspaceName, resolveGroupWorkspaceName } from '@/utils/workspace-name-snapshot.uts'
 import {
 	basename,
 	getAgentsRoot,
@@ -140,7 +141,8 @@ export function lookupManagedAgentName(agentId: string): string {
 			break
 		}
 	}
-	return ''
+	const preservedName = resolveAgentWorkspaceName(getInternalFilesDir(), agentId)
+	return preservedName != '' ? preservedName : '已删除的智能体'
 }
 
 export function lookupManagedAgentConversationName(agentId: string, conversationId: string): string {
@@ -172,7 +174,8 @@ export function lookupManagedGroupName(groupId: string): string {
 			return ''
 		}
 	}
-	return ''
+	const preservedName = resolveGroupWorkspaceName(getInternalFilesDir(), groupId)
+	return preservedName != '' ? preservedName : '已删除的群聊'
 }
 
 export function lookupManagedGroupSessionName(groupId: string, sessionId: string): string {

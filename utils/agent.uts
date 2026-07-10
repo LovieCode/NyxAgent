@@ -3,9 +3,10 @@
  * 使用 SQLite app_settings 持久化智能体列表
  */
 
-import { deleteItem, exists, getAgentDir, getAgentsRoot, joinPath } from '@/utils/file-manager.uts'
+import { deleteItem, exists, getAgentDir, getAgentsRoot, getInternalFilesDir, joinPath } from '@/utils/file-manager.uts'
 import { getAppSetting, setAppSetting } from '@/utils/database.uts'
 import { isAstrBotEnabled } from '@/utils/astrbot-service.uts'
+import { rememberAgentWorkspaceName, rememberAgentWorkspaceNames, writeAgentWorkspaceNameMetadata } from '@/utils/workspace-name-snapshot.uts'
 
 export const NYX_ADMIN_AGENT_ID = 'nyx-admin'
 export const NYX_ADMIN_AGENT_NAME = '眠汐'
@@ -247,9 +248,23 @@ function applyAgentDefaultFlagsInMemory(agents: UTSJSONObject[]): UTSJSONObject[
 	return agents
 }
 
+function syncAgentWorkspaceNameMetadata(agents: UTSJSONObject[]): void {
+	const filesDir = getInternalFilesDir()
+	if (filesDir == '') { return }
+	for (let i = 0; i < agents.length; i++) {
+		const id = agents[i]['id'] as string | null
+		const name = agents[i]['name'] as string | null
+		if (id != null && id != '' && name != null && name.trim() != '') {
+			writeAgentWorkspaceNameMetadata(filesDir, id, name)
+		}
+	}
+}
+
 /** 保存智能体列表 */
 export function saveAgents(agents: UTSJSONObject[]): void {
 	setAppSetting('agent_list', JSON.stringify(agents))
+	rememberAgentWorkspaceNames(agents)
+	syncAgentWorkspaceNameMetadata(agents)
 }
 
 /** 获取所有智能体 */
@@ -258,7 +273,8 @@ export function getAgents(): UTSJSONObject[] {
 	if (stored != null && stored != '') {
 		const list = JSON.parse(stored) as UTSJSONObject[]
 		if (list != null) {
-			return applyAgentDefaultFlagsInMemory(applyDefaultAgentPromptFallbackInMemory(list))
+			const normalized = applyAgentDefaultFlagsInMemory(applyDefaultAgentPromptFallbackInMemory(list))
+			return normalized
 		}
 	}
 	// 首次使用，写入默认数据并初始化文件沙箱
@@ -528,15 +544,22 @@ export function deleteAgent(id: string): AgentDeleteResult {
 	const agents = getAgents()
 	const newAgents = [] as UTSJSONObject[]
 	let found = false
+	let deletedName = ''
 	for (let i = 0; i < agents.length; i++) {
 		if ((agents[i]['id'] as string) != id) {
 			newAgents.push(agents[i])
 		} else {
 			found = true
+			const name = agents[i]['name'] as string | null
+			deletedName = name != null ? name.trim() : ''
 		}
 	}
 	if (found == false) {
 		return { ok: false, filesCleared: false } as AgentDeleteResult
+	}
+	if (deletedName != '') {
+		rememberAgentWorkspaceName(id, deletedName)
+		writeAgentWorkspaceNameMetadata(getInternalFilesDir(), id, deletedName)
 	}
 	const serialized = JSON.stringify(newAgents)
 	saveAgents(newAgents)

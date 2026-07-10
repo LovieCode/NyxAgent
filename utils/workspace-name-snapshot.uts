@@ -1,0 +1,220 @@
+import { getAppSetting, setAppSetting } from '@/utils/database.uts'
+import { createDir, readContent, writeContent } from '@/utils/file-manager-io.uts'
+import { joinPath } from '@/utils/file-manager-models.uts'
+
+type WorkspaceNameSnapshot = {
+	id: string
+	name: string
+}
+
+type WorkspaceNameMetadata = {
+	kind: string
+	id: string
+	name: string
+	updatedAt: number
+}
+
+const AGENT_WORKSPACE_NAME_SNAPSHOTS_KEY = 'agent_workspace_name_snapshots'
+const GROUP_WORKSPACE_NAME_SNAPSHOTS_KEY = 'group_workspace_name_snapshots'
+const agentSnapshotCache: Map<string, string> = new Map<string, string>()
+const groupSnapshotCache: Map<string, string> = new Map<string, string>()
+const metadataNameCache: Map<string, string> = new Map<string, string>()
+
+function getSnapshotCache(key: string): Map<string, string> {
+	return key == AGENT_WORKSPACE_NAME_SNAPSHOTS_KEY ? agentSnapshotCache : groupSnapshotCache
+}
+
+function isSafeWorkspaceId(id: string): boolean {
+	return id != '' && id.indexOf('/') < 0 && id.indexOf('\\') < 0 && id.indexOf('..') < 0
+}
+
+function buildWorkspaceNameMetadataPath(filesDir: string, kind: string, id: string, ensureParent: boolean): string {
+	if (filesDir == '' || kind == '' || isSafeWorkspaceId(id) == false) { return '' }
+	const metadataRoot = joinPath(joinPath(filesDir, '.nyx-metadata'), 'workspace-names')
+	const kindRoot = joinPath(metadataRoot, kind)
+	if (ensureParent == true && createDir(kindRoot, true).ok == false) { return '' }
+	return joinPath(kindRoot, id + '.json')
+}
+
+function readWorkspaceNameMetadata(filesDir: string, kind: string, id: string): string {
+	const metadataPath = buildWorkspaceNameMetadataPath(filesDir, kind, id, false)
+	if (metadataPath == '') { return '' }
+	const cachedName = metadataNameCache.get(metadataPath)
+	if (cachedName != null) { return cachedName }
+	const content = readContent(metadataPath)
+	if (content == null || content == '') { return '' }
+	try {
+		const metadata = JSON.parse(content) as UTSJSONObject
+		const storedKind = metadata['kind'] as string | null
+		const storedId = metadata['id'] as string | null
+		const storedName = metadata['name'] as string | null
+		if (storedKind == kind && storedId == id && storedName != null && storedName.trim() != '') {
+			const cleanName = storedName.trim()
+			metadataNameCache.set(metadataPath, cleanName)
+			return cleanName
+		}
+	} catch (_e: any) {
+		return ''
+	}
+	return ''
+}
+
+function writeWorkspaceNameMetadata(filesDir: string, kind: string, id: string, name: string): void {
+	const cleanName = name.trim()
+	if (filesDir == '' || kind == '' || id == '' || cleanName == '') { return }
+	const metadataPath = buildWorkspaceNameMetadataPath(filesDir, kind, id, true)
+	if (metadataPath == '') { return }
+	if (readWorkspaceNameMetadata(filesDir, kind, id) == cleanName) { return }
+	const metadata: WorkspaceNameMetadata = {
+		kind: kind,
+		id: id,
+		name: cleanName,
+		updatedAt: Date.now(),
+	}
+	if (writeContent(metadataPath, JSON.stringify(metadata)).ok == true) {
+		metadataNameCache.set(metadataPath, cleanName)
+	}
+}
+
+function getBuiltInAgentWorkspaceName(agentId: string): string {
+	if (agentId == 'nyx-admin') { return '眠汐' }
+	if (agentId == 'ai-assistant') { return '小夜' }
+	if (agentId == 'coding-helper') { return '零' }
+	if (agentId == 'writing-helper') { return '千夏' }
+	if (agentId == 'translate') { return '凛' }
+	if (agentId == 'idea-lab') { return '星' }
+	return ''
+}
+
+function readWorkspaceNameSnapshots(key: string): WorkspaceNameSnapshot[] {
+	const result: WorkspaceNameSnapshot[] = []
+	const cache = getSnapshotCache(key)
+	const raw = getAppSetting(key)
+	if (raw == null || raw == '') { return result }
+	try {
+		const items = JSON.parse(raw) as UTSJSONObject[]
+		for (let i = 0; i < items.length; i++) {
+			const id = items[i]['id'] as string | null
+			const name = items[i]['name'] as string | null
+			if (id != null && id != '' && name != null && name.trim() != '') {
+				const cleanName = name.trim()
+				result.push({ id: id, name: cleanName } as WorkspaceNameSnapshot)
+				cache.set(id, cleanName)
+			}
+		}
+	} catch (_e: any) {
+		return []
+	}
+	return result
+}
+
+function rememberWorkspaceNames(key: string, candidates: WorkspaceNameSnapshot[]): void {
+	if (candidates.length == 0) { return }
+	const cache = getSnapshotCache(key)
+	let allCached = true
+	for (let i = 0; i < candidates.length; i++) {
+		const cachedName = cache.get(candidates[i].id)
+		if (cachedName == null || cachedName != candidates[i].name) {
+			allCached = false
+			break
+		}
+	}
+	if (allCached == true) { return }
+	const snapshots = readWorkspaceNameSnapshots(key)
+	let changed = false
+	for (let i = 0; i < candidates.length; i++) {
+		const candidate = candidates[i]
+		if (candidate.id == '' || candidate.name == '') { continue }
+		let found = false
+		for (let j = 0; j < snapshots.length; j++) {
+			if (snapshots[j].id == candidate.id) {
+				found = true
+				if (snapshots[j].name != candidate.name) {
+					snapshots[j].name = candidate.name
+					changed = true
+				}
+				break
+			}
+		}
+		if (found == false) {
+			snapshots.push({ id: candidate.id, name: candidate.name } as WorkspaceNameSnapshot)
+			changed = true
+		}
+		cache.set(candidate.id, candidate.name)
+	}
+	if (changed == true) {
+		setAppSetting(key, JSON.stringify(snapshots))
+	}
+}
+
+function getWorkspaceNameSnapshot(key: string, id: string): string {
+	if (id == '') { return '' }
+	const cache = getSnapshotCache(key)
+	const cachedName = cache.get(id)
+	if (cachedName != null) { return cachedName }
+	const snapshots = readWorkspaceNameSnapshots(key)
+	for (let i = 0; i < snapshots.length; i++) {
+		if (snapshots[i].id == id) {
+			return snapshots[i].name
+		}
+	}
+	return ''
+}
+
+function buildWorkspaceNameCandidates(items: UTSJSONObject[]): WorkspaceNameSnapshot[] {
+	const result: WorkspaceNameSnapshot[] = []
+	for (let i = 0; i < items.length; i++) {
+		const id = items[i]['id'] as string | null
+		const name = items[i]['name'] as string | null
+		if (id != null && id != '' && name != null && name.trim() != '') {
+			result.push({ id: id, name: name.trim() } as WorkspaceNameSnapshot)
+		}
+	}
+	return result
+}
+
+export function rememberAgentWorkspaceNames(agents: UTSJSONObject[]): void {
+	rememberWorkspaceNames(AGENT_WORKSPACE_NAME_SNAPSHOTS_KEY, buildWorkspaceNameCandidates(agents))
+}
+
+export function rememberAgentWorkspaceName(agentId: string, agentName: string): void {
+	const name = agentName.trim()
+	if (agentId == '' || name == '') { return }
+	const candidates: WorkspaceNameSnapshot[] = []
+	candidates.push({ id: agentId, name: name } as WorkspaceNameSnapshot)
+	rememberWorkspaceNames(AGENT_WORKSPACE_NAME_SNAPSHOTS_KEY, candidates)
+}
+
+export function rememberGroupWorkspaceNames(rows: UTSJSONObject[]): void {
+	rememberWorkspaceNames(GROUP_WORKSPACE_NAME_SNAPSHOTS_KEY, buildWorkspaceNameCandidates(rows))
+}
+
+export function rememberGroupWorkspaceName(groupId: string, groupName: string): void {
+	const name = groupName.trim()
+	if (groupId == '' || name == '') { return }
+	const candidates: WorkspaceNameSnapshot[] = []
+	candidates.push({ id: groupId, name: name } as WorkspaceNameSnapshot)
+	rememberWorkspaceNames(GROUP_WORKSPACE_NAME_SNAPSHOTS_KEY, candidates)
+}
+
+export function writeAgentWorkspaceNameMetadata(filesDir: string, agentId: string, agentName: string): void {
+	writeWorkspaceNameMetadata(filesDir, 'agent', agentId, agentName)
+}
+
+export function writeGroupWorkspaceNameMetadata(filesDir: string, groupId: string, groupName: string): void {
+	writeWorkspaceNameMetadata(filesDir, 'group', groupId, groupName)
+}
+
+export function resolveAgentWorkspaceName(filesDir: string, agentId: string): string {
+	const metadataName = readWorkspaceNameMetadata(filesDir, 'agent', agentId)
+	if (metadataName != '') { return metadataName }
+	const snapshotName = getWorkspaceNameSnapshot(AGENT_WORKSPACE_NAME_SNAPSHOTS_KEY, agentId)
+	if (snapshotName != '') { return snapshotName }
+	return getBuiltInAgentWorkspaceName(agentId)
+}
+
+export function resolveGroupWorkspaceName(filesDir: string, groupId: string): string {
+	const metadataName = readWorkspaceNameMetadata(filesDir, 'group', groupId)
+	if (metadataName != '') { return metadataName }
+	return getWorkspaceNameSnapshot(GROUP_WORKSPACE_NAME_SNAPSHOTS_KEY, groupId)
+}

@@ -15,6 +15,7 @@ import {
 	deleteItem,
 	normalizePath,
 } from '@/utils/file-manager.uts'
+import { rememberGroupWorkspaceName, writeGroupWorkspaceNameMetadata } from '@/utils/workspace-name-snapshot.uts'
 import {
 	CHAT_ROLE_USER,
 	cloneParts,
@@ -147,12 +148,19 @@ function ensureDirectory(path: string): boolean {
 	return createDir(path, true).ok
 }
 
+function syncGroupWorkspaceNameMetadata(group: GroupChat): void {
+	const filesDir = getInternalFilesDir()
+	if (filesDir == '') { return }
+	writeGroupWorkspaceNameMetadata(filesDir, group.id, group.name)
+}
+
 export function getGroupChats(): GroupChat[] {
 	const rows = getGroupChatRows()
 	const result: GroupChat[] = []
 	const legacySchedulerPrompt = readLegacySchedulerPrompt()
 	for (let i = 0; i < rows.length; i++) {
-		result.push(dbRowToGroupChat(rows[i], legacySchedulerPrompt))
+		const group = dbRowToGroupChat(rows[i], legacySchedulerPrompt)
+		result.push(group)
 	}
 	return result
 }
@@ -160,19 +168,24 @@ export function getGroupChats(): GroupChat[] {
 export function saveGroupChats(groups: GroupChat[]): void {
 	for (let i = 0; i < groups.length; i++) {
 		saveGroupChatRow(groupChatToDbRow(groups[i]))
+		rememberGroupWorkspaceName(groups[i].id, groups[i].name)
+		syncGroupWorkspaceNameMetadata(groups[i])
 	}
 }
 
 export function getGroupChatById(groupId: string): GroupChat | null {
 	const row = getGroupChatRowById(groupId)
 	if (row != null) {
-		return dbRowToGroupChat(row, readLegacySchedulerPrompt())
+		const group = dbRowToGroupChat(row, readLegacySchedulerPrompt())
+		return group
 	}
 	return null
 }
 
 export function saveGroupChat(group: GroupChat): void {
 	saveGroupChatRow(groupChatToDbRow(group))
+	rememberGroupWorkspaceName(group.id, group.name)
+	syncGroupWorkspaceNameMetadata(group)
 }
 
 export function buildGroupWorkspaceRoot(): string {
