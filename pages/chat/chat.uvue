@@ -229,6 +229,7 @@
 	import { resolveKeyboardInset } from '@/utils/keyboard-inset.uts'
 	import { NYX_FLOAT_CONTEXT_CHAT, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
 	import { APP_ERROR_CATEGORY_RUNTIME, reportAppErrorFromCause } from '@/utils/app-error.uts'
+	import { handleCameraPickerFailure } from '@/utils/media-permission.uts'
 
 	let chatNyxFloatVoiceCallback: (() => void) | null = null
 
@@ -1083,7 +1084,7 @@
 					},
 					fail: (err: any) => {
 						if (isChooseCancelError(err) == true) { return }
-						uni.showToast({ position: 'bottom', title: '拍照失败', icon: 'none' })
+						handleCameraPickerFailure(err, 'chat_camera_picker')
 					}
 				})
 			},

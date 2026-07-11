@@ -148,6 +148,7 @@
 	import { setImageMessageCaption } from '@/utils/chat-models.uts'
 	import { setActiveAgentRuntimeId, setContextPreviewPayload, setFilesInitialPath, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, type PickedLocalFile } from '@/utils/attachment-reader.uts'
+	import { handleCameraPickerFailure } from '@/utils/media-permission.uts'
 	import {
 		buildGroupDispatchHistoryText,
 		buildGroupMemberAgentItems as buildGroupMemberAgentItemsForPage,
@@ -1058,7 +1059,7 @@ let groupTurnRuntimeSyncTimer: number = -1
 					},
 					fail: (err: any) => {
 						if (isChooseCancelError(err) == true) { return }
-						uni.showToast({ position: 'bottom', title: '拍照失败', icon: 'none' })
+						handleCameraPickerFailure(err, 'group_chat_camera_picker')
 					}
 				})
 			},

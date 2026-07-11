@@ -8,6 +8,7 @@ import { isChooseCancelError, parsePickedImagePath, readPickedImageSelection } f
 import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 import { copyItem, createDir, deleteItem, exists, getInternalFilesDir, joinPath } from '@/utils/file-manager.uts'
+import { handleCameraPickerFailure } from '@/utils/media-permission.uts'
 
 const AVATAR_CROP_RESULT_KEY = 'crop_result'
 const AVATAR_CROP_TARGET_KEY = 'crop_target'
@@ -221,7 +222,7 @@ function chooseAvatarFromCamera(onPicked: (path: string) => void): void {
 		},
 		fail: (err: any) => {
 			if (isChooseCancelError(err) == true) { return }
-			showAvatarPickerFailure('AVATAR_CAMERA_FAILED', 'avatar_picker_camera', '拍照失败', err)
+			handleCameraPickerFailure(err, 'avatar_picker_camera')
 		}
 	})
 }

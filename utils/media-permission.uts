@@ -1,0 +1,68 @@
+/** 媒体选择失败后的权限恢复入口。 */
+
+import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
+
+function showMediaPermissionFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+	const error = reportAppErrorFromCause(code, APP_ERROR_CATEGORY_RUNTIME, operation, userMessage, cause, true)
+	uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+}
+
+function openMediaAuthorizationSettings(): void {
+	// #ifdef APP
+	uni.openAppAuthorizeSetting({
+		fail: (err: any) => {
+			showMediaPermissionFailure('MEDIA_PERMISSION_SETTINGS_OPEN_FAILED', 'media_permission_settings_open', '无法打开系统授权设置', err)
+		}
+	})
+	// #endif
+}
+
+/**
+ * 仅在系统明确报告相机权限被拒绝时引导设置；其他失败保留原始错误语义。
+ */
+export function handleCameraPickerFailure(err: any, operation: string): void {
+	// #ifdef APP
+	try {
+		const authorizeSetting = uni.getAppAuthorizeSetting()
+		if (authorizeSetting.cameraAuthorized == 'denied') {
+			reportAppErrorFromCause(
+				'MEDIA_CAMERA_PERMISSION_DENIED',
+				APP_ERROR_CATEGORY_RUNTIME,
+				operation,
+				'相机权限已关闭',
+				err,
+				true,
+			)
+			uni.showModal({
+				title: '需要相机权限',
+				content: '请在系统设置中允许使用相机，然后返回重试。',
+				confirmText: '打开设置',
+				cancelText: '取消',
+				success: (res) => {
+					if (res.confirm == true) {
+						openMediaAuthorizationSettings()
+					}
+				},
+				fail: (modalErr: any) => {
+					showMediaPermissionFailure('MEDIA_CAMERA_PERMISSION_DIALOG_FAILED', 'media_camera_permission_dialog', '无法显示权限提示', modalErr)
+				}
+			})
+			return
+		}
+		if (authorizeSetting.cameraAuthorized == 'config error') {
+			showMediaPermissionFailure('MEDIA_CAMERA_PERMISSION_CONFIG_ERROR', operation, '应用没有正确配置相机权限', err)
+			return
+		}
+	} catch (settingErr: any) {
+		reportAppErrorFromCause(
+			'MEDIA_CAMERA_PERMISSION_READ_FAILED',
+			APP_ERROR_CATEGORY_RUNTIME,
+			operation,
+			'读取相机授权状态失败',
+			settingErr,
+			true,
+		)
+	}
+	// #endif
+	showMediaPermissionFailure('MEDIA_CAMERA_PICK_FAILED', operation, '拍照失败', err)
+}
