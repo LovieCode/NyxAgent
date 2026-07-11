@@ -19,8 +19,8 @@
 					v-model="temperatureStr"
 					placeholder="0 - 2，默认 1"
 					placeholder-style="color: #D1D5DB; font-size: 13px;"
-					@input="autoSaveSettings"
 					@blur="normalizeAndSaveSettings"
+					@confirm="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">越低越稳，越高越发散。默认 1 更通用，写代码可手动调低。</text>
 
@@ -31,8 +31,8 @@
 					v-model="maxTokensStr"
 					placeholder="256 - 65536，默认 4096"
 					placeholder-style="color: #D1D5DB; font-size: 13px;"
-					@input="autoSaveSettings"
 					@blur="normalizeAndSaveSettings"
+					@confirm="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">限制单次回复长度，太低会被截断，太高会更吃额度。</text>
 
@@ -43,8 +43,8 @@
 					v-model="maxIterationsStr"
 					placeholder="0 - 100，默认 20"
 					placeholder-style="color: #D1D5DB; font-size: 13px;"
-					@input="autoSaveSettings"
 					@blur="normalizeAndSaveSettings"
+					@confirm="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">每次「思考 → 工具 → 继续」算一轮。填 0 表示不限制，遇到“达到最大迭代次数”就调这里。</text>
 			</view>
@@ -61,8 +61,8 @@
 					v-model="memoryTemperatureStr"
 					placeholder="0 - 2，默认 0.7"
 					placeholder-style="color: #D1D5DB; font-size: 13px;"
-					@input="autoSaveSettings"
 					@blur="normalizeAndSaveSettings"
+					@confirm="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">默认保持通用温度，避免部分模型温度过低时异常；需要更稳再手动调低。</text>
 
@@ -73,8 +73,8 @@
 					v-model="memoryMaxTokensStr"
 					placeholder="256 - 2048，默认 2048"
 					placeholder-style="color: #D1D5DB; font-size: 13px;"
-					@input="autoSaveSettings"
 					@blur="normalizeAndSaveSettings"
+					@confirm="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">记忆整理只需要简短总结，最高限制为 2048。</text>
 
@@ -85,8 +85,8 @@
 					v-model="memoryMaxIterationsStr"
 					placeholder="1 - 100，默认 20"
 					placeholder-style="color: #D1D5DB; font-size: 13px;"
-					@input="autoSaveSettings"
 					@blur="normalizeAndSaveSettings"
+					@confirm="normalizeAndSaveSettings"
 				/>
 				<text class="field-tip">记忆整理会查历史、查记忆、写短缓存/长期记忆。默认 20，系统提示也会同步标注。</text>
 				<text class="field-tip">记忆整理固定非流式运行，避免后台维护过程刷屏。</text>
@@ -179,19 +179,6 @@
 				} as UTSJSONObject
 			},
 
-			autoSaveSettings(): boolean {
-				const built = this.buildCurrentSettings()
-				const settings = built['settings'] as GenerationSettings
-				const memorySettings = built['memorySettings'] as GenerationSettings
-				const saved = saveGenerationSettings(settings, memorySettings)
-				if (saved == false) {
-					this.loadSettings()
-					uni.showToast({ title: '保存生成参数失败，请重试', icon: 'none' })
-					return false
-				}
-				return true
-			},
-
 			normalizeAndSaveSettings() {
 				const built = this.buildCurrentSettings()
 				const settings = built['settings'] as GenerationSettings
@@ -212,8 +199,17 @@
 
 			saveStreamSetting() {
 				const oldValue = !this.streamEnabled
-				if (this.autoSaveSettings() == false) {
+				const oldSettings = getGlobalGenerationSettings()
+				const memorySettings = getMemoryOrganizerGenerationSettings()
+				const settings: GenerationSettings = {
+					temperature: oldSettings.temperature,
+					maxTokens: oldSettings.maxTokens,
+					maxIterations: oldSettings.maxIterations,
+					streamEnabled: this.streamEnabled,
+				}
+				if (saveGenerationSettings(settings, memorySettings) == false) {
 					this.streamEnabled = oldValue
+					uni.showToast({ title: '保存生成参数失败，请重试', icon: 'none' })
 				}
 			},
 		}

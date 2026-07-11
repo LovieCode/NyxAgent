@@ -46,7 +46,7 @@
 | 设置 | `pages/settings/basic/provider-edit` | 新增/编辑提供商、URL/API Key/模型、校验、删除 | 测试中 | Android class 编译与常规编辑页 ADB 通过；首启不再预置过时模型，多模型必须显式选择默认项；全新安装流程待隔离数据回归 |
 | 设置 | `pages/settings/model/model` | 旧模型设置兼容与跳转 | 静态确认 | 页面仍注册，但项目内没有跳转方，也没有代码写入 `pending_agent_model_id`；保留/重定向/下线需要兼容策略确认 |
 | 设置 | `pages/settings/default-models/default-models` | chat/TTS/STT/vision/organize 默认模型与图片描述 Prompt | 测试中 | ADB 已通过 Chat/Memory/Vision 区域、页面返回；TTS dirty 保护已编译，五类任务选择和非法参数待写操作回归 |
-| 设置 | `pages/settings/generation/generation` | 温度、Token、迭代、流式配置与边界值 | 测试中 | ADB 已通过上下界裁剪、流式开关、退出重进与 force-stop 持久化；发现数值逐字符保存会污染非法输入回退值，待下一轮修复 |
+| 设置 | `pages/settings/generation/generation` | 温度、Token、迭代、流式配置与边界值 | ADB 通过 | 上下界裁剪、流式开关、退出重进与 force-stop 持久化通过；数值改为 blur/confirm 提交，编辑中间态不再写库 |
 | 设置 | `pages/settings/plugin/plugin` | 插件配置、启停、输入校验、错误态 | 测试中 | ADB 已通过页面入口、搜索与 AstrBot 配置渲染；401/500/超时/断网及 diagnostics 待测 |
 | 设置 | `pages/settings/skills/skills` | Skill 新增/编辑/删除、Agent 绑定、长文本编辑 | 测试中 | ADB 已通过页面入口、空状态和返回；损坏 JSON 全链路写保护已编译，CRUD/长文/绑定待隔离数据回归 |
 | 设置 | `pages/settings/data/data` | 导出、导入、取消、无效文件、覆盖确认 | 测试中 | ADB 安全备份生成与 Android 分享选择器通过；导入增加字段/资源完整性拒绝，真实覆盖恢复仍待隔离数据回归 |
@@ -125,12 +125,13 @@
 | UI-007 | P1 | Rice Dialog/ActionSheet 小程序 API 分支引用错误字段、未声明变量及错误的 fail 参数类型 | 已修复，待 MP 编译 | `cancelText` 改为 `cancelButtonText`，失败信息统一传字符串 `err.errMsg` | Rice Dialog/ActionSheet API，`815ecf6` |
 | SET-015 | P2 | 生成参数保存失败后页面继续展示未持久化值，重进时才突然回退 | 已修复，故障注入待回归 | 两条保存路径失败时立即重新读取最后成功配置 | `pages/settings/generation/generation.uvue`，`815ecf6` |
 | SET-016 | P2 | 旧模型设置页仍注册并参与备份白名单，但已无入口和运行态写入方 | 待兼容决策 | 直接删除可能影响外部深链或旧备份语义；可选重定向到默认模型页或正式下线 | 待用户确认兼容清理策略 |
-| SET-017 | P2 | 生成参数数值框在 `@input` 每字符保存，清空旧值时会把中间态裁剪后写库并污染非法输入回退 | 待修复 | ADB 复现 `65536 -> 清空 -> abc` 回退为 `256`、`100 -> abc` 回退为 `1`；应改为 blur/confirm 提交 | `pages/settings/generation/generation.uvue` |
+| SET-017 | P2 | 生成参数数值框在 `@input` 每字符保存，清空旧值时会把中间态裁剪后写库并污染非法输入回退 | 已修复，ADB 通过 | 数值仅在 blur/confirm 提交；流式开关只更新已持久化快照。编辑 `4096 -> 65` 时 DB 保持 `4096`，`abc` 失焦与 force-stop 后仍恢复 `4096` | `pages/settings/generation/generation.uvue` |
 
 ## 修改记录
 
 | 日期 | 文件 | 修改 | 验证 | commit |
 | --- | --- | --- | --- | --- |
+| 2026-07-11 | `pages/settings/generation/generation.uvue` | 数值输入从逐字符保存改为 blur/confirm 提交；流式开关不再顺带提交编辑中的半成品 | HBuilderX 28 页面编译并同步成功；ADB + SQLite 验证编辑中、非法失焦和 force-stop 均不污染原值 | 本轮提交 |
 | 2026-07-11 | 私聊 runtime、聊天页、会话恢复、历史/Agent 删除与数据导入 | 私聊流脱离页面生命周期；图片 caption/停止/保存统一进入 runtime；删除或覆盖恢复后旧页面不可复活数据；进程遗留流式消息转为明确中断态 | HBuilderX 5.15 clean 与差量编译 28 页面成功；ADB 退出续流、重进防重复、SQLite 终态和日志回归通过 | 本轮提交 |
 | 2026-07-11 | 私聊/群聊媒体错误、Rice Dialog/ActionSheet、Todo、Files、Agent 模型标签、生成设置 | 补文件/相册/图片失败诊断；修复 Dialog 校验保留、物理返回和外部关闭；统一旧裸模型 Provider 语义；生成保存失败立即回滚；修正 MP API 字段 | HBuilderX 5.15 对 28 页面连续编译并同步成功；ADB 群聊相机权限、Todo/文件空输入、返回/遮罩、冷启动和前后台切换通过 | `82d7223`、`815ecf6` |
 | 2026-07-11 | 相机权限公共处理器、头像、私聊与群聊媒体入口 | 永久拒绝相机权限时显示恢复弹窗，支持直接进入系统授权设置；普通相机故障继续保留结构化错误与 toast | HBuilderX 5.15 对 28 页面编译成功；ADB 覆盖头像确认打开设置、头像取消、私聊“不再询问”拒绝和取消；测试后权限与系统自动旋转状态已恢复 | `81976fa` |
@@ -234,6 +235,7 @@
 | 2026-07-11 19:06 | ADB 生命周期与进程重启 | Home 键触发 `App Hide`，恢复触发 `App Show`；force-stop 后新 PID 冷启动，首页联系人/群聊可见项计数一致，无 fatal/UTS 异常 |
 | 2026-07-11 20:12 | 私聊 runtime clean compile | HBuilderX 5.15 对 28 页面完成 Android class 干净编译，`ready in 130716ms`；追加清理/checkpoint 后差量编译再次成功 |
 | 2026-07-11 20:23 | ADB 私聊退出续流回归 | 发送 `RUNTIME_EXIT_2021` 后约 50ms 退出；助手消息时间戳晚于用户约 1.1 秒，证明离页后继续；重进后 SQLite 严格 `1 user + 1 assistant`，无重复流、fatal、ABI 或 UTS 异常；设备恢复首页 |
+| 2026-07-11 20:42 | 生成参数同步部署与持久化回归 | HBuilderX 28 页面编译成功并明确“同步手机端程序文件成功”；恢复测试前 `max_tokens=4096`，编辑为 `65` 时 DB 不变，输入 `abc` 失焦后 UI/DB 回退 `4096`，force-stop 前后仍为 `4096` |
 
 ## 手动真机回归
 
