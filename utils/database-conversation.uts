@@ -139,6 +139,14 @@ export function saveConversation(
 			if (isError != null) {
 				extra['isError'] = isError
 			}
+			const errorMessage = msg['errorMessage']
+			if (errorMessage != null) {
+				extra['errorMessage'] = errorMessage
+			}
+			const isInterrupted = msg['isInterrupted']
+			if (isInterrupted != null) {
+				extra['isInterrupted'] = isInterrupted
+			}
 			const toolCallId = msg['tool_call_id']
 			if (toolCallId != null) {
 				extra['tool_call_id'] = toolCallId
@@ -241,6 +249,12 @@ export function getMessages(conversationId: string): UTSJSONObject[] {
 				}
 				if (extra['isError'] != null) {
 					row['isError'] = extra['isError']
+				}
+				if (extra['errorMessage'] != null) {
+					row['errorMessage'] = extra['errorMessage']
+				}
+				if (extra['isInterrupted'] != null) {
+					row['isInterrupted'] = extra['isInterrupted']
 				}
 				if (extra['tool_call_id'] != null) {
 					row['tool_call_id'] = extra['tool_call_id']

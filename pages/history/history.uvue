@@ -100,6 +100,7 @@
 	 * 历史记录页面 - 展示过往对话列表，支持批量管理
 	 */
 	import { deleteRuntimeState, getConversations, getMessages, getRuntimeState, deleteConversation, setRuntimeState } from '@/utils/database.uts'
+	import { disposeChatTurnByConversationId } from '@/utils/chat-turn-runtime.uts'
 	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 	import {
 		buildGroupHistoryContextItems,
@@ -272,8 +273,11 @@
 										failedCount++
 									}
 								} else {
-									if (deleteConversation(this.selectedIds[i]) == false) {
+									const conversationId = this.selectedIds[i]
+									if (deleteConversation(conversationId) == false) {
 										failedCount++
+									} else {
+										disposeChatTurnByConversationId(conversationId)
 									}
 								}
 							}
@@ -501,6 +505,8 @@
 								} else {
 									if (deleteConversation(id) == false) {
 										failedCount++
+									} else {
+										disposeChatTurnByConversationId(id)
 									}
 								}
 							}

@@ -168,3 +168,19 @@ export function saveChatConversation(conversationId: string, agentId: string, sy
 		messages
 	)
 }
+
+/** 冷启动时把旧进程遗留的流式消息收束为明确的中断状态，不伪装成仍在生成。 */
+export function recoverInterruptedChatConversation(conversationId: string, agentId: string, systemPrompt: string, messages: UTSJSONObject[]): boolean {
+	let changed = false
+	for (let i = 0; i < messages.length; i++) {
+		const message = messages[i]
+		if ((message['isStreaming'] as boolean | null) != true) { continue }
+		message['isStreaming'] = false
+		message['isError'] = true
+		message['isInterrupted'] = true
+		message['errorMessage'] = '上次回复因应用退出而中断'
+		changed = true
+	}
+	if (changed == false) { return true }
+	return saveChatConversation(conversationId, agentId, systemPrompt, messages)
+}

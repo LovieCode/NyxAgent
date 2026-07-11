@@ -8,6 +8,7 @@ import { saveAgents } from '@/utils/agent.uts'
 import { getAgentDir, getInternalFilesDir, joinPath, exists, createDir, writeContent } from '@/utils/file-manager.uts'
 import { readImportManifest, importAgentWorkspaceFiles, importBackupAssets, importGroupWorkspaceFiles, importUserWorkspaceFiles } from '@/utssdk/app-data-export/index.uts'
 import { APP_ERROR_CATEGORY_STORAGE, reportAppErrorFromCause } from '@/utils/app-error.uts'
+import { disposeAllChatTurns } from '@/utils/chat-turn-runtime.uts'
 
 const IMPORT_SCHEMA_VERSION = 1
 
@@ -590,6 +591,7 @@ export function importSettingsOnlyFromZip(zipPath: string): string {
 			if (saveAgents(agents) == false) {
 				throw new Error('Agent 设置恢复失败')
 			}
+			disposeAllChatTurns()
 			if (restoreListStorage('skills_list', skills) == false) {
 				throw new Error('Skill 设置恢复失败')
 			}
@@ -664,7 +666,8 @@ export function importAllDataFromZip(zipPath: string): string {
 			storage['todo_list'] = JSON.stringify(todos)
 		}
 
-		importDatabaseTables(providers, conversations, messages, appSettings, memoryBuffers, memoryCore, conversationTokenUsageStats, memoryCompactionStates, groupChatData != null ? groupChatData : ({} as UTSJSONObject))
+			importDatabaseTables(providers, conversations, messages, appSettings, memoryBuffers, memoryCore, conversationTokenUsageStats, memoryCompactionStates, groupChatData != null ? groupChatData : ({} as UTSJSONObject))
+			disposeAllChatTurns()
 			if (saveAgents(agents) == false) {
 				throw new Error('Agent 数据恢复失败')
 			}

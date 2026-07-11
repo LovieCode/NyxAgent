@@ -323,6 +323,7 @@
 	import { getGlobalGenerationSettings } from '@/utils/generation-settings.uts'
 	import { chooseAvatarImage, consumeAvatarCropResult, discardManagedAvatarFile, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
 	import { clearActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
+	import { disposeChatTurnsByAgent } from '@/utils/chat-turn-runtime.uts'
 	import { getSkills, getAgentSkillIds, filterExistingSkillIds, hasSkillsStorageReadError } from '@/utils/skills.uts'
 	import {
 		buildAgentCurrentModelLabel,
@@ -780,6 +781,7 @@
 								showAgentSettingsFailure('AGENT_DELETE_REJECTED', 'agent_delete', '删除联系人失败', 'deleteAgent 返回失败')
 								return
 							}
+							disposeChatTurnsByAgent(this.agentId)
 							discardManagedAvatarFile(this.agentAvatar)
 							if (this.savedAvatarPath != this.agentAvatar) {
 								discardManagedAvatarFile(this.savedAvatarPath)

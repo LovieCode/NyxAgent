@@ -1,0 +1,557 @@
+/**
+ * 私聊后台回合运行时。
+ *
+ * 按 agentId + conversationId 唯一持有生成流、消息和保存状态。
+ * 页面只订阅更新，退出页面不会中止当前回复。
+ */
+
+import { agentChat, captionImage } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+import { saveChatConversation } from '@/utils/chat-conversation-service.uts'
+import { buildRuntimeMessages as buildRuntimeChatMessages, finalizeAssistantTurn, markAssistantMessageError, reduceAgentEvent } from '@/utils/chat-message-reducer.uts'
+import { applyChatImageCaption } from '@/utils/chat-page-helpers.uts'
+import {
+	CHAT_STREAM_FLUSH_DELAY_MS,
+	appendBufferedChatAgentEvent,
+	appendLatestChatResponseSnapshot,
+	flushBufferedChatStreamEvents,
+	isBufferedChatAgentEvent,
+} from '@/utils/chat-stream-events.uts'
+import { eventBus } from '@/utils/event-bus.uts'
+import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
+import { getAgentConversationDir } from '@/utils/file-manager.uts'
+
+const CHAT_TURN_RUNTIME_EVENT_PREFIX = 'chat-turn-runtime-update:'
+const CHAT_TURN_RUNTIME_CLEANUP_EVENT = 'chat-turn-runtime-cleanup'
+let chatTurnRunSequence = 0
+let chatTurnSubscriptionSequence = 0
+
+type ChatTurnSubscription = {
+	token: string
+	eventName: string
+	callback: () => void
+}
+
+function buildChatTurnRuntimeKey(agentId: string, conversationId: string): string {
+	return agentId + ':' + conversationId
+}
+
+function readChatTurnEventError(event: AgentEvent): string {
+	const raw = event.error != null ? (event.error as string).trim() : ''
+	return raw != '' ? raw : '请求失败'
+}
+
+export function getChatTurnRuntimeEventName(agentId: string, conversationId: string): string {
+	return CHAT_TURN_RUNTIME_EVENT_PREFIX + buildChatTurnRuntimeKey(agentId, conversationId)
+}
+
+class ChatTurnRuntime {
+	agentId: string
+	conversationId: string
+	messages: UTSJSONObject[]
+	running: boolean
+	phase: string
+	runId: string
+	currentStream: AgentEventStream | null
+	eventQueue: AgentEvent[]
+	flushTimer: number
+	systemPrompt: string
+	model: string
+	msgSegmentation: boolean
+	lastErrorMessage: string
+	errorRevision: number
+	memoryNoticeMessage: string
+	memoryNoticeRevision: number
+	completionRevision: number
+	lastCompletionSucceeded: boolean
+	refCount: number
+	generationFailed: boolean
+
+	constructor(agentId: string, conversationId: string) {
+		this.agentId = agentId
+		this.conversationId = conversationId
+		this.messages = [] as UTSJSONObject[]
+		this.running = false
+		this.phase = 'idle'
+		this.runId = ''
+		this.currentStream = null
+		this.eventQueue = [] as AgentEvent[]
+		this.flushTimer = -1
+		this.systemPrompt = ''
+		this.model = ''
+		this.msgSegmentation = true
+		this.lastErrorMessage = ''
+		this.errorRevision = 0
+		this.memoryNoticeMessage = ''
+		this.memoryNoticeRevision = 0
+		this.completionRevision = 0
+		this.lastCompletionSucceeded = false
+		this.refCount = 0
+		this.generationFailed = false
+	}
+
+	emitUpdate(): void {
+		eventBus.emit(getChatTurnRuntimeEventName(this.agentId, this.conversationId))
+	}
+
+	reportError(message: string): void {
+		this.lastErrorMessage = message
+		this.errorRevision++
+		this.emitUpdate()
+	}
+
+	reportMemoryNotice(message: string): void {
+		this.memoryNoticeMessage = message
+		this.memoryNoticeRevision++
+		this.emitUpdate()
+	}
+
+	clearFlushTimer(): void {
+		if (this.flushTimer == -1) { return }
+		clearTimeout(this.flushTimer)
+		this.flushTimer = -1
+	}
+
+	flushEvents(): void {
+		this.clearFlushTimer()
+		const result = flushBufferedChatStreamEvents(this.messages, this.eventQueue)
+		this.eventQueue = result.nextQueue
+		if (result.messageChanged == true) {
+			this.emitUpdate()
+		}
+	}
+
+	scheduleFlush(): void {
+		if (this.flushTimer != -1) { return }
+		this.flushTimer = setTimeout(() => {
+			this.flushTimer = -1
+			this.flushEvents()
+		}, CHAT_STREAM_FLUSH_DELAY_MS)
+	}
+
+	isRunActive(runId: string): boolean {
+		return this.running == true && this.runId == runId
+	}
+
+	saveMessages(): boolean {
+		const saved = saveChatConversation(this.conversationId, this.agentId, this.systemPrompt, this.messages)
+		if (saved == true && this.running == false && this.phase == 'save_failed') {
+			this.phase = 'completed'
+		}
+		return saved
+	}
+
+	checkpoint(): void {
+		if (this.saveMessages() == false) {
+			this.reportError('对话进度暂未保存，内存中的回复仍会继续')
+		}
+	}
+
+	finish(runId: string): void {
+		if (this.isRunActive(runId) == false) { return }
+		this.flushEvents()
+		finalizeAssistantTurn(this.messages, this.msgSegmentation)
+		if (this.generationFailed == false) {
+			appendLatestChatResponseSnapshot(this.messages, this.agentId, this.conversationId)
+		}
+		this.running = false
+		this.currentStream = null
+		const saved = this.saveMessages()
+		this.phase = saved == true ? 'completed' : 'save_failed'
+		this.lastCompletionSucceeded = this.generationFailed == false && saved == true
+		this.completionRevision++
+		if (saved == false) {
+			this.reportError('对话保存失败，内容仍保留，请重试')
+		}
+		this.emitUpdate()
+		if (this.refCount == 0 && this.phase != 'save_failed') {
+			this.phase = 'disposed'
+			eventBus.emit(CHAT_TURN_RUNTIME_CLEANUP_EVENT)
+		}
+	}
+
+	handleEvent(event: AgentEvent, runId: string): void {
+		if (this.isRunActive(runId) == false) { return }
+		if (isBufferedChatAgentEvent(event) == true) {
+			appendBufferedChatAgentEvent(this.eventQueue, event)
+			this.scheduleFlush()
+			return
+		}
+		this.flushEvents()
+		if (event.type == 'error') {
+			this.lastErrorMessage = readChatTurnEventError(event)
+			this.errorRevision++
+			this.generationFailed = true
+		}
+		const changed = reduceAgentEvent(this.messages, event)
+		if (changed == true) {
+			if (event.type == 'text_end' || event.type == 'tool_execution_end' || event.type == 'turn_end') {
+				this.checkpoint()
+			}
+			this.emitUpdate()
+			return
+		}
+		if (event.type == 'memory_organize_start') {
+			const message = event.message != null ? (event.message as string) : '记忆整理已开始'
+			this.reportMemoryNotice(message)
+			return
+		}
+		if (event.type == 'agent_end') {
+			this.finish(runId)
+		}
+	}
+
+	openStream(runtimeMessages: UTSJSONObject[], runId: string): boolean {
+		try {
+			const workspaceRoot = getAgentConversationDir(this.agentId, this.conversationId)
+			const stream = agentChat(
+				runtimeMessages,
+				this.systemPrompt,
+				'',
+				this.model,
+				this.agentId,
+				0,
+				this.conversationId,
+				workspaceRoot
+			)
+			this.currentStream = stream
+			stream.on((event: AgentEvent) => {
+				this.handleEvent(event, runId)
+			})
+			return true
+		} catch (error: any) {
+			const detail = '' + error
+			markAssistantMessageError(this.messages, detail)
+			finalizeAssistantTurn(this.messages, this.msgSegmentation)
+			this.running = false
+			this.currentStream = null
+			this.generationFailed = true
+			this.phase = this.saveMessages() == true ? 'completed' : 'save_failed'
+			this.lastCompletionSucceeded = false
+			this.completionRevision++
+			this.reportError(detail)
+			if (this.refCount == 0 && this.phase != 'save_failed') {
+				this.phase = 'disposed'
+				eventBus.emit(CHAT_TURN_RUNTIME_CLEANUP_EVENT)
+			}
+			return false
+		}
+	}
+
+	prepareStart(messages: UTSJSONObject[], systemPrompt: string, model: string, msgSegmentation: boolean): string {
+		if (this.running == true) { return '' }
+		if (this.phase == 'save_failed' && this.saveMessages() == false) {
+			this.reportError('上次对话仍未保存，请稍后重试')
+			return ''
+		}
+		this.messages = messages
+		this.systemPrompt = systemPrompt
+		this.model = model
+		this.msgSegmentation = msgSegmentation
+		this.lastErrorMessage = ''
+		this.lastCompletionSucceeded = false
+		this.generationFailed = false
+		this.eventQueue = [] as AgentEvent[]
+		this.running = true
+		this.phase = 'running'
+		chatTurnRunSequence++
+		this.runId = '' + Date.now() + '-' + chatTurnRunSequence
+		const runId = this.runId
+		// 先持久化用户输入。进程被系统杀死时不会留下假的流式回复。
+		if (this.saveMessages() == false) {
+			this.running = false
+			this.phase = 'save_failed'
+			this.reportError('用户消息保存失败，未发起回复，请重试')
+			return ''
+		}
+		this.emitUpdate()
+		return runId
+	}
+
+	start(messages: UTSJSONObject[], runtimeMessages: UTSJSONObject[], systemPrompt: string, model: string, msgSegmentation: boolean): boolean {
+		const runId = this.prepareStart(messages, systemPrompt, model, msgSegmentation)
+		if (runId == '') { return false }
+		return this.openStream(runtimeMessages, runId)
+	}
+
+	startImage(
+		messages: UTSJSONObject[],
+		imagePath: string,
+		messageIndex: number,
+		systemPrompt: string,
+		model: string,
+		msgSegmentation: boolean,
+		injectDatetime: boolean,
+		datetimePrefix: string,
+		interactionRules: string
+	): boolean {
+		const runId = this.prepareStart(messages, systemPrompt, model, msgSegmentation)
+		if (runId == '') { return false }
+		this.phase = 'captioning'
+		this.emitUpdate()
+		captionImage(imagePath).then((caption: string | null) => {
+			if (this.isRunActive(runId) == false) { return }
+			applyChatImageCaption(this.messages, messageIndex, caption)
+			if (this.saveMessages() == false) {
+				this.reportError('图片转述进度暂未保存，回复仍会继续')
+			}
+			if (caption == null || caption == '') {
+				this.reportMemoryNotice('图片转述未配置或失败，已直接发送')
+			}
+			const runtimeMessages = buildRuntimeChatMessages(this.messages, {
+				injectDatetime: injectDatetime,
+				datetimePrefix: datetimePrefix,
+				interactionRules: interactionRules,
+			})
+			this.phase = 'running'
+			this.emitUpdate()
+			this.openStream(runtimeMessages, runId)
+		})
+		return true
+	}
+
+	stop(): void {
+		if (this.running == false) { return }
+		const stream = this.currentStream
+		this.running = false
+		this.phase = 'stopped'
+		this.runId = ''
+		this.currentStream = null
+		this.clearFlushTimer()
+		const result = flushBufferedChatStreamEvents(this.messages, this.eventQueue)
+		this.eventQueue = result.nextQueue
+		finalizeAssistantTurn(this.messages, this.msgSegmentation)
+		const saved = this.saveMessages()
+		if (saved == false) {
+			this.phase = 'save_failed'
+			this.reportError('停止状态保存失败，内容仍保留，请重试')
+		}
+		this.completionRevision++
+		this.lastCompletionSucceeded = false
+		this.emitUpdate()
+		if (stream != null) {
+			stream.abort()
+		}
+		if (this.refCount == 0 && this.phase != 'save_failed') {
+			this.phase = 'disposed'
+			eventBus.emit(CHAT_TURN_RUNTIME_CLEANUP_EVENT)
+		}
+	}
+
+	dispose(): void {
+		this.clearFlushTimer()
+		this.eventQueue = [] as AgentEvent[]
+		const stream = this.currentStream
+		this.currentStream = null
+		this.running = false
+		this.phase = 'disposed'
+		this.runId = ''
+		this.emitUpdate()
+		if (stream != null) {
+			stream.abort()
+		}
+	}
+}
+
+const chatTurnRuntimes: ChatTurnRuntime[] = []
+const chatTurnSubscriptions: ChatTurnSubscription[] = []
+
+function findChatTurnRuntimeIndex(agentId: string, conversationId: string): number {
+	for (let i = 0; i < chatTurnRuntimes.length; i++) {
+		const runtime = chatTurnRuntimes[i]
+		if (runtime.agentId == agentId && runtime.conversationId == conversationId) {
+			return runtime.phase != 'disposed' ? i : -1
+		}
+	}
+	return -1
+}
+
+function pruneDisposedChatTurns(): void {
+	for (let i = chatTurnRuntimes.length - 1; i >= 0; i--) {
+		if (chatTurnRuntimes[i].phase == 'disposed') {
+			chatTurnRuntimes.splice(i, 1)
+		}
+	}
+}
+
+eventBus.on(CHAT_TURN_RUNTIME_CLEANUP_EVENT, () => {
+	pruneDisposedChatTurns()
+})
+
+function findChatTurnRuntime(agentId: string, conversationId: string): ChatTurnRuntime | null {
+	const index = findChatTurnRuntimeIndex(agentId, conversationId)
+	return index >= 0 ? chatTurnRuntimes[index] : null
+}
+
+function getOrCreateChatTurnRuntime(agentId: string, conversationId: string): ChatTurnRuntime {
+	const existing = findChatTurnRuntime(agentId, conversationId)
+	if (existing != null) { return existing }
+	const runtime = new ChatTurnRuntime(agentId, conversationId)
+	chatTurnRuntimes.push(runtime)
+	return runtime
+}
+
+export function retainChatTurn(agentId: string, conversationId: string, loadedMessages: UTSJSONObject[]): UTSJSONObject[] {
+	const runtime = getOrCreateChatTurnRuntime(agentId, conversationId)
+	if (runtime.refCount == 0 && runtime.running == false && runtime.phase == 'idle') {
+		runtime.messages = loadedMessages
+	}
+	runtime.refCount++
+	return runtime.messages
+}
+
+export function releaseChatTurn(agentId: string, conversationId: string): void {
+	const index = findChatTurnRuntimeIndex(agentId, conversationId)
+	if (index < 0) { return }
+	const runtime = chatTurnRuntimes[index]
+	if (runtime.refCount > 0) { runtime.refCount-- }
+	if (runtime.refCount > 0 || runtime.running == true || runtime.phase == 'save_failed') { return }
+	runtime.dispose()
+	chatTurnRuntimes.splice(index, 1)
+}
+
+export function subscribeChatTurn(agentId: string, conversationId: string, callback: () => void): string {
+	chatTurnSubscriptionSequence++
+	const token = 'chat-turn-sub-' + chatTurnSubscriptionSequence
+	const eventName = getChatTurnRuntimeEventName(agentId, conversationId)
+	const subscription = {
+		token: token,
+		eventName: eventName,
+		callback: callback,
+	} as ChatTurnSubscription
+	chatTurnSubscriptions.push(subscription)
+	eventBus.on(eventName, callback)
+	return token
+}
+
+export function unsubscribeChatTurn(token: string): void {
+	if (token == '') { return }
+	for (let i = chatTurnSubscriptions.length - 1; i >= 0; i--) {
+		const subscription = chatTurnSubscriptions[i]
+		if (subscription.token != token) { continue }
+		eventBus.off(subscription.eventName, subscription.callback)
+		chatTurnSubscriptions.splice(i, 1)
+	}
+}
+
+export function getChatTurnMessages(agentId: string, conversationId: string, fallbackMessages: UTSJSONObject[]): UTSJSONObject[] {
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	return runtime != null ? runtime.messages : fallbackMessages
+}
+
+export function isChatTurnRunning(agentId: string, conversationId: string): boolean {
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	return runtime != null && runtime.running == true
+}
+
+export function getChatTurnErrorMessage(agentId: string, conversationId: string): string {
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	return runtime != null ? runtime.lastErrorMessage : ''
+}
+
+export function getChatTurnErrorRevision(agentId: string, conversationId: string): number {
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	return runtime != null ? runtime.errorRevision : 0
+}
+
+export function getChatTurnMemoryNotice(agentId: string, conversationId: string): string {
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	return runtime != null ? runtime.memoryNoticeMessage : ''
+}
+
+export function getChatTurnMemoryNoticeRevision(agentId: string, conversationId: string): number {
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	return runtime != null ? runtime.memoryNoticeRevision : 0
+}
+
+export function getChatTurnCompletionRevision(agentId: string, conversationId: string): number {
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	return runtime != null ? runtime.completionRevision : 0
+}
+
+export function getChatTurnLastCompletionSucceeded(agentId: string, conversationId: string): boolean {
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	return runtime != null && runtime.lastCompletionSucceeded == true
+}
+
+/** 页面用它识别删除/导入导致的 runtime 失效；检查期间不修改注册表。 */
+export function isChatTurnAvailable(agentId: string, conversationId: string): boolean {
+	for (let i = 0; i < chatTurnRuntimes.length; i++) {
+		const runtime = chatTurnRuntimes[i]
+		if (runtime.agentId == agentId && runtime.conversationId == conversationId) {
+			return runtime.phase != 'disposed'
+		}
+	}
+	return false
+}
+
+export function startChatTurn(
+	agentId: string,
+	conversationId: string,
+	messages: UTSJSONObject[],
+	runtimeMessages: UTSJSONObject[],
+	systemPrompt: string,
+	model: string,
+	msgSegmentation: boolean
+): boolean {
+	if (agentId == '' || conversationId == '') { return false }
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	return runtime != null ? runtime.start(messages, runtimeMessages, systemPrompt, model, msgSegmentation) : false
+}
+
+export function startChatImageTurn(
+	agentId: string,
+	conversationId: string,
+	messages: UTSJSONObject[],
+	imagePath: string,
+	messageIndex: number,
+	systemPrompt: string,
+	model: string,
+	msgSegmentation: boolean,
+	injectDatetime: boolean,
+	datetimePrefix: string,
+	interactionRules: string
+): boolean {
+	if (agentId == '' || conversationId == '' || imagePath == '' || messageIndex < 0) { return false }
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	return runtime != null
+		? runtime.startImage(messages, imagePath, messageIndex, systemPrompt, model, msgSegmentation, injectDatetime, datetimePrefix, interactionRules)
+		: false
+}
+
+export function stopChatTurn(agentId: string, conversationId: string): void {
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	if (runtime != null) { runtime.stop() }
+}
+
+export function saveChatTurn(agentId: string, conversationId: string, systemPrompt: string, messages: UTSJSONObject[]): boolean {
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	if (runtime == null) { return false }
+	runtime.systemPrompt = systemPrompt
+	runtime.messages = messages
+	return runtime.saveMessages()
+}
+
+export function disposeChatTurnByConversationId(conversationId: string): void {
+	for (let i = chatTurnRuntimes.length - 1; i >= 0; i--) {
+		const runtime = chatTurnRuntimes[i]
+		if (runtime.conversationId != conversationId) { continue }
+		runtime.dispose()
+		chatTurnRuntimes.splice(i, 1)
+	}
+}
+
+export function disposeChatTurnsByAgent(agentId: string): void {
+	for (let i = chatTurnRuntimes.length - 1; i >= 0; i--) {
+		const runtime = chatTurnRuntimes[i]
+		if (runtime.agentId != agentId) { continue }
+		runtime.dispose()
+		chatTurnRuntimes.splice(i, 1)
+	}
+}
+
+export function disposeAllChatTurns(): void {
+	for (let i = chatTurnRuntimes.length - 1; i >= 0; i--) {
+		chatTurnRuntimes[i].dispose()
+		chatTurnRuntimes.splice(i, 1)
+	}
+}

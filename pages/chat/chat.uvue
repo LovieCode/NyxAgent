@@ -136,31 +136,26 @@
 	 * 对话页面 - AI Agent 主聊天界面
 	 * 扁平化粉白主题
 	 */
-		import { agentChat, readLastLLMRequestSnapshot, organizeAgentMemory, captionImage } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
-	import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
+	import { readLastLLMRequestSnapshot, organizeAgentMemory } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
 	import { getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { getAgentById } from '@/utils/agent.uts'
 	import { buildChatDatetimePrefix } from '@/utils/datetime-context.uts'
 	import {
 		loadChatUserProfile,
 		loadActiveAgentSnapshot,
 		loadInitialConversation,
 		getCurrentAgentSystemPrompt,
+		recoverInterruptedChatConversation,
 		saveChatConversation,
 	} from '@/utils/chat-conversation-service.uts'
-		import {
-			getMessageContent,
-		} from '@/utils/chat-models.uts'
+	import { getMessageContent } from '@/utils/chat-models.uts'
 	import {
 		deleteChatMessage,
 		updateChatMessageContent,
 		saveEditAndFindLastUserText,
 		truncateFromMessage,
 		buildRuntimeMessages as buildRuntimeChatMessages,
-		finishAssistantMessage as reduceFinishAssistantMessage,
-		finalizeAssistantTurn,
-		reduceAgentEvent,
 	} from '@/utils/chat-message-reducer.uts'
-	import { getAgentConversationDir } from '@/utils/file-manager.uts'
 	import { setActiveAgentRuntimeId, setContextPreviewPayload, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import { transcribeAudio, synthesizeSpeech } from '@/utils/speech-service.uts'
 	import {
@@ -179,7 +174,6 @@
 		appendChatLocationMessage,
 		appendChatTextMessage,
 		appendChatVoiceMessage,
-		applyChatImageCaption,
 		buildChatMessageActionContext,
 		buildChatLocationContent,
 		calcChatInputHeight,
@@ -199,14 +193,28 @@
 	import {
 		buildChatStreamScrollTop,
 		CHAT_IDLE_SCROLL_BOTTOM_TOP,
-		CHAT_STREAM_FLUSH_DELAY_MS,
 		CHAT_STREAM_SCROLL_DELAY_MS,
-		appendBufferedChatAgentEvent,
-		appendLatestChatResponseSnapshot,
-		flushBufferedChatStreamEvents,
-		isBufferedChatAgentEvent,
 		nextChatStreamScrollTick,
 	} from '@/utils/chat-stream-events.uts'
+	import {
+		getChatTurnCompletionRevision,
+		getChatTurnErrorMessage,
+		getChatTurnErrorRevision,
+		getChatTurnLastCompletionSucceeded,
+		getChatTurnMemoryNotice,
+		getChatTurnMemoryNoticeRevision,
+		getChatTurnMessages,
+		isChatTurnAvailable,
+		isChatTurnRunning,
+		releaseChatTurn,
+		retainChatTurn,
+		saveChatTurn,
+		startChatImageTurn,
+		startChatTurn,
+		stopChatTurn,
+		subscribeChatTurn,
+		unsubscribeChatTurn,
+	} from '@/utils/chat-turn-runtime.uts'
 	import {
 		buildChatScrollbarThumbStyle,
 		clampChatScrollTarget,
@@ -256,16 +264,17 @@
 				speechPlayer: null as InnerAudioContext | null,
 				/** AI 是否正在生成回复 */
 				isGenerating: false as boolean,
-				/** 当前 Agent 事件流，用于停止生成 */
-				currentStream: null as AgentEventStream | null,
-				/** 流式 token 事件缓冲队列，避免真机每个 token 都重绘页面 */
-				streamEventQueue: [] as AgentEvent[],
-				/** 流式事件批量刷新定时器 */
-				streamFlushTimer: -1 as number,
 				/** 流式期间滚动节流定时器 */
 				streamScrollTimer: -1 as number,
-				/** 图片转述任务序号，用于取消过期的 caption 回调 */
-				imageCaptionTaskId: 0 as number,
+				/** 私聊后台回合订阅 token；页面不直接持有网络流。 */
+				chatTurnSubscriptionToken: '' as string,
+				boundChatAgentId: '' as string,
+				boundChatConversationId: '' as string,
+				chatTurnInvalidated: false as boolean,
+				chatTurnInvalidationScheduled: false as boolean,
+				seenChatTurnErrorRevision: 0 as number,
+				seenChatTurnMemoryNoticeRevision: 0 as number,
+				seenChatTurnCompletionRevision: 0 as number,
 				/** 当前智能体 ID */
 				currentAgentId: '' as string,
 				/** 当前智能体名称 */
@@ -342,8 +351,6 @@
 					measureStableTimer: -1 as number,
 				/** 页面不可见时仍消费事件，但不再触发 UI 副作用 */
 				pageVisible: true as boolean,
-				/** 当前生成失败信息；用于阻止失败响应进入成功快照和 TTS。 */
-				generationErrorMessage: '' as string,
 				/** 页面隐藏期间保存失败，返回页面后再明确提示。 */
 				conversationSaveFailed: false as boolean,
 			}
@@ -382,6 +389,9 @@
 			// 仍然没有，生成新对话 ID
 			if (agentLoaded == true && this.conversationId == '') {
 				this.conversationId = '' + Date.now()
+			}
+			if (agentLoaded == true) {
+				this.bindChatTurnRuntime()
 			}
 			this.resetMessageWindowToRecent()
 			try {
@@ -427,6 +437,10 @@
 
 		onShow() {
 			this.pageVisible = true
+			if (this.chatTurnInvalidated == true) {
+				this.handleChatTurnInvalidated()
+				return
+			}
 			if (this.conversationSaveFailed == true) {
 				uni.showToast({ position: 'bottom', title: '对话保存失败，内容仍保留，请重试', icon: 'none' })
 			}
@@ -437,6 +451,7 @@
 				setActiveAgentRuntimeId(this.currentAgentId)
 			}
 			this.loadCurrentAgent()
+			this.syncChatTurnRuntime(false)
 			activateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_CHAT)
 			this.consumeNyxFloatVoiceText()
 		},
@@ -448,13 +463,12 @@
 		},
 
 		onHide() {
-			// 离开页面时保存当前对话，并停止后台朗读。
+			// 页面只停止 UI 副作用；后台回合由 ChatTurnRuntime 继续持有。
 			this.pageVisible = false
-				this.flushStreamEvents()
-				this.clearStreamScrollTimer()
-				if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
-				if (this.measureStableTimer != -1) { clearTimeout(this.measureStableTimer); this.measureStableTimer = -1 }
-				this.stopSpeechPlayback()
+			this.clearStreamScrollTimer()
+			if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
+			if (this.measureStableTimer != -1) { clearTimeout(this.measureStableTimer); this.measureStableTimer = -1 }
+			this.stopSpeechPlayback()
 			if (this.saveCurrentConversation() == false) {
 				this.conversationSaveFailed = true
 			}
@@ -464,12 +478,11 @@
 		onUnload() {
 			// 页面卸载时移除软键盘高度监听，防止内存泄漏
 			this.pageVisible = false
-			this.flushStreamEvents()
-				this.clearStreamFlushTimer()
-				this.clearStreamScrollTimer()
-				if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
-				if (this.measureStableTimer != -1) { clearTimeout(this.measureStableTimer); this.measureStableTimer = -1 }
-				this.stopSpeechPlayback()
+			this.clearStreamScrollTimer()
+			if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
+			if (this.measureStableTimer != -1) { clearTimeout(this.measureStableTimer); this.measureStableTimer = -1 }
+			this.stopSpeechPlayback()
+			this.unbindChatTurnRuntime()
 			if (this.keyboardHeightListenerId != -1) {
 				uni.offKeyboardHeightChange(this.keyboardHeightListenerId)
 				this.keyboardHeightListenerId = -1
@@ -499,6 +512,128 @@
 
 			hasMessageRef(target: UTSJSONObject): boolean {
 				return hasChatMessageRef(this.messages, target)
+			},
+
+			bindChatTurnRuntime(): void {
+				if (this.currentAgentId == '' || this.conversationId == '') { return }
+				if (this.chatTurnSubscriptionToken != '') { this.unbindChatTurnRuntime() }
+				this.messages = retainChatTurn(this.currentAgentId, this.conversationId, this.messages)
+				this.boundChatAgentId = this.currentAgentId
+				this.boundChatConversationId = this.conversationId
+				this.chatTurnInvalidated = false
+				const running = isChatTurnRunning(this.boundChatAgentId, this.boundChatConversationId)
+				if (running == false) {
+					const recovered = recoverInterruptedChatConversation(
+						this.boundChatConversationId,
+						this.boundChatAgentId,
+						this.getCurrentSystemPrompt(),
+						this.messages
+					)
+					if (recovered == false) { this.conversationSaveFailed = true }
+				}
+				this.seenChatTurnCompletionRevision = getChatTurnCompletionRevision(this.boundChatAgentId, this.boundChatConversationId)
+				this.seenChatTurnErrorRevision = running == true ? 0 : getChatTurnErrorRevision(this.boundChatAgentId, this.boundChatConversationId)
+				this.seenChatTurnMemoryNoticeRevision = running == true ? 0 : getChatTurnMemoryNoticeRevision(this.boundChatAgentId, this.boundChatConversationId)
+				this.chatTurnSubscriptionToken = subscribeChatTurn(this.boundChatAgentId, this.boundChatConversationId, () => {
+					this.syncChatTurnRuntime(false)
+				})
+				this.isGenerating = running
+				this.syncChatTurnRuntime(false)
+			},
+
+			unbindChatTurnRuntime(): void {
+				const token = this.chatTurnSubscriptionToken
+				if (token != '') {
+					unsubscribeChatTurn(token)
+					this.chatTurnSubscriptionToken = ''
+				}
+				if (this.boundChatAgentId != '' && this.boundChatConversationId != '') {
+					releaseChatTurn(this.boundChatAgentId, this.boundChatConversationId)
+				}
+				this.boundChatAgentId = ''
+				this.boundChatConversationId = ''
+			},
+
+			scheduleChatTurnInvalidation(): void {
+				this.chatTurnInvalidated = true
+				this.isGenerating = false
+				if (this.chatTurnInvalidationScheduled == true) { return }
+				this.chatTurnInvalidationScheduled = true
+				setTimeout(() => {
+					this.chatTurnInvalidationScheduled = false
+					if (this.pageVisible == true && this.chatTurnInvalidated == true) {
+						this.handleChatTurnInvalidated()
+					}
+				}, 0)
+			},
+
+			handleChatTurnInvalidated(): void {
+				const agentId = this.boundChatAgentId
+				this.unbindChatTurnRuntime()
+				this.isGenerating = false
+				this.messages = [] as UTSJSONObject[]
+				if (agentId == '' || getAgentById(agentId) == null) {
+					this.chatTurnInvalidated = false
+					uni.showToast({ position: 'bottom', title: '当前联系人已被删除', icon: 'none' })
+					uni.reLaunch({ url: '/pages/agents/agents' })
+					return
+				}
+				setActiveAgentRuntimeId(agentId)
+				if (this.loadCurrentAgent() == false) {
+					uni.reLaunch({ url: '/pages/agents/agents' })
+					return
+				}
+				const loaded = loadInitialConversation(agentId)
+				this.conversationId = loaded.conversationId
+				this.messages = loaded.messages
+				this.savedFlag = loaded.saved
+				this.conversationSaveFailed = false
+				this.chatTurnInvalidated = false
+				this.bindChatTurnRuntime()
+				this.resetMessageWindowToRecent()
+				this.scrollToBottom()
+				activateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_CHAT)
+				this.consumeNyxFloatVoiceText()
+				uni.showToast({ position: 'bottom', title: '原对话已失效，已切换到可用对话', icon: 'none' })
+			},
+
+			syncChatTurnRuntime(initial: boolean): void {
+				if (this.boundChatAgentId == '' || this.boundChatConversationId == '') { return }
+				if (isChatTurnAvailable(this.boundChatAgentId, this.boundChatConversationId) == false) {
+					this.scheduleChatTurnInvalidation()
+					return
+				}
+				const wasGenerating = this.isGenerating
+				this.messages = getChatTurnMessages(this.boundChatAgentId, this.boundChatConversationId, this.messages)
+				const running = isChatTurnRunning(this.boundChatAgentId, this.boundChatConversationId)
+				this.isGenerating = running
+				const errorRevision = getChatTurnErrorRevision(this.boundChatAgentId, this.boundChatConversationId)
+				if (this.pageVisible == true && errorRevision > this.seenChatTurnErrorRevision) {
+					this.seenChatTurnErrorRevision = errorRevision
+					const message = getChatTurnErrorMessage(this.boundChatAgentId, this.boundChatConversationId)
+					if (message != '') {
+						uni.showToast({ position: 'bottom', title: message, icon: 'none' })
+					}
+				}
+				const noticeRevision = getChatTurnMemoryNoticeRevision(this.boundChatAgentId, this.boundChatConversationId)
+				if (this.pageVisible == true && noticeRevision > this.seenChatTurnMemoryNoticeRevision) {
+					this.seenChatTurnMemoryNoticeRevision = noticeRevision
+					const message = getChatTurnMemoryNotice(this.boundChatAgentId, this.boundChatConversationId)
+					if (message != '') {
+						uni.showToast({ position: 'bottom', title: message, icon: 'none' })
+					}
+				}
+				const completionRevision = getChatTurnCompletionRevision(this.boundChatAgentId, this.boundChatConversationId)
+				if (this.pageVisible == true && completionRevision > this.seenChatTurnCompletionRevision) {
+					this.seenChatTurnCompletionRevision = completionRevision
+					if (wasGenerating == true && getChatTurnLastCompletionSucceeded(this.boundChatAgentId, this.boundChatConversationId) == true) {
+						this.maybeSynthesizeLatestAssistantSpeech()
+					}
+				}
+				if (this.pageVisible == true && initial == false) {
+					this.refreshMessagesView()
+					this.scrollToBottomIfPinned()
+				}
 			},
 
 			loadUserNickname() {
@@ -788,9 +923,6 @@
 				if (text == '' || this.isGenerating == true) {
 					return
 				}
-				if (this.messages.length == 0) {
-					this.conversationId = '' + Date.now()
-				}
 				// 发新消息时允许保存（从历史加载后 savedFlag 为 true 会阻止保存）
 				this.savedFlag = false
 				this.addTextMessage('user', text)
@@ -944,25 +1076,28 @@
 			},
 
 			/** 参考 AstrBot：先用默认图片转述模型生成 caption，再把 caption 注入普通对话上下文。 */
-			startGenerationForImage(imagePath: string, fallbackPrompt: string, messageIndex: number) {
+			startGenerationForImage(imagePath: string, _fallbackPrompt: string, messageIndex: number) {
 				if (this.isGenerating == true) {
 					return
 				}
-				this.isGenerating = true
 				this.savedFlag = false
-				this.imageCaptionTaskId++
-				const taskId = this.imageCaptionTaskId
-				captionImage(imagePath).then((caption: string | null) => {
-					if (taskId != this.imageCaptionTaskId) {
-						return
-					}
-					applyChatImageCaption(this.messages, messageIndex, caption)
-					this.isGenerating = false
-					if (caption == null || caption == '') {
-						uni.showToast({ position: 'bottom', title: '图片转述未配置或失败，已直接发送', icon: 'none' })
-					}
-					this.startGenerationForMedia(fallbackPrompt)
-				})
+				this.streamFollowBottom = this.isAtBottom == true
+				this._streamScrollTick = 0
+				const started = startChatImageTurn(
+					this.boundChatAgentId,
+					this.boundChatConversationId,
+					this.messages,
+					imagePath,
+					messageIndex,
+					this.getCurrentSystemPrompt(),
+					this.currentAgentModel,
+					this.msgSegmentation,
+					this.injectDatetime,
+					this.buildDatetimePrefix(),
+					this.currentInteractionRules
+				)
+				this.isGenerating = started
+				this.syncChatTurnRuntime(false)
 			},
 
 			/** 添加文件消息 */
@@ -1381,17 +1516,6 @@
 				this.synthesizeAssistantSpeech(msg, true)
 			},
 
-			isBufferedAgentEvent(event: AgentEvent): boolean {
-				return isBufferedChatAgentEvent(event)
-			},
-
-			clearStreamFlushTimer() {
-				if (this.streamFlushTimer != -1) {
-					clearTimeout(this.streamFlushTimer)
-					this.streamFlushTimer = -1
-				}
-			},
-
 			clearStreamScrollTimer() {
 				if (this.streamScrollTimer != -1) {
 					clearTimeout(this.streamScrollTimer)
@@ -1399,59 +1523,11 @@
 				}
 			},
 
-			appendBufferedAgentEvent(event: AgentEvent) {
-				appendBufferedChatAgentEvent(this.streamEventQueue, event)
-			},
-
-			scheduleStreamFlush() {
-				if (this.streamFlushTimer != -1) { return }
-				const self = this
-				this.streamFlushTimer = setTimeout(() => {
-					self.streamFlushTimer = -1
-					self.flushStreamEvents()
-				}, CHAT_STREAM_FLUSH_DELAY_MS)
-			},
-
-			flushStreamEvents() {
-				this.clearStreamFlushTimer()
-				const result = flushBufferedChatStreamEvents(this.messages, this.streamEventQueue)
-				this.streamEventQueue = result.nextQueue
-				if (result.messageChanged == true) {
-					this.savedFlag = false
-					if (this.pageVisible == true) {
-						this.refreshMessagesView()
-						this.scrollToBottomIfPinned()
-					}
-				}
-			},
-
-			enqueueAgentEvent(event: AgentEvent) {
-				if (this.isBufferedAgentEvent(event) == true) {
-					this.appendBufferedAgentEvent(event)
-					this.scheduleStreamFlush()
-					return
-				}
-				this.flushStreamEvents()
-				this.handleAgentEvent(event)
-			},
-
 			/** 停止当前 AI 生成 */
 			stopGenerating() {
-				this.imageCaptionTaskId++
-				this.flushStreamEvents()
-				const stream = this.currentStream
-				if (stream != null) {
-					stream.abort()
-					this.currentStream = null
-				}
-				reduceFinishAssistantMessage(this.messages, '')
-				finalizeAssistantTurn(this.messages, this.msgSegmentation)
-				this.refreshMessagesView()
-				this.isGenerating = false
-				this.clearStreamFlushTimer()
+				stopChatTurn(this.boundChatAgentId, this.boundChatConversationId)
+				this.syncChatTurnRuntime(false)
 				this.clearStreamScrollTimer()
-				this.scrollToBottomIfPinned()
-				this.saveCurrentConversation()
 			},
 
 			goAgentSettings() {
@@ -1502,6 +1578,7 @@
 					uni.showToast({ position: 'bottom', title: '保存失败，请重试', icon: 'none' })
 					return
 				}
+				this.unbindChatTurnRuntime()
 				// 清空消息
 				this.messages = [] as UTSJSONObject[]
 				// 新对话 ID
@@ -1513,6 +1590,7 @@
 				this.scrollOffset = 0
 				this.scrollContentHeight = 0
 				this.isAtBottom = true
+				this.bindChatTurnRuntime()
 				this.resetMessageWindowToRecent()
 			},
 
@@ -1520,7 +1598,9 @@
 				if (this.messages.length == 0 || (this.savedFlag == true && force == false)) {
 					return true
 				}
-				const saved = saveChatConversation(this.conversationId, this.currentAgentId, this.getCurrentSystemPrompt(), this.messages)
+				const saved = this.chatTurnSubscriptionToken != ''
+					? saveChatTurn(this.boundChatAgentId, this.boundChatConversationId, this.getCurrentSystemPrompt(), this.messages)
+					: saveChatConversation(this.conversationId, this.currentAgentId, this.getCurrentSystemPrompt(), this.messages)
 				this.savedFlag = saved
 				this.conversationSaveFailed = saved == false
 				return saved
@@ -1585,78 +1665,21 @@
 				return getCurrentAgentSystemPrompt(this.currentAgentId)
 			},
 
-			/** Agent 事件流统一入口 */
-			handleAgentEvent(event: AgentEvent) {
-				if (event.type == 'error') {
-					this.generationErrorMessage = event.error != null ? (event.error as string) : '请求失败'
-				}
-				const messageChanged = reduceAgentEvent(this.messages, event)
-				if (messageChanged == true) {
-					this.savedFlag = false
-					if (this.pageVisible == true) {
-						this.refreshMessagesView()
-						this.scrollToBottomIfPinned()
-					}
-					if (event.type == 'error' && this.pageVisible == true) {
-						uni.showToast({ position: 'bottom', title: this.generationErrorMessage, icon: 'none' })
-					}
-					return
-				}
-				if (event.type == 'memory_organize_start') {
-					if (this.pageVisible == true) {
-						uni.showToast({ position: 'bottom',
-							title: event.message != null ? (event.message as string) : '记忆整理已开始',
-							icon: 'none'
-						})
-					}
-				} else if (event.type == 'agent_end') {
-					const generationFailed = this.generationErrorMessage != ''
-					finalizeAssistantTurn(this.messages, this.msgSegmentation)
-					if (generationFailed == false) {
-						appendLatestChatResponseSnapshot(this.messages, this.currentAgentId, this.conversationId)
-					}
-					this.isGenerating = false
-					this.currentStream = null
-					this.clearStreamFlushTimer()
-					this.clearStreamScrollTimer()
-					this.savedFlag = false
-					if (this.pageVisible == true) {
-						this.refreshMessagesView()
-						this.scrollToBottomIfPinned()
-					}
-					const saved = this.saveCurrentConversation(true)
-					if (saved == false && this.pageVisible == true) {
-						uni.showToast({ position: 'bottom', title: '对话保存失败，内容仍保留，请重试', icon: 'none' })
-					}
-					if (generationFailed == false && this.pageVisible == true) {
-						this.maybeSynthesizeLatestAssistantSpeech()
-					}
-					this.generationErrorMessage = ''
-				}
-			},
 			simulateAIResponse(_userText: string) {
 				this.streamFollowBottom = this.isAtBottom == true
-				this.isGenerating = true
-				this.generationErrorMessage = ''
 				this._streamScrollTick = 0
-
-				// 使用 ReAct Agent Loop（带沙箱文件工具）
 				const runtimeMessages = this.buildRuntimeMessages()
-				const workspaceRoot = getAgentConversationDir(this.currentAgentId, this.conversationId)
-				const stream: AgentEventStream = agentChat(
+				const started = startChatTurn(
+					this.boundChatAgentId,
+					this.boundChatConversationId,
+					this.messages,
 					runtimeMessages,
 					this.getCurrentSystemPrompt(),
-					'',           // providerId → 自动从 DB 读取
 					this.currentAgentModel,
-					this.currentAgentId,
-					0,
-					this.conversationId,
-					workspaceRoot
+					this.msgSegmentation
 				)
-				this.currentStream = stream
-				stream.on((event: AgentEvent) => {
-					this.enqueueAgentEvent(event)
-				})
+				this.isGenerating = started == true
+				this.syncChatTurnRuntime(false)
 			}
 
 		}
