@@ -41,7 +41,7 @@
 | 媒体 | `pages/common/crop/crop` | 图片加载、缩放/移动、裁剪、取消 | ADB 通过 | 系统 Picker -> 裁剪页、返回取消、完成裁剪均通过；无 `CROP_SOURCE_MISSING` |
 | 上下文 | `pages/context-preview/context-preview` | 请求快照、标签顺序、空状态、长内容滚动 | 测试中 | ADB 已通过原始上下文展示、长内容滚动与复制入口 |
 | 记忆 | `pages/memory/memory` | 分类/目标切换、新增/编辑/删除、搜索、记忆整理状态 | 测试中 | 短期缓存保存、清空确认和重进持久化已通过；重要信息 CRUD 继续覆盖 |
-| 设置 | `pages/settings/profile/profile` | 用户名、简介、详细介绍、头像、保存与私聊注入 | 测试中 | 相册选择、裁剪、内部文件落盘和“不保存”临时文件回收已通过；权限拒绝和资料保存继续覆盖 |
+| 设置 | `pages/settings/profile/profile` | 用户名、简介、详细介绍、头像、保存与私聊注入 | 测试中 | 相册选择、裁剪、内部文件落盘和“不保存”临时文件回收已通过；相机永久拒绝后的设置恢复入口 ADB 通过，资料保存继续覆盖 |
 | 设置 | `pages/settings/basic/basic` | 提供商列表、启停、默认配置入口 | 测试中 | ADB 已通过提供商管理入口、列表渲染与返回；启停、删除引用清理和失败回滚待隔离数据回归 |
 | 设置 | `pages/settings/basic/provider-edit` | 新增/编辑提供商、URL/API Key/模型、校验、删除 | 测试中 | Android class 编译与常规编辑页 ADB 通过；首启不再预置过时模型，多模型必须显式选择默认项；全新安装流程待隔离数据回归 |
 | 设置 | `pages/settings/model/model` | 旧模型设置兼容与跳转 | 待测 | |
@@ -50,9 +50,9 @@
 | 设置 | `pages/settings/plugin/plugin` | 插件配置、启停、输入校验、错误态 | 测试中 | ADB 已通过页面入口、搜索与 AstrBot 配置渲染；401/500/超时/断网及 diagnostics 待测 |
 | 设置 | `pages/settings/skills/skills` | Skill 新增/编辑/删除、Agent 绑定、长文本编辑 | 测试中 | ADB 已通过页面入口、空状态和返回；损坏 JSON 全链路写保护已编译，CRUD/长文/绑定待隔离数据回归 |
 | 设置 | `pages/settings/data/data` | 导出、导入、取消、无效文件、覆盖确认 | 测试中 | ADB 安全备份生成与 Android 分享选择器通过；导入增加字段/资源完整性拒绝，真实覆盖恢复仍待隔离数据回归 |
-| 设置 | `pages/settings/about/about` | 版本信息、外链打开 | 待测 | |
-| 通用组件 | `rice-ui/action-sheet` | 展示、选择、取消、遮罩关闭 | 待测 | 通过业务入口覆盖 |
-| 通用组件 | `rice-ui/dialog` | 确认、取消、输入校验、遮罩行为 | 待测 | 通过业务入口覆盖 |
+| 设置 | `pages/settings/about/about` | 版本信息、外链打开 | ADB 通过 | 版本 `1.5.0`、构建号 `150` 正常；开发者链接打开 `https://github.com/LovieCode` |
+| 通用组件 | `rice-ui/action-sheet` | 展示、选择、取消、遮罩关闭 | 测试中 | 头像来源操作表展示与取消通过；选择入口由相册/相机业务回归覆盖，遮罩关闭待测 |
+| 通用组件 | `rice-ui/dialog` | 确认、取消、输入校验、遮罩行为 | 测试中 | 相机权限提示确认后打开系统设置、取消后留在原页面均通过；输入校验和遮罩行为继续覆盖 |
 
 ## 跨功能检查
 
@@ -63,7 +63,7 @@
 | App 进程重启后的数据恢复 | 待测 | |
 | 软键盘与输入框可见性 | 测试中 | 真机确认页面顶部不再被推出屏幕，但输入栏未抬到键盘上方；已增加 resize 差额补偿并通过 Android 编译，待二次真机回归 |
 | 长消息滚动与底部定位 | 测试中 | 私聊/群聊已改为固定 80 渲染单元、每次 40 单元的双向批量滑动窗口；Android class 编译通过，滚动锚点待下次 ADB/真机回归 |
-| 相册、相机、文件权限 | 待测 | |
+| 相册、相机、文件权限 | 测试中 | 相册选择、文件选择和头像裁剪已通过；头像与私聊相机永久拒绝均显示恢复弹窗，可打开系统授权设置或取消；群聊共用处理器已编译，直接入口待回归 |
 | 断网、超时、无模型配置错误态 | 测试中 | LLM transport error 已与正常回复分离；私聊/群聊显示失败消息和 toast，运行诊断保留结构化记录；待 ADB 断网注入回归 |
 | 深浅色、系统字体和高 density 布局 | 待测 | 当前设备 density 640 |
 | 日志中的 crash / ANR / UTS 异常 | 测试中 | 2026-07-11 干净编译后完成主要页面冒烟，未发现 `FATAL EXCEPTION`、`NoSuchMethodError` 或未捕获 UTS 异常 |
@@ -112,7 +112,7 @@
 | SET-006 | P1 | 首次引导分步保存 Provider、active、默认模型和完成标记，失败会留下半配置 | 待重构 | 需要 DAO 事务或完整补偿回滚协议 | 待用户确认首次引导事务重构 |
 | SET-007 | P1 | vision/reasoning 能力只按 model ID 全局匹配，同名模型可能串 Provider | 待重构 | 能力查询和调用链需要同时携带 `providerId + modelId` | 待用户确认模型能力解析重构 |
 | SET-008 | P2 | AstrBot 测试失败只显示 toast，不进入统一 diagnostics | 已修复，异常注入待回归 | 连接失败统一记录 `ASTRBOT_CONNECTION_TEST_FAILED` 并显示诊断编号 | `pages/settings/plugin/plugin.uvue` |
-| SET-009 | P2 | 相机权限永久拒绝后没有跳转系统授权设置的恢复入口 | 待修复 | 当前只能重复显示拍照失败 | `utils/avatar-image-picker.uts` |
+| SET-009 | P2 | 相机权限永久拒绝后没有跳转系统授权设置的恢复入口 | 已修复，ADB 通过 | 头像和私聊在 `cameraAuthorized == denied` 时显示恢复弹窗；确认进入应用授权设置，取消留在原页面；群聊复用同一处理器 | `utils/media-permission.uts`、头像/私聊/群聊媒体入口，`81976fa` |
 | SET-010 | P2 | 默认模型页 TTS 参数修改后直接返回会静默丢失 | 已修复，交互待回归 | TTS 全字段加入快照、统一未保存确认、保存成功刷新快照、不保存恢复快照 | `pages/settings/default-models/default-models.uvue` |
 | SET-011 | P2 | Provider 模型已拉取成功后仍同步等待 models.dev 元数据刷新，异常网络可额外阻塞约 30 秒 | 已修复 | 能力元数据改为单例后台刷新，模型列表成功后立即可用 | `provider-edit.uvue`、`llm-metadata.uts` |
 | UI-004 | P1 | Rice 输入组件把 `30rpx` 截成 `30r` 交给 Android 原生字号解析，新建文件对话框触发 `NumberFormatException` | 已修复，ADB 通过 | placeholder 字号统一经 `getPxNum` 转为真实 px；新建文件对话框打开、取消且日志无同类异常 | `rice-input.uvue`、`rice-textarea.uvue`、`rice-search.uvue` |
@@ -125,6 +125,7 @@
 
 | 日期 | 文件 | 修改 | 验证 | commit |
 | --- | --- | --- | --- | --- |
+| 2026-07-11 | 相机权限公共处理器、头像、私聊与群聊媒体入口 | 永久拒绝相机权限时显示恢复弹窗，支持直接进入系统授权设置；普通相机故障继续保留结构化错误与 toast | HBuilderX 5.15 对 28 页面编译成功；ADB 覆盖头像确认打开设置、头像取消、私聊“不再询问”拒绝和取消；测试后权限与系统自动旋转状态已恢复 | `81976fa` |
 | 2026-07-11 | Provider、默认模型、Skill、Agent 设置与数据导出 | 保留停用 Provider 状态；补 TTS 离页保护；Skill 损坏时阻止全链路写入和空备份 | HBuilderX 5.15 对 28 页面差量编译成功；ADB Provider/默认模型/Skills 入口与返回通过；app 定向日志无 fatal/UTS 异常 | `bcfb782` |
 | 2026-07-11 | Provider 拉取、插件诊断、Rice 输入组件 | 区分模型接口错误和合法空列表；models.dev 元数据后台刷新；AstrBot 失败进入诊断；修复 Android placeholder 字号崩溃；API Key 默认掩码 | HBuilderX 5.15 差量编译与同步成功；ADB 新建文件对话框回归无 `NumberFormatException`；Provider 编辑识别为 Android 密码字段 | `dc35b2d` |
 | 2026-07-11 | 首启模型、Provider 初始数据、Agent 模型继承与联网搜索 | 移除易过时的具体模型默认值；首启基于 Provider 实际返回显式选择默认模型；旧内置 Agent 定向迁移为继承；阻止裸模型跨 Provider 绑定；搜索模型不再猜测硬编码 ID | HBuilderX 5.15 连续多轮 Android class 编译成功并同步模拟器；SQLite 只读检查确认用户显式配置未被覆盖；Agent 设置和日志回归通过 | `d20fc32` |
@@ -213,6 +214,10 @@
 | 2026-07-11 17:58 | placeholder 修复增量编译与部署 | 最新 28 页面连续两轮编译成功，同步并启动 `emulator-5554` |
 | 2026-07-11 18:02 | ADB Agent 设置日志回归 | 首页、私聊和聊天设置正常；输入框实际渲染后无 `Color_Parser`、Java fatal 或未捕获 UTS 异常；未修改用户数据 |
 | 2026-07-11 18:10 | 最终单进程 CLI 部署 | watcher 退出后重新独立编译、同步并启动首页；PID `10487`，UI hierarchy 非空，App 定向日志无 fatal、ABI、类型、UTS 或产物加载错误 |
+| 2026-07-11 18:27 | ADB 头像相机永久拒绝回归 | 拒绝权限后显示“需要相机权限”；确认打开 Android 应用授权设置；普通模拟器相机故障走结构化错误且不崩溃 |
+| 2026-07-11 18:31 | ADB About 与操作表回归 | About 正常显示版本 `1.5.0`、构建号 `150`；开发者链接打开 GitHub；头像来源操作表展示和取消正常 |
+| 2026-07-11 18:34 | ADB 私聊相机永久拒绝回归 | 选择“不再询问”并拒绝后显示统一恢复弹窗；取消后保留当前私聊；日志记录 `MEDIA_CAMERA_PERMISSION_DENIED` |
+| 2026-07-11 18:41 | 相机权限修复最终 compile-only | HBuilderX 5.15 对 28 页面重新编译为 Android class 成功；未出现新增 UTS/Kotlin 错误；权限 `USER_FIXED` 测试标记已通过系统设置清除 |
 
 ## 手动真机回归
 
