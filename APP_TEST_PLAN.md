@@ -27,12 +27,12 @@
 | --- | --- | --- | --- | --- |
 | 主导航 | `pages/agents/agents` | 筛选、私聊/群聊入口、新建 Agent、新建群聊、头像选择、首次引导 | 测试中 | ADB 已通过私聊/群聊筛选与会话入口、Agent 新建/删除；首次引导待测 |
 | 主导航 | `pages/todo/todo` | 待办新增/完成/筛选/删除、笔记搜索/新增/编辑 | ADB 通过 | 已实测待办新增、单击完成、筛选、删除，以及笔记新增、编辑、保存、删除；测试数据已清理 |
-| 主导航 | `pages/files/files` | 根目录、面包屑、搜索、排序、导入、新建文件/目录、打开、重命名、删除 | 测试中 | ADB 已通过根目录、名称回退与主导航；导入和写操作待测 |
+| 主导航 | `pages/files/files` | 根目录、面包屑、搜索、排序、导入、新建文件/目录、打开、重命名、删除 | 测试中 | ADB 已通过根目录、名称回退、新建空名称校验、弹窗返回和遮罩行为；导入和实际写操作继续覆盖 |
 | 主导航 | `pages/settings/settings` | 所有设置入口、资料摘要、状态展示 | 测试中 | ADB 已通过设置列表与运行诊断入口；各设置写操作继续回归 |
 | 设置 | `pages/settings/diagnostics/diagnostics` | 错误记录、诊断编号、技术详情、清空、空状态 | 测试中 | ADB 已通过入口与空状态；错误注入、详情和清空待测 |
 | 私聊 | `pages/chat/chat` | 文本发送、流式状态、停止/续跑、工具栏、图片/拍照/文件、滚动、重进恢复 | 测试中 | 已完成进入、历史渲染、输入框焦点基线；键盘修复待回归 |
 | 私聊 | `pages/agent-settings/agent-settings` | 名称/备注/头像/Prompt/规则/模型/语音/生成参数/Skills/工具/截断/删除 | 测试中 | ADB 已通过临时改名、全屏编辑往返保留未保存状态、不保存退出、Agent 删除；其余设置继续覆盖 |
-| 群聊 | `pages/group-chat/group-chat` | 文本/媒体、调度、暂停、后台续流、成员消息、上下文/文件/记忆入口 | 测试中 | 干净编译后 ADB 已通过历史渲染与页面进入；发送、后台流和键盘待测 |
+| 群聊 | `pages/group-chat/group-chat` | 文本/媒体、调度、暂停、后台续流、成员消息、上下文/文件/记忆入口 | 测试中 | ADB 已通过历史渲染、拍照入口、普通/永久权限拒绝恢复；文本发送、后台流、相册/文件和键盘继续覆盖 |
 | 群聊 | `pages/group-chat-settings/group-chat-settings` | 群名、成员、调度 Prompt、共享 Prompt、未保存退出 | 测试中 | ADB 已通过页面进入和成员列表；编辑、保存与退出保护待测 |
 | 群聊 | `pages/group-chat-sessions/group-chat-sessions` | 会话新增、切换、重命名、删除 | 测试中 | ADB 已通过页面进入和当前会话展示；写操作待测 |
 | 历史 | `pages/history/history` | 私聊/群上下文切换、预览、恢复、批量删除、清空 | 测试中 | ADB 已通过历史预览、切换到对话和管理模式选择；未对用户数据执行批量删除 |
@@ -44,26 +44,26 @@
 | 设置 | `pages/settings/profile/profile` | 用户名、简介、详细介绍、头像、保存与私聊注入 | 测试中 | 相册选择、裁剪、内部文件落盘和“不保存”临时文件回收已通过；相机永久拒绝后的设置恢复入口 ADB 通过，资料保存继续覆盖 |
 | 设置 | `pages/settings/basic/basic` | 提供商列表、启停、默认配置入口 | 测试中 | ADB 已通过提供商管理入口、列表渲染与返回；启停、删除引用清理和失败回滚待隔离数据回归 |
 | 设置 | `pages/settings/basic/provider-edit` | 新增/编辑提供商、URL/API Key/模型、校验、删除 | 测试中 | Android class 编译与常规编辑页 ADB 通过；首启不再预置过时模型，多模型必须显式选择默认项；全新安装流程待隔离数据回归 |
-| 设置 | `pages/settings/model/model` | 旧模型设置兼容与跳转 | 待测 | |
+| 设置 | `pages/settings/model/model` | 旧模型设置兼容与跳转 | 静态确认 | 页面仍注册，但项目内没有跳转方，也没有代码写入 `pending_agent_model_id`；保留/重定向/下线需要兼容策略确认 |
 | 设置 | `pages/settings/default-models/default-models` | chat/TTS/STT/vision/organize 默认模型与图片描述 Prompt | 测试中 | ADB 已通过 Chat/Memory/Vision 区域、页面返回；TTS dirty 保护已编译，五类任务选择和非法参数待写操作回归 |
-| 设置 | `pages/settings/generation/generation` | 温度、Token、迭代、流式配置与边界值 | 测试中 | ADB 已通过页面入口和当前值渲染；边界值、失败回滚与重启持久化待测 |
+| 设置 | `pages/settings/generation/generation` | 温度、Token、迭代、流式配置与边界值 | 测试中 | ADB 已通过页面入口和当前值渲染；保存失败现在恢复持久化值并通过 Android 编译，边界值、故障注入和重启持久化待测 |
 | 设置 | `pages/settings/plugin/plugin` | 插件配置、启停、输入校验、错误态 | 测试中 | ADB 已通过页面入口、搜索与 AstrBot 配置渲染；401/500/超时/断网及 diagnostics 待测 |
 | 设置 | `pages/settings/skills/skills` | Skill 新增/编辑/删除、Agent 绑定、长文本编辑 | 测试中 | ADB 已通过页面入口、空状态和返回；损坏 JSON 全链路写保护已编译，CRUD/长文/绑定待隔离数据回归 |
 | 设置 | `pages/settings/data/data` | 导出、导入、取消、无效文件、覆盖确认 | 测试中 | ADB 安全备份生成与 Android 分享选择器通过；导入增加字段/资源完整性拒绝，真实覆盖恢复仍待隔离数据回归 |
 | 设置 | `pages/settings/about/about` | 版本信息、外链打开 | ADB 通过 | 版本 `1.5.0`、构建号 `150` 正常；开发者链接打开 `https://github.com/LovieCode` |
-| 通用组件 | `rice-ui/action-sheet` | 展示、选择、取消、遮罩关闭 | 测试中 | 头像来源操作表展示与取消通过；选择入口由相册/相机业务回归覆盖，遮罩关闭待测 |
-| 通用组件 | `rice-ui/dialog` | 确认、取消、输入校验、遮罩行为 | 测试中 | 相机权限提示确认后打开系统设置、取消后留在原页面均通过；输入校验和遮罩行为继续覆盖 |
+| 通用组件 | `rice-ui/action-sheet` | 展示、选择、取消、遮罩关闭 | ADB 通过 | 头像来源与文件新建操作表展示、选择、取消和点击遮罩关闭均通过；MP API 字段类型错误已静态修复 |
+| 通用组件 | `rice-ui/dialog` | 确认、取消、输入校验、遮罩行为 | ADB 通过 | Todo/文件空输入确认后保持弹窗；物理返回只关弹窗；遮罩按 `closeOnClickOverlay=false` 不误关；权限提示确认/取消通过 |
 
 ## 跨功能检查
 
 | 检查项 | 状态 | 证据 / 备注 |
 | --- | --- | --- |
-| 首次安装与冷启动 | 待测 | |
-| 前后台切换与页面退出时流继续 | 待测 | |
-| App 进程重启后的数据恢复 | 待测 | |
+| 首次安装与冷启动 | 测试中 | 冷启动已通过；首次安装需要隔离用户数据的测试用户/模拟器快照，尚未执行 |
+| 前后台切换与页面退出时流继续 | 测试中 | 普通页面 Home 键切后台和恢复通过，日志触发 `App Hide/Show`；群聊运行时静态具备后台续流，真实流与私聊重构待测 |
+| App 进程重启后的数据恢复 | ADB 通过 | force-stop 后 PID `14222 -> 15042`，重新触发 `App Launch/Show`；首页联系人和群聊可见项计数前后一致 |
 | 软键盘与输入框可见性 | 测试中 | 真机确认页面顶部不再被推出屏幕，但输入栏未抬到键盘上方；已增加 resize 差额补偿并通过 Android 编译，待二次真机回归 |
 | 长消息滚动与底部定位 | 测试中 | 私聊/群聊已改为固定 80 渲染单元、每次 40 单元的双向批量滑动窗口；Android class 编译通过，滚动锚点待下次 ADB/真机回归 |
-| 相册、相机、文件权限 | 测试中 | 相册选择、文件选择和头像裁剪已通过；头像与私聊相机永久拒绝均显示恢复弹窗，可打开系统授权设置或取消；群聊共用处理器已编译，直接入口待回归 |
+| 相册、相机、文件权限 | 测试中 | 相册选择、文件选择和头像裁剪已通过；头像、私聊、群聊相机普通/永久拒绝均显示恢复弹窗并可打开设置；实体相机成像成功链路待真机 |
 | 断网、超时、无模型配置错误态 | 测试中 | LLM transport error 已与正常回复分离；私聊/群聊显示失败消息和 toast，运行诊断保留结构化记录；待 ADB 断网注入回归 |
 | 深浅色、系统字体和高 density 布局 | 待测 | 当前设备 density 640 |
 | 日志中的 crash / ANR / UTS 异常 | 测试中 | 2026-07-11 干净编译后完成主要页面冒烟，未发现 `FATAL EXCEPTION`、`NoSuchMethodError` 或未捕获 UTS 异常 |
@@ -102,7 +102,7 @@
 | RUNTIME-003 | P1 | 兼容旧页面保留的 void 包装器因无可达调用被 DCE 删除，热更新仍可能 `NoSuchMethodError` | 已修复，字节码验证通过 | 新 boolean 入口真实调用旧 void ABI；`javap` 确认两个 JVM 签名同时存在 | `utils/agent-settings-page-helpers.uts` |
 | SECURITY-001 | P0 | 导入备份可携带伪造的群会话 `workspace_path`，后续复制/删除可能越出群聊工作区；系统文件选择器返回的文件名也可包含路径片段 | 已修复，ADB 入口通过 | 导入时只按受限 group/session ID 重建应用私有路径；Android 使用 canonical path 校验目录包含关系；递归复制拒绝 symlink，递归删除只移除链接本身；文件导入只接受 basename | `utils/data-import.uts`、`utils/file-manager-io.uts`、`utils/group-chat-service.uts`、`pages/files/files.uvue` |
 | MEDIA-002 | P1 | 私聊生成过程中仍可追加图片/文件/位置，新增消息不会进入当前请求；群聊图片转述异步完成后可能写入已切换的会话，停止讨论也未失效 caption | 已修复，ADB 入口通过 | 媒体入口统一阻止并发追加；位置失败进入诊断；群聊 caption 绑定 group/session/message ID，切换与停止时失效；文件保存失败回滚消息 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` |
-| RUNTIME-004 | P0 | 私聊流仍由页面实例持有；退出后继续流式生成时重新进入同一会话可启动第二条流，两个页面最终互相覆盖持久化结果 | 待重构 | 独立审查确认页面隐藏仅保存快照，旧流闭包仍持有页面；需要仿照群聊实现按 Agent + conversation 注册的 `ChatTurnRuntime`，页面改为订阅者 | 待用户确认架构重构 |
+| RUNTIME-004 | P0 | 私聊流仍由页面实例持有；退出后继续流式生成时重新进入同一会话可启动第二条流，两个页面最终互相覆盖持久化结果 | 待重构 | 对照群聊 runtime 与 AstrBot EventBus、active-event registry、session lock 后确认：应按 Agent + conversation 唯一注册 `ChatTurnRuntime`，页面只订阅；进程死亡仅恢复快照，不伪造断点续流 | 待用户确认架构重构 |
 | SECURITY-002 | P2 | 非 Android 平台的目录包含检查仍是词法前缀判断，无法识别工作区内部 symlink | 待跨端验证 | Android 已封堵 canonical path 和递归 symlink；iOS/WEB 缺少当前可验证的 lstat/realpath 实现，涉及复制/删除前仍需平台实现后再开放同等级保证 | `utils/file-manager-io.uts` |
 | SET-001 | P1 | 编辑已停用 Provider 后自动保存会固定写成启用 | 已修复，写操作待回归 | 编辑时保留原 `enabled == 1` 状态，新建项才默认启用；异常非 1 值不会被提升为启用 | `pages/settings/basic/provider-edit.uvue` |
 | SET-002 | P1 | 模型级 `maxTokens`、`params`、`supportsToolCall` 可保存但聊天运行请求不读取 | 待重构 | 需要统一解析模型运行配置并定义旧数据兼容语义，不能只在页面层补字段 | 待用户确认运行时配置重构 |
@@ -120,11 +120,17 @@
 | SET-012 | P0 | 首次启动和内置 Agent 硬编码 `deepseek-v4-flash`，选择其他 Provider 时仍可能调用 DeepSeek 模型；首启多模型又静默保存列表第一项 | 已修复，首装待回归 | Provider 初始模型列表为空；内置 Agent 默认跟随任务模型；只迁移仍使用旧裸 ID 的内置 Agent；首启从真实拉取结果中显式选择默认模型 | Provider/Agent/首启相关页面与 helpers |
 | SET-013 | P1 | 通用 `/models` 拉取只适合 OpenAI-compatible Provider，Anthropic 等协议无法通过同一端点可靠发现模型 | 待重构 | 对照 AstrBot 后确认模型可用性应由 Provider adapter 获取；models.dev 只用于能力元数据，不能替代账号实际模型列表 | 后续需要 Provider Source / Model adapter 层，属于架构调整 |
 | UI-005 | P2 | Agent 设置页把 CSS 变量交给 Android 原生 placeholder 颜色解析器，持续输出 `Color_Parser` 越界异常 | 已修复，ADB 通过 | placeholder 改用等价静态色；最新包进入聊天设置并渲染输入框后日志无 `Color_Parser` | `pages/agent-settings/agent-settings.uvue` |
+| UI-006 | P1 | Rice Dialog 点击确认后无条件关闭，业务空值校验或写入失败无法保留输入重试 | 已修复，ADB 通过 | 新增兼容默认开启的 `closeOnClickConfirm`；Todo/文件弹窗由成功分支关窗；空标题/名称确认、物理返回和遮罩行为均通过 | Rice Dialog、Todo、Files，`815ecf6` |
+| SET-014 | P1 | Agent 旧裸 `modelId` 在标签、选择面板和运行时分别猜测不同 Provider | 已修复，Android 编译通过 | 标签和面板统一按运行时默认 Chat Provider 解释；不迁移用户数据，未配置模型明确标注 | `utils/agent-settings-models.uts`，`815ecf6` |
+| UI-007 | P1 | Rice Dialog/ActionSheet 小程序 API 分支引用错误字段、未声明变量及错误的 fail 参数类型 | 已修复，待 MP 编译 | `cancelText` 改为 `cancelButtonText`，失败信息统一传字符串 `err.errMsg` | Rice Dialog/ActionSheet API，`815ecf6` |
+| SET-015 | P2 | 生成参数保存失败后页面继续展示未持久化值，重进时才突然回退 | 已修复，故障注入待回归 | 两条保存路径失败时立即重新读取最后成功配置 | `pages/settings/generation/generation.uvue`，`815ecf6` |
+| SET-016 | P2 | 旧模型设置页仍注册并参与备份白名单，但已无入口和运行态写入方 | 待兼容决策 | 直接删除可能影响外部深链或旧备份语义；可选重定向到默认模型页或正式下线 | 待用户确认兼容清理策略 |
 
 ## 修改记录
 
 | 日期 | 文件 | 修改 | 验证 | commit |
 | --- | --- | --- | --- | --- |
+| 2026-07-11 | 私聊/群聊媒体错误、Rice Dialog/ActionSheet、Todo、Files、Agent 模型标签、生成设置 | 补文件/相册/图片失败诊断；修复 Dialog 校验保留、物理返回和外部关闭；统一旧裸模型 Provider 语义；生成保存失败立即回滚；修正 MP API 字段 | HBuilderX 5.15 对 28 页面连续编译并同步成功；ADB 群聊相机权限、Todo/文件空输入、返回/遮罩、冷启动和前后台切换通过 | `82d7223`、`815ecf6` |
 | 2026-07-11 | 相机权限公共处理器、头像、私聊与群聊媒体入口 | 永久拒绝相机权限时显示恢复弹窗，支持直接进入系统授权设置；普通相机故障继续保留结构化错误与 toast | HBuilderX 5.15 对 28 页面编译成功；ADB 覆盖头像确认打开设置、头像取消、私聊“不再询问”拒绝和取消；测试后权限与系统自动旋转状态已恢复 | `81976fa` |
 | 2026-07-11 | Provider、默认模型、Skill、Agent 设置与数据导出 | 保留停用 Provider 状态；补 TTS 离页保护；Skill 损坏时阻止全链路写入和空备份 | HBuilderX 5.15 对 28 页面差量编译成功；ADB Provider/默认模型/Skills 入口与返回通过；app 定向日志无 fatal/UTS 异常 | `bcfb782` |
 | 2026-07-11 | Provider 拉取、插件诊断、Rice 输入组件 | 区分模型接口错误和合法空列表；models.dev 元数据后台刷新；AstrBot 失败进入诊断；修复 Android placeholder 字号崩溃；API Key 默认掩码 | HBuilderX 5.15 差量编译与同步成功；ADB 新建文件对话框回归无 `NumberFormatException`；Provider 编辑识别为 Android 密码字段 | `dc35b2d` |
@@ -218,6 +224,11 @@
 | 2026-07-11 18:31 | ADB About 与操作表回归 | About 正常显示版本 `1.5.0`、构建号 `150`；开发者链接打开 GitHub；头像来源操作表展示和取消正常 |
 | 2026-07-11 18:34 | ADB 私聊相机永久拒绝回归 | 选择“不再询问”并拒绝后显示统一恢复弹窗；取消后保留当前私聊；日志记录 `MEDIA_CAMERA_PERMISSION_DENIED` |
 | 2026-07-11 18:41 | 相机权限修复最终 compile-only | HBuilderX 5.15 对 28 页面重新编译为 Android class 成功；未出现新增 UTS/Kotlin 错误；权限 `USER_FIXED` 测试标记已通过系统设置清除 |
+| 2026-07-11 18:47 | ADB 群聊相机正常授权回归 | 群聊拍照入口响应；模拟器硬件返回 `camera error`，应用记录 `MEDIA_CAMERA_PICK_FAILED` 且不崩溃 |
+| 2026-07-11 18:50 | ADB 群聊相机永久拒绝回归 | 普通拒绝和“不再询问”均显示恢复弹窗；打开设置后重新授权，最终 CAMERA granted、flags 清空、自动旋转恢复 |
+| 2026-07-11 18:59 | Dialog 与设置修复 compile-only | 28 页面 Android class 编译成功；Rice 新属性、Agent 默认 Provider 解析、生成参数失败回滚通过 UTS/Kotlin 编译 |
+| 2026-07-11 19:03 | ADB Todo / Files Dialog 回归 | 空标题/空文件名点击确认仍保留弹窗；物理返回关闭弹窗且页面不退出；操作表遮罩关闭、Dialog 遮罩阻止关闭符合配置 |
+| 2026-07-11 19:06 | ADB 生命周期与进程重启 | Home 键触发 `App Hide`，恢复触发 `App Show`；force-stop 后新 PID 冷启动，首页联系人/群聊可见项计数一致，无 fatal/UTS 异常 |
 
 ## 手动真机回归
 
