@@ -43,7 +43,7 @@
 | 记忆 | `pages/memory/memory` | 分类/目标切换、新增/编辑/删除、搜索、记忆整理状态 | 测试中 | 短期缓存保存、清空确认和重进持久化已通过；重要信息 CRUD 继续覆盖 |
 | 设置 | `pages/settings/profile/profile` | 用户名、简介、详细介绍、头像、保存与私聊注入 | 测试中 | 相册选择、裁剪、内部文件落盘和“不保存”临时文件回收已通过；权限拒绝和资料保存继续覆盖 |
 | 设置 | `pages/settings/basic/basic` | 提供商列表、启停、默认配置入口 | 测试中 | ADB 已通过提供商管理入口、列表渲染与返回；启停、删除引用清理和失败回滚待隔离数据回归 |
-| 设置 | `pages/settings/basic/provider-edit` | 新增/编辑提供商、URL/API Key/模型、校验、删除 | 测试中 | 静态审查与 Android class 编译通过；已修复编辑停用项被重新启用，新增/编辑写操作及错误网络待 ADB |
+| 设置 | `pages/settings/basic/provider-edit` | 新增/编辑提供商、URL/API Key/模型、校验、删除 | 测试中 | Android class 编译与常规编辑页 ADB 通过；首启不再预置过时模型，多模型必须显式选择默认项；全新安装流程待隔离数据回归 |
 | 设置 | `pages/settings/model/model` | 旧模型设置兼容与跳转 | 待测 | |
 | 设置 | `pages/settings/default-models/default-models` | chat/TTS/STT/vision/organize 默认模型与图片描述 Prompt | 测试中 | ADB 已通过 Chat/Memory/Vision 区域、页面返回；TTS dirty 保护已编译，五类任务选择和非法参数待写操作回归 |
 | 设置 | `pages/settings/generation/generation` | 温度、Token、迭代、流式配置与边界值 | 测试中 | ADB 已通过页面入口和当前值渲染；边界值、失败回滚与重启持久化待测 |
@@ -117,6 +117,9 @@
 | SET-011 | P2 | Provider 模型已拉取成功后仍同步等待 models.dev 元数据刷新，异常网络可额外阻塞约 30 秒 | 已修复 | 能力元数据改为单例后台刷新，模型列表成功后立即可用 | `provider-edit.uvue`、`llm-metadata.uts` |
 | UI-004 | P1 | Rice 输入组件把 `30rpx` 截成 `30r` 交给 Android 原生字号解析，新建文件对话框触发 `NumberFormatException` | 已修复，ADB 通过 | placeholder 字号统一经 `getPxNum` 转为真实 px；新建文件对话框打开、取消且日志无同类异常 | `rice-input.uvue`、`rice-textarea.uvue`、`rice-search.uvue` |
 | SECURITY-003 | P1 | Provider 编辑页默认以明文输入展示 API Key，Android UI hierarchy 可读取完整内容 | 已修复，交互待回归 | API Key 默认使用密码态，提供显式可见性切换 | `pages/settings/basic/provider-edit.uvue` |
+| SET-012 | P0 | 首次启动和内置 Agent 硬编码 `deepseek-v4-flash`，选择其他 Provider 时仍可能调用 DeepSeek 模型；首启多模型又静默保存列表第一项 | 已修复，首装待回归 | Provider 初始模型列表为空；内置 Agent 默认跟随任务模型；只迁移仍使用旧裸 ID 的内置 Agent；首启从真实拉取结果中显式选择默认模型 | Provider/Agent/首启相关页面与 helpers |
+| SET-013 | P1 | 通用 `/models` 拉取只适合 OpenAI-compatible Provider，Anthropic 等协议无法通过同一端点可靠发现模型 | 待重构 | 对照 AstrBot 后确认模型可用性应由 Provider adapter 获取；models.dev 只用于能力元数据，不能替代账号实际模型列表 | 后续需要 Provider Source / Model adapter 层，属于架构调整 |
+| UI-005 | P2 | Agent 设置页把 CSS 变量交给 Android 原生 placeholder 颜色解析器，持续输出 `Color_Parser` 越界异常 | 已修复，ADB 通过 | placeholder 改用等价静态色；最新包进入聊天设置并渲染输入框后日志无 `Color_Parser` | `pages/agent-settings/agent-settings.uvue` |
 
 ## 修改记录
 
@@ -124,6 +127,7 @@
 | --- | --- | --- | --- | --- |
 | 2026-07-11 | Provider、默认模型、Skill、Agent 设置与数据导出 | 保留停用 Provider 状态；补 TTS 离页保护；Skill 损坏时阻止全链路写入和空备份 | HBuilderX 5.15 对 28 页面差量编译成功；ADB Provider/默认模型/Skills 入口与返回通过；app 定向日志无 fatal/UTS 异常 | `bcfb782` |
 | 2026-07-11 | Provider 拉取、插件诊断、Rice 输入组件 | 区分模型接口错误和合法空列表；models.dev 元数据后台刷新；AstrBot 失败进入诊断；修复 Android placeholder 字号崩溃；API Key 默认掩码 | HBuilderX 5.15 差量编译与同步成功；ADB 新建文件对话框回归无 `NumberFormatException`；Provider 编辑识别为 Android 密码字段 | `dc35b2d` |
+| 2026-07-11 | 首启模型、Provider 初始数据、Agent 模型继承与联网搜索 | 移除易过时的具体模型默认值；首启基于 Provider 实际返回显式选择默认模型；旧内置 Agent 定向迁移为继承；阻止裸模型跨 Provider 绑定；搜索模型不再猜测硬编码 ID | HBuilderX 5.15 连续多轮 Android class 编译成功并同步模拟器；SQLite 只读检查确认用户显式配置未被覆盖；Agent 设置和日志回归通过 | `d20fc32` |
 | 2026-07-11 | 聊天、群聊、文件导入、数据恢复与 Provider 日志相关源码 | 阻止媒体并发丢消息；隔离图片转述异步任务；校验导入工作区与文件名；旧备份缺少工作区目录时保留本地；阻止递归 symlink 越界；API Key 日志仅记录是否存在 | HBuilderX 5.15 Android class 两轮编译通过；ADB 冷启动、私聊、群聊、文件和设置入口通过；logcat 无 fatal/UTS 未捕获异常 | `1c3dbed`、`8cdec95` |
 | 2026-07-10 | `APP_TEST_PLAN.md` | 建立全功能测试矩阵和缺陷台账 | `git diff --check` 通过 | `fix: stabilize keyboard layouts` |
 | 2026-07-10 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` | 关闭输入组件重复顶起；键盘变化后重测滚动区；统一输入文字上下留白 | HBuilderX CLI 编译、ADB 输入与截图检查通过；真软键盘待真机 | `fix: stabilize keyboard layouts` |
@@ -158,6 +162,7 @@
 | 22 | 独立代码审查追加轮 | 检查 JVM ABI/DCE、跨介质数据一致性、页面生命周期、长消息滑窗和键盘延迟回调 | 三个独立审查代理 + `javap` + `git diff --check` + ADB | `5923efc` |
 | 23 | 导入边界、媒体并发与聊天生命周期复审 | 修复工作区路径穿越、恶意文件名、递归 symlink、媒体并发和群聊 caption 串会话；保持旧 schema 备份的缺目录兼容；记录私聊 runtime P0 重构项 | UTS 静态扫描、28 页面 Android class 编译、ADB 冷启动及私聊/群聊/文件/设置入口 | `1c3dbed`、`8cdec95` |
 | 24 | 设置状态与损坏数据复审 | 修复停用 Provider 被重新启用、TTS 未保存丢失；Skill 损坏保护扩展到 Agent 保存和数据导出；记录模型运行配置和引用事务重构项 | 三个并行审查/ADB 代理、`git diff --check`、28 页面 Android class 差量编译、设置入口 ADB 回归 | `bcfb782` |
+| 25 | 首启模型与 AstrBot 对照审查 | 清理 Provider/内置 Agent/联网搜索的过时模型默认值；首启改为真实发现并显式选择；models.dev 仅保留能力元数据职责；记录非 OpenAI-compatible adapter 缺口 | 三个并行代码/ADB 审查、AstrBot Provider 架构对照、UTS 静态扫描、多轮 28 页面 Android class 编译和设置页日志回归 | `d20fc32` |
 
 ## 执行日志
 
@@ -204,6 +209,10 @@
 | 2026-07-11 16:57 | Provider/Rice 组件差量编译 | 当前 28 页面 Android class 编译成功并同步模拟器；无新增 UTS/Kotlin 错误 |
 | 2026-07-11 16:59 | ADB 新建文件对话框回归 | 操作菜单、文件名输入弹窗和取消流程正常；定向日志不再出现 `NumberFormatException` |
 | 2026-07-11 17:24 | ADB Provider 密钥掩码回归 | DeepSeek 编辑页 4 个输入控件中恰好 1 个为 Android password 字段；App PID 稳定，定向日志无 fatal、ABI、类型或 UTS 异常 |
+| 2026-07-11 17:56 | 首启默认模型清理首次编译 | 修复一处 SFC 闭合括号后，28 页面 Android class 完整编译成功；未出现 UTS/Kotlin 错误 |
+| 2026-07-11 17:58 | placeholder 修复增量编译与部署 | 最新 28 页面连续两轮编译成功，同步并启动 `emulator-5554` |
+| 2026-07-11 18:02 | ADB Agent 设置日志回归 | 首页、私聊和聊天设置正常；输入框实际渲染后无 `Color_Parser`、Java fatal 或未捕获 UTS 异常；未修改用户数据 |
+| 2026-07-11 18:10 | 最终单进程 CLI 部署 | watcher 退出后重新独立编译、同步并启动首页；PID `10487`，UI hierarchy 非空，App 定向日志无 fatal、ABI、类型、UTS 或产物加载错误 |
 
 ## 手动真机回归
 
