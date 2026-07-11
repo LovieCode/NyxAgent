@@ -100,11 +100,15 @@
 | UI-003 | P1 | 笔记和通用全屏编辑器的 Android 物理返回绕过放弃确认 | 已修复，ADB 通过 | `onBackPress` 统一进入确认逻辑，放弃前清 dirty 防止重复确认循环 | `pages/note-editor/note-editor.uvue`、`pages/common/editor/editor.uvue` |
 | PERF-002 | P1 | 长消息滚到底部先写 `scrollTop=0`，误触双向滑窗向旧消息换窗，造成底部位置错误 | 已修复，长历史待回归 | 程序化滚底期间锁定窗口换页，避免 0 脉冲参与边缘检测 | 私聊/群聊页面 |
 | RUNTIME-003 | P1 | 兼容旧页面保留的 void 包装器因无可达调用被 DCE 删除，热更新仍可能 `NoSuchMethodError` | 已修复，字节码验证通过 | 新 boolean 入口真实调用旧 void ABI；`javap` 确认两个 JVM 签名同时存在 | `utils/agent-settings-page-helpers.uts` |
+| SECURITY-001 | P0 | 导入备份可携带伪造的群会话 `workspace_path`，后续复制/删除可能越出群聊工作区；系统文件选择器返回的文件名也可包含路径片段 | 已修复，ADB 入口通过 | 导入时只按受限 group/session ID 重建应用私有路径；Android 使用 canonical path 校验目录包含关系；文件导入只接受 basename | `utils/data-import.uts`、`utils/file-manager-io.uts`、`utils/group-chat-service.uts`、`pages/files/files.uvue` |
+| MEDIA-002 | P1 | 私聊生成过程中仍可追加图片/文件/位置，新增消息不会进入当前请求；群聊图片转述异步完成后可能写入已切换的会话，停止讨论也未失效 caption | 已修复，ADB 入口通过 | 媒体入口统一阻止并发追加；位置失败进入诊断；群聊 caption 绑定 group/session/message ID，切换与停止时失效；文件保存失败回滚消息 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` |
+| RUNTIME-004 | P0 | 私聊流仍由页面实例持有；退出后继续流式生成时重新进入同一会话可启动第二条流，两个页面最终互相覆盖持久化结果 | 待重构 | 独立审查确认页面隐藏仅保存快照，旧流闭包仍持有页面；需要仿照群聊实现按 Agent + conversation 注册的 `ChatTurnRuntime`，页面改为订阅者 | 待用户确认架构重构 |
 
 ## 修改记录
 
 | 日期 | 文件 | 修改 | 验证 | commit |
 | --- | --- | --- | --- | --- |
+| 2026-07-11 | 聊天、群聊、文件导入、数据恢复与 Provider 日志相关 8 个源码文件 | 阻止媒体并发丢消息；隔离图片转述异步任务；校验导入工作区与文件名；资源目录缺失改为失败；API Key 日志仅记录是否存在 | HBuilderX 5.15 Android class 编译通过；ADB 冷启动、私聊、群聊、文件和设置入口通过；logcat 无 fatal/UTS 未捕获异常 | `1c3dbed` |
 | 2026-07-10 | `APP_TEST_PLAN.md` | 建立全功能测试矩阵和缺陷台账 | `git diff --check` 通过 | `fix: stabilize keyboard layouts` |
 | 2026-07-10 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` | 关闭输入组件重复顶起；键盘变化后重测滚动区；统一输入文字上下留白 | HBuilderX CLI 编译、ADB 输入与截图检查通过；真软键盘待真机 | `fix: stabilize keyboard layouts` |
 | 2026-07-10 | `components/FullscreenTextEditor/FullscreenTextEditor.uvue`、`pages/note-editor/note-editor.uvue`、`pages.json` | 全屏编辑改为页面 resize，关闭控件 transform 上推 | HBuilderX CLI 编译与 ADB 静态布局通过；真软键盘待真机 | `fix: stabilize keyboard layouts` |
@@ -136,6 +140,7 @@
 | 20 | 历史、记忆、Todo 与编辑器复审 | 修复 Todo 双切换、定向文件更新、短期记忆清空、历史恢复、物理返回确认 | HBuilderX Android 差量编译；ADB Todo/Note CRUD、Memory 清空、历史恢复和物理返回通过 | `5923efc` |
 | 21 | 头像与 Agent 生命周期复审 | 相册返回竞态、内部头像持久化、取消/不保存回收、Agent 创建删除与未保存状态保护 | 28 页面 Android class 干净编译；ADB 相册、裁剪、取消、完成和临时文件回收通过 | `5923efc` |
 | 22 | 独立代码审查追加轮 | 检查 JVM ABI/DCE、跨介质数据一致性、页面生命周期、长消息滑窗和键盘延迟回调 | 三个独立审查代理 + `javap` + `git diff --check` + ADB | `5923efc` |
+| 23 | 导入边界、媒体并发与聊天生命周期复审 | 修复工作区路径穿越、恶意文件名、备份资源缺失假成功、媒体并发和群聊 caption 串会话；记录私聊 runtime P0 重构项 | UTS 静态扫描、28 页面 Android class 编译、ADB 冷启动及私聊/群聊/文件/设置入口 | `1c3dbed` |
 
 ## 执行日志
 
@@ -167,6 +172,11 @@
 | 2026-07-11 05:15 | 三轮独立代码审查 | 发现旧 ABI 被 DCE、备份字段/资源假成功、物理返回绕过确认、滚底触发旧窗口、键盘延迟离页执行等问题并修复 |
 | 2026-07-11 05:20 | ADB Android 物理返回 | 未保存笔记按系统返回弹出放弃确认；修复 dirty 清理后选择放弃可正常返回且不产生笔记 |
 | 2026-07-11 05:26 | 最终 HBuilderX CLI `--cleanCache true` 部署 | 28 页面 Android class 全量编译成功并同步模拟器；物理返回复测无 `StackOverflowError`、Java fatal、ABI 或 UTS 未捕获异常 |
+| 2026-07-11 15:38 | 重启后工具链复核 | HBuilderX CLI `5.15.2026070915` 可用；`emulator-5554` 在线；Git Bash、ADB 与项目工作树访问正常 |
+| 2026-07-11 15:40 | 本轮首次 clean compile | 捕获 `charCodeAt()` nullable UTS 编译错误并补显式空值收窄；第二次 clean compile 遇到 HBuilderX GUI 占用 `uts-openSchema/index.jar` 的 `EBUSY`，未改缓存文件 |
+| 2026-07-11 15:43 | 普通 Android compile-only 回归 | 当前 28 页面编译为 Android class 成功，无后续 UTS/Kotlin 错误 |
+| 2026-07-11 15:45 | CLI 部署与 ADB 冷启动 | 当前包同步成功；冷启动进入 Agent 首页，截图和 UI hierarchy 均非空；logcat 无 `FATAL EXCEPTION`、`NoSuchMethodError` 或未捕获 UTS 异常 |
+| 2026-07-11 15:48 | ADB 关键入口冒烟 | 私聊显示历史与输入栏；群聊显示当前会话、消息和输入栏；文件根目录与设置首页正常渲染，页面切换无 fatal |
 
 ## 手动真机回归
 
