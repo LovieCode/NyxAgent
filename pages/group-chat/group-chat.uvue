@@ -149,6 +149,7 @@
 	import { setActiveAgentRuntimeId, setContextPreviewPayload, setFilesInitialPath, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, type PickedLocalFile } from '@/utils/attachment-reader.uts'
 	import { handleCameraPickerFailure } from '@/utils/media-permission.uts'
+	import { APP_ERROR_CATEGORY_RUNTIME, reportAppErrorFromCause } from '@/utils/app-error.uts'
 	import {
 		buildGroupDispatchHistoryText,
 		buildGroupMemberAgentItems as buildGroupMemberAgentItemsForPage,
@@ -1074,6 +1075,7 @@ let groupTurnRuntimeSyncTimer: number = -1
 					},
 					fail: (err: any) => {
 						if (isChooseCancelError(err) == true) { return }
+						reportAppErrorFromCause('GROUP_CHAT_FILE_PICK_FAILED', APP_ERROR_CATEGORY_RUNTIME, 'group_chat_file_picker', '选择文件失败', err, true)
 						uni.showToast({ position: 'bottom', title: '选择文件失败', icon: 'none' })
 					}
 				})
@@ -1097,6 +1099,7 @@ let groupTurnRuntimeSyncTimer: number = -1
 					fail: (err: any) => {
 						if (isChooseCancelError(err) == true) { return }
 						console.log('[GroupChat] chooseMedia 相册失败，切换文件选图: ' + JSON.stringify(err))
+						reportAppErrorFromCause('GROUP_CHAT_ALBUM_PICK_FALLBACK', APP_ERROR_CATEGORY_RUNTIME, 'group_chat_album_picker', '相册媒体选择失败，已改用文件选择', err, true)
 						uni.showToast({ position: 'bottom', title: '相册打开失败，请从文件选择图片', icon: 'none' })
 						this.pickGroupImageFromFileFallback(fallbackReason)
 					}
@@ -1119,6 +1122,7 @@ let groupTurnRuntimeSyncTimer: number = -1
 					},
 					fail: (err: any) => {
 						if (isChooseCancelError(err) == true) { return }
+						reportAppErrorFromCause('GROUP_CHAT_IMAGE_PICK_FAILED', APP_ERROR_CATEGORY_RUNTIME, 'group_chat_image_file_picker', '选择图片失败', err, true)
 						uni.showToast({ position: 'bottom', title: '选择图片失败', icon: 'none' })
 					}
 				})
