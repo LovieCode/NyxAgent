@@ -42,13 +42,13 @@
 | 上下文 | `pages/context-preview/context-preview` | 请求快照、标签顺序、空状态、长内容滚动 | 测试中 | ADB 已通过原始上下文展示、长内容滚动与复制入口 |
 | 记忆 | `pages/memory/memory` | 分类/目标切换、新增/编辑/删除、搜索、记忆整理状态 | 测试中 | 短期缓存保存、清空确认和重进持久化已通过；重要信息 CRUD 继续覆盖 |
 | 设置 | `pages/settings/profile/profile` | 用户名、简介、详细介绍、头像、保存与私聊注入 | 测试中 | 相册选择、裁剪、内部文件落盘和“不保存”临时文件回收已通过；权限拒绝和资料保存继续覆盖 |
-| 设置 | `pages/settings/basic/basic` | 提供商列表、启停、默认配置入口 | 待测 | |
-| 设置 | `pages/settings/basic/provider-edit` | 新增/编辑提供商、URL/API Key/模型、校验、删除 | 待测 | 键盘遮挡问题优先 |
+| 设置 | `pages/settings/basic/basic` | 提供商列表、启停、默认配置入口 | 测试中 | ADB 已通过提供商管理入口、列表渲染与返回；启停、删除引用清理和失败回滚待隔离数据回归 |
+| 设置 | `pages/settings/basic/provider-edit` | 新增/编辑提供商、URL/API Key/模型、校验、删除 | 测试中 | 静态审查与 Android class 编译通过；已修复编辑停用项被重新启用，新增/编辑写操作及错误网络待 ADB |
 | 设置 | `pages/settings/model/model` | 旧模型设置兼容与跳转 | 待测 | |
-| 设置 | `pages/settings/default-models/default-models` | chat/TTS/STT/vision/organize 默认模型与图片描述 Prompt | 待测 | |
-| 设置 | `pages/settings/generation/generation` | 温度、Token、迭代、流式配置与边界值 | 待测 | |
-| 设置 | `pages/settings/plugin/plugin` | 插件配置、启停、输入校验、错误态 | 待测 | |
-| 设置 | `pages/settings/skills/skills` | Skill 新增/编辑/删除、Agent 绑定、长文本编辑 | 待测 | |
+| 设置 | `pages/settings/default-models/default-models` | chat/TTS/STT/vision/organize 默认模型与图片描述 Prompt | 测试中 | ADB 已通过 Chat/Memory/Vision 区域、页面返回；TTS dirty 保护已编译，五类任务选择和非法参数待写操作回归 |
+| 设置 | `pages/settings/generation/generation` | 温度、Token、迭代、流式配置与边界值 | 测试中 | ADB 已通过页面入口和当前值渲染；边界值、失败回滚与重启持久化待测 |
+| 设置 | `pages/settings/plugin/plugin` | 插件配置、启停、输入校验、错误态 | 测试中 | ADB 已通过页面入口、搜索与 AstrBot 配置渲染；401/500/超时/断网及 diagnostics 待测 |
+| 设置 | `pages/settings/skills/skills` | Skill 新增/编辑/删除、Agent 绑定、长文本编辑 | 测试中 | ADB 已通过页面入口、空状态和返回；损坏 JSON 全链路写保护已编译，CRUD/长文/绑定待隔离数据回归 |
 | 设置 | `pages/settings/data/data` | 导出、导入、取消、无效文件、覆盖确认 | 测试中 | ADB 安全备份生成与 Android 分享选择器通过；导入增加字段/资源完整性拒绝，真实覆盖恢复仍待隔离数据回归 |
 | 设置 | `pages/settings/about/about` | 版本信息、外链打开 | 待测 | |
 | 通用组件 | `rice-ui/action-sheet` | 展示、选择、取消、遮罩关闭 | 待测 | 通过业务入口覆盖 |
@@ -88,7 +88,7 @@
 | RUNTIME-001 | P0 | Android 消息 key 读取时间戳时触发 `Long cannot be cast to String`，历史私聊白屏 | 已修复，ADB 通过 | 私聊和群聊列表 key 改为窗口 source index；历史页可正常渲染 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` |
 | GROUP-001 | P1 | 群聊缺少只对用户可见的成员私发；其他成员/调度/复盘可能读取私密正文 | 已修复，ADB 待回归 | 私发由用户原文显式触发；只对用户和原 Agent 可见，原 Agent 后续公开发言保留连续性但不得主动泄露；不进入公开计数和复盘 | `utils/group-chat-*`、`components/ChatBubble/ChatBubble.uvue` |
 | ERROR-001 | P1 | LLM 网络/API/SSE 失败被当作正常 assistant 正文，或流结束后无提示 | 已修复，ADB 待回归 | transport error 独立传递；失败气泡、toast、诊断记录；失败不写成功快照、不触发 TTS | `llm-api-client.uts`、`llm-client.uts`、`utils/event.uts`、聊天页面 |
-| ERROR-002 | P1 | Provider、模型、资料、生成参数、插件、Skill 等保存失败仍更新 UI 或提示成功 | 已修复，ADB 待回归 | DAO 返回真实 boolean；相关多字段保存改为事务；失败回滚即时选择或保留 dirty 状态 | 设置页面、`database-settings.uts`、`provider.uts` 等 |
+| ERROR-002 | P1 | Provider、模型、资料、生成参数、插件、Skill 等保存失败仍更新 UI 或提示成功 | 部分修复，ADB 待回归 | DAO 与主要页面已补回滚/dirty 状态；Provider 拉取、AstrBot diagnostics 和跨引用事务仍有缺口 | 设置页面、`database-settings.uts`、`provider.uts` 等 |
 | ERROR-003 | P2 | App 每次启动尝试重复 `ALTER TABLE`，logcat 持续输出 `duplicate column` | 已修复，ADB 通过 | 迁移前使用 `PRAGMA table_info` 检查字段；冷启动清空 logcat 后无重复字段错误 | `utils/database-core.uts`、`utils/database.uts` |
 | RUNTIME-002 | P0 | 修改导出 UTS 函数返回值后，Android 增量缓存混用旧调用方与新实现，进入群聊触发 `NoSuchMethodError` | 已修复，ADB 通过 | 恢复既有公共函数 JVM 签名；需要结果的页面改用已有底层状态写入；`--cleanCache true` 重编 28 页面后群聊入口正常 | Agent/历史/文件/群聊页面与 runtime state helpers |
 | DATA-008 | P1 | 默认群聊创建或调度持久化中途失败时可能残留数据库行、目录，部分失败只写日志 | 已修复，ADB 入口通过 | 创建失败事务清理 9 张关联表并回收工作区；复盘、任务、记忆、指标、上下文和快照写入失败进入统一诊断 | `utils/database-group-chat.uts`、`utils/group-chat-service.uts`、`utils/group-chat-scheduler.uts` 等 |
@@ -104,11 +104,23 @@
 | MEDIA-002 | P1 | 私聊生成过程中仍可追加图片/文件/位置，新增消息不会进入当前请求；群聊图片转述异步完成后可能写入已切换的会话，停止讨论也未失效 caption | 已修复，ADB 入口通过 | 媒体入口统一阻止并发追加；位置失败进入诊断；群聊 caption 绑定 group/session/message ID，切换与停止时失效；文件保存失败回滚消息 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` |
 | RUNTIME-004 | P0 | 私聊流仍由页面实例持有；退出后继续流式生成时重新进入同一会话可启动第二条流，两个页面最终互相覆盖持久化结果 | 待重构 | 独立审查确认页面隐藏仅保存快照，旧流闭包仍持有页面；需要仿照群聊实现按 Agent + conversation 注册的 `ChatTurnRuntime`，页面改为订阅者 | 待用户确认架构重构 |
 | SECURITY-002 | P2 | 非 Android 平台的目录包含检查仍是词法前缀判断，无法识别工作区内部 symlink | 待跨端验证 | Android 已封堵 canonical path 和递归 symlink；iOS/WEB 缺少当前可验证的 lstat/realpath 实现，涉及复制/删除前仍需平台实现后再开放同等级保证 | `utils/file-manager-io.uts` |
+| SET-001 | P1 | 编辑已停用 Provider 后自动保存会固定写成启用 | 已修复，写操作待回归 | 编辑时保留原 `enabled == 1` 状态，新建项才默认启用；异常非 1 值不会被提升为启用 | `pages/settings/basic/provider-edit.uvue` |
+| SET-002 | P1 | 模型级 `maxTokens`、`params`、`supportsToolCall` 可保存但聊天运行请求不读取 | 待重构 | 需要统一解析模型运行配置并定义旧数据兼容语义，不能只在页面层补字段 | 待用户确认运行时配置重构 |
+| SET-003 | P1 | `skills_list` JSON 损坏后被当成空列表，后续保存 Agent 或导出备份会覆盖/固化为空 | 已修复，故障注入待回归 | 解析失败进入 diagnostics；Skill 公共保存、Agent 设置和数据导出统一停止；绑定 ID 保留，页面显示保护状态 | `utils/skills.uts`、`utils/agent-settings-save-service.uts`、`utils/data-export.uts`、Skill/Agent 设置页 |
+| SET-004 | P1 | 停用/删除 Provider 或模型时，默认任务、联网搜索及 Agent 引用可能悬空 | 待重构 | 需要统一引用统计、阻止或事务清理策略，并纳入 Agent 引用 | 待用户确认 Provider 引用重构 |
+| SET-005 | P1 | 获取模型列表无明确超时和结构化错误，HTTP/解析/空列表/断网统一折叠为失败 | 待修复 | 当前用户提示和 diagnostics 无法区分 Key、地址、超时与合法空列表 | `provider.uts`、`provider-edit.uvue` |
+| SET-006 | P1 | 首次引导分步保存 Provider、active、默认模型和完成标记，失败会留下半配置 | 待重构 | 需要 DAO 事务或完整补偿回滚协议 | 待用户确认首次引导事务重构 |
+| SET-007 | P1 | vision/reasoning 能力只按 model ID 全局匹配，同名模型可能串 Provider | 待重构 | 能力查询和调用链需要同时携带 `providerId + modelId` | 待用户确认模型能力解析重构 |
+| SET-008 | P2 | AstrBot 测试失败只显示 toast，不进入统一 diagnostics | 待修复 | 401、500、超时和断网缺少诊断编号 | `pages/settings/plugin/plugin.uvue`、`utils/astrbot-service.uts` |
+| SET-009 | P2 | 相机权限永久拒绝后没有跳转系统授权设置的恢复入口 | 待修复 | 当前只能重复显示拍照失败 | `utils/avatar-image-picker.uts` |
+| SET-010 | P2 | 默认模型页 TTS 参数修改后直接返回会静默丢失 | 已修复，交互待回归 | TTS 全字段加入快照、统一未保存确认、保存成功刷新快照、不保存恢复快照 | `pages/settings/default-models/default-models.uvue` |
+| SET-011 | P2 | Provider 模型已拉取成功后仍同步等待 models.dev 元数据刷新，异常网络可额外阻塞约 30 秒 | 待优化 | 应让元数据刷新异步化，不阻塞主模型列表 | `provider-edit.uvue`、`llm-metadata.uts` |
 
 ## 修改记录
 
 | 日期 | 文件 | 修改 | 验证 | commit |
 | --- | --- | --- | --- | --- |
+| 2026-07-11 | Provider、默认模型、Skill、Agent 设置与数据导出 | 保留停用 Provider 状态；补 TTS 离页保护；Skill 损坏时阻止全链路写入和空备份 | HBuilderX 5.15 对 28 页面差量编译成功；ADB Provider/默认模型/Skills 入口与返回通过；app 定向日志无 fatal/UTS 异常 | `bcfb782` |
 | 2026-07-11 | 聊天、群聊、文件导入、数据恢复与 Provider 日志相关源码 | 阻止媒体并发丢消息；隔离图片转述异步任务；校验导入工作区与文件名；旧备份缺少工作区目录时保留本地；阻止递归 symlink 越界；API Key 日志仅记录是否存在 | HBuilderX 5.15 Android class 两轮编译通过；ADB 冷启动、私聊、群聊、文件和设置入口通过；logcat 无 fatal/UTS 未捕获异常 | `1c3dbed`、`8cdec95` |
 | 2026-07-10 | `APP_TEST_PLAN.md` | 建立全功能测试矩阵和缺陷台账 | `git diff --check` 通过 | `fix: stabilize keyboard layouts` |
 | 2026-07-10 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` | 关闭输入组件重复顶起；键盘变化后重测滚动区；统一输入文字上下留白 | HBuilderX CLI 编译、ADB 输入与截图检查通过；真软键盘待真机 | `fix: stabilize keyboard layouts` |
@@ -142,6 +154,7 @@
 | 21 | 头像与 Agent 生命周期复审 | 相册返回竞态、内部头像持久化、取消/不保存回收、Agent 创建删除与未保存状态保护 | 28 页面 Android class 干净编译；ADB 相册、裁剪、取消、完成和临时文件回收通过 | `5923efc` |
 | 22 | 独立代码审查追加轮 | 检查 JVM ABI/DCE、跨介质数据一致性、页面生命周期、长消息滑窗和键盘延迟回调 | 三个独立审查代理 + `javap` + `git diff --check` + ADB | `5923efc` |
 | 23 | 导入边界、媒体并发与聊天生命周期复审 | 修复工作区路径穿越、恶意文件名、递归 symlink、媒体并发和群聊 caption 串会话；保持旧 schema 备份的缺目录兼容；记录私聊 runtime P0 重构项 | UTS 静态扫描、28 页面 Android class 编译、ADB 冷启动及私聊/群聊/文件/设置入口 | `1c3dbed`、`8cdec95` |
+| 24 | 设置状态与损坏数据复审 | 修复停用 Provider 被重新启用、TTS 未保存丢失；Skill 损坏保护扩展到 Agent 保存和数据导出；记录模型运行配置和引用事务重构项 | 三个并行审查/ADB 代理、`git diff --check`、28 页面 Android class 差量编译、设置入口 ADB 回归 | `bcfb782` |
 
 ## 执行日志
 
@@ -180,6 +193,11 @@
 | 2026-07-11 15:48 | ADB 关键入口冒烟 | 私聊显示历史与输入栏；群聊显示当前会话、消息和输入栏；文件根目录与设置首页正常渲染，页面切换无 fatal |
 | 2026-07-11 16:00 | 导入/路径安全追加审查 | 发现 schema 1 旧包缺少工作区目录时的兼容回归，以及递归复制/删除跟随内部 symlink；恢复跳过语义并封堵 Android 递归越界 |
 | 2026-07-11 16:02 | 安全修正 compile-only | 当前 28 页面再次编译为 Android class 成功，新增 `File` canonical/symlink 检查通过 UTS/Kotlin 编译 |
+| 2026-07-11 16:32 | 设置改动首次 compile-only | HBuilderX 5.15 编译成功；缓存有效，无新增 UTS/Kotlin 错误 |
+| 2026-07-11 16:37 | 设置页单线程 ADB 回归 | Provider 管理、默认模型与 Skills 页面均可进入和返回；App PID 稳定，定向 logcat 无 fatal、UTS、TypeError 或空指针异常 |
+| 2026-07-11 16:39 | Skill 全链路保护差量编译 | 当前 28 页面 Android class 差量编译成功，Agent 设置、导出失败保护和页面状态通过 UTS/Kotlin 编译 |
+| 2026-07-11 16:42 | 最新设置包部署 | 28 页面差量编译后同步 `emulator-5554` 并启动成功 |
+| 2026-07-11 16:45 | 最新包冷启动与 Agent 设置回归 | 冷启动、私聊、聊天设置页正常渲染；App PID 定向日志 323 行中无 fatal、ABI、空指针、类型或 UTS 异常 |
 
 ## 手动真机回归
 
