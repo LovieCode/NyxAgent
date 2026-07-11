@@ -82,6 +82,7 @@
 		showConfirmButton: true,
 		confirmButtonText: '确认',
 		confirmButtonDisabled: false,
+		closeOnClickConfirm: true,
 		showCancelButton: true,
 		cancelButtonText: '取消',
 		cancelButtonDisabled: false,
@@ -145,6 +146,7 @@
 			confirmButtonText: props.confirmButtonText,
 			confirmButtonColor: props.confirmButtonColor,
 			confirmButtonDisabled: props.confirmButtonDisabled,
+			closeOnClickConfirm: props.closeOnClickConfirm,
 			showCancelButton: props.showCancelButton,
 			cancelButtonText: props.cancelButtonText,
 			cancelButtonColor: props.cancelButtonColor,
@@ -235,16 +237,21 @@
 	const confirmLoading = ref(false)
 	const confirm = () => {
 		if (props.confirmButtonDisabled || confirmLoading.value) return
-		emit('confirm')
 		if (typeof props.beforeClose != 'function') {
-			show.value = false
+			emit('confirm')
+			if (props.closeOnClickConfirm) {
+				show.value = false
+			}
 			return
 		}
 		//异步控制-
 		confirmLoading.value = true
 		callInterceptor(props.beforeClose as BeforeChangeInterceptor, {
 			done() {
-				show.value = false
+				emit('confirm')
+				if (props.closeOnClickConfirm) {
+					show.value = false
+				}
 			},
 			complete() {
 				confirmLoading.value = false
@@ -275,6 +282,14 @@
 			// #endif
 			open()
 			emit('open')
+		}
+		if (!newVal) {
+			// #ifdef APP
+			if (isUseDialogPage.value) {
+				hideDialog()
+				return
+			}
+			// #endif
 		}
 		if (!newVal && realShow.value) {
 			close()

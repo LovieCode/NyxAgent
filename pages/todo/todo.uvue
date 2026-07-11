@@ -82,6 +82,7 @@
 					:show-cancel-button="true"
 					:cancel-button-text="'取消'"
 					:confirm-button-text="'确认'"
+					:close-on-click-confirm="false"
 					@confirm="addTodo"
 					@cancel="cancelAddTodo"
 				>
@@ -252,6 +253,13 @@
 			this.loadTodos()
 			this.loadNotes()
 			this.consumeNoteEditorResult()
+		},
+		onBackPress(): boolean {
+			if (this.showAddTodo == true) {
+				this.cancelAddTodo()
+				return true
+			}
+			return false
 		},
 		methods: {
 			getUserDisplayName(): string {

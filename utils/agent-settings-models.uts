@@ -4,7 +4,7 @@
  * 页面只处理交互；模型标签、面板选择和参数格式化放这里，别把 uvue 写成配置计算器。
  */
 
-import { getProviderModels, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
+import { getDefaultTaskModel, getProviderModels, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
 import { type GenerationSettings } from '@/utils/generation-settings.uts'
 
 export type AgentSettingsModelSelection = {
@@ -50,6 +50,22 @@ function readProviderName(provider: UTSJSONObject): string {
 	return raw != null ? raw : ''
 }
 
+function readDefaultChatProviderId(): string {
+	const config = getDefaultTaskModel('chat')
+	if (config == null) { return '' }
+	const raw = config['providerId'] as string | null
+	return raw != null ? raw : ''
+}
+
+function providerContainsModel(providerId: string, modelId: string): boolean {
+	if (providerId == '' || modelId == '') { return false }
+	const models = getProviderModels(providerId)
+	for (let i = 0; i < models.length; i++) {
+		if (models[i].id == modelId) { return true }
+	}
+	return false
+}
+
 export function buildAgentCurrentModelLabel(currentModel: string, providers: UTSJSONObject[]): string {
 	if (currentModel == '') { return '跟随默认对话模型' }
 	const sep = '||'
@@ -67,22 +83,17 @@ export function buildAgentCurrentModelLabel(currentModel: string, providers: UTS
 		}
 		return providerId + ' / ' + modelId
 	}
-	if (currentModel != '') {
+	const defaultProviderId = readDefaultChatProviderId()
+	if (defaultProviderId != '') {
 		for (let i = 0; i < providers.length; i++) {
-			const enabled = providers[i]['enabled'] as number | null
-			if (enabled == 1) {
-				const providerId = readProviderId(providers[i])
-				const models = getProviderModels(providerId)
-				for (let j = 0; j < models.length; j++) {
-					if (models[j].id == currentModel) {
-						return readProviderName(providers[i]) + ' / ' + currentModel
-					}
-				}
+			if (readProviderId(providers[i]) == defaultProviderId) {
+				const configuredSuffix = providerContainsModel(defaultProviderId, currentModel) ? '' : '（未配置）'
+				return readProviderName(providers[i]) + ' / ' + currentModel + configuredSuffix
 			}
 		}
-		return currentModel + '（未关联提供商）'
+		return defaultProviderId + ' / ' + currentModel + '（提供商不存在）'
 	}
-	return '跟随默认对话模型'
+	return currentModel + '（未关联默认提供商）'
 }
 
 export function resolveAgentModelSelection(currentModel: string, enabledProviders: UTSJSONObject[]): AgentSettingsModelSelection {
@@ -100,9 +111,13 @@ export function resolveAgentModelSelection(currentModel: string, enabledProvider
 			modelId: currentModel.substring(idx + sep.length),
 		} as AgentSettingsModelSelection
 	}
+	const defaultProviderId = readDefaultChatProviderId()
 	let providerId = ''
-	if (enabledProviders.length > 0) {
-		providerId = readProviderId(enabledProviders[0])
+	for (let i = 0; i < enabledProviders.length; i++) {
+		if (readProviderId(enabledProviders[i]) == defaultProviderId) {
+			providerId = defaultProviderId
+			break
+		}
 	}
 	return {
 		providerId: providerId,

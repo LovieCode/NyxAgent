@@ -11,6 +11,7 @@ export type DialogProps = {
 	confirmButtonText ?: string,
 	confirmButtonColor ?: string,
 	confirmButtonDisabled ?: boolean,
+	closeOnClickConfirm ?: boolean,
 	showCancelButton ?: boolean,
 	cancelButtonText ?: string,
 	cancelButtonColor ?: string,

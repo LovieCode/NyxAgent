@@ -93,6 +93,7 @@
 				:show-cancel-button="true"
 				cancel-button-text="取消"
 				confirm-button-text="创建"
+				:close-on-click-confirm="false"
 				@confirm="doCreate"
 				@cancel="cancelCreate"
 			>
@@ -108,6 +109,7 @@
 				:show-cancel-button="true"
 				cancel-button-text="取消"
 				confirm-button-text="确认"
+				:close-on-click-confirm="false"
 				@confirm="doRename"
 				@cancel="cancelRename"
 			>
@@ -207,6 +209,14 @@
 			this.refreshList()
 		},
 		onBackPress(): boolean {
+			if (this.showRenameDialog == true) {
+				this.cancelRename()
+				return true
+			}
+			if (this.showCreateDialog == true) {
+				this.cancelCreate()
+				return true
+			}
 			if (this.currentPath == VIRTUAL_ROOT) {
 				return false // 根视图 → 正常返回
 			}

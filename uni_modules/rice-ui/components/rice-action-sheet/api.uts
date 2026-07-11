@@ -74,9 +74,7 @@ export const showActionSheet = (options : ActionSheetProps) => {
 			if (err.errMsg === 'showActionSheet:fail cancel') {
 				options.cancel?.()
 			} else {
-				options.fail?.({
-					errMsg: err.errMsg
-				})
+				options.fail?.(err.errMsg)
 			}
 
 		}

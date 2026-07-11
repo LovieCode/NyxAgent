@@ -185,6 +185,7 @@
 				const memorySettings = built['memorySettings'] as GenerationSettings
 				const saved = saveGenerationSettings(settings, memorySettings)
 				if (saved == false) {
+					this.loadSettings()
 					uni.showToast({ title: '保存生成参数失败，请重试', icon: 'none' })
 					return false
 				}
@@ -197,6 +198,7 @@
 				const memorySettings = built['memorySettings'] as GenerationSettings
 				const saved = saveGenerationSettings(settings, memorySettings)
 				if (saved == false) {
+					this.loadSettings()
 					uni.showToast({ title: '保存生成参数失败，请重试', icon: 'none' })
 					return
 				}
