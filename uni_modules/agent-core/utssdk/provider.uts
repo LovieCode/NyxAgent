@@ -338,12 +338,40 @@ export function getProviderApiConfig(id: string): UTSJSONObject | null {
  * 从提供商的 API 获取模型列表
  * 调用 GET {baseUrl}/v1/models
  */
- export function fetchProviderModels(apiBase: string, apiKey: string): Promise<string[]> {
-	return new Promise<string[]>((resolve) => {
+export type ProviderModelsFetchResult = {
+	ok: boolean
+	ids: string[]
+	errorCode: string
+	errorMessage: string
+	detail: string
+	statusCode: number
+}
+
+function buildProviderModelsFetchResult(ok: boolean, ids: string[], errorCode: string, errorMessage: string, detail: string, statusCode: number): ProviderModelsFetchResult {
+	return {
+		ok: ok,
+		ids: ids,
+		errorCode: errorCode,
+		errorMessage: errorMessage,
+		detail: detail,
+		statusCode: statusCode,
+	} as ProviderModelsFetchResult
+}
+
+function buildProviderModelsHttpMessage(statusCode: number): string {
+	if (statusCode == 401 || statusCode == 403) { return 'API Key 无效或没有模型列表权限' }
+	if (statusCode == 404) { return '模型列表接口不存在，请检查接口地址' }
+	if (statusCode == 408 || statusCode == 504) { return '模型列表请求超时，请稍后重试' }
+	if (statusCode >= 500) { return '模型服务暂时不可用，请稍后重试' }
+	return '模型列表请求失败，HTTP ' + statusCode
+}
+
+export function fetchProviderModelsDetailed(apiBase: string, apiKey: string): Promise<ProviderModelsFetchResult> {
+	return new Promise<ProviderModelsFetchResult>((resolve) => {
 		let baseUrl = apiBase
 		if (baseUrl == '') {
 			console.log('[Provider] 获取模型列表 ← 地址为空')
-			resolve([])
+			resolve(buildProviderModelsFetchResult(false, [], 'PROVIDER_MODELS_BASE_URL_EMPTY', '接口地址不能为空', 'apiBase 为空', 0))
 			return
 		}
 		// 去掉末尾 /
@@ -359,6 +387,7 @@ export function getProviderApiConfig(id: string): UTSJSONObject | null {
 		uni.request({
 			url: fetchUrl,
 			method: 'GET',
+			timeout: 15000,
 			header: {
 				'Authorization': 'Bearer ' + apiKey,
 			} as UTSJSONObject,
@@ -369,13 +398,18 @@ export function getProviderApiConfig(id: string): UTSJSONObject | null {
 						const data = res.data as UTSJSONObject
 						if (data == null) {
 							console.log('[Provider] 获取模型列表 ← 200 | 响应体为空')
-							resolve([])
+							resolve(buildProviderModelsFetchResult(false, [], 'PROVIDER_MODELS_RESPONSE_INVALID', '模型服务返回了无法识别的响应', 'HTTP 200 响应体为空', statusCode))
 							return
 						}
 						const modelList = data['data'] as any[] | null
-						if (modelList == null || modelList.length == 0) {
+						if (modelList == null) {
+							console.log('[Provider] 获取模型列表 ← 200 | 缺少 data 数组')
+							resolve(buildProviderModelsFetchResult(false, [], 'PROVIDER_MODELS_RESPONSE_INVALID', '模型服务返回了无法识别的响应', 'HTTP 200 响应缺少 data 数组', statusCode))
+							return
+						}
+						if (modelList.length == 0) {
 							console.log('[Provider] 获取模型列表 ← 200 | data 数组为空，完整响应: ' + JSON.stringify(data).substring(0, JSON.stringify(data).length < 300 ? JSON.stringify(data).length : 300))
-							resolve([])
+							resolve(buildProviderModelsFetchResult(true, [], '', '', 'HTTP 200，data 数组为空', statusCode))
 							return
 						}
 						const ids: string[] = []
@@ -386,11 +420,15 @@ export function getProviderApiConfig(id: string): UTSJSONObject | null {
 								ids.push(mid)
 							}
 						}
+						if (ids.length == 0) {
+							resolve(buildProviderModelsFetchResult(false, [], 'PROVIDER_MODELS_RESPONSE_INVALID', '模型服务没有返回有效的模型 ID', 'HTTP 200，data 不为空但没有有效 id', statusCode))
+							return
+						}
 						console.log('[Provider] 获取模型列表 ← 200 | ' + ids.length + ' 个模型: ' + ids.join(', '))
-						resolve(ids)
-					} catch (_e: any) {
+						resolve(buildProviderModelsFetchResult(true, ids, '', '', '', statusCode))
+					} catch (e: any) {
 						console.log('[Provider] 获取模型列表 ← 200 | JSON 解析失败')
-						resolve([])
+						resolve(buildProviderModelsFetchResult(false, [], 'PROVIDER_MODELS_RESPONSE_INVALID', '模型服务返回了无法识别的响应', '' + e, statusCode))
 					}
 				} else {
 					let errBody = ''
@@ -402,13 +440,30 @@ export function getProviderApiConfig(id: string): UTSJSONObject | null {
 					} catch (_e: any) {}
 					const preview = errBody != '' ? errBody.substring(0, errBody.length < 300 ? errBody.length : 300) : '(无)'
 					console.log('[Provider] 获取模型列表 ← ' + statusCode + ' | ' + preview)
-					resolve([])
+					resolve(buildProviderModelsFetchResult(false, [], 'PROVIDER_MODELS_HTTP_ERROR', buildProviderModelsHttpMessage(statusCode), 'HTTP ' + statusCode + ' | ' + preview, statusCode))
 				}
 			},
-			fail: (_err: any) => {
+			fail: (err: any) => {
 				console.log('[Provider] 获取模型列表 ← 网络失败 | ' + fetchUrl)
-				resolve([])
+				let detail = '' + err
+				try {
+					detail = JSON.stringify(err)
+				} catch (_e: any) {}
+				const lowerDetail = detail.toLowerCase()
+				const isTimeout = lowerDetail.indexOf('timeout') >= 0 || lowerDetail.indexOf('超时') >= 0
+				const errorCode = isTimeout == true ? 'PROVIDER_MODELS_TIMEOUT' : 'PROVIDER_MODELS_NETWORK_FAILED'
+				const errorMessage = isTimeout == true ? '模型列表请求超时，请检查网络或接口地址' : '无法连接模型服务，请检查网络和接口地址'
+				resolve(buildProviderModelsFetchResult(false, [], errorCode, errorMessage, detail, 0))
 			}
+		})
+	})
+}
+
+/** 保留旧 API 与 JVM 签名，旧调用方仍只接收模型 ID。 */
+export function fetchProviderModels(apiBase: string, apiKey: string): Promise<string[]> {
+	return new Promise<string[]>((resolve) => {
+		fetchProviderModelsDetailed(apiBase, apiKey).then((result) => {
+			resolve(result.ids)
 		})
 	})
 }

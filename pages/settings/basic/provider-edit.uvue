@@ -33,15 +33,21 @@
 
 				<!-- API Key -->
 				<text class="field-label">API Key</text>
-				<input
-					class="field-input"
-					type="text"
-					v-model="editApiKey"
-					placeholder="输入 API Key"
-					placeholder-class="ph"
-					@input="autoSaveProvider"
-					@blur="autoSaveProvider"
-				/>
+				<view class="api-key-row">
+					<input
+						class="field-input api-key-input"
+						type="text"
+						:password="showApiKey == false"
+						v-model="editApiKey"
+						placeholder="输入 API Key"
+						placeholder-class="ph"
+						@input="autoSaveProvider"
+						@blur="autoSaveProvider"
+					/>
+					<view class="api-key-toggle" @click="toggleApiKeyVisibility">
+						<oui-icon-unix name="eye" size="20px" :color="showApiKey == true ? '#E05A87' : '#9CA3AF'" />
+					</view>
+				</view>
 
 				<!-- 接口地址 -->
 				<text class="field-label">接口地址</text>
@@ -176,9 +182,10 @@
 </template>
 
 <script lang="uts">
-	import { saveProvider, fetchProviderModels, parseModels, ModelInfo, getDefaultTaskModel, getProviderById, getDefaultProviderApiBase, setActiveProvider, setDefaultChatTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
-	import { refreshMetadataCache, isMetadataCacheStale, ensureMetadataCache } from '@/uni_modules/agent-core/utssdk/llm-metadata.uts'
+	import { saveProvider, fetchProviderModelsDetailed, parseModels, ModelInfo, getDefaultTaskModel, getProviderById, getDefaultProviderApiBase, setActiveProvider, setDefaultChatTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { refreshMetadataCacheInBackground, ensureMetadataCache } from '@/uni_modules/agent-core/utssdk/llm-metadata.uts'
 	import { consumeRuntimeState, setAppSetting } from '@/utils/database.uts'
+	import { APP_ERROR_CATEGORY_NETWORK, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 	import {
 		appendSelectedProviderModels,
 		areAllProviderModelsSelected,
@@ -209,6 +216,7 @@
 				editId: '' as string,
 				editName: '' as string,
 				editApiKey: '' as string,
+				showApiKey: false as boolean,
 				editApiBase: '' as string,
 				editModels: [] as ModelInfo[],
 				fromFirstRunGuide: false as boolean,
@@ -267,6 +275,10 @@
 		methods: {
 			goBack() {
 				uni.navigateBack()
+			},
+
+			toggleApiKeyVisibility() {
+				this.showApiKey = !this.showApiKey
 			},
 
 			appendModelIfMissing(modelId: string): void {
@@ -351,18 +363,21 @@
 					return
 				}
 				this.fetchingModels = true
-				const ids = await fetchProviderModels(this.editApiBase, this.editApiKey)
-				if (this.pageActive == false) { return }
-				// 过期才刷新元数据缓存，避免每次拉取 130KB
-				if (isMetadataCacheStale()) {
-					await refreshMetadataCache()
-					if (this.pageActive == false) { return }
-				}
+				const result = await fetchProviderModelsDetailed(this.editApiBase, this.editApiKey)
 				this.fetchingModels = false
-				if (ids.length == 0) {
-					uni.showToast({ position: 'bottom',  title: '获取失败，请检查地址和 Key', icon: 'none' })
+				if (this.pageActive == false) { return }
+				if (result.ok == false) {
+					const error = reportAppErrorFromCause(result.errorCode, APP_ERROR_CATEGORY_NETWORK, 'provider_fetch_models', result.errorMessage, result.detail, true)
+					uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
 					return
 				}
+				const ids = result.ids
+				if (ids.length == 0) {
+					uni.showToast({ position: 'bottom', title: '接口连接成功，但没有返回可用模型', icon: 'none' })
+					return
+				}
+				// 元数据只补充能力标签，后台刷新不应阻塞已获取的模型列表。
+				refreshMetadataCacheInBackground()
 				// 过滤已有模型，只展示新增的
 				const newIds = filterNewProviderModelIds(ids, this.editModels)
 				if (newIds.length == 0) {
@@ -563,6 +578,23 @@
 		padding: 10px;
 		font-size: 14px;
 		color: #111827;
+	}
+
+	.api-key-row {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.api-key-input {
+		flex: 1;
+	}
+
+	.api-key-toggle {
+		width: 48px;
+		height: 48px;
+		align-items: center;
+		justify-content: center;
+		margin-left: 8px;
 	}
 
 	.ph {

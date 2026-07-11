@@ -167,6 +167,7 @@
 	 * 插件设置子页面 - GitHub 代理 / 网络搜索配置
 	 */
 	import { getAllProviders, getProviderModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { APP_ERROR_CATEGORY_NETWORK, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 	import { getAppSetting, setAppSettings } from '@/utils/database.uts'
 	import { ASTRBOT_API_KEY_KEY, ASTRBOT_BASE_URL_KEY, ASTRBOT_CONFIG_ID_KEY, ASTRBOT_ENABLED_KEY, ASTRBOT_SESSION_ID_KEY, ASTRBOT_USERNAME_KEY, getAstrBotConfig, normalizeAstrBotBaseUrl, testAstrBotConnection } from '@/utils/astrbot-service.uts'
 
@@ -274,7 +275,15 @@
 						uni.showToast({ position: 'bottom', title: 'AstrBot 连接成功', icon: 'success' })
 						return
 					}
-					uni.showToast({ position: 'bottom', title: result.error, icon: 'none' })
+					const error = reportAppErrorFromCause(
+						'ASTRBOT_CONNECTION_TEST_FAILED',
+						APP_ERROR_CATEGORY_NETWORK,
+						'astrbot_connection_test',
+						'AstrBot 连接测试失败',
+						result.error,
+						true,
+					)
+					uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
 				})
 			},
 

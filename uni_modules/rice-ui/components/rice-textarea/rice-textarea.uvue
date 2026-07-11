@@ -16,7 +16,7 @@
 <script setup>
 	import { useNamespace } from "../../libs/use"
 	import { isDark } from "../../libs/store"
-	import { hasStrValue, addUnit } from "../../libs/utils"
+	import { hasStrValue, addUnit, getPxNum } from "../../libs/utils"
 	import { formDisabledInjectKey, formReadonlyInjectKey } from "../rice-form"
 	import { formItemBlurInjectKey } from "../rice-form-item"
 	import { TextareaProps } from "./type.uts"
@@ -161,7 +161,8 @@
 
 	const _placeholderStyle = computed(() => {
 		let baseColor = isDark.value ? '#4d4d4d' : '#c8c9cc'
-		let css = `color:${baseColor};font-size:${addUnit(props.fontSize ?? '30rpx')};`
+		const placeholderFontSize = getPxNum(props.fontSize ?? '30rpx') + 'px'
+		let css = `color:${baseColor};font-size:${placeholderFontSize};`
 		return css + (props.placeholderStyle ?? "")
 	})
 

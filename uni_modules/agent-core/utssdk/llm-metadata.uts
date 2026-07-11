@@ -22,6 +22,7 @@ const CACHE_TTL = 7 * 24 * 60 * 60 * 1000
 /** 内存缓存 — 扁平结构 { "model_id": { reasoning, tool_call, modalities } } */
 let metadataCache: UTSJSONObject | null = null
 let cacheTimestamp: number = 0
+let metadataRefreshInProgress = false
 
 /**
  * 确保元数据缓存已加载到内存（从本地存储读取，不走网络）
@@ -146,4 +147,13 @@ export function refreshMetadataCache(): Promise<boolean> {
 export function isMetadataCacheStale(): boolean {
 	if (cacheTimestamp == 0) return true
 	return (Date.now() - cacheTimestamp) > CACHE_TTL
+}
+
+/** 后台刷新能力元数据；同一时刻只允许一个请求，不阻塞业务模型列表。 */
+export function refreshMetadataCacheInBackground(): void {
+	if (isMetadataCacheStale() == false || metadataRefreshInProgress == true) { return }
+	metadataRefreshInProgress = true
+	refreshMetadataCache().then((_saved) => {
+		metadataRefreshInProgress = false
+	})
 }
