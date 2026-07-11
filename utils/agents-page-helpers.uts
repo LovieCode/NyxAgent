@@ -15,7 +15,7 @@ import {
 } from '@/utils/agent-create-presets.uts'
 import { DEFAULT_AGENT_INTERACTION_RULES, getAgents, saveAgents } from '@/utils/agent.uts'
 import { deleteItem, exists, getAgentDir } from '@/utils/file-manager.uts'
-import { getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
+import { getDefaultTaskModel, parseModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
 
 export type AgentCreateForm = {
 	templateKey: string
@@ -84,12 +84,21 @@ export function buildFirstRunProviderCardClass(activeIndex: number, index: numbe
 }
 
 export function hasReadyChatProviderInList(providers: UTSJSONObject[]): boolean {
+	const defaultChat = getDefaultTaskModel('chat')
+	if (defaultChat == null) { return false }
+	const defaultProviderId = defaultChat['providerId'] as string | null
+	const defaultModelId = defaultChat['model'] as string | null
+	if (defaultProviderId == null || defaultProviderId == '' || defaultModelId == null || defaultModelId == '') { return false }
 	for (let i = 0; i < providers.length; i++) {
 		const provider = providers[i]
+		const providerId = provider['id'] as string | null
 		const enabled = provider['enabled'] as number | null
 		const apiKey = provider['api_key'] as string | null
-		if (enabled != null && enabled == 1 && apiKey != null && apiKey.trim() != '') {
-			return true
+		const modelsJson = provider['models'] as string | null
+		if (providerId != defaultProviderId || enabled != 1 || apiKey == null || apiKey.trim() == '' || modelsJson == null) { continue }
+		const models = parseModels(modelsJson)
+		for (let j = 0; j < models.length; j++) {
+			if (models[j].id == defaultModelId) { return true }
 		}
 	}
 	return false
@@ -130,7 +139,7 @@ export function parseAgentCreateImagePath(res: any): string {
 	return ''
 }
 
-function buildCreatedAgentPayload(id: string, data: AgentCreateForm, defaultModel: string | null): UTSJSONObject {
+function buildCreatedAgentPayload(id: string, data: AgentCreateForm, _defaultModel: string | null): UTSJSONObject {
 	const name = readAgentCreateName(data)
 	const desc = data.desc.trim()
 	const systemPrompt = data.systemPrompt.trim()
@@ -138,15 +147,6 @@ function buildCreatedAgentPayload(id: string, data: AgentCreateForm, defaultMode
 	const avatar = readAgentCreateAvatar(data)
 	const finalDesc = desc != '' ? desc : '自定义联系人'
 	const finalPrompt = systemPrompt != '' ? systemPrompt : readCreateTemplatePrompt(AGENT_CREATE_TEMPLATES[0])
-	let model = defaultModel != null && defaultModel != '' ? defaultModel : 'deepseek-v4-flash'
-	const defaultChat = getDefaultTaskModel('chat')
-	if (defaultChat != null) {
-		const providerId = defaultChat['providerId'] as string | null
-		const modelId = defaultChat['model'] as string | null
-		if (modelId != null && modelId != '') {
-			model = providerId != null && providerId != '' ? providerId + '||' + modelId : modelId
-		}
-	}
 	const agent: UTSJSONObject = {
 		id: id,
 		icon: icon,
@@ -154,7 +154,7 @@ function buildCreatedAgentPayload(id: string, data: AgentCreateForm, defaultMode
 		desc: finalDesc,
 		systemPrompt: finalPrompt,
 		interactionRules: DEFAULT_AGENT_INTERACTION_RULES,
-		model: model,
+		model: '',
 		time: '刚刚',
 	} as UTSJSONObject
 	if (avatar != '') {

@@ -78,7 +78,7 @@ const defaultAgents: UTSJSONObject[] = [
 		avatar: NYX_ADMIN_AGENT_AVATAR,
 		systemPrompt: NYX_ADMIN_SYSTEM_PROMPT,
 		interactionRules: DEFAULT_AGENT_INTERACTION_RULES,
-		model: 'deepseek-v4-flash',
+		model: '',
 		cacheEnabled: true,
 		injectDatetime: true,
 		enabledToolIds: [
@@ -98,7 +98,7 @@ const defaultAgents: UTSJSONObject[] = [
 		desc: '沉稳可靠，有问必答，话不多但句句到位',
 		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫小夜，是冷静可靠的通用搭档。闲聊时自然接话，办事时效率优先，先抓重点，再给可执行的下一步。关心藏在具体回应里，不刻意表现温柔，也不故作冷淡。',
 		interactionRules: DEFAULT_AGENT_INTERACTION_RULES,
-		model: 'deepseek-v4-flash',
+		model: '',
 		cacheEnabled: true,
 		injectDatetime: true,
 		time: '刚刚'
@@ -110,7 +110,7 @@ const defaultAgents: UTSJSONObject[] = [
 		desc: '毒舌代码审查官，骂完还是会帮你改',
 		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫零，是代码搭档和审查官。可以对问题本身轻微吐槽，但不攻击用户。先读上下文、定位根因，再给最小可行修复和验证方式；不借修 Bug 扩大重构。代码、变量名和命令保持英文，不确定版本或接口行为时先求证。',
 		interactionRules: DEFAULT_AGENT_INTERACTION_RULES,
-		model: 'deepseek-v4-flash',
+		model: '',
 		cacheEnabled: true,
 		injectDatetime: true,
 		time: '昨天'
@@ -122,7 +122,7 @@ const defaultAgents: UTSJSONObject[] = [
 		desc: '对文字有强迫症，改完让你的句子发光',
 		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫千夏，是文字编辑和写作搭档。挑剔但不卖弄，优先保留原意、语气和节奏，只把表达变得干净、准确、有质感。润色先给成稿，必要时再解释关键改动；长文结构清楚，不堆形容词，不把话写油。',
 		interactionRules: DEFAULT_AGENT_INTERACTION_RULES,
-		model: 'deepseek-v4-flash',
+		model: '',
 		cacheEnabled: true,
 		injectDatetime: true,
 		time: '3天前'
@@ -134,7 +134,7 @@ const defaultAgents: UTSJSONObject[] = [
 		desc: '多语种无缝切换，干净利落不废话',
 		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫凛，是翻译和本地化搭档。准确优先，同时照顾语境、语气、文化差异和术语一致性。不添油加醋，也不机械直译；用户只要翻译时直接给译文，需要对照时再展开，遇到关键歧义就点明。',
 		interactionRules: DEFAULT_AGENT_INTERACTION_RULES,
-		model: 'deepseek-v4-flash',
+		model: '',
 		cacheEnabled: true,
 		injectDatetime: true,
 		time: '5天前'
@@ -146,7 +146,7 @@ const defaultAgents: UTSJSONObject[] = [
 		desc: '脑洞清奇，话题跳脱但总能绕回来',
 		systemPrompt: MINXI_BASE_STYLE + '\n你的角色：你叫星，是灵感和方案搭档。可以联想跳跃，但要记住当前问题，最后落回可执行方案。头脑风暴时区分稳妥选项与冒险想法，并明确自己更推荐哪一个，不用每次都把所有可能性铺满。',
 		interactionRules: DEFAULT_AGENT_INTERACTION_RULES,
-		model: 'deepseek-v4-flash',
+		model: '',
 		cacheEnabled: true,
 		injectDatetime: true,
 		time: '1周前'
@@ -201,6 +201,20 @@ function hasAgentId(agents: UTSJSONObject[], id: string): boolean {
 	return false
 }
 
+function migrateLegacyBuiltInModelInheritance(agents: UTSJSONObject[]): boolean {
+	let changed = false
+	for (let i = 0; i < agents.length; i++) {
+		const agent = agents[i]
+		const id = agent['id'] as string | null
+		const model = agent['model'] as string | null
+		if (id != null && findDefaultAgent(id) != null && model == 'deepseek-v4-flash') {
+			agent['model'] = ''
+			changed = true
+		}
+	}
+	return changed
+}
+
 function buildNyxAdminAgent(): UTSJSONObject {
 	return {
 		id: NYX_ADMIN_AGENT_ID,
@@ -210,7 +224,7 @@ function buildNyxAdminAgent(): UTSJSONObject {
 		avatar: NYX_ADMIN_AGENT_AVATAR,
 		systemPrompt: NYX_ADMIN_SYSTEM_PROMPT,
 		interactionRules: DEFAULT_AGENT_INTERACTION_RULES,
-		model: 'deepseek-v4-flash',
+		model: '',
 		cacheEnabled: true,
 		injectDatetime: true,
 		enabledToolIds: [
@@ -276,6 +290,9 @@ export function getAgents(): UTSJSONObject[] {
 		const list = JSON.parse(stored) as UTSJSONObject[]
 		if (list != null) {
 			const normalized = applyAgentDefaultFlagsInMemory(applyDefaultAgentPromptFallbackInMemory(list))
+			if (migrateLegacyBuiltInModelInheritance(normalized) == true) {
+				saveAgents(normalized)
+			}
 			return normalized
 		}
 	}

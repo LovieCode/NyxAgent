@@ -54,7 +54,7 @@
 								</view>
 							</view>
 						</scroll-view>
-						<text class="input-hint">留空默认使用第一个模型。Grok 建议选 grok-2 或 grok-3。</text>
+						<text class="input-hint">留空默认使用该提供商配置的第一个模型。</text>
 					</view>
 				</view>
 			</view>

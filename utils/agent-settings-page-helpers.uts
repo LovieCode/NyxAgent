@@ -14,7 +14,7 @@ export type AgentSettingsProfileForm = {
 	ttsPitch: string
 }
 
-export function readAgentSettingsProfileForm(agent: UTSJSONObject, fallbackModel: string): AgentSettingsProfileForm {
+export function readAgentSettingsProfileForm(agent: UTSJSONObject, _fallbackModel: string): AgentSettingsProfileForm {
 	const rawName = agent['name'] as string | null
 	const rawDesc = agent['desc'] as string | null
 	const rawPrompt = agent['systemPrompt'] as string | null
@@ -30,7 +30,7 @@ export function readAgentSettingsProfileForm(agent: UTSJSONObject, fallbackModel
 		systemPrompt: rawPrompt != null ? rawPrompt : '',
 		interactionRules: rawInteractionRules != null ? rawInteractionRules : DEFAULT_AGENT_INTERACTION_RULES,
 		avatar: rawAvatar != null ? rawAvatar : '',
-		model: rawModel != null && rawModel != '' ? rawModel : fallbackModel,
+		model: rawModel != null ? rawModel : '',
 		ttsVoice: rawTtsVoice != null ? rawTtsVoice : '',
 		ttsVolume: rawTtsVolume != null ? rawTtsVolume : '',
 		ttsPitch: rawTtsPitch != null ? rawTtsPitch : '',

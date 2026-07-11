@@ -140,27 +140,11 @@
 </template>
 
 <script lang="uts">
-	/**
-	 * 设置页面 - 扁平化粉白渐变设计
-	 * 参考 PI Agent models.generated.ts 模型列表
-	 */
-
-	import { getAppSetting, setAppSettings } from '@/utils/database.uts'
+	import { getAppSetting } from '@/utils/database.uts'
 
 	export default {
 		data() {
 			return {
-				selectedProviderId: 'deepseek' as string,
-				apiKey: '' as string,
-				baseUrl: '' as string,
-				selectedModel: 'deepseek-v4-flash' as string,
-				ghProxyEnabled: false as boolean,
-				ghProxyDomain: '' as string,
-				showApiKey: false as boolean,
-				expandBasic: true as boolean,
-				expandModel: true as boolean,
-				expandPlugin: true as boolean,
-				expandAbout: true as boolean,
 				profileNickname: '' as string,
 				profileBio: '' as string,
 				profileDescription: '' as string,
@@ -186,98 +170,15 @@
 					return name.substring(0, 1)
 				}
 				return '我'
-			},
-			pIds() : string[] {
-				return [
-					'anthropic', 'openai', 'deepseek', 'zai',
-					'kimi-coding', 'minimax-cn', 'xiaomi', 'ant-ling', 'custom'
-				]
-			},
-			pNames() : string[] {
-				return [
-					'Anthropic', 'OpenAI', 'DeepSeek', 'ZAI',
-					'Kimi', 'MiniMax', 'MiMo', 'AntLing', 'Custom'
-				]
-			},
-			pUrls() : string[] {
-				return [
-					'https://api.anthropic.com',
-					'https://api.openai.com/v1',
-					'https://api.deepseek.com',
-					'https://api.z.ai/api/coding/paas/v4',
-					'https://api.kimi.com/coding',
-					'https://api.minimaxi.com/anthropic',
-					'https://api.xiaomimimo.com/v1',
-					'https://api.ant-ling.com/v1',
-					''
-				]
-			},
-			pHints() : string[] {
-				return [
-					'sk-ant-...', 'sk-...', 'sk-...', 'ZAI Coding Plan Key',
-					'KIMI_API_KEY', 'MINIMAX_CN_API_KEY', 'XIAOMI_API_KEY', 'ANT_LING_API_KEY', 'Enter API Key'
-				]
-			},
-			pModels() : string[][] {
-				return [
-					['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
-					['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano'],
-					['deepseek-v4-flash', 'deepseek-v4-pro'],
-					['glm-5.2', 'glm-5.1', 'glm-5-turbo', 'glm-4.7', 'glm-4.5-air'],
-					['k2p7', 'kimi-for-coding', 'kimi-k2-thinking'],
-					['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'],
-					['mimo-v2.5-pro-ultraspeed', 'mimo-v2.5-pro', 'mimo-v2-pro', 'mimo-v2-omni', 'mimo-v2-flash'],
-					['Ring-2.6-1T', 'Ling-2.6-1T', 'Ling-2.6-flash'],
-					['custom-model']
-				]
-			},
-			currentModels() : string[] {
-				const idx = this.findProviderIndex(this.selectedProviderId)
-				if (idx >= 0) {
-					return this.pModels[idx]
-				}
-				return ['custom-model']
-			},
-			keyPlaceholder() : string {
-				const idx = this.findProviderIndex(this.selectedProviderId)
-				if (idx >= 0) {
-					return this.pHints[idx]
-				}
-				return 'Enter API Key'
 			}
 		},
 		onLoad() {
-			this.loadSettings()
 			this.loadProfileSummary()
 		},
 		onShow() {
 			this.loadProfileSummary()
 		},
 		methods: {
-			findProviderIndex(id : string) : number {
-				for (let i = 0; i < this.pIds.length; i++) {
-					if (this.pIds[i] == id) {
-						return i
-					}
-				}
-				return -1
-			},
-
-			loadSettings() {
-				let providerId = getAppSetting('settings_provider_id')
-				this.selectedProviderId = (providerId != null && providerId != '') ? providerId : 'deepseek'
-				let key = getAppSetting('settings_api_key')
-				this.apiKey = (key != null) ? key : ''
-				let url = getAppSetting('settings_base_url')
-				this.baseUrl = (url != null) ? url : ''
-				let model = getAppSetting('settings_model')
-				this.selectedModel = (model != null && model != '') ? model : 'deepseek-v4-flash'
-				let proxyEnabled = getAppSetting('settings_gh_proxy_enabled')
-				this.ghProxyEnabled = (proxyEnabled != null && proxyEnabled == 'true')
-				let proxyDomain = getAppSetting('settings_gh_proxy_domain')
-				this.ghProxyDomain = (proxyDomain != null) ? proxyDomain : ''
-			},
-
 			loadProfileSummary() {
 				const nickname = getAppSetting('profile_nickname')
 				this.profileNickname = (nickname != null) ? nickname : ''
@@ -287,45 +188,6 @@
 				this.profileDescription = (description != null) ? description : ''
 				const avatar = getAppSetting('profile_avatar')
 				this.profileAvatar = (avatar != null) ? avatar : ''
-			},
-
-			saveSettings() {
-				const saved = setAppSettings(
-					['settings_provider_id', 'settings_api_key', 'settings_base_url', 'settings_model', 'settings_gh_proxy_enabled', 'settings_gh_proxy_domain'],
-					[this.selectedProviderId, this.apiKey, this.baseUrl, this.selectedModel, this.ghProxyEnabled ? 'true' : 'false', this.ghProxyDomain],
-				)
-				if (saved == false) {
-					uni.showToast({ position: 'bottom', title: '保存连接设置失败，请重试', icon: 'none' })
-					return
-				}
-				uni.showToast({ position: 'bottom', 
-					title: '已保存',
-					icon: 'success'
-				})
-			},
-
-			selectProvider(id : string) {
-				this.selectedProviderId = id
-				const idx = this.findProviderIndex(id)
-				if (idx >= 0) {
-					this.baseUrl = ''
-					const models = this.pModels[idx]
-					if (models != null && models.length > 0) {
-						this.selectedModel = models[0]
-					}
-				}
-			},
-
-			selectModel(model : string) {
-				this.selectedModel = model
-			},
-
-			toggleGhProxy() {
-				this.ghProxyEnabled = !this.ghProxyEnabled
-			},
-
-			toggleShowApiKey() {
-				this.showApiKey = !this.showApiKey
 			},
 
 			goSubPage(name : string) {

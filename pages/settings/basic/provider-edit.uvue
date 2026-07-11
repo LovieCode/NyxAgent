@@ -122,6 +122,12 @@
 							</view>
 						</view>
 						<view class="model-row-right">
+							<text
+								v-if="fromFirstRunGuide == true && m.id != ''"
+								class="model-default-btn"
+								:class="firstRunDefaultModelId == m.id ? 'model-default-btn-active' : ''"
+								@click.stop="selectFirstRunDefaultModel(m.id)"
+							>{{firstRunDefaultModelId == m.id ? '默认模型' : '设为默认'}}</text>
 							<text class="model-expand-icon">{{(m.expanded == true) ? '▾' : '▸'}}</text>
 							<text class="model-del-btn" @click.stop="removeModel(mi)">✕</text>
 						</view>
@@ -131,7 +137,7 @@
 					<view v-if="m.expanded" class="model-detail">
 						<view class="detail-field">
 							<text class="detail-field-label">模型 ID</text>
-							<input class="detail-field-input" type="text" v-model="m.id" placeholder="deepseek-v4-flash" placeholder-class="ph" @blur="autoSaveProvider" />
+							<input class="detail-field-input" type="text" v-model="m.id" placeholder="输入 Provider 返回的模型 ID" placeholder-class="ph" @blur="autoSaveProvider" />
 						</view>
 						<view class="detail-field">
 							<text class="detail-field-label">显示名称</text>
@@ -225,6 +231,7 @@
 				fetchedModelIds: [] as string[],
 				selectedModelIndexes: [] as boolean[],
 				pickerSearchText: '' as string,
+				firstRunDefaultModelId: '' as string,
 				pageActive: false as boolean,
 				navigationTimer: -1 as number,
 			}
@@ -289,6 +296,9 @@
 			applyProviderPreset(presetJson: string, overrideIdentity: boolean): void {
 				const preset = parseProviderEditPreset(presetJson)
 				if (preset.valid == false) { return }
+				if (this.fromFirstRunGuide == true) {
+					this.editEnabled = true
+				}
 				if (overrideIdentity == true) {
 					this.isNew = true
 					this.editEnabled = true
@@ -345,8 +355,16 @@
 			},
 
 			removeModel(index: number) {
+				if (index >= 0 && index < this.editModels.length && this.editModels[index].id == this.firstRunDefaultModelId) {
+					this.firstRunDefaultModelId = ''
+				}
 				this.editModels = removeProviderEditModelAt(this.editModels, index)
 				this.autoSaveProvider()
+			},
+
+			selectFirstRunDefaultModel(modelId: string) {
+				if (modelId == '') { return }
+				this.firstRunDefaultModelId = modelId
 			},
 
 			async fetchModels() {
@@ -460,7 +478,24 @@
 					uni.showToast({ position: 'bottom',  title: '先添加或获取一个模型', icon: 'none' })
 					return false
 				}
-				const providerSaved = saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, this.editEnabled)
+				let firstRunDefaultModel = ''
+				if (this.fromFirstRunGuide == true && navigateAfterSave == true) {
+					if (validModels.length == 1) {
+						firstRunDefaultModel = validModels[0].id
+					} else {
+						for (let i = 0; i < validModels.length; i++) {
+							if (validModels[i].id == this.firstRunDefaultModelId) {
+								firstRunDefaultModel = validModels[i].id
+								break
+							}
+						}
+						if (firstRunDefaultModel == '') {
+							uni.showToast({ position: 'bottom', title: '多个模型中请选择一个默认对话模型', icon: 'none' })
+								return false
+							}
+						}
+					}
+					const providerSaved = saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, this.editEnabled)
 				if (providerSaved == false) {
 					uni.showToast({ position: 'bottom', title: '保存提供商失败，请重试', icon: 'none' })
 					return false
@@ -469,9 +504,8 @@
 					return true
 				}
 				if (this.fromFirstRunGuide == true) {
-					const defaultModel = validModels[0].id
 					const activeSaved = setActiveProvider(this.editId)
-					const defaultSaved = setDefaultChatTaskModel(this.editId, defaultModel)
+					const defaultSaved = setDefaultChatTaskModel(this.editId, firstRunDefaultModel)
 					const guideSaved = setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true')
 					if (activeSaved == false || defaultSaved == false || guideSaved == false) {
 						uni.showToast({ position: 'bottom', title: '模型配置保存不完整，请重试', icon: 'none' })
@@ -684,6 +718,20 @@
 	.model-row-right {
 		flex-direction: row;
 		align-items: center;
+	}
+
+	.model-default-btn {
+		font-size: 11px;
+		color: #6B7280;
+		padding: 5px 7px;
+		margin-right: 4px;
+		border-radius: 4px;
+		background-color: #F3F4F6;
+	}
+
+	.model-default-btn-active {
+		color: #DB6F92;
+		background-color: #FDE8EF;
 	}
 
 	.model-expand-icon {

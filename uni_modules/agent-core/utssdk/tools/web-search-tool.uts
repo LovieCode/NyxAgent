@@ -1,4 +1,4 @@
-import { getProviderApiConfig } from '../provider'
+import { getProviderApiConfig, getProviderModels } from '../provider'
 import { getAppSetting } from '@/utils/database.uts'
 import { AgentTool, ToolResult } from './agent-tool-types'
 
@@ -98,7 +98,12 @@ export class WebSearchTool implements AgentTool {
 		const modelRaw = getAppSetting('settings_web_search_model')
 		let model = modelRaw != null ? modelRaw : ''
 		if (model == '') {
-			model = isDoubao ? 'doubao-seed-1-6-250615' : 'grok-2'
+			const models = getProviderModels(providerId)
+			if (models.length == 0) {
+				resolve({ content: '搜索提供商没有可用模型，请先在提供商管理中获取或添加模型。', isError: true } as ToolResult)
+				return
+			}
+			model = models[0].id
 		}
 		if (isDoubao) {
 			this.doDoubaoSearch(baseUrl, apiKey, model, query, providerId, resolve)

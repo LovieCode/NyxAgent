@@ -51,6 +51,7 @@ function readProviderName(provider: UTSJSONObject): string {
 }
 
 export function buildAgentCurrentModelLabel(currentModel: string, providers: UTSJSONObject[]): string {
+	if (currentModel == '') { return '跟随默认对话模型' }
 	const sep = '||'
 	const idx = currentModel.indexOf(sep)
 	if (idx >= 0) {
@@ -81,10 +82,16 @@ export function buildAgentCurrentModelLabel(currentModel: string, providers: UTS
 		}
 		return currentModel + '（未关联提供商）'
 	}
-	return '未选择模型'
+	return '跟随默认对话模型'
 }
 
 export function resolveAgentModelSelection(currentModel: string, enabledProviders: UTSJSONObject[]): AgentSettingsModelSelection {
+	if (currentModel == '') {
+		return {
+			providerId: '',
+			modelId: '',
+		} as AgentSettingsModelSelection
+	}
 	const sep = '||'
 	const idx = currentModel.indexOf(sep)
 	if (idx >= 0) {

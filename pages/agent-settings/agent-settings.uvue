@@ -79,6 +79,13 @@
 
 				<!-- 展开模型选择 -->
 				<view v-if="showModelPanel" class="model-panel">
+					<view
+						class="model-pill inherit-model-pill"
+						:class="currentModel == '' ? 'pill-active' : ''"
+						@click="selectInheritedModel"
+					>
+						<text class="pill-text" :class="currentModel == '' ? 'pill-text-active' : ''">跟随默认对话模型</text>
+					</view>
 					<text class="panel-label">选择提供商</text>
 					<scroll-view class="chip-scroll" :scroll-x="true" :show-scrollbar="false">
 						<view class="chip-row">
@@ -94,11 +101,11 @@
 						</view>
 					</scroll-view>
 
-					<text class="panel-label" style="margin-top:8px;">选择模型</text>
-					<view v-if="providerModels.length == 0" class="panel-empty">
+					<text v-if="selectedProviderId != ''" class="panel-label" style="margin-top:8px;">选择模型</text>
+					<view v-if="selectedProviderId != '' && providerModels.length == 0" class="panel-empty">
 						<text class="panel-empty-text">请先在提供商管理中配置模型</text>
 					</view>
-					<view v-else class="model-grid">
+					<view v-if="selectedProviderId != '' && providerModels.length > 0" class="model-grid">
 						<view
 							v-for="(m, mi) in providerModels"
 							:key="mi"
@@ -312,7 +319,7 @@
 	 */
 	import { getAgentById, deleteAgent, getAgentEnabledToolIds, NYX_ADMIN_AGENT_ID, type AgentDeleteResult } from '@/utils/agent.uts'
 	import { getAllProviders, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
-	import { getAppSetting, getRuntimeState } from '@/utils/database.uts'
+	import { getRuntimeState } from '@/utils/database.uts'
 	import { getGlobalGenerationSettings } from '@/utils/generation-settings.uts'
 	import { chooseAvatarImage, consumeAvatarCropResult, discardManagedAvatarFile, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
 	import { clearActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
@@ -372,7 +379,7 @@
 				agentInteractionRules: '' as string,
 				agentAvatar: '' as string,
 				savedAvatarPath: '' as string,
-				currentModel: 'deepseek-v4-flash',
+				currentModel: '' as string,
 				allProviders: [] as UTSJSONObject[],
 				allSkills: [] as UTSJSONObject[],
 				skillsStorageError: false as boolean,
@@ -495,7 +502,7 @@
 					this.allSkills = getSkills()
 					this.skillsStorageError = hasSkillsStorageReadError()
 					this.availableTools = this.buildToolOptions()
-					const profile = readAgentSettingsProfileForm(agent, this.currentModel)
+					const profile = readAgentSettingsProfileForm(agent, '')
 					this.agentName = profile.name
 					this.agentDesc = profile.desc
 					this.agentSystemPrompt = profile.systemPrompt
@@ -549,6 +556,14 @@
 				this.selectedProviderId = id
 				this.selectedModelId = ''
 				this.hasUnsaved = true
+			},
+
+			selectInheritedModel() {
+				this.currentModel = ''
+				this.selectedProviderId = ''
+				this.selectedModelId = ''
+				this.hasUnsaved = true
+				this.showModelPanel = false
 			},
 
 			selectModel(id: string) {
@@ -656,13 +671,6 @@
 						showAgentSettingsFailure('AGENT_SETTINGS_EDITOR_ROUTE_FAILED', 'agent_settings_editor_navigate', '无法打开全屏编辑器', err)
 					}
 				})
-			},
-
-			loadModel() {
-				const model = getAppSetting('settings_model')
-				if (model != null && model != '') {
-					this.currentModel = model
-				}
 			},
 
 			onGenerationInput(_event: any) {
@@ -959,7 +967,8 @@
 	}
 
 	.input-placeholder {
-		color: var(--rice-text-color-3);
+		/* Android 原生 placeholder 颜色解析器不支持 CSS 变量。 */
+		color: #9CA3AF;
 	}
 
 	/* 模型卡片 - 可点击跳转 */

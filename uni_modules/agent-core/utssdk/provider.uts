@@ -531,9 +531,9 @@ export function getDefaultTaskModel(type: string): UTSJSONObject | null {
 		if (type == 'chat') {
 			const oldModel = getAppSetting('settings_model')
 			const oldProvider = getAppSetting('settings_provider_id')
-			if (oldModel != null && oldModel != '') {
+			if (oldModel != null && oldModel != '' && oldProvider != null && oldProvider != '') {
 				return {
-					providerId: (oldProvider != null && oldProvider != '') ? oldProvider : 'deepseek',
+					providerId: oldProvider,
 					model: oldModel,
 				} as UTSJSONObject
 			}
@@ -712,16 +712,12 @@ export function resolveLLMConfig(providerId: string, model: string): LLMConfig |
 		}
 	}
 
-	// LEGACY_MODEL_SETTINGS: 未指定时继续读取全局 settings_*。
-	if (pid == '') {
+	// LEGACY_MODEL_SETTINGS: 旧 provider/model 必须成对存在，禁止把裸模型串到其他 Provider。
+	if (pid == '' && mdl == '') {
 		const storageProvider = getAppSetting('settings_provider_id')
-		if (storageProvider != null) {
-			pid = storageProvider
-		}
-	}
-	if (mdl == '') {
 		const storageModel = getAppSetting('settings_model')
-		if (storageModel != null) {
+		if (storageProvider != null && storageProvider != '' && storageModel != null && storageModel != '') {
+			pid = storageProvider
 			mdl = storageModel
 		}
 	}

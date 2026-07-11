@@ -125,7 +125,7 @@ function resolveDefaultChatModel(): string {
 	if (globalModel != null && globalModel != '') {
 		return globalModel
 	}
-	return 'deepseek-v4-flash'
+	return ''
 }
 
 export function resolveConversationModel(agentId: string): string {

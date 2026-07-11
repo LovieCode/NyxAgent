@@ -299,7 +299,7 @@
 	 * 扁平化粉白主题
 	 */
 	import { getAgents } from '@/utils/agent.uts'
-	import { deleteRuntimeState, getAppSetting, getRuntimeState, setAppSetting, setRuntimeState } from '@/utils/database.uts'
+	import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 	import { getAllProviders } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import {
@@ -313,7 +313,6 @@
 		AGENT_CREATE_ICONS,
 		AGENT_CREATE_TEMPLATES,
 		DEV_ONLY_FORCE_FIRST_RUN_GUIDE,
-		FIRST_RUN_GUIDE_DONE_KEY,
 		FIRST_RUN_PROVIDER_EDIT_ID_KEY,
 		FIRST_RUN_PROVIDER_EDIT_PRESET_KEY,
 		FIRST_RUN_PROVIDER_EDIT_SOURCE_KEY,
@@ -372,6 +371,7 @@
 				showCreateMenu: false as boolean,
 				showCreateDialog: false as boolean,
 				showFirstRunGuide: false as boolean,
+				firstRunGuideDismissedThisLaunch: false as boolean,
 				firstRunProviderIndex: 0 as number,
 				/** 创建表单数据：模板只绑定标量，避免 UTS 把对象字段 v-model 编成下标访问。 */
 				createTemplateKeyValue: '' as string,
@@ -591,19 +591,15 @@
 					this.showFirstRunGuide = true
 					return
 				}
-				const done = getAppSetting(FIRST_RUN_GUIDE_DONE_KEY)
-				if (done == 'true') {
+				if (this.hasReadyChatProvider() == true || this.firstRunGuideDismissedThisLaunch == true) {
 					this.showFirstRunGuide = false
 					return
 				}
-				this.showFirstRunGuide = this.hasReadyChatProvider() == false
+				this.showFirstRunGuide = true
 			},
 
 			dismissFirstRunGuide(): void {
-				if (setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true') == false) {
-					this.showAgentPageFailure('AGENT_GUIDE_DISMISS_FAILED', 'agent_guide_dismiss', '首启引导状态保存失败', 'setAppSetting 返回 false')
-					return
-				}
+				this.firstRunGuideDismissedThisLaunch = true
 				this.showFirstRunGuide = false
 			},
 
@@ -861,11 +857,10 @@
 					return
 				}
 
-				// 默认模型从 SQLite app_settings 读取，缺省时回退内置模型。
+				// 新 Agent 默认跟随全局对话模型，不固化具体模型 ID。
 				let id = ''
 				try {
-					const defaultModel = getAppSetting('settings_model')
-					id = createAgentFromCreateData(data, defaultModel)
+					id = createAgentFromCreateData(data, null)
 				} catch (e: any) {
 					this.showAgentPageFailure('AGENT_CREATE_SAVE_FAILED', 'agent_create_save', '创建私聊失败', e)
 					return
