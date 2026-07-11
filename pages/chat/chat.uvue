@@ -465,6 +465,7 @@
 		onHide() {
 			// 页面只停止 UI 副作用；后台回合由 ChatTurnRuntime 继续持有。
 			this.pageVisible = false
+			this.cancelMessageWindowShift()
 			this.clearStreamScrollTimer()
 			if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
 			if (this.measureStableTimer != -1) { clearTimeout(this.measureStableTimer); this.measureStableTimer = -1 }
@@ -478,6 +479,7 @@
 		onUnload() {
 			// 页面卸载时移除软键盘高度监听，防止内存泄漏
 			this.pageVisible = false
+			this.cancelMessageWindowShift()
 			this.clearStreamScrollTimer()
 			if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
 			if (this.measureStableTimer != -1) { clearTimeout(this.measureStableTimer); this.measureStableTimer = -1 }
@@ -710,18 +712,20 @@
 				this.isAtBottom = windowAtRecentEnd == true && isChatScrollAtBottom(this.scrollOffset, this.scrollContentHeight, this.scrollViewHeight)
 			},
 
-				scheduleMeasureMessageScroll(): void {
-					if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
-					if (this.measureStableTimer != -1) { clearTimeout(this.measureStableTimer); this.measureStableTimer = -1 }
-					this.measureScrollTimer = setTimeout(() => {
-						this.measureScrollTimer = -1
-						if (this.pageVisible == true) { this.measureMessageScrollSize() }
-					}, 60)
+			scheduleMeasureMessageScroll(): void {
+				if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
+				this.measureScrollTimer = setTimeout(() => {
+					this.measureScrollTimer = -1
+					if (this.pageVisible == true) { this.measureMessageScrollSize() }
+				}, 60)
+				// 高频流式刷新使用 max-wait，避免每次重置后稳定测量永远无法执行。
+				if (this.measureStableTimer == -1) {
 					this.measureStableTimer = setTimeout(() => {
 						this.measureStableTimer = -1
 						if (this.pageVisible == true) { this.measureMessageScrollSize() }
 					}, 260)
-				},
+				}
+			},
 
 			measureMessageScrollSize(): void {
 				const query = uni.createSelectorQuery().in(this)
@@ -820,6 +824,11 @@
 			},
 
 			onMessageContentResize(): void {
+				const shouldFollow = this.isGenerating == true ? this.streamFollowBottom : this.isAtBottom == true
+				if (shouldFollow == true) {
+					this.scrollToBottom()
+					return
+				}
 				this.scheduleMeasureMessageScroll()
 			},
 
@@ -836,7 +845,14 @@
 				this.messageWindowEndIndex = resolveChatMessageWindowEnd(total, start)
 			},
 
+			cancelMessageWindowShift(): void {
+				this.messageWindowShiftToken++
+				this.messageWindowShifting = false
+				this.messageWindowShiftLockUntil = Date.now() + 80
+			},
+
 			resetMessageWindowToRecent(): void {
+				this.cancelMessageWindowShift()
 				this.syncMessageWindowBounds(true)
 				this.scheduleMeasureMessageScroll()
 			},

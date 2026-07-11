@@ -376,6 +376,7 @@ let groupTurnRuntimeSyncTimer: number = -1
 		},
 			onHide() {
 				this.pageVisible = false
+				this.cancelMessageWindowShift()
 				if (this.streamScrollTimer != -1) { clearTimeout(this.streamScrollTimer); this.streamScrollTimer = -1 }
 				if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
 				if (this.measureStableTimer != -1) { clearTimeout(this.measureStableTimer); this.measureStableTimer = -1 }
@@ -383,6 +384,7 @@ let groupTurnRuntimeSyncTimer: number = -1
 			},
 			onUnload() {
 				this.pageVisible = false
+				this.cancelMessageWindowShift()
 				if (this.streamScrollTimer != -1) { clearTimeout(this.streamScrollTimer); this.streamScrollTimer = -1 }
 				if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
 				if (this.measureStableTimer != -1) { clearTimeout(this.measureStableTimer); this.measureStableTimer = -1 }
@@ -629,18 +631,20 @@ let groupTurnRuntimeSyncTimer: number = -1
 				const windowAtRecentEnd = isChatMessageWindowAtRecentEnd(this.messageTotalCount, this.messageWindowEndIndex)
 				this.isAtBottom = windowAtRecentEnd == true && isChatScrollAtBottom(this.scrollOffset, this.scrollContentHeight, this.scrollViewHeight)
 			},
-				scheduleMeasureMessageScroll(): void {
-					if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
-					if (this.measureStableTimer != -1) { clearTimeout(this.measureStableTimer); this.measureStableTimer = -1 }
-					this.measureScrollTimer = setTimeout(() => {
-						this.measureScrollTimer = -1
-						if (this.pageVisible == true) { this.measureMessageScrollSize() }
-					}, 60)
+			scheduleMeasureMessageScroll(): void {
+				if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
+				this.measureScrollTimer = setTimeout(() => {
+					this.measureScrollTimer = -1
+					if (this.pageVisible == true) { this.measureMessageScrollSize() }
+				}, 60)
+				// 高频流式刷新使用 max-wait，避免每次重置后稳定测量永远无法执行。
+				if (this.measureStableTimer == -1) {
 					this.measureStableTimer = setTimeout(() => {
 						this.measureStableTimer = -1
 						if (this.pageVisible == true) { this.measureMessageScrollSize() }
 					}, 260)
-				},
+				}
+			},
 			measureMessageScrollSize(): void {
 				const query = uni.createSelectorQuery().in(this)
 				query.select('#group-message-scroll').boundingClientRect()
@@ -730,9 +734,14 @@ let groupTurnRuntimeSyncTimer: number = -1
 				this.syncMessageWindowBounds(keepRecent)
 			},
 
-			onMessageContentResize(): void {
-				this.scheduleMeasureMessageScroll()
-			},
+				onMessageContentResize(): void {
+					const shouldFollow = this.isGenerating == true ? this.streamFollowBottom : this.isAtBottom == true
+					if (shouldFollow == true) {
+						this.scrollToBottom()
+						return
+					}
+					this.scheduleMeasureMessageScroll()
+				},
 
 			syncMessageWindowBounds(keepRecent: boolean): void {
 				const source = this.allVisibleMessages
@@ -747,10 +756,17 @@ let groupTurnRuntimeSyncTimer: number = -1
 				this.messageWindowStartIndex = start
 				this.messageWindowEndIndex = resolveChatMessageWindowEnd(total, start)
 			},
-			resetMessageWindowToRecent(): void {
-				this.syncMessageWindowBounds(true)
-				this.scheduleMeasureMessageScroll()
-			},
+				cancelMessageWindowShift(): void {
+					this.messageWindowShiftToken++
+					this.messageWindowShifting = false
+					this.messageWindowShiftLockUntil = Date.now() + 80
+				},
+
+				resetMessageWindowToRecent(): void {
+					this.cancelMessageWindowShift()
+					this.syncMessageWindowBounds(true)
+					this.scheduleMeasureMessageScroll()
+				},
 			maybeShiftMessageWindow(): void {
 				if (this.messageWindowShifting == true || Date.now() < this.messageWindowShiftLockUntil) { return }
 				if (this.messageTotalCount <= CHAT_MESSAGE_WINDOW_BASE_SIZE || this.scrollViewHeight <= 0) { return }
