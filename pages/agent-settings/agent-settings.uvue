@@ -180,10 +180,13 @@
 					<text class="card-label">Skills</text>
 				</view>
 				<text class="skill-section-desc">为当前私聊启用纯文本技能包。不同联系人可以使用不同 Skills。</text>
-				<view v-if="allSkills.length == 0" class="panel-empty">
+				<view v-if="skillsStorageError == true" class="panel-empty">
+					<text class="skill-storage-error">Skill 数据无法读取。当前绑定已保留，但保存联系人设置已暂停，请先到运行诊断处理。</text>
+				</view>
+				<view v-if="allSkills.length == 0 && skillsStorageError == false" class="panel-empty">
 					<text class="panel-empty-text">还没有 Skill，请到 设置 / Skills 创建。</text>
 				</view>
-				<view v-else class="skill-grid">
+				<view v-if="allSkills.length > 0 && skillsStorageError == false" class="skill-grid">
 					<view
 						v-for="(skill, si) in allSkills"
 						:key="si"
@@ -313,7 +316,7 @@
 	import { getGlobalGenerationSettings } from '@/utils/generation-settings.uts'
 	import { chooseAvatarImage, consumeAvatarCropResult, discardManagedAvatarFile, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
 	import { clearActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
-	import { getSkills, getAgentSkillIds, filterExistingSkillIds } from '@/utils/skills.uts'
+	import { getSkills, getAgentSkillIds, filterExistingSkillIds, hasSkillsStorageReadError } from '@/utils/skills.uts'
 	import {
 		buildAgentCurrentModelLabel,
 		buildAgentSettingsToolRows,
@@ -372,6 +375,7 @@
 				currentModel: 'deepseek-v4-flash',
 				allProviders: [] as UTSJSONObject[],
 				allSkills: [] as UTSJSONObject[],
+				skillsStorageError: false as boolean,
 				selectedSkillIds: [] as string[],
 				availableTools: [] as UTSJSONObject[],
 				selectedToolIds: [] as string[],
@@ -489,6 +493,7 @@
 					this.hasUnsaved = false
 					this.allProviders = getAllProviders()
 					this.allSkills = getSkills()
+					this.skillsStorageError = hasSkillsStorageReadError()
 					this.availableTools = this.buildToolOptions()
 					const profile = readAgentSettingsProfileForm(agent, this.currentModel)
 					this.agentName = profile.name
@@ -1014,6 +1019,12 @@
 		color: #6B7280;
 		line-height: 18px;
 		margin-bottom: 8px;
+	}
+
+	.skill-storage-error {
+		font-size: 12px;
+		color: #B45309;
+		line-height: 18px;
 	}
 
 	.skill-grid {

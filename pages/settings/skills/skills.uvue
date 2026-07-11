@@ -36,7 +36,10 @@
 					<oui-icon-unix name="file-text" size="14px" color="#6B7280" style="margin-right:6px" />
 					<text class="card-title">Skill 列表</text>
 				</view>
-				<view v-if="skills.length == 0" class="empty-box">
+				<view v-if="skillsStorageError == true" class="empty-box">
+					<text class="empty-text">Skill 数据无法读取，已停止写入以保护原数据。请先从备份恢复，或到运行诊断查看错误。</text>
+				</view>
+				<view v-if="skills.length == 0 && skillsStorageError == false" class="empty-box">
 					<text class="empty-text">还没有 Skill。先新建一个，或者粘贴导入 SKILL.md。</text>
 				</view>
 				<view v-for="(skill, index) in skills" :key="index" class="skill-item" :class="selectedSkillId == getSkillId(skill) ? 'skill-item-active' : ''" @click="selectSkill(skill)">
@@ -111,7 +114,7 @@
 </template>
 
 <script lang="uts">
-	import { getSkills, upsertSkill, deleteSkill, createSkillDocument, createSkillFromMarkdown, normalizeSkillName, readSkillId, readSkillName, readSkillDescription, readSkillEnabled, readSkillDocuments, readSkillDocumentTitle, getSkillDocumentCount } from '@/utils/skills.uts'
+	import { getSkills, hasSkillsStorageReadError, upsertSkill, deleteSkill, createSkillDocument, createSkillFromMarkdown, normalizeSkillName, readSkillId, readSkillName, readSkillDescription, readSkillEnabled, readSkillDocuments, readSkillDocumentTitle, getSkillDocumentCount } from '@/utils/skills.uts'
 	import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
 	import {
 		buildCurrentSkillRecord,
@@ -131,6 +134,7 @@
 		data() {
 			return {
 				skills: [] as UTSJSONObject[],
+				skillsStorageError: false as boolean,
 				selectedSkillId: '' as string,
 				skillName: '' as string,
 				skillDescription: '' as string,
@@ -168,6 +172,7 @@
 
 			reloadSkills() {
 				this.skills = getSkills()
+				this.skillsStorageError = hasSkillsStorageReadError()
 				if (this.selectedSkillId == '' && this.skills.length > 0) {
 					this.loadSkillToEditor(this.skills[0])
 				}

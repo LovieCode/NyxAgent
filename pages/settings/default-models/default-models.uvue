@@ -195,16 +195,25 @@
 				ttsPitch: '' as string,
 				ttsExtraParams: '' as string,
 				ttsTempDir: '' as string,
+				savedTtsAdapter: TTS_ADAPTER_OPENAI_COMPAT as string,
+				savedTtsVoice: '' as string,
+				savedTtsResponseFormat: '' as string,
+				savedTtsSpeed: '' as string,
+				savedTtsVolume: '' as string,
+				savedTtsPitch: '' as string,
+				savedTtsExtraParams: '' as string,
 				savedImageCaptionPrompt: '' as string,
 				hasUnsavedPrompt: false as boolean,
 				isConfirmingLeave: false as boolean,
 			}
 		},
 		onShow() {
-			this.loadData()
+			if (this.hasUnsavedChanges() == false) {
+				this.loadData()
+			}
 		},
 		onBackPress(): boolean {
-			if (this.hasUnsavedPrompt == false) {
+			if (this.hasUnsavedChanges() == false) {
 				return false
 			}
 			this.confirmLeave()
@@ -236,6 +245,41 @@
 				this.ttsVolume = form.volume
 				this.ttsPitch = form.pitch
 				this.ttsExtraParams = form.extraParams
+				this.captureTtsSnapshot()
+			},
+
+			captureTtsSnapshot() {
+				this.savedTtsAdapter = this.ttsAdapter
+				this.savedTtsVoice = this.ttsVoice
+				this.savedTtsResponseFormat = this.ttsResponseFormat
+				this.savedTtsSpeed = this.ttsSpeed
+				this.savedTtsVolume = this.ttsVolume
+				this.savedTtsPitch = this.ttsPitch
+				this.savedTtsExtraParams = this.ttsExtraParams
+			},
+
+			restoreTtsSnapshot() {
+				this.ttsAdapter = this.savedTtsAdapter
+				this.ttsVoice = this.savedTtsVoice
+				this.ttsResponseFormat = this.savedTtsResponseFormat
+				this.ttsSpeed = this.savedTtsSpeed
+				this.ttsVolume = this.savedTtsVolume
+				this.ttsPitch = this.savedTtsPitch
+				this.ttsExtraParams = this.savedTtsExtraParams
+			},
+
+			hasUnsavedTtsSettings(): boolean {
+				return this.ttsAdapter != this.savedTtsAdapter ||
+					this.ttsVoice != this.savedTtsVoice ||
+					this.ttsResponseFormat != this.savedTtsResponseFormat ||
+					this.ttsSpeed != this.savedTtsSpeed ||
+					this.ttsVolume != this.savedTtsVolume ||
+					this.ttsPitch != this.savedTtsPitch ||
+					this.ttsExtraParams != this.savedTtsExtraParams
+			},
+
+			hasUnsavedChanges(): boolean {
+				return this.hasUnsavedPrompt == true || this.hasUnsavedTtsSettings() == true
 			},
 
 			taskIcon(type: string): string {
@@ -383,6 +427,7 @@
 					uni.showToast({ title: '保存 TTS 参数失败，请重试', icon: 'none' })
 					return false
 				}
+				this.captureTtsSnapshot()
 				uni.showToast({ title: '已保存 TTS 参数', icon: 'success' })
 				return true
 			},
@@ -420,6 +465,9 @@
 					uni.showToast({ title: '保存默认任务模型失败，请重试', icon: 'none' })
 					return false
 				}
+				if (type == 'tts') {
+					this.captureTtsSnapshot()
+				}
 				if (providerId == '' || model == '') {
 					uni.showToast({ title: '已停用默认任务模型', icon: 'none' })
 					return true
@@ -448,19 +496,27 @@
 				if (this.isConfirmingLeave == true) { return }
 				this.isConfirmingLeave = true
 				uni.showModal({
-					title: '有未保存提示词',
-					content: '图片转述提示词已修改，要保存后退出吗？',
+					title: '有未保存设置',
+					content: '默认模型页面的参数已修改，要保存后退出吗？',
 					cancelText: '不保存',
 					confirmText: '保存',
 					success: (res) => {
 						this.isConfirmingLeave = false
 						if (res.confirm == true) {
-							if (this.saveImageCaptionPrompt() == true) {
+							let saved = true
+							if (this.hasUnsavedTtsSettings() == true) {
+								saved = this.saveTtsSettings()
+							}
+							if (saved == true && this.hasUnsavedPrompt == true) {
+								saved = this.saveImageCaptionPrompt()
+							}
+							if (saved == true) {
 								uni.navigateBack()
 							}
 						} else {
 							this.imageCaptionPrompt = this.savedImageCaptionPrompt
 							this.hasUnsavedPrompt = false
+							this.restoreTtsSnapshot()
 							uni.navigateBack()
 						}
 					},
@@ -471,7 +527,7 @@
 			},
 
 			goBack() {
-				if (this.hasUnsavedPrompt == false) {
+				if (this.hasUnsavedChanges() == false) {
 					uni.navigateBack()
 					return
 				}

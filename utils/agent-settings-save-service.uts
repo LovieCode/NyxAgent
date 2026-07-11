@@ -11,7 +11,7 @@ import {
 } from '@/utils/agent.uts'
 import { updateSystemPromptForAgent } from '@/utils/database.uts'
 import { type GenerationSettings } from '@/utils/generation-settings.uts'
-import { filterExistingSkillIds } from '@/utils/skills.uts'
+import { filterExistingSkillIds, hasSkillsStorageReadError } from '@/utils/skills.uts'
 import { buildAgentGenerationSaveState, type AgentSettingsGenerationSaveState } from '@/utils/agent-settings-models.uts'
 
 export type AgentSettingsSaveInput = {
@@ -87,6 +87,10 @@ export function saveAgentSettings(input: AgentSettingsSaveInput, global: Generat
 		input.truncateDropCountStr,
 		global
 	)
+	const filteredSkillIds = filterExistingSkillIds(input.selectedSkillIds)
+	if (hasSkillsStorageReadError() == true) {
+		return failSave('Skill 数据损坏，已停止保存联系人设置以保护现有绑定')
+	}
 	const agents = getAgents()
 	const previousAgentsSnapshot = JSON.stringify(agents)
 	let target: UTSJSONObject | null = null
@@ -120,7 +124,7 @@ export function saveAgentSettings(input: AgentSettingsSaveInput, global: Generat
 	target['hideThinking'] = input.hideThinking
 	target['injectDatetime'] = input.injectDatetime
 	target['msgSegmentation'] = input.msgSegmentation
-	target['skillIds'] = filterExistingSkillIds(input.selectedSkillIds)
+	target['skillIds'] = filteredSkillIds
 	target['enabledToolIds'] = filterAllowedAgentToolIdsForAgent(input.selectedToolIds, target, false)
 	if (saveAgents(agents) == false) {
 		return failSave('保存联系人设置失败，请重试')

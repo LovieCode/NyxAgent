@@ -6,7 +6,7 @@
 import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings, getDatabaseFilePathForExport, getAllMemoryBuffersForExport, getAllMemoryCoreForExport, getAllConversationTokenUsageStatsForExport, getAllMemoryCompactionStatesForExport, getAllGroupChatDataForExport } from '@/utils/database.uts'
 import { getAllDefaultTaskModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
 import { getAgents } from '@/utils/agent.uts'
-import { getSkills } from '@/utils/skills.uts'
+import { getSkills, hasSkillsStorageReadError } from '@/utils/skills.uts'
 import { getAgentDir, getAgentsRoot, getInternalFilesDir, getUserDir, listDir, joinPath, exists, readContent, formatFileSize, formatTime } from '@/utils/file-manager.uts'
 import { buildTodoMarkdown, buildNoteMarkdown } from '@/utils/markdown.uts'
 import { writeExportZipFile, shareExportFile, getLastShareExportError } from '@/utssdk/app-data-export/index.uts'
@@ -584,6 +584,9 @@ export function buildAllDataExportWithOptions(options: DataExportOptions): UTSJS
 	const storage = sanitizeStorageForExport(collectKnownStorageByKeys(storageKeys, rawAppSettings), options)
 	const agents = getAgents()
 	const skills = getSkills()
+	if (hasSkillsStorageReadError() == true) {
+		throw new Error('Skill 数据损坏，已停止导出以避免生成不可恢复的空备份')
+	}
 	const fileSpecs: UTSJSONObject[] = []
 	let databaseFile: UTSJSONObject | null = null
 	if (options.includeApiKeys == true) {

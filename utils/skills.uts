@@ -9,6 +9,7 @@
 
 import { getAgentById, NYX_ADMIN_AGENT_ID } from '@/utils/agent.uts'
 import { getAppSetting, setAppSetting } from '@/utils/database.uts'
+import { APP_ERROR_CATEGORY_STORAGE, reportAppErrorFromCause } from '@/utils/app-error.uts'
 
 export const SKILLS_STORAGE_KEY = 'skills_list'
 
@@ -18,6 +19,8 @@ const MAX_SKILLS_PER_AGENT = 16
 const MAX_DOCUMENTS_PER_SKILL = 12
 const MAX_DOCUMENT_CONTENT_CHARS = 10000
 const MAX_SKILLS_PROMPT_CHARS = 50000
+
+let skillsStorageReadError = false
 
 const NYX_APP_MANAGER_SKILL_CONTENT = '# 眠汐 App 管理与教学\n\n' +
 	'你是 NyxAgent 的显式全局管理员。你的任务不是把 App 说成专业软件，而是像聊天软件里的熟人一样，帮用户理解、配置和管理整个 App。\n\n' +
@@ -329,6 +332,7 @@ function normalizeSkillRecord(skill: UTSJSONObject): UTSJSONObject {
 export function getSkills(): UTSJSONObject[] {
 	const raw = getAppSetting(SKILLS_STORAGE_KEY)
 	if (raw == null || raw == '') {
+		skillsStorageReadError = false
 		return []
 	}
 	try {
@@ -337,18 +341,33 @@ export function getSkills(): UTSJSONObject[] {
 		for (let i = 0; i < parsed.length; i++) {
 			result.push(normalizeSkillRecord(parsed[i]))
 		}
+		skillsStorageReadError = false
 		return result
-	} catch (_e: any) {
+	} catch (e: any) {
+		if (skillsStorageReadError == false) {
+			reportAppErrorFromCause('SKILLS_STORAGE_PARSE_FAILED', APP_ERROR_CATEGORY_STORAGE, 'skills_storage_parse', 'Skill 数据损坏，已停止写入', e, true)
+		}
+		skillsStorageReadError = true
 		return []
 	}
 }
 
+export function hasSkillsStorageReadError(): boolean {
+	return skillsStorageReadError
+}
+
 export function saveSkills(skills: UTSJSONObject[]): boolean {
-	return setAppSetting(SKILLS_STORAGE_KEY, JSON.stringify(skills))
+	if (skillsStorageReadError == true) { return false }
+	const saved = setAppSetting(SKILLS_STORAGE_KEY, JSON.stringify(skills))
+	if (saved == true) {
+		skillsStorageReadError = false
+	}
+	return saved
 }
 
 export function upsertSkill(skill: UTSJSONObject): boolean {
 	const skills = getSkills()
+	if (skillsStorageReadError == true) { return false }
 	const id = readSkillId(skill)
 	const normalized = normalizeSkillRecord(skill)
 	normalized['updatedAt'] = Date.now()
@@ -369,6 +388,7 @@ export function upsertSkill(skill: UTSJSONObject): boolean {
 export function deleteSkill(skillId: string): boolean {
 	if (skillId == '') { return false }
 	const skills = getSkills()
+	if (skillsStorageReadError == true) { return false }
 	const next: UTSJSONObject[] = []
 	let found = false
 	for (let i = 0; i < skills.length; i++) {
@@ -411,6 +431,12 @@ export function skillIdListContains(list: string[], skillId: string): boolean {
 export function filterExistingSkillIds(ids: string[]): string[] {
 	const result: string[] = []
 	const skills = getSkills()
+	if (skillsStorageReadError == true) {
+		for (let i = 0; i < ids.length; i++) {
+			appendUniqueString(result, ids[i])
+		}
+		return result
+	}
 	for (let i = 0; i < ids.length; i++) {
 		const id = ids[i]
 		for (let j = 0; j < skills.length; j++) {

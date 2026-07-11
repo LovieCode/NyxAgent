@@ -205,6 +205,7 @@
 		data() {
 			return {
 				isNew: true as boolean,
+				editEnabled: true as boolean,
 				editId: '' as string,
 				editName: '' as string,
 				editApiKey: '' as string,
@@ -278,6 +279,7 @@
 				if (preset.valid == false) { return }
 				if (overrideIdentity == true) {
 					this.isNew = true
+					this.editEnabled = true
 					this.editId = preset.id
 					this.editName = preset.name
 				} else if (this.editName == '' && preset.name != '') {
@@ -300,9 +302,11 @@
 				const rawName = data['name'] as string | null
 				const rawApiKey = data['api_key'] as string | null
 				const rawApiBase = data['api_base'] as string | null
+				const rawEnabled = data['enabled'] as number | null
 				this.editName = rawName != null ? rawName : ''
 				this.editApiKey = rawApiKey != null ? rawApiKey : ''
 				this.editApiBase = rawApiBase != null ? rawApiBase : ''
+				this.editEnabled = rawEnabled == 1
 				if (this.editApiBase == '') {
 					this.editApiBase = getDefaultProviderApiBase(id)
 				}
@@ -441,7 +445,7 @@
 					uni.showToast({ position: 'bottom',  title: '先添加或获取一个模型', icon: 'none' })
 					return false
 				}
-				const providerSaved = saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, true)
+				const providerSaved = saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, this.editEnabled)
 				if (providerSaved == false) {
 					uni.showToast({ position: 'bottom', title: '保存提供商失败，请重试', icon: 'none' })
 					return false
