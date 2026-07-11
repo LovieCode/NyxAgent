@@ -691,7 +691,7 @@ export function importAgentWorkspaceFiles(zipPath: string): number {
 		const zip = new ZipFile(zipFile)
 		if (zipContainsPrefix(zip, 'agent-workspaces/') == false) {
 			zip.close()
-			return -1
+			return 0
 		}
 		const agentsRoot = new File((context.filesDir as File).absolutePath + '/agents')
 		const stage = new File(importRoot.absolutePath + '/agent-workspaces-stage')
@@ -740,7 +740,7 @@ export function importGroupWorkspaceFiles(zipPath: string): number {
 		const zip = new ZipFile(zipFile)
 		if (zipContainsPrefix(zip, 'group-workspaces/') == false) {
 			zip.close()
-			return -1
+			return 0
 		}
 		const groupRoot = new File((context.filesDir as File).absolutePath + '/group-workspaces')
 		const stage = new File(importRoot.absolutePath + '/group-workspaces-stage')
@@ -789,7 +789,7 @@ export function importUserWorkspaceFiles(zipPath: string): number {
 		const zip = new ZipFile(zipFile)
 		if (zipContainsPrefix(zip, 'user-files/') == false) {
 			zip.close()
-			return -1
+			return 0
 		}
 		const userRoot = new File((context.filesDir as File).absolutePath + '/user')
 		const stage = new File(importRoot.absolutePath + '/user-files-stage')

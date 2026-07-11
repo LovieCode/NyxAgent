@@ -103,6 +103,21 @@ function containsParentPathSegment(path: string): boolean {
 	return false
 }
 
+// #ifdef APP-ANDROID
+/** 检测路径项自身是否为符号链接，不把父目录本身的链接误判到子项。 */
+function isAndroidSymbolicLink(file: File): boolean {
+	try {
+		const parent = file.parentFile
+		if (parent == null) { return false }
+		const expected = new File(parent.canonicalFile, file.name)
+		return file.canonicalPath != expected.absolutePath
+	} catch (e: any) {
+		recordFileIoFailure('FILE_SYMLINK_CHECK_FAILED', 'file_symlink_check', '文件链接校验失败', e)
+		return true
+	}
+}
+// #endif
+
 /** 判断目标路径是否真实位于指定目录内。 */
 export function isPathInsideDirectory(rootPath: string, targetPath: string): boolean {
 	const root = normalizePath(rootPath)
@@ -525,12 +540,15 @@ export function deleteItem(path: string, recursive: boolean = true): FileOpResul
  * 递归删除目录（Android 原生）。
  */
 function deleteRecursiveAndroid(file: File): boolean {
+	if (isAndroidSymbolicLink(file) == true) {
+		return file.delete()
+	}
 	if (file.isDirectory()) {
 		const children = file.listFiles()
 		if (children != null) {
 			let idx = 0 as Int
 			while (idx < children.size) {
-				deleteRecursiveAndroid(children[idx])
+				if (deleteRecursiveAndroid(children[idx]) == false) { return false }
 				idx++
 			}
 		}
@@ -613,6 +631,12 @@ export function copyItem(srcPath: string, destPath: string): FileOpResult {
 	if (exists(normalizedDest)) {
 		return failResult('目标路径已存在')
 	}
+	// #ifdef APP-ANDROID
+	const sourceAbsPath = toAndroidAbsPath(normalizedSrc)
+	if (sourceAbsPath == '' || isAndroidSymbolicLink(new File(sourceAbsPath)) == true) {
+		return failResult('不支持复制符号链接')
+	}
+	// #endif
 	const stat = statItem(normalizedSrc)
 	if (stat.isDirectory) {
 		return copyDirRecursive(normalizedSrc, normalizedDest)
