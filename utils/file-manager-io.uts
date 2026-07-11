@@ -94,6 +94,39 @@ function toAndroidAbsPath(path: string): string {
 }
 // #endif
 
+function containsParentPathSegment(path: string): boolean {
+	const normalized = normalizePath(path)
+	const parts = normalized.split('/')
+	for (let i = 0; i < parts.length; i++) {
+		if (parts[i] == '.' || parts[i] == '..') { return true }
+	}
+	return false
+}
+
+/** 判断目标路径是否真实位于指定目录内。 */
+export function isPathInsideDirectory(rootPath: string, targetPath: string): boolean {
+	const root = normalizePath(rootPath)
+	const target = normalizePath(targetPath)
+	if (root == '' || target == '') { return false }
+	// #ifdef APP-ANDROID
+	const rootAbs = toAndroidAbsPath(root)
+	const targetAbs = toAndroidAbsPath(target)
+	if (rootAbs == '' || targetAbs == '') { return false }
+	try {
+		const canonicalRoot = new File(rootAbs).canonicalPath
+		const canonicalTarget = new File(targetAbs).canonicalPath
+		return canonicalTarget == canonicalRoot || canonicalTarget.startsWith(canonicalRoot + File.separator)
+	} catch (e: any) {
+		recordFileIoFailure('FILE_PATH_CONTAINMENT_FAILED', 'file_path_containment', '文件路径校验失败', e)
+		return false
+	}
+	// #endif
+	// #ifndef APP-ANDROID
+	if (containsParentPathSegment(root) == true || containsParentPathSegment(target) == true) { return false }
+	return target == root || target.startsWith(root + '/')
+	// #endif
+}
+
 /**
  * 列出指定目录下的文件和文件夹。
  *

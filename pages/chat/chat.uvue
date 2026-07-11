@@ -228,6 +228,7 @@
 	import { eventBus } from '@/utils/event-bus.uts'
 	import { resolveKeyboardInset } from '@/utils/keyboard-inset.uts'
 	import { NYX_FLOAT_CONTEXT_CHAT, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
+	import { APP_ERROR_CATEGORY_RUNTIME, reportAppErrorFromCause } from '@/utils/app-error.uts'
 
 	let chatNyxFloatVoiceCallback: (() => void) | null = null
 
@@ -932,6 +933,7 @@
 			},
 
 			handlePickedImagePath(imagePath: string, fallbackPrompt: string): void {
+				if (this.canAppendMediaMessage() == false) { return }
 				if (imagePath == '') {
 					uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
 					return
@@ -964,6 +966,7 @@
 
 			/** 添加文件消息 */
 			addFileMessage(fileInfo: any) {
+				if (this.canAppendMediaMessage() == false) { return }
 				const picked = readPickedFileSelection(fileInfo)
 				if (picked.ok == false) {
 					uni.showToast({ position: 'bottom', title: picked.error, icon: 'none' })
@@ -981,6 +984,7 @@
 
 			/** 添加位置消息 */
 			addLocationMessage(location: UTSJSONObject) {
+				if (this.canAppendMediaMessage() == false) { return }
 				const content = buildChatLocationContent(location)
 				appendChatLocationMessage(this.messages, content)
 				this.resetMessageWindowToRecent()
@@ -1016,6 +1020,12 @@
 
 			// ===== 工具栏 =====
 
+			canAppendMediaMessage(): boolean {
+				if (this.isGenerating == false) { return true }
+				uni.showToast({ position: 'bottom', title: '当前回复进行中，请稍后发送', icon: 'none' })
+				return false
+			},
+
 			/** 切换工具栏面板：只有原本贴底时才保持到底，避免中途阅读被强拉 */
 			toggleToolPanel() {
 				const keepBottom = this.isAtBottom == true
@@ -1042,6 +1052,7 @@
 			/** 从相册选择图片 */
 			pickImage() {
 				this.showToolPanel = false
+				if (this.canAppendMediaMessage() == false) { return }
 				uni.chooseImage({
 					count: 1,
 					sourceType: ['album'],
@@ -1061,6 +1072,7 @@
 			/** 拍照 */
 			takePhoto() {
 				this.showToolPanel = false
+				if (this.canAppendMediaMessage() == false) { return }
 				uni.chooseImage({
 					count: 1,
 					sourceType: ['camera'],
@@ -1079,6 +1091,7 @@
 			/** 选择文件 */
 			pickFile() {
 				this.showToolPanel = false
+				if (this.canAppendMediaMessage() == false) { return }
 				uni.chooseFile({
 					count: 1,
 					success: (res: any) => {
@@ -1133,12 +1146,18 @@
 			/** 选择位置 */
 			pickLocation() {
 				this.showToolPanel = false
+				if (this.canAppendMediaMessage() == false) { return }
 				uni.chooseLocation({
 					success: (res: any) => {
 						const raw = JSON.stringify(res)
 						if (raw == null || raw == '') { return }
 						const parsed = JSON.parse(raw) as UTSJSONObject
 						this.addLocationMessage(parsed)
+					},
+					fail: (err: any) => {
+						if (isChooseCancelError(err) == true) { return }
+						reportAppErrorFromCause('CHAT_LOCATION_PICK_FAILED', APP_ERROR_CATEGORY_RUNTIME, 'chat_pick_location', '位置选择失败', err, true)
+						uni.showToast({ position: 'bottom', title: '位置选择失败，请检查定位权限', icon: 'none' })
 					}
 				})
 			},

@@ -13,7 +13,7 @@ import {
 	exists,
 	copyItem,
 	deleteItem,
-	normalizePath,
+	isPathInsideDirectory,
 } from '@/utils/file-manager.uts'
 import { rememberGroupWorkspaceName, writeGroupWorkspaceNameMetadata } from '@/utils/workspace-name-snapshot.uts'
 import {
@@ -225,10 +225,7 @@ export function getGroupSessionWorkspaceDir(groupId: string, sessionId: string):
 }
 
 function isInsideGroupWorkspace(path: string): boolean {
-	const root = normalizePath(buildGroupWorkspaceRoot())
-	const target = normalizePath(path)
-	if (root == '' || target == '') { return false }
-	return target == root || target.startsWith(root + '/')
+	return isPathInsideDirectory(buildGroupWorkspaceRoot(), path)
 }
 
 export function getGroupMembers(groupId: string): GroupChatMember[] {

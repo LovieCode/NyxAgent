@@ -354,8 +354,7 @@ export function getProviderApiConfig(id: string): UTSJSONObject | null {
 		const hasApiVersion = baseUrl.indexOf('/v1') >= 0 || baseUrl.indexOf('/api/v') >= 0
 		const fetchUrl = hasApiVersion ? baseUrl + '/models' : baseUrl + '/v1/models'
 		const hasKey = apiKey != null && apiKey != ''
-		const keyPreview = hasKey ? apiKey.substring(0, apiKey.length < 8 ? apiKey.length : 8) + '...' : '无'
-		console.log('[Provider] 获取模型列表 → ' + baseUrl + ' | Key=' + keyPreview)
+		console.log('[Provider] 获取模型列表 → ' + baseUrl + ' | hasApiKey=' + hasKey)
 
 		uni.request({
 			url: fetchUrl,

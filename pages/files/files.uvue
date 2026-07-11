@@ -122,7 +122,7 @@
 </template>
 
 <script lang="uts">
-	import { listDir, listRootContents, createDir, createFile, copyItem, deleteItem, exists, renameItem, parentPath, joinPath, getUserDir, getInternalFilesDir, getExternalFilesDir, getAgentsRoot, formatFileSize, formatTime, isTextFile, isImageFile, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
+	import { basename, listDir, listRootContents, createDir, createFile, copyItem, deleteItem, exists, renameItem, parentPath, joinPath, getUserDir, getInternalFilesDir, getExternalFilesDir, getAgentsRoot, formatFileSize, formatTime, isTextFile, isImageFile, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
 	import { isChooseCancelError, parsePickedFileInfo, type PickedLocalFile } from '@/utils/attachment-reader.uts'
 	import { APP_ERROR_CATEGORY_STORAGE, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 	import { getRuntimeState } from '@/utils/database.uts'
@@ -337,12 +337,17 @@
 					uni.showToast({ position: 'bottom', title: '未选择文件', icon: 'none' })
 					return
 				}
+				const safeName = basename(file.name)
+				if (safeName == '' || safeName == '.' || safeName == '..' || safeName != file.name || file.name.indexOf('/') >= 0 || file.name.indexOf('\\') >= 0) {
+					uni.showToast({ position: 'bottom', title: '文件名不合法', icon: 'none' })
+					return
+				}
 				const basePath = this.resolveImportBasePath()
 				if (basePath == '') {
 					uni.showToast({ position: 'bottom', title: '当前目录不可用', icon: 'none' })
 					return
 				}
-				const targetPath = joinPath(basePath, file.name)
+				const targetPath = joinPath(basePath, safeName)
 				if (exists(targetPath) == true) {
 					uni.showToast({ position: 'bottom', title: '同名文件已存在', icon: 'none' })
 					return

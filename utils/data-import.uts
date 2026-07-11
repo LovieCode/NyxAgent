@@ -5,7 +5,7 @@
 
 import { importDatabaseTables, importSettingsTables, setAppSetting, setRuntimeState } from '@/utils/database.uts'
 import { saveAgents } from '@/utils/agent.uts'
-import { getAgentDir, joinPath, exists, createDir, writeContent } from '@/utils/file-manager.uts'
+import { getAgentDir, getInternalFilesDir, joinPath, exists, createDir, writeContent } from '@/utils/file-manager.uts'
 import { readImportManifest, importAgentWorkspaceFiles, importBackupAssets, importGroupWorkspaceFiles, importUserWorkspaceFiles } from '@/utssdk/app-data-export/index.uts'
 import { APP_ERROR_CATEGORY_STORAGE, reportAppErrorFromCause } from '@/utils/app-error.uts'
 
@@ -46,6 +46,41 @@ function readObjectArray(obj: UTSJSONObject, key: string): UTSJSONObject[] {
 		return []
 	}
 	return value
+}
+
+function isSafeImportWorkspaceId(value: string): boolean {
+	if (value == '' || value.length > 120) { return false }
+	for (let i = 0; i < value.length; i++) {
+		const codeValue = value.charCodeAt(i)
+		if (codeValue == null) { return false }
+		const code = codeValue
+		const isDigit = code >= 48 && code <= 57
+		const isUpper = code >= 65 && code <= 90
+		const isLower = code >= 97 && code <= 122
+		if (isDigit == false && isUpper == false && isLower == false && code != 45 && code != 95) {
+			return false
+		}
+	}
+	return true
+}
+
+/** 导入时不信任备份内的绝对路径，只按 group/session ID 重建应用私有路径。 */
+function rewriteImportedGroupSessionWorkspacePaths(groupChatData: UTSJSONObject): string {
+	const workspaceRoot = joinPath(getInternalFilesDir(), 'group-workspaces')
+	if (workspaceRoot == '') { return '群聊工作区根目录不可用' }
+	const sessions = readObjectArray(groupChatData, 'groupSessions')
+	for (let i = 0; i < sessions.length; i++) {
+		const item = sessions[i]
+		const groupIdValue = item['group_id'] as string | null
+		const sessionIdValue = item['id'] as string | null
+		const groupId = groupIdValue != null ? groupIdValue : ''
+		const sessionId = sessionIdValue != null ? sessionIdValue : ''
+		if (isSafeImportWorkspaceId(groupId) == false || isSafeImportWorkspaceId(sessionId) == false) {
+			return '群聊会话 ID 不合法'
+		}
+		item['workspace_path'] = joinPath(joinPath(workspaceRoot, groupId), sessionId)
+	}
+	return ''
 }
 
 function validateRequiredObjectArray(data: UTSJSONObject, key: string): string {
@@ -599,6 +634,13 @@ export function importAllDataFromZip(zipPath: string): string {
 		const conversationTokenUsageStats = readObjectArray(data, 'conversationTokenUsageStats')
 		const memoryCompactionStates = readObjectArray(data, 'memoryCompactionStates')
 		const groupChatData = data['groupChatData'] as UTSJSONObject | null
+		if (groupChatData == null) {
+			throw new Error('备份包缺少 groupChatData 对象')
+		}
+		const groupWorkspacePathError = rewriteImportedGroupSessionWorkspacePaths(groupChatData)
+		if (groupWorkspacePathError != '') {
+			throw new Error(groupWorkspacePathError)
+		}
 		const agents = readObjectArray(data, 'agents')
 		const skills = readObjectArray(data, 'skills')
 		const notes = readObjectArray(data, 'notes')

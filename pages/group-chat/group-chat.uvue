@@ -413,6 +413,7 @@ let groupTurnRuntimeSyncTimer: number = -1
 			},
 			loadGroup(): void {
 				try {
+					this.imageCaptionTaskId++
 					let groupId = getActiveGroupChatId()
 					if (groupId == '') {
 						const group = createDefaultWritingGroupChat()
@@ -959,6 +960,8 @@ let groupTurnRuntimeSyncTimer: number = -1
 			},
 			stopDiscussion(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
+				this.imageCaptionTaskId++
+				this.isGenerating = false
 				stopGroupChatTurn(this.sessionId)
 				this.syncGroupTurnRuntime()
 				uni.showToast({ position: 'bottom', title: '已停止讨论', icon: 'none' })
@@ -1000,12 +1003,17 @@ let groupTurnRuntimeSyncTimer: number = -1
 			},
 			startGenerationForImage(imagePath: string, fallbackReason: string, messageIndex: number): void {
 				if (this.isGenerating == true) { return }
+				if (messageIndex < 0 || messageIndex >= this.messages.length) { return }
 				this.isGenerating = true
 				this.imageCaptionTaskId++
 				const taskId = this.imageCaptionTaskId
+				const taskGroupId = this.groupId
+				const taskSessionId = this.sessionId
+				const taskMessageId = this.messages[messageIndex].id
 				captionImage(imagePath).then((caption: string | null) => {
 					if (taskId != this.imageCaptionTaskId) { return }
-					if (messageIndex >= 0 && messageIndex < this.messages.length && caption != null && caption != '') {
+					if (this.groupId != taskGroupId || this.sessionId != taskSessionId) { return }
+					if (messageIndex >= 0 && messageIndex < this.messages.length && this.messages[messageIndex].id == taskMessageId && caption != null && caption != '') {
 						setImageMessageCaption(this.messages[messageIndex], caption)
 						this.messages.splice(messageIndex, 1, this.messages[messageIndex])
 						this.saveMessages()
@@ -1115,6 +1123,7 @@ let groupTurnRuntimeSyncTimer: number = -1
 				})
 			},
 			addGroupFileMessage(fileInfo: any): void {
+				if (this.isGenerating == true) { return }
 				const file = parsePickedFileInfo(fileInfo)
 				if (file.path == '') {
 					uni.showToast({ position: 'bottom', title: '未选择文件', icon: 'none' })
@@ -1129,7 +1138,11 @@ let groupTurnRuntimeSyncTimer: number = -1
 				this.userNickname = profile.nickname
 				this.userAvatar = profile.avatar
 				this.messages.push(createGroupUserFileMessage(this.groupId, this.sessionId, file.name, file.path, profile.nickname, fileText))
-				this.saveMessages()
+				if (this.saveMessages() == false) {
+					this.messages.splice(this.messages.length - 1, 1)
+					uni.showToast({ position: 'bottom', title: '文件消息保存失败', icon: 'none' })
+					return
+				}
 				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
 				this.startGroupGenerationForMedia('用户发送了一个文件：' + file.name)
