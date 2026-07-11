@@ -108,19 +108,22 @@
 | SET-002 | P1 | 模型级 `maxTokens`、`params`、`supportsToolCall` 可保存但聊天运行请求不读取 | 待重构 | 需要统一解析模型运行配置并定义旧数据兼容语义，不能只在页面层补字段 | 待用户确认运行时配置重构 |
 | SET-003 | P1 | `skills_list` JSON 损坏后被当成空列表，后续保存 Agent 或导出备份会覆盖/固化为空 | 已修复，故障注入待回归 | 解析失败进入 diagnostics；Skill 公共保存、Agent 设置和数据导出统一停止；绑定 ID 保留，页面显示保护状态 | `utils/skills.uts`、`utils/agent-settings-save-service.uts`、`utils/data-export.uts`、Skill/Agent 设置页 |
 | SET-004 | P1 | 停用/删除 Provider 或模型时，默认任务、联网搜索及 Agent 引用可能悬空 | 待重构 | 需要统一引用统计、阻止或事务清理策略，并纳入 Agent 引用 | 待用户确认 Provider 引用重构 |
-| SET-005 | P1 | 获取模型列表无明确超时和结构化错误，HTTP/解析/空列表/断网统一折叠为失败 | 待修复 | 当前用户提示和 diagnostics 无法区分 Key、地址、超时与合法空列表 | `provider.uts`、`provider-edit.uvue` |
+| SET-005 | P1 | 获取模型列表无明确超时和结构化错误，HTTP/解析/空列表/断网统一折叠为失败 | 已修复，异常注入待回归 | 15 秒超时；区分鉴权、404、服务端、网络、非法响应和合法空列表；错误写入 diagnostics | `provider.uts`、`provider-edit.uvue` |
 | SET-006 | P1 | 首次引导分步保存 Provider、active、默认模型和完成标记，失败会留下半配置 | 待重构 | 需要 DAO 事务或完整补偿回滚协议 | 待用户确认首次引导事务重构 |
 | SET-007 | P1 | vision/reasoning 能力只按 model ID 全局匹配，同名模型可能串 Provider | 待重构 | 能力查询和调用链需要同时携带 `providerId + modelId` | 待用户确认模型能力解析重构 |
-| SET-008 | P2 | AstrBot 测试失败只显示 toast，不进入统一 diagnostics | 待修复 | 401、500、超时和断网缺少诊断编号 | `pages/settings/plugin/plugin.uvue`、`utils/astrbot-service.uts` |
+| SET-008 | P2 | AstrBot 测试失败只显示 toast，不进入统一 diagnostics | 已修复，异常注入待回归 | 连接失败统一记录 `ASTRBOT_CONNECTION_TEST_FAILED` 并显示诊断编号 | `pages/settings/plugin/plugin.uvue` |
 | SET-009 | P2 | 相机权限永久拒绝后没有跳转系统授权设置的恢复入口 | 待修复 | 当前只能重复显示拍照失败 | `utils/avatar-image-picker.uts` |
 | SET-010 | P2 | 默认模型页 TTS 参数修改后直接返回会静默丢失 | 已修复，交互待回归 | TTS 全字段加入快照、统一未保存确认、保存成功刷新快照、不保存恢复快照 | `pages/settings/default-models/default-models.uvue` |
-| SET-011 | P2 | Provider 模型已拉取成功后仍同步等待 models.dev 元数据刷新，异常网络可额外阻塞约 30 秒 | 待优化 | 应让元数据刷新异步化，不阻塞主模型列表 | `provider-edit.uvue`、`llm-metadata.uts` |
+| SET-011 | P2 | Provider 模型已拉取成功后仍同步等待 models.dev 元数据刷新，异常网络可额外阻塞约 30 秒 | 已修复 | 能力元数据改为单例后台刷新，模型列表成功后立即可用 | `provider-edit.uvue`、`llm-metadata.uts` |
+| UI-004 | P1 | Rice 输入组件把 `30rpx` 截成 `30r` 交给 Android 原生字号解析，新建文件对话框触发 `NumberFormatException` | 已修复，ADB 通过 | placeholder 字号统一经 `getPxNum` 转为真实 px；新建文件对话框打开、取消且日志无同类异常 | `rice-input.uvue`、`rice-textarea.uvue`、`rice-search.uvue` |
+| SECURITY-003 | P1 | Provider 编辑页默认以明文输入展示 API Key，Android UI hierarchy 可读取完整内容 | 已修复，交互待回归 | API Key 默认使用密码态，提供显式可见性切换 | `pages/settings/basic/provider-edit.uvue` |
 
 ## 修改记录
 
 | 日期 | 文件 | 修改 | 验证 | commit |
 | --- | --- | --- | --- | --- |
 | 2026-07-11 | Provider、默认模型、Skill、Agent 设置与数据导出 | 保留停用 Provider 状态；补 TTS 离页保护；Skill 损坏时阻止全链路写入和空备份 | HBuilderX 5.15 对 28 页面差量编译成功；ADB Provider/默认模型/Skills 入口与返回通过；app 定向日志无 fatal/UTS 异常 | `bcfb782` |
+| 2026-07-11 | Provider 拉取、插件诊断、Rice 输入组件 | 区分模型接口错误和合法空列表；models.dev 元数据后台刷新；AstrBot 失败进入诊断；修复 Android placeholder 字号崩溃；API Key 默认掩码 | HBuilderX 5.15 差量编译与同步成功；ADB 新建文件对话框回归无 `NumberFormatException`；Provider 编辑识别为 Android 密码字段 | `dc35b2d` |
 | 2026-07-11 | 聊天、群聊、文件导入、数据恢复与 Provider 日志相关源码 | 阻止媒体并发丢消息；隔离图片转述异步任务；校验导入工作区与文件名；旧备份缺少工作区目录时保留本地；阻止递归 symlink 越界；API Key 日志仅记录是否存在 | HBuilderX 5.15 Android class 两轮编译通过；ADB 冷启动、私聊、群聊、文件和设置入口通过；logcat 无 fatal/UTS 未捕获异常 | `1c3dbed`、`8cdec95` |
 | 2026-07-10 | `APP_TEST_PLAN.md` | 建立全功能测试矩阵和缺陷台账 | `git diff --check` 通过 | `fix: stabilize keyboard layouts` |
 | 2026-07-10 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` | 关闭输入组件重复顶起；键盘变化后重测滚动区；统一输入文字上下留白 | HBuilderX CLI 编译、ADB 输入与截图检查通过；真软键盘待真机 | `fix: stabilize keyboard layouts` |
@@ -198,6 +201,9 @@
 | 2026-07-11 16:39 | Skill 全链路保护差量编译 | 当前 28 页面 Android class 差量编译成功，Agent 设置、导出失败保护和页面状态通过 UTS/Kotlin 编译 |
 | 2026-07-11 16:42 | 最新设置包部署 | 28 页面差量编译后同步 `emulator-5554` 并启动成功 |
 | 2026-07-11 16:45 | 最新包冷启动与 Agent 设置回归 | 冷启动、私聊、聊天设置页正常渲染；App PID 定向日志 323 行中无 fatal、ABI、空指针、类型或 UTS 异常 |
+| 2026-07-11 16:57 | Provider/Rice 组件差量编译 | 当前 28 页面 Android class 编译成功并同步模拟器；无新增 UTS/Kotlin 错误 |
+| 2026-07-11 16:59 | ADB 新建文件对话框回归 | 操作菜单、文件名输入弹窗和取消流程正常；定向日志不再出现 `NumberFormatException` |
+| 2026-07-11 17:24 | ADB Provider 密钥掩码回归 | DeepSeek 编辑页 4 个输入控件中恰好 1 个为 Android password 字段；App PID 稳定，定向日志无 fatal、ABI、类型或 UTS 异常 |
 
 ## 手动真机回归
 
