@@ -205,11 +205,38 @@ export function buildGroupMemberAgentItems(groupId: string, group: GroupChat | n
 	return result
 }
 
+export function buildGroupPrivateAgentItems(groupId: string): UTSJSONObject[] {
+	const members = getActiveGroupMembers(groupId)
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < members.length; i++) {
+		const agent = getAgentById(members[i].agentId)
+		if (agent == null) { continue }
+		const name = readAgentName(agent)
+		let duplicated = false
+		for (let j = 0; j < members.length; j++) {
+			if (j == i) { continue }
+			const other = getAgentById(members[j].agentId)
+			if (other != null && readAgentName(other) == name) {
+				duplicated = true
+				break
+			}
+		}
+		const shortId = members[i].agentId.length > 6 ? members[i].agentId.substring(0, 6) : members[i].agentId
+		result.push({
+			agentId: members[i].agentId,
+			name: name,
+			label: duplicated == true ? name + ' · ' + shortId : name,
+		} as UTSJSONObject)
+	}
+	return result
+}
+
 export function buildGroupMemberAgentNames(items: UTSJSONObject[]): string[] {
 	const names: string[] = []
 	for (let i = 0; i < items.length; i++) {
+		const label = items[i]['label'] as string | null
 		const name = items[i]['name'] as string | null
-		names.push(name != null ? name : '联系人')
+		names.push(label != null && label != '' ? label : (name != null ? name : '联系人'))
 	}
 	return names
 }

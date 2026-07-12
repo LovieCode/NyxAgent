@@ -57,6 +57,7 @@ import {
 	ACTIVE_GROUP_SESSION_ID_KEY,
 	GROUP_DELIVERY_MODE_PUBLIC,
 	GROUP_DELIVERY_MODE_USER_PRIVATE,
+	GROUP_MESSAGE_AUDIENCE_AGENT,
 	GROUP_MESSAGE_AUDIENCE_GROUP,
 	GROUP_MESSAGE_AUDIENCE_USER,
 	GROUP_MESSAGE_SENDER_AGENT,
@@ -533,6 +534,32 @@ export function createGroupUserMessage(groupId: string, sessionId: string, conte
 	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_USER, '', normalizeGroupUserDisplayName(userName), '', true, GROUP_MESSAGE_VISIBILITY_PUBLIC)
 }
 
+export function createGroupUserPrivateMessage(groupId: string, sessionId: string, content: string, targetAgentId: string, userName: string = ''): UTSJSONObject | null {
+	if (groupId == '' || sessionId == '' || content.trim() == '' || isAgentInGroup(groupId, targetAgentId) == false || getGroupSessionById(groupId, sessionId) == null) {
+		return null
+	}
+	const base = createTextMessage(CHAT_ROLE_USER, content)
+	const targetAgent = getAgentById(targetAgentId)
+	if (targetAgent == null) { return null }
+	base['targetAgentId'] = targetAgentId
+	base['targetAgentName'] = readAgentName(targetAgent)
+	base['privateThreadAgentId'] = targetAgentId
+	base['deliveryStatus'] = 'pending'
+	return decorateGroupMessage(
+		base,
+		groupId,
+		sessionId,
+		GROUP_MESSAGE_SENDER_USER,
+		'',
+		normalizeGroupUserDisplayName(userName),
+		'',
+		true,
+		GROUP_MESSAGE_VISIBILITY_PRIVATE,
+		[targetAgentId] as string[],
+		GROUP_MESSAGE_AUDIENCE_AGENT,
+	)
+}
+
 export function createGroupHiddenMessage(groupId: string, sessionId: string, senderType: string, content: string): UTSJSONObject {
 	const base = createTextMessage('system', content)
 	const group = senderType == GROUP_MESSAGE_SENDER_SCHEDULER || senderType == GROUP_MESSAGE_SENDER_REVIEWER ? getGroupChatById(groupId) : null
@@ -552,7 +579,9 @@ export function createGroupAgentStreamingMessage(groupId: string, sessionId: str
 	const privateDelivery = deliveryMode == GROUP_DELIVERY_MODE_USER_PRIVATE
 	const visibility = privateDelivery == true ? GROUP_MESSAGE_VISIBILITY_PRIVATE : GROUP_MESSAGE_VISIBILITY_PUBLIC
 	const audience = privateDelivery == true ? GROUP_MESSAGE_AUDIENCE_USER : GROUP_MESSAGE_AUDIENCE_GROUP
-	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true, visibility, [] as string[], audience)
+	const message = decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true, visibility, [] as string[], audience)
+	if (privateDelivery == true) { message['privateThreadAgentId'] = agentId }
+	return message
 }
 
 export function createGroupAgentFinalMessage(groupId: string, sessionId: string, agentId: string, parts: UTSJSONObject[], content: string, deliveryMode: string = GROUP_DELIVERY_MODE_PUBLIC): UTSJSONObject {
@@ -569,7 +598,9 @@ export function createGroupAgentFinalMessage(groupId: string, sessionId: string,
 	const privateDelivery = deliveryMode == GROUP_DELIVERY_MODE_USER_PRIVATE
 	const visibility = privateDelivery == true ? GROUP_MESSAGE_VISIBILITY_PRIVATE : GROUP_MESSAGE_VISIBILITY_PUBLIC
 	const audience = privateDelivery == true ? GROUP_MESSAGE_AUDIENCE_USER : GROUP_MESSAGE_AUDIENCE_GROUP
-	return decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true, visibility, [] as string[], audience)
+	const message = decorateGroupMessage(base, groupId, sessionId, GROUP_MESSAGE_SENDER_AGENT, agentId, name, avatar, true, visibility, [] as string[], audience)
+	if (privateDelivery == true) { message['privateThreadAgentId'] = agentId }
+	return message
 }
 
 export function createGroupUserImageMessage(groupId: string, sessionId: string, imagePath: string, userName: string = ''): UTSJSONObject {

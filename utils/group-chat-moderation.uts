@@ -25,6 +25,14 @@ const SCHEDULER_LEAK_KEYWORDS: string[] = [
 	'幕后安排',
 	'scheduler',
 	'privateInstruction',
+	'private_group_reply_history',
+	'private_group_dialogue_history',
+	'private_group_message',
+	'private_scheduler_context',
+	'private_delivery_receipt',
+	'刚才私下',
+	'此前私发',
+	'私发内容',
 ]
 
 export function getSchedulerLeakHoldSize(): number {

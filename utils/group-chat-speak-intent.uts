@@ -1,0 +1,744 @@
+import { getAllGroupTaskRows, getGroupMemberRows, getGroupMessageRows, getGroupTaskRows, saveGroupTaskRow } from '@/utils/database.uts'
+import { getAgentById } from '@/utils/agent.uts'
+import { createId, dbRowToGroupMember, dbRowToGroupMessage, GROUP_MESSAGE_SENDER_AGENT } from '@/utils/group-chat-models.uts'
+import { AgentTool, ToolResult } from '@/uni_modules/agent-core/utssdk/tools/agent-tool-types.uts'
+
+const GROUP_SPEAK_INTENT_KIND = 'speak_intent'
+const GROUP_SPEAK_INTENT_TOMBSTONE_KIND = 'speak_intent_tombstone'
+const GROUP_SPEAK_INTENT_TRIGGER = 'next_scheduler_cycle'
+const GROUP_SPEAK_INTENT_DELAY_TRIGGER = 'after_delay'
+const GROUP_SPEAK_INTENT_MIN_DELAY_SECONDS = 5
+const GROUP_SPEAK_INTENT_MAX_DELAY_SECONDS = 30 * 60
+
+export type GroupSpeakIntentClaim = {
+	intentId: string
+	agentId: string
+	requesterAgentId: string
+	intentMode: string
+}
+
+export type GroupSpeakIntentSettlement = {
+	intentId: string
+	claimId: string
+	outcome: string
+}
+
+export type GroupSpeakIntentClaimResult = {
+	claimed: GroupSpeakIntentClaim[]
+	claimFailedAgentIds: string[]
+	terminalWriteFailedIntents: GroupSpeakIntentSettlement[]
+}
+
+export type GroupSpeakIntentExecutionGuard = () => boolean
+
+function readRowString(row: UTSJSONObject, key: string): string {
+	const raw = row[key] as string | null
+	return raw != null ? raw : ''
+}
+
+function readIntentId(payload: UTSJSONObject): string {
+	const raw = payload['id'] as string | null
+	return raw != null ? raw : ''
+}
+
+function readIntentRequesterAgentId(payload: UTSJSONObject): string {
+	const raw = payload['requesterAgentId'] as string | null
+	if (raw != null && raw != '') { return raw }
+	return readRowString(payload, 'ownerAgentId')
+}
+
+function readTaskPayload(row: UTSJSONObject): UTSJSONObject | null {
+	const raw = readRowString(row, 'payload_json')
+	if (raw == '') { return null }
+	try {
+		return JSON.parse(raw) as UTSJSONObject
+	} catch (_e: any) {
+		return null
+	}
+}
+
+function isActiveGroupMember(groupId: string, agentId: string): boolean {
+	if (getAgentById(agentId) == null) { return false }
+	const rows = getGroupMemberRows(groupId)
+	for (let i = 0; i < rows.length; i++) {
+		const member = dbRowToGroupMember(rows[i])
+		if (member.agentId == agentId && member.active == true) { return true }
+	}
+	return false
+}
+
+function saveIntentStatus(payload: UTSJSONObject, status: string, outcome: string): boolean {
+	const updated = JSON.parse(JSON.stringify(payload)) as UTSJSONObject
+	updated['status'] = status
+	updated['outcome'] = outcome
+	updated['resolvedAt'] = Date.now()
+	return saveGroupTaskRow(updated)
+}
+
+function saveIntentClaim(payload: UTSJSONObject, claimId: string): boolean {
+	const updated = JSON.parse(JSON.stringify(payload)) as UTSJSONObject
+	updated['status'] = 'claimed'
+	updated['outcome'] = 'approved'
+	updated['claimId'] = claimId
+	updated['claimedAt'] = Date.now()
+	return saveGroupTaskRow(updated)
+}
+
+function saveIntentCancellationTombstone(payload: UTSJSONObject, outcome: string): boolean {
+	const intentId = readIntentId(payload)
+	const groupId = readRowString(payload, 'groupId')
+	const sessionId = readRowString(payload, 'sessionId')
+	if (intentId == '' || groupId == '' || sessionId == '') { return false }
+	const ownerAgentId = readRowString(payload, 'ownerAgentId')
+	const sourceUserMessageId = readRowString(payload, 'sourceUserMessageId')
+	const now = Date.now()
+	const participants: string[] = []
+	if (ownerAgentId != '') { participants.push(ownerAgentId) }
+	const record = {
+		id: 'gspeak-tombstone-' + intentId,
+		kind: GROUP_SPEAK_INTENT_TOMBSTONE_KIND,
+		groupId: groupId,
+		sessionId: sessionId,
+		title: '成员发言申请取消保护',
+		ownerAgentId: ownerAgentId,
+		participants: participants,
+		status: 'done',
+		sourceReviewId: '',
+		sourceIntentId: intentId,
+		sourceUserMessageId: sourceUserMessageId,
+		outcome: outcome,
+		cancelledAt: now,
+		createdAt: now,
+	} as UTSJSONObject
+	return saveGroupTaskRow(record)
+}
+
+export function saveGroupSpeakIntentSessionCancellationTombstone(groupId: string, sessionId: string, outcome: string, cutoffAt: number): boolean {
+	if (groupId == '' || sessionId == '' || cutoffAt <= 0) { return false }
+	const record = {
+		id: 'gspeak-session-tombstone-' + groupId + '-' + sessionId + '-' + cutoffAt,
+		kind: GROUP_SPEAK_INTENT_TOMBSTONE_KIND,
+		scope: 'session',
+		groupId: groupId,
+		sessionId: sessionId,
+		title: '成员发言申请停止保护',
+		ownerAgentId: '',
+		participants: [] as string[],
+		status: 'done',
+		sourceReviewId: '',
+		outcome: outcome,
+		cancellationCutoff: cutoffAt,
+		cancelledAt: Date.now(),
+		createdAt: cutoffAt,
+	} as UTSJSONObject
+	return saveGroupTaskRow(record)
+}
+
+/**
+ * 原申请状态更新失败时，单独写入取消 tombstone。
+ * 读取待办时会优先识别 tombstone，避免旧 open 记录在下次启动重新唤醒。
+ */
+function saveTerminalIntentStatus(payload: UTSJSONObject, status: string, outcome: string): boolean {
+	if (saveIntentStatus(payload, status, outcome) == true) { return true }
+	return saveIntentCancellationTombstone(payload, outcome)
+}
+
+function collectIntentTombstoneIds(rows: UTSJSONObject[]): string[] {
+	const result: string[] = []
+	for (let i = 0; i < rows.length; i++) {
+		const payload = readTaskPayload(rows[i])
+		if (payload == null) { continue }
+		const kind = payload['kind'] as string | null
+		if (kind != GROUP_SPEAK_INTENT_TOMBSTONE_KIND) { continue }
+		const intentId = readRowString(payload, 'sourceIntentId')
+		if (intentId != '' && result.indexOf(intentId) < 0) {
+			result.push(intentId)
+		}
+	}
+	return result
+}
+
+function readSessionCancellationCutoff(rows: UTSJSONObject[], groupId: string, sessionId: string): number {
+	let cutoff = 0
+	for (let i = 0; i < rows.length; i++) {
+		const payload = readTaskPayload(rows[i])
+		if (payload == null) { continue }
+		const kind = payload['kind'] as string | null
+		const scope = payload['scope'] as string | null
+		if (kind != GROUP_SPEAK_INTENT_TOMBSTONE_KIND || scope != 'session') { continue }
+		if (readRowString(payload, 'groupId') != groupId || readRowString(payload, 'sessionId') != sessionId) { continue }
+		const rawCutoff = payload['cancellationCutoff'] as number | null
+		const current = rawCutoff != null ? rawCutoff : 0
+		if (current > cutoff) { cutoff = current }
+	}
+	return cutoff
+}
+
+function isIntentSuppressedBySessionTombstone(payload: UTSJSONObject, cutoff: number): boolean {
+	if (cutoff <= 0) { return false }
+	const rawCreatedAt = payload['createdAt'] as number | null
+	const createdAt = rawCreatedAt != null ? rawCreatedAt : 0
+	return createdAt <= cutoff
+}
+
+function isValidReasonCode(reasonCode: string): boolean {
+	return reasonCode == 'promised_followup' || reasonCode == 'pending_result' || reasonCode == 'correction' || reasonCode == 'new_information'
+}
+
+function isValidIntentMode(groupId: string, payload: UTSJSONObject, ownerAgentId: string, trigger: string): boolean {
+	const modeRaw = payload['intentMode'] as string | null
+	const intentMode = modeRaw != null ? modeRaw : 'self_followup'
+	if (intentMode == '' || intentMode == 'self_followup') { return true }
+	if (intentMode != 'handoff') { return false }
+	const deliveryMode = payload['deliveryMode'] as string | null
+	const requesterAgentId = readIntentRequesterAgentId(payload)
+	return deliveryMode == 'public'
+		&& trigger == GROUP_SPEAK_INTENT_TRIGGER
+		&& requesterAgentId != ''
+		&& requesterAgentId != ownerAgentId
+		&& isActiveGroupMember(groupId, requesterAgentId) == true
+}
+
+/** 已持久化的成员回复可作为 claim 的提交标记，避免恢复时重复发言。 */
+function readPersistedClaimOutcome(groupId: string, sessionId: string, intentId: string, claimId: string): string {
+	if (groupId == '' || sessionId == '' || intentId == '' || claimId == '') { return '' }
+	let messages: UTSJSONObject[] = [] as UTSJSONObject[]
+	try {
+		const rows = getGroupMessageRows(groupId, sessionId)
+		for (let i = 0; i < rows.length; i++) {
+			messages.push(dbRowToGroupMessage(rows[i]))
+		}
+	} catch (_e: any) {
+		return ''
+	}
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const senderType = messages[i]['senderType'] as string | null
+		const savedIntentId = messages[i]['speakIntentId'] as string | null
+		const savedClaimId = messages[i]['speakIntentClaimId'] as string | null
+		if (senderType != GROUP_MESSAGE_SENDER_AGENT || savedIntentId != intentId || savedClaimId != claimId) { continue }
+		const isStreaming = messages[i]['isStreaming'] as boolean | null
+		if (isStreaming == true) { continue }
+		const storedOutcome = messages[i]['speakIntentOutcome'] as string | null
+		if (storedOutcome != null && storedOutcome != '') { return storedOutcome }
+		const revoked = messages[i]['revoked'] as boolean | null
+		const isError = messages[i]['isError'] as boolean | null
+		const contentRaw = messages[i]['content'] as string | null
+		const content = contentRaw != null ? contentRaw.trim() : ''
+		if (revoked == true) { return 'revoked' }
+		if (isError == true || content == '') { return 'failed' }
+		return 'completed'
+	}
+	return ''
+}
+
+function readIntentWakeAt(payload: UTSJSONObject): number {
+	const trigger = payload['trigger'] as string | null
+	const wakeAt = payload['wakeAt'] as number | null
+	const createdAt = payload['createdAt'] as number | null
+	if (trigger == GROUP_SPEAK_INTENT_DELAY_TRIGGER) {
+		return wakeAt != null ? wakeAt : 0
+	}
+	return createdAt != null ? createdAt : 0
+}
+
+function isPendingIntent(payload: UTSJSONObject, sourceUserMessageId: string, now: number, dueOnly: boolean): boolean {
+	const kind = payload['kind'] as string | null
+	const status = payload['status'] as string | null
+	if (kind != GROUP_SPEAK_INTENT_KIND || status != 'open') { return false }
+	const expiresAt = payload['expiresAt'] as number | null
+	const sourceId = payload['sourceUserMessageId'] as string | null
+	const reasonRaw = payload['reasonCode'] as string | null
+	const reasonCode = reasonRaw != null ? reasonRaw : ''
+	if ((expiresAt != null && expiresAt <= now) || sourceId == null || sourceId != sourceUserMessageId || isValidReasonCode(reasonCode) == false) { return false }
+	return dueOnly == false || readIntentWakeAt(payload) <= now
+}
+
+function collectPendingIntents(groupId: string, sessionId: string, sourceUserMessageId: string, dueOnly: boolean): UTSJSONObject[] {
+	const rows = getGroupTaskRows(groupId, sessionId)
+	const tombstonedIntentIds = collectIntentTombstoneIds(rows)
+	const sessionCancellationCutoff = readSessionCancellationCutoff(rows, groupId, sessionId)
+	const result: UTSJSONObject[] = []
+	const now = Date.now()
+	for (let i = 0; i < rows.length; i++) {
+		const payload = readTaskPayload(rows[i])
+		if (payload == null) { continue }
+		const kind = payload['kind'] as string | null
+		const status = payload['status'] as string | null
+		if (kind != GROUP_SPEAK_INTENT_KIND || status != 'open') { continue }
+		if (tombstonedIntentIds.indexOf(readIntentId(payload)) >= 0) { continue }
+		if (isIntentSuppressedBySessionTombstone(payload, sessionCancellationCutoff) == true) { continue }
+		const agentIdRaw = payload['ownerAgentId'] as string | null
+		const agentId = agentIdRaw != null ? agentIdRaw : ''
+		const expiresAt = payload['expiresAt'] as number | null
+		const sourceIdRaw = payload['sourceUserMessageId'] as string | null
+		const sourceId = sourceIdRaw != null ? sourceIdRaw : ''
+		const triggerRaw = payload['trigger'] as string | null
+		const trigger = triggerRaw != null ? triggerRaw : ''
+		const reasonRaw = payload['reasonCode'] as string | null
+		const reasonCode = reasonRaw != null ? reasonRaw : ''
+		if (expiresAt != null && expiresAt <= now) {
+			saveTerminalIntentStatus(payload, 'cancelled', 'expired')
+			continue
+		}
+		if (sourceId == '') {
+			saveTerminalIntentStatus(payload, 'cancelled', 'invalid_payload')
+			continue
+		}
+		if (sourceId != sourceUserMessageId) {
+			continue
+		}
+		if (isActiveGroupMember(groupId, agentId) == false) {
+			saveTerminalIntentStatus(payload, 'cancelled', 'agent_unavailable')
+			continue
+		}
+		if (isValidIntentMode(groupId, payload, agentId, trigger) == false) {
+			saveTerminalIntentStatus(payload, 'cancelled', 'invalid_handoff')
+			continue
+		}
+		if ((trigger != GROUP_SPEAK_INTENT_TRIGGER && trigger != GROUP_SPEAK_INTENT_DELAY_TRIGGER) || isValidReasonCode(reasonCode) == false || readIntentWakeAt(payload) <= 0) {
+			saveTerminalIntentStatus(payload, 'cancelled', 'invalid_payload')
+			continue
+		}
+		if (isPendingIntent(payload, sourceUserMessageId, now, dueOnly) == true) {
+			result.push(payload)
+		}
+	}
+	return result
+}
+
+/** 同一 Agent 流内只保留一次申请；不同回合可以无限续谈。 */
+function hasOpenIntentForRequestTurn(groupId: string, sessionId: string, requestTurnId: string): boolean {
+	if (requestTurnId == '') { return true }
+	const rows = getGroupTaskRows(groupId, sessionId)
+	for (let i = 0; i < rows.length; i++) {
+		const payload = readTaskPayload(rows[i])
+		if (payload == null) { continue }
+		const kind = payload['kind'] as string | null
+		const status = payload['status'] as string | null
+		const turnRaw = payload['requestTurnId'] as string | null
+		if (kind == GROUP_SPEAK_INTENT_KIND && status == 'open' && turnRaw == requestTurnId) { return true }
+	}
+	return false
+}
+
+class GroupRequestSpeakTool implements AgentTool {
+	name: string = 'group_request_speak'
+	description: string = '申请在当前群聊的下一次调度周期或短暂延迟后，沿当前公开或私聊送达范围获得一次后续发言机会。公开的立即申请可用 next_agent_id 建议另一位成员接续你的公开发言；这仍需调度器批准，不能直接唤醒对方。它只登记固定元数据，不能保证获准，也不能绕过调度器；禁止传入聊天正文。'
+	parameters: UTSJSONObject = {
+		'type': 'object',
+		'properties': {
+			'trigger': {
+				'type': 'string',
+				'enum': ['next_scheduler_cycle', 'after_delay'],
+				'description': '立即进入下一次调度用 next_scheduler_cycle；需要稍后主动唤醒用 after_delay。'
+			},
+			'reason_code': {
+				'type': 'string',
+				'enum': ['promised_followup', 'pending_result', 'correction', 'new_information'],
+				'description': '申请原因，只能选择固定枚举。'
+			},
+			'delay_seconds': {
+				'type': 'number',
+				'description': 'trigger=after_delay 时填写 5 到 1800 秒；立即调度时省略或填 0。'
+			},
+			'next_agent_id': {
+				'type': 'string',
+				'description': '仅公开且 trigger=next_scheduler_cycle 时可填写群成员 Agent ID，表示建议该成员接续你的公开发言。私聊、延迟唤醒、自己续讲时省略。'
+			}
+		},
+		'required': ['trigger', 'reason_code']
+	} as UTSJSONObject
+
+	private groupId: string
+	private sessionId: string
+	private agentId: string
+	private sourceUserMessageId: string
+	private deliveryMode: string
+	private requestTurnId: string
+	private isExecutionActive: GroupSpeakIntentExecutionGuard
+
+	constructor(groupId: string, sessionId: string, agentId: string, sourceUserMessageId: string, deliveryMode: string, requestTurnId: string, isExecutionActive: GroupSpeakIntentExecutionGuard) {
+		this.groupId = groupId
+		this.sessionId = sessionId
+		this.agentId = agentId
+		this.sourceUserMessageId = sourceUserMessageId
+		this.deliveryMode = deliveryMode == 'user_private' ? 'user_private' : 'public'
+		this.requestTurnId = requestTurnId
+		this.isExecutionActive = isExecutionActive
+	}
+
+	execute(args: UTSJSONObject): Promise<ToolResult> {
+		return new Promise<ToolResult>((resolve) => {
+			if (this.isExecutionActive() == false) {
+				resolve({ content: '当前群聊回合已结束，发言申请未保存。', isError: true } as ToolResult)
+				return
+			}
+			const triggerRaw = args['trigger'] as string | null
+			const reasonRaw = args['reason_code'] as string | null
+			const delayRaw = args['delay_seconds'] as number | null
+			const nextAgentRaw = args['next_agent_id'] as string | null
+			const trigger = triggerRaw != null ? triggerRaw : ''
+			const reasonCode = reasonRaw != null ? reasonRaw : ''
+			const nextAgentId = nextAgentRaw != null ? nextAgentRaw.trim() : ''
+			const delayed = trigger == GROUP_SPEAK_INTENT_DELAY_TRIGGER
+			const validTrigger = trigger == GROUP_SPEAK_INTENT_TRIGGER || delayed == true
+			const delaySeconds = delayRaw != null ? delayRaw : (delayed == true ? 30 : 0)
+			const validDelay = delayed == false || (delaySeconds >= GROUP_SPEAK_INTENT_MIN_DELAY_SECONDS && delaySeconds <= GROUP_SPEAK_INTENT_MAX_DELAY_SECONDS)
+			if (validTrigger == false || isValidReasonCode(reasonCode) == false || validDelay == false) {
+				resolve({ content: '发言申请参数无效。', isError: true } as ToolResult)
+				return
+			}
+			if (this.sourceUserMessageId == '' || this.requestTurnId == '' || isActiveGroupMember(this.groupId, this.agentId) == false) {
+				resolve({ content: '当前群聊上下文已失效，无法提交发言申请。', isError: true } as ToolResult)
+				return
+			}
+			let ownerAgentId = this.agentId
+			let intentMode = 'self_followup'
+			if (nextAgentId != '') {
+				if (this.deliveryMode != 'public' || delayed == true || nextAgentId == this.agentId || isActiveGroupMember(this.groupId, nextAgentId) == false) {
+					resolve({ content: '公开交接申请无效：只能立即建议另一位在群成员接续。', isError: true } as ToolResult)
+					return
+				}
+				ownerAgentId = nextAgentId
+				intentMode = 'handoff'
+			}
+			if (hasOpenIntentForRequestTurn(this.groupId, this.sessionId, this.requestTurnId) == true) {
+				resolve({ content: '本次发言已提交过申请，不会重复登记。', isError: false } as ToolResult)
+				return
+			}
+			const now = Date.now()
+			const wakeAt = delayed == true ? now + Math.floor(delaySeconds * 1000) : now
+			const participants: string[] = [this.agentId]
+			if (ownerAgentId != this.agentId) { participants.push(ownerAgentId) }
+			const record = {
+				id: createId('gspeak'),
+				kind: GROUP_SPEAK_INTENT_KIND,
+				groupId: this.groupId,
+				sessionId: this.sessionId,
+				title: intentMode == 'handoff' ? '成员申请接续发言' : '成员申请后续发言',
+				ownerAgentId: ownerAgentId,
+				requesterAgentId: this.agentId,
+				requestTurnId: this.requestTurnId,
+				intentMode: intentMode,
+				participants: participants,
+				status: 'open',
+				sourceReviewId: '',
+				sourceUserMessageId: this.sourceUserMessageId,
+				trigger: trigger,
+				reasonCode: reasonCode,
+				deliveryMode: this.deliveryMode,
+				createdAt: now,
+				wakeAt: wakeAt,
+			} as UTSJSONObject
+			if (saveGroupTaskRow(record) == false) {
+				resolve({ content: '发言申请保存失败。', isError: true } as ToolResult)
+				return
+			}
+			const resultText = intentMode == 'handoff'
+				? '公开交接申请已提交，是否由对方接续仍由下一次调度决定。'
+				: (delayed == true ? '延迟发言申请已登记，到时会唤醒调度器决定是否发言。' : '发言申请已提交，是否获准由下一次调度决定。')
+			resolve({ content: resultText, isError: false } as ToolResult)
+		})
+	}
+}
+
+export function createGroupRequestSpeakTool(groupId: string, sessionId: string, agentId: string, sourceUserMessageId: string, deliveryMode: string, requestTurnId: string, isExecutionActive: GroupSpeakIntentExecutionGuard): AgentTool {
+	return new GroupRequestSpeakTool(groupId, sessionId, agentId, sourceUserMessageId, deliveryMode, requestTurnId, isExecutionActive) as AgentTool
+}
+
+export function hasPendingGroupSpeakIntent(groupId: string, sessionId: string, sourceUserMessageId: string): boolean {
+	if (sourceUserMessageId == '') { return false }
+	return collectPendingIntents(groupId, sessionId, sourceUserMessageId, true).length > 0
+}
+
+export function buildPendingGroupSpeakIntentSummary(groupId: string, sessionId: string, sourceUserMessageId: string): string {
+	if (sourceUserMessageId == '') { return '(暂无待决发言申请)' }
+	const intents = collectPendingIntents(groupId, sessionId, sourceUserMessageId, true)
+	if (intents.length == 0) { return '(暂无待决发言申请)' }
+	const lines: string[] = []
+	for (let i = 0; i < intents.length; i++) {
+		const ownerRaw = intents[i]['ownerAgentId'] as string | null
+		const requesterAgentId = readIntentRequesterAgentId(intents[i])
+		const reasonRaw = intents[i]['reasonCode'] as string | null
+		const triggerRaw = intents[i]['trigger'] as string | null
+		const intentModeRaw = intents[i]['intentMode'] as string | null
+		const intentMode = intentModeRaw == 'handoff' ? 'handoff' : 'self_followup'
+		const trigger = triggerRaw == GROUP_SPEAK_INTENT_DELAY_TRIGGER ? GROUP_SPEAK_INTENT_DELAY_TRIGGER : GROUP_SPEAK_INTENT_TRIGGER
+		const deliveryRaw = intents[i]['deliveryMode'] as string | null
+		const deliveryMode = deliveryRaw == 'user_private' ? 'user_private' : 'public'
+		lines.push('- agentId=' + (ownerRaw != null ? ownerRaw : '') + ' / requesterAgentId=' + requesterAgentId + ' / intentMode=' + intentMode + ' / trigger=' + trigger + ' / deliveryMode=' + deliveryMode + ' / reasonCode=' + (reasonRaw != null ? reasonRaw : ''))
+	}
+	return lines.join('\n')
+}
+
+/**
+ * 幂等写入申请终态。claimId 为空时只允许终结仍为 open 的申请，避免旧重试误伤新的 claim。
+ */
+export function settleGroupSpeakIntent(groupId: string, sessionId: string, intentId: string, claimId: string, outcome: string): boolean {
+	if (intentId == '') { return true }
+	const rows = getGroupTaskRows(groupId, sessionId)
+	for (let i = 0; i < rows.length; i++) {
+		const payload = readTaskPayload(rows[i])
+		if (payload == null) { continue }
+		const kind = payload['kind'] as string | null
+		const status = payload['status'] as string | null
+		const savedId = readIntentId(payload)
+		const savedClaimId = payload['claimId'] as string | null
+		if (kind != GROUP_SPEAK_INTENT_KIND || savedId != intentId) { continue }
+		if (status == 'done' || status == 'cancelled') { return true }
+		if (claimId == '') {
+			if (status != 'open') { return true }
+		} else if (status != 'claimed' || savedClaimId != claimId) {
+			return true
+		}
+		return saveTerminalIntentStatus(payload, 'done', outcome)
+	}
+	return true
+}
+
+/**
+ * 调度决定执行前先把获准申请置为 claimed。只有 claim 成功的成员才能继续发言；
+ * 这样即使进程在执行中断，旧 open 申请也不会被恢复流程重复唤醒。
+ */
+export function claimPendingGroupSpeakIntents(groupId: string, sessionId: string, sourceUserMessageId: string, selectedAgentIds: string[], claimId: string): GroupSpeakIntentClaimResult {
+	const result: GroupSpeakIntentClaimResult = {
+		claimed: [] as GroupSpeakIntentClaim[],
+		claimFailedAgentIds: [] as string[],
+		terminalWriteFailedIntents: [] as GroupSpeakIntentSettlement[],
+	}
+	if (sourceUserMessageId == '') { return result }
+	const intents = collectPendingIntents(groupId, sessionId, sourceUserMessageId, true)
+	const claimedAgentIds: string[] = []
+	for (let i = 0; i < intents.length; i++) {
+		const ownerRaw = intents[i]['ownerAgentId'] as string | null
+		const ownerAgentId = ownerRaw != null ? ownerRaw : ''
+		if (ownerAgentId == '') { continue }
+		if (selectedAgentIds.indexOf(ownerAgentId) >= 0) {
+			if (claimedAgentIds.indexOf(ownerAgentId) >= 0) {
+				if (saveTerminalIntentStatus(intents[i], 'done', 'coalesced_with_selected_target') == false) {
+					result.terminalWriteFailedIntents.push({
+						intentId: readIntentId(intents[i]),
+						claimId: '',
+						outcome: 'coalesced_with_selected_target',
+					} as GroupSpeakIntentSettlement)
+				}
+				continue
+			}
+			if (saveIntentClaim(intents[i], claimId) == true) {
+				const requesterAgentId = readIntentRequesterAgentId(intents[i])
+				const intentModeRaw = intents[i]['intentMode'] as string | null
+				result.claimed.push({
+					intentId: readIntentId(intents[i]),
+					agentId: ownerAgentId,
+					requesterAgentId: requesterAgentId,
+					intentMode: intentModeRaw == 'handoff' ? 'handoff' : 'self_followup',
+				} as GroupSpeakIntentClaim)
+				claimedAgentIds.push(ownerAgentId)
+			} else {
+				result.claimFailedAgentIds.push(ownerAgentId)
+			}
+			continue
+		}
+		if (saveTerminalIntentStatus(intents[i], 'done', 'rejected') == false) {
+			result.terminalWriteFailedIntents.push({
+				intentId: readIntentId(intents[i]),
+				claimId: '',
+				outcome: 'rejected',
+			} as GroupSpeakIntentSettlement)
+		}
+	}
+	return result
+}
+
+export function resolvePendingGroupSpeakIntentDeliveryMode(groupId: string, sessionId: string, sourceUserMessageId: string): string {
+	if (sourceUserMessageId == '') { return 'public' }
+	const intents = collectPendingIntents(groupId, sessionId, sourceUserMessageId, true)
+	for (let i = 0; i < intents.length; i++) {
+		const deliveryMode = intents[i]['deliveryMode'] as string | null
+		if (deliveryMode == 'user_private') { return 'user_private' }
+	}
+	return 'public'
+}
+
+export function getNextGroupSpeakIntentDelay(groupId: string, sessionId: string, sourceUserMessageId: string): number {
+	if (sourceUserMessageId == '') { return -1 }
+	const intents = collectPendingIntents(groupId, sessionId, sourceUserMessageId, false)
+	if (intents.length == 0) { return -1 }
+	const now = Date.now()
+	let delay = -1
+	for (let i = 0; i < intents.length; i++) {
+		const current = readIntentWakeAt(intents[i]) - now
+		const normalized = current > 0 ? current : 0
+		if (delay < 0 || normalized < delay) { delay = normalized }
+	}
+	return delay
+}
+
+export function cancelPendingGroupSpeakIntents(groupId: string, sessionId: string, sourceUserMessageId: string, outcome: string): boolean {
+	if (sourceUserMessageId == '') { return true }
+	const intents = collectPendingIntents(groupId, sessionId, sourceUserMessageId, false)
+	let saved = true
+	for (let i = 0; i < intents.length; i++) {
+		if (saveTerminalIntentStatus(intents[i], 'cancelled', outcome) == false) { saved = false }
+	}
+	return saved
+}
+
+export function cancelGroupSpeakIntentTarget(groupId: string, sessionId: string, sourceUserMessageId: string, ownerAgentId: string, outcome: string): boolean {
+	if (sourceUserMessageId == '' || ownerAgentId == '') { return true }
+	const rows = getGroupTaskRows(groupId, sessionId)
+	let saved = true
+	for (let i = 0; i < rows.length; i++) {
+		const payload = readTaskPayload(rows[i])
+		if (payload == null) { continue }
+		const kind = payload['kind'] as string | null
+		const status = payload['status'] as string | null
+		const source = payload['sourceUserMessageId'] as string | null
+		const owner = payload['ownerAgentId'] as string | null
+		if (kind == GROUP_SPEAK_INTENT_KIND && status == 'open' && source == sourceUserMessageId && owner == ownerAgentId) {
+			if (saveTerminalIntentStatus(payload, 'cancelled', outcome) == false) { saved = false }
+		}
+	}
+	return saved
+}
+
+export function cancelAllPendingGroupSpeakIntents(groupId: string, sessionId: string, outcome: string, cutoffAt: number): boolean {
+	const sessionTombstoneSaved = saveGroupSpeakIntentSessionCancellationTombstone(groupId, sessionId, outcome, cutoffAt)
+	const rows = getGroupTaskRows(groupId, sessionId)
+	let saved = true
+	for (let i = 0; i < rows.length; i++) {
+		const payload = readTaskPayload(rows[i])
+		if (payload == null) { continue }
+		const kind = payload['kind'] as string | null
+		const status = payload['status'] as string | null
+		const createdAtRaw = payload['createdAt'] as number | null
+		const createdAt = createdAtRaw != null ? createdAtRaw : 0
+		if (kind == GROUP_SPEAK_INTENT_KIND && (status == 'open' || status == 'claimed') && createdAt <= cutoffAt) {
+			if (saveTerminalIntentStatus(payload, 'cancelled', outcome) == false) { saved = false }
+		}
+	}
+	return sessionTombstoneSaved == true && saved == true
+}
+
+/**
+ * 冷启动时把上次进程中断留下的 claimed 申请重新打开。
+ * 调用方传入当前进程已经接管的会话，避免恢复流程误开当前回合的 claim。
+ */
+export function recoverInterruptedGroupSpeakIntents(protectedSessionKeys: string[]): boolean {
+	let rows: UTSJSONObject[] = [] as UTSJSONObject[]
+	try {
+		rows = getAllGroupTaskRows()
+	} catch (_e: any) {
+		return false
+	}
+	const tombstonedIntentIds = collectIntentTombstoneIds(rows)
+	const now = Date.now()
+	let allSaved = true
+	for (let i = 0; i < rows.length; i++) {
+		const payload = readTaskPayload(rows[i])
+		if (payload == null) { continue }
+		const kind = payload['kind'] as string | null
+		const status = payload['status'] as string | null
+		if (kind != GROUP_SPEAK_INTENT_KIND || status != 'claimed') { continue }
+		const intentId = readIntentId(payload)
+		if (intentId != '' && tombstonedIntentIds.indexOf(intentId) >= 0) { continue }
+		const groupId = readRowString(payload, 'groupId')
+		const sessionId = readRowString(payload, 'sessionId')
+		if (groupId != '' && sessionId != '' && protectedSessionKeys.indexOf(groupId + '\n' + sessionId) >= 0) { continue }
+		const sourceUserMessageId = readRowString(payload, 'sourceUserMessageId')
+		const ownerAgentId = readRowString(payload, 'ownerAgentId')
+		const trigger = readRowString(payload, 'trigger')
+		const reasonCode = readRowString(payload, 'reasonCode')
+		const expiresAt = payload['expiresAt'] as number | null
+		const validTrigger = trigger == GROUP_SPEAK_INTENT_TRIGGER || trigger == GROUP_SPEAK_INTENT_DELAY_TRIGGER
+		let terminalOutcome = ''
+		let terminalStatus = 'cancelled'
+		if (intentId == '' || groupId == '' || sessionId == '' || sourceUserMessageId == '' || ownerAgentId == '' || readIntentWakeAt(payload) <= 0 || validTrigger == false || isValidReasonCode(reasonCode) == false) {
+			terminalOutcome = 'invalid_payload'
+		} else if (expiresAt != null && expiresAt <= now) {
+			terminalOutcome = 'expired'
+		} else if (isIntentSuppressedBySessionTombstone(payload, readSessionCancellationCutoff(rows, groupId, sessionId)) == true) {
+			terminalOutcome = 'superseded_by_user_message'
+		} else {
+			const persistedOutcome = readPersistedClaimOutcome(groupId, sessionId, intentId, readRowString(payload, 'claimId'))
+			if (persistedOutcome != '') {
+				terminalOutcome = persistedOutcome
+				terminalStatus = 'done'
+			} else if (isActiveGroupMember(groupId, ownerAgentId) == false) {
+				terminalOutcome = 'agent_unavailable'
+			} else if (isValidIntentMode(groupId, payload, ownerAgentId, trigger) == false) {
+				terminalOutcome = 'invalid_handoff'
+			}
+		}
+		if (terminalOutcome != '') {
+			if (saveTerminalIntentStatus(payload, terminalStatus, terminalOutcome) == false) { allSaved = false }
+			continue
+		}
+		const recovered = JSON.parse(JSON.stringify(payload)) as UTSJSONObject
+		recovered['status'] = 'open'
+		recovered['outcome'] = 'recovered_after_process_interruption'
+		recovered['claimId'] = ''
+		recovered['claimedAt'] = 0
+		recovered['recoveredAt'] = now
+		if (saveGroupTaskRow(recovered) == false) { allSaved = false }
+	}
+	return allSaved
+}
+
+export function listOpenGroupSpeakIntentTargets(): UTSJSONObject[] {
+	const rows = getAllGroupTaskRows()
+	const tombstonedIntentIds = collectIntentTombstoneIds(rows)
+	const now = Date.now()
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < rows.length; i++) {
+		const payload = readTaskPayload(rows[i])
+		if (payload == null) { continue }
+		const kind = payload['kind'] as string | null
+		const status = payload['status'] as string | null
+		const expiresAt = payload['expiresAt'] as number | null
+		if (kind != GROUP_SPEAK_INTENT_KIND || status != 'open') { continue }
+		if (tombstonedIntentIds.indexOf(readIntentId(payload)) >= 0) { continue }
+		if (expiresAt != null && expiresAt <= now) {
+			saveTerminalIntentStatus(payload, 'cancelled', 'expired')
+			continue
+		}
+		const groupIdRaw = payload['groupId'] as string | null
+		const sessionIdRaw = payload['sessionId'] as string | null
+		const sourceIdRaw = payload['sourceUserMessageId'] as string | null
+		const ownerRaw = payload['ownerAgentId'] as string | null
+		const triggerRaw = payload['trigger'] as string | null
+		const reasonRaw = payload['reasonCode'] as string | null
+		const deliveryRaw = payload['deliveryMode'] as string | null
+		const groupId = groupIdRaw != null ? groupIdRaw : ''
+		const sessionId = sessionIdRaw != null ? sessionIdRaw : ''
+		const sourceUserMessageId = sourceIdRaw != null ? sourceIdRaw : ''
+		const ownerAgentId = ownerRaw != null ? ownerRaw : ''
+		const trigger = triggerRaw != null ? triggerRaw : ''
+		const reasonCode = reasonRaw != null ? reasonRaw : ''
+		const wakeAt = readIntentWakeAt(payload)
+		const validTrigger = trigger == GROUP_SPEAK_INTENT_TRIGGER || trigger == GROUP_SPEAK_INTENT_DELAY_TRIGGER
+		const sessionCancellationCutoff = readSessionCancellationCutoff(rows, groupId, sessionId)
+		if (isIntentSuppressedBySessionTombstone(payload, sessionCancellationCutoff) == true) { continue }
+		if (groupId == '' || sessionId == '' || sourceUserMessageId == '' || ownerAgentId == '' || wakeAt <= 0 || validTrigger == false || isValidReasonCode(reasonCode) == false) {
+			saveTerminalIntentStatus(payload, 'cancelled', 'invalid_payload')
+			continue
+		}
+		if (isActiveGroupMember(groupId, ownerAgentId) == false) {
+			saveTerminalIntentStatus(payload, 'cancelled', 'agent_unavailable')
+			continue
+		}
+		if (isValidIntentMode(groupId, payload, ownerAgentId, trigger) == false) {
+			saveTerminalIntentStatus(payload, 'cancelled', 'invalid_handoff')
+			continue
+		}
+		result.push({
+			groupId: groupId,
+			sessionId: sessionId,
+			sourceUserMessageId: sourceUserMessageId,
+			ownerAgentId: ownerAgentId,
+			deliveryMode: deliveryRaw == 'user_private' ? 'user_private' : 'public',
+			delayMs: wakeAt > now ? wakeAt - now : 0,
+		} as UTSJSONObject)
+	}
+	return result
+}

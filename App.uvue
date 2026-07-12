@@ -1,5 +1,6 @@
 <script lang="uts">
 	import { initDatabase, initDefaultProviders } from '@/utils/database.uts'
+	import { resumeGroupSpeakIntentWakes } from '@/utils/group-chat-turn-runtime.uts'
 
   // #ifdef APP-ANDROID || APP-HARMONY
 	let firstBackTime = 0
@@ -11,6 +12,9 @@
 				// 初始化失败时停止后续数据库写入，避免在残缺 schema 上继续运行。
 				initDatabase()
 				initDefaultProviders()
+				try {
+					resumeGroupSpeakIntentWakes()
+				} catch (_wakeError: any) {}
 			} catch (_e: any) {
 				// onLaunch 时页面可能尚未挂载，延迟到首屏可承载 toast 后再提示。
 				setTimeout(() => {
@@ -24,6 +28,9 @@
 		},
 		onShow: function () {
 			console.log('App Show')
+			try {
+				resumeGroupSpeakIntentWakes()
+			} catch (_e: any) {}
 		},
 		onHide: function () {
 			console.log('App Hide')

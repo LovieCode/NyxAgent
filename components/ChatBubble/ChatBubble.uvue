@@ -2,7 +2,16 @@
 	<view :class="bubbleClass">
 		<view v-if="role == 'user'" class="user-row">
 			<view class="user-stack">
-				<text v-if="userDisplayName != ''" class="speaker-name user-speaker-name">{{userDisplayName}}</text>
+				<view v-if="userDisplayName != '' || isPrivateMessage == true" class="user-meta-row">
+					<text v-if="userDisplayName != ''" class="speaker-name user-speaker-name">{{userDisplayName}}</text>
+					<view v-if="isPrivateMessage == true" class="private-message-badge">
+						<oui-icon-unix name="lock" size="10px" color="#9A5A72" />
+						<text class="private-message-badge-text">{{privateMessageLabel != '' ? privateMessageLabel : '私聊消息'}}</text>
+					</view>
+					<view v-if="privateDeliveryStatusText != ''" :class="privateDeliveryStatusClass">
+						<text class="private-delivery-status-text">{{privateDeliveryStatusText}}</text>
+					</view>
+				</view>
 				<view class="user-bubble" :class="isPressed ? 'bubble-pressed' : ''"
 					@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
 					@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
@@ -40,7 +49,10 @@
 							<text v-if="assistantName != ''" class="speaker-name assistant-name">{{assistantName}}</text>
 							<view v-if="isPrivateMessage == true && pi == 0" class="private-message-badge">
 								<oui-icon-unix name="lock" size="10px" color="#9A5A72" />
-								<text class="private-message-badge-text">私发给你</text>
+									<text class="private-message-badge-text">{{privateMessageLabel != '' ? privateMessageLabel : '私发给你'}}</text>
+							</view>
+							<view v-if="pi == 0 && privateDeliveryStatusText != ''" :class="privateDeliveryStatusClass">
+								<text class="private-delivery-status-text">{{privateDeliveryStatusText}}</text>
 							</view>
 						</view>
 					<view class="ai-content timeline-content" :class="(isPressed ? 'bubble-pressed ' : '') + (isErrorBool ? 'ai-content-error' : '')"
@@ -108,7 +120,10 @@
 					<text v-if="assistantName != ''" class="speaker-name assistant-name">{{assistantName}}</text>
 					<view v-if="isPrivateMessage == true" class="private-message-badge">
 						<oui-icon-unix name="lock" size="10px" color="#9A5A72" />
-						<text class="private-message-badge-text">私发给你</text>
+							<text class="private-message-badge-text">{{privateMessageLabel != '' ? privateMessageLabel : '私发给你'}}</text>
+					</view>
+					<view v-if="privateDeliveryStatusText != ''" :class="privateDeliveryStatusClass">
+						<text class="private-delivery-status-text">{{privateDeliveryStatusText}}</text>
 					</view>
 				</view>
 				<view class="ai-content timeline-content" :class="(isPressed ? 'bubble-pressed ' : '') + (isErrorBool ? 'ai-content-error' : '')"
@@ -244,6 +259,14 @@
 				type: Boolean,
 				default: false
 			},
+			privateMessageLabel: {
+				type: String,
+				default: ''
+			},
+			privateDeliveryStatus: {
+				type: String,
+				default: ''
+			},
 			userNickname: {
 				type: String,
 				default: ''
@@ -342,6 +365,20 @@
 			},
 			isErrorBool(): boolean {
 				return this.isError == true
+			},
+			privateDeliveryStatusText(): string {
+				if (this.isPrivateMessage == false) { return '' }
+				const status = this.privateDeliveryStatus.trim()
+				if (status == 'pending') { return '待送达' }
+				if (status == 'failed') { return '发送失败' }
+				if (status == 'aborted') { return '已中止' }
+				if (status == 'revoked') { return '未送达' }
+				return ''
+			},
+			privateDeliveryStatusClass(): string {
+				const status = this.privateDeliveryStatus.trim()
+				if (status == 'pending') { return 'private-delivery-status private-delivery-status-pending' }
+				return 'private-delivery-status private-delivery-status-error'
 			},
 			userInitial(): string {
 				const name = this.userNickname as string
@@ -556,6 +593,16 @@
 		min-height: 20px;
 		margin-bottom: 4px;
 	}
+	.user-meta-row {
+		flex-direction: row;
+		align-items: center;
+		justify-content: flex-end;
+		min-height: 20px;
+		margin-bottom: 4px;
+	}
+	.user-meta-row .user-speaker-name {
+		margin-bottom: 0;
+	}
 	.assistant-meta-row .assistant-name {
 		margin-bottom: 0;
 	}
@@ -578,6 +625,32 @@
 		line-height: 12px;
 		color: #9A5A72;
 		margin-left: 3px;
+	}
+	.private-delivery-status {
+		margin-left: 6px;
+		padding-left: 6px;
+		padding-right: 6px;
+		padding-top: 2px;
+		padding-bottom: 2px;
+		border-radius: 7px;
+		border-width: 1px;
+		border-style: solid;
+	}
+	.private-delivery-status-pending {
+		background-color: #F7F4FF;
+		border-color: rgba(124, 108, 181, 0.2);
+	}
+	.private-delivery-status-error {
+		background-color: #FFF3F3;
+		border-color: rgba(220, 78, 78, 0.22);
+	}
+	.private-delivery-status-text {
+		font-size: 10px;
+		line-height: 12px;
+		color: #A24141;
+	}
+	.private-delivery-status-pending .private-delivery-status-text {
+		color: #6E5DA4;
 	}
 	.speaker-name {
 		font-size: 13px;

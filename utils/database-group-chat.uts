@@ -466,6 +466,15 @@ export function getGroupTaskRows(groupId: string, sessionId: string): UTSJSONObj
 	return rowsToObjects(result)
 }
 
+export function getAllGroupTaskRows(): UTSJSONObject[] {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query('SELECT * FROM group_chat_tasks ORDER BY updated_at DESC')
+	db.close()
+	assertSqlSuccess(result, '读取全部群聊任务失败')
+	return rowsToObjects(result)
+}
+
 export function getGroupAgentMemoryRows(groupId: string, sessionId: string, agentId: string): UTSJSONObject[] {
 	const db = getDb()
 	ensureGroupChatTables(db)

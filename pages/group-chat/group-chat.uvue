@@ -31,6 +31,8 @@
 						:isError="item.renderMessage.isError == true"
 							:isStreaming="item.renderMessage.isStreaming == true"
 							:isPrivateMessage="isPrivateMessage(item.renderMessage)"
+							:privateMessageLabel="readPrivateMessageLabel(item.renderMessage)"
+							:privateDeliveryStatus="readPrivateDeliveryStatus(item.renderMessage)"
 						:cancelToken="longpressCancelToken"
 						@contentResize="onMessageContentResize"
 						@bubbleLongpress="onMessageLongpress(item.sourceMessage)"
@@ -52,18 +54,27 @@
 		</view>
 
 		<view class="chat-bottom" :style="{ marginBottom: keyboardInset + 'px' }">
+			<view v-if="privateTargetAgentId != ''" class="private-compose-bar">
+				<view class="private-compose-main">
+					<oui-icon-unix name="lock" size="13px" color="#9A5A72" />
+					<text class="private-compose-text">群内私聊 · {{privateTargetAgentName}}</text>
+				</view>
+				<view class="private-compose-close" @click="clearPrivateTarget">
+					<oui-icon-unix name="close" size="14px" color="#8A7B84" />
+				</view>
+			</view>
 			<view class="input-bar">
 				<view class="toolbar-toggle" @click="toggleToolPanel">
 					<oui-icon-unix name="plus" size="18px" color="#FFFFFF" />
 				</view>
 				<view class="input-wrap">
-					<textarea class="text-input" v-model="inputText" :style="{ height: inputHeight + 'px' }" :adjust-position="false" placeholder="给群里发消息..." placeholder-style="color:#9CA3AF" @linechange="onInputLineChange" :disabled="isGenerating == true" />
+					<textarea class="text-input" v-model="inputText" :style="{ height: inputHeight + 'px' }" :adjust-position="false" :placeholder="inputPlaceholder" placeholder-style="color:#9CA3AF" @linechange="onInputLineChange" />
 				</view>
-				<view v-if="isGenerating == false" class="send-chip" @click="sendMessage">
-					<text class="send-chip-text">发送</text>
+				<view v-if="isGenerating == true" class="stop-discussion-chip" @click="stopDiscussion">
+					<oui-icon-unix name="stop" size="15px" color="#FFFFFF" />
 				</view>
-				<view v-else class="send-chip send-chip-stop" @click="stopDiscussion">
-					<text class="send-chip-text">停止</text>
+				<view class="send-chip" @click="sendMessage">
+					<text class="send-chip-text">{{isGenerating == true ? '插话' : '发送'}}</text>
 				</view>
 			</view>
 			<view v-if="showToolPanel" class="toolbar-panel">
@@ -121,6 +132,10 @@
 										<view class="toolbar-grid-icon"><oui-icon-unix name="file-text" size="26px" color="var(--rice-primary-color)" /></view>
 										<text class="toolbar-grid-label">调度记录</text>
 									</view>
+									<view class="toolbar-grid-item" @click="chooseAgentForPrivateMessage">
+										<view class="toolbar-grid-icon"><oui-icon-unix name="lock" size="26px" color="var(--rice-primary-color)" /></view>
+										<text class="toolbar-grid-label">群内私聊</text>
+									</view>
 								</view>
 							</view>
 						</view>
@@ -153,6 +168,7 @@
 	import {
 		buildGroupDispatchHistoryText,
 		buildGroupMemberAgentItems as buildGroupMemberAgentItemsForPage,
+		buildGroupPrivateAgentItems as buildGroupPrivateAgentItemsForPage,
 		buildGroupMemberAgentNames,
 		buildGroupToolbarTrackStyle,
 		calcGroupInputHeight,
@@ -199,12 +215,12 @@
 		getGroupChatTurnErrorRevision,
 		getGroupChatTurnMessages,
 		isGroupChatTurnRunning,
+		dispatchGroupChatUserMessage,
 		startGroupChatTurn,
 		stopGroupChatTurn,
 	} from '@/utils/group-chat-turn-runtime.uts'
 	import {
 		GROUP_MESSAGE_SENDER_AGENT,
-		GROUP_MESSAGE_AUDIENCE_USER,
 		GROUP_MESSAGE_VISIBILITY_PRIVATE,
 		type GroupChat,
 		type GroupChatSession,
@@ -212,6 +228,7 @@
 		createGroupUserFileMessage,
 		createGroupUserImageMessage,
 		createGroupUserMessage,
+		createGroupUserPrivateMessage,
 		displaySessionTitle,
 		ensureGroupActiveSession,
 		getActiveGroupChatId,
@@ -231,6 +248,11 @@
 let groupTurnRuntimeCallback: (() => void) | null = null
 let groupTurnRuntimeEventName: string = ''
 let groupTurnRuntimeSyncTimer: number = -1
+
+	type GroupPrivateDraft = {
+		agentId: string
+		text: string
+	}
 
 	export default {
 		data() {
@@ -279,6 +301,10 @@ let groupTurnRuntimeSyncTimer: number = -1
 				longpressCancelToken: 0 as number,
 				userNickname: '' as string,
 				userAvatar: '' as string,
+				privateTargetAgentId: '' as string,
+				privateTargetAgentName: '' as string,
+				publicDraftText: '' as string,
+				privateDrafts: [] as GroupPrivateDraft[],
 					imageCaptionTaskId: 0 as number,
 					keyboardHeightListenerId: -1 as number,
 					measureScrollTimer: -1 as number,
@@ -318,6 +344,9 @@ let groupTurnRuntimeSyncTimer: number = -1
 			},
 			showBackToBottom(): boolean {
 				return this.messageTotalCount > 0 && this.isAtBottom == false
+			},
+			inputPlaceholder(): string {
+				return this.privateTargetAgentId != '' ? '私聊 ' + this.privateTargetAgentName + '...' : '给群里发消息...'
 			}
 		},
 		onLoad() {
@@ -433,13 +462,33 @@ let groupTurnRuntimeSyncTimer: number = -1
 						uni.showToast({ position: 'bottom', title: '群聊状态保存失败，请重试', icon: 'none' })
 						return
 					}
-					if (this.sessionId != session.id) {
+					const conversationChanged = this.groupId != group.id || this.sessionId != session.id
+					if (conversationChanged == true) {
 						this.seenRuntimeErrorRevision = 0
 					}
 					this.groupId = group.id
 					this.sessionId = session.id
 					this.group = group
 					this.session = session
+					if (conversationChanged == true) {
+						this.inputText = ''
+						this.publicDraftText = ''
+						this.privateDrafts = [] as GroupPrivateDraft[]
+						this.privateTargetAgentId = ''
+						this.privateTargetAgentName = ''
+					} else if (this.privateTargetAgentId != '' && this.isPrivateTargetActive() == false) {
+						this.clearPrivateTarget()
+					} else if (this.privateTargetAgentId != '') {
+						const privateItems = this.buildGroupPrivateAgentItems()
+						for (let privateIndex = 0; privateIndex < privateItems.length; privateIndex++) {
+							const privateAgentId = privateItems[privateIndex]['agentId'] as string | null
+							if (privateAgentId != this.privateTargetAgentId) { continue }
+							const privateLabel = privateItems[privateIndex]['label'] as string | null
+							const privateName = privateItems[privateIndex]['name'] as string | null
+							this.privateTargetAgentName = privateLabel != null && privateLabel != '' ? privateLabel : (privateName != null ? privateName : '成员')
+							break
+						}
+					}
 					this.messages = getGroupChatTurnMessages(group.id, session.id)
 					this.isGenerating = isGroupChatTurnRunning(session.id)
 					this.bindGroupTurnRuntime()
@@ -858,11 +907,26 @@ let groupTurnRuntimeSyncTimer: number = -1
 			isUserMessage(msg: UTSJSONObject): boolean {
 				return isGroupUserMessage(msg)
 			},
-			isPrivateMessage(msg: UTSJSONObject): boolean {
-				const visibility = msg['visibility'] as string | null
-				const audience = msg['audience'] as string | null
-				return visibility == GROUP_MESSAGE_VISIBILITY_PRIVATE && audience == GROUP_MESSAGE_AUDIENCE_USER
-			},
+				isPrivateMessage(msg: UTSJSONObject): boolean {
+					const visibility = msg['visibility'] as string | null
+					return visibility == GROUP_MESSAGE_VISIBILITY_PRIVATE
+				},
+				readPrivateMessageLabel(msg: UTSJSONObject): string {
+					if (this.isPrivateMessage(msg) == false) { return '' }
+					const senderType = msg['senderType'] as string | null
+					if (senderType == GROUP_MESSAGE_SENDER_AGENT) { return '私发给你' }
+					const targetAgentId = msg['targetAgentId'] as string | null
+					const snapshotRaw = msg['targetAgentName'] as string | null
+					const agent = targetAgentId != null ? getAgentById(targetAgentId) : null
+					const nameRaw = snapshotRaw != null && snapshotRaw.trim() != '' ? snapshotRaw : (agent != null ? (agent['name'] as string | null) : null)
+					const name = nameRaw != null ? nameRaw.trim() : ''
+					return name != '' ? '私发给 ' + name : '群内私聊'
+				},
+				readPrivateDeliveryStatus(msg: UTSJSONObject): string {
+					if (this.isPrivateMessage(msg) == false) { return '' }
+					const status = msg['deliveryStatus'] as string | null
+					return status != null ? status.trim() : ''
+				},
 			readMessageSenderName(msg: UTSJSONObject): string {
 				return readGroupMessageSenderName(msg)
 			},
@@ -932,24 +996,44 @@ let groupTurnRuntimeSyncTimer: number = -1
 			sendMessage(): void {
 				const text = this.inputText.trim()
 				if (text == '') { return }
-				if (this.isGenerating == true) { return }
+				const privateSend = this.privateTargetAgentId != ''
 				const profile = loadChatUserProfile()
 				this.userNickname = profile.nickname
 				this.userAvatar = profile.avatar
-				const msg = createGroupUserMessage(this.groupId, this.sessionId, text, profile.nickname)
-				this.messages.push(msg)
-				if (this.saveMessages() == false) {
-					this.messages.splice(this.messages.length - 1, 1)
+					let msg: UTSJSONObject | null = null
+					let reason = this.isGenerating == true ? '用户插入新消息' : '用户发送消息'
+					if (this.privateTargetAgentId != '') {
+						if (this.isPrivateTargetActive() == false) {
+							this.clearPrivateTarget()
+							uni.showToast({ position: 'bottom', title: '私聊成员已不在群内', icon: 'none' })
+							return
+						}
+						msg = createGroupUserPrivateMessage(this.groupId, this.sessionId, text, this.privateTargetAgentId, profile.nickname)
+						reason = '用户向群成员发送私聊'
+					} else {
+						msg = createGroupUserMessage(this.groupId, this.sessionId, text, profile.nickname)
+					}
+				if (msg == null) {
+					uni.showToast({ position: 'bottom', title: privateSend == true ? '私聊目标或会话已失效' : '消息创建失败', icon: 'none' })
+					return
+				}
+				const dispatchResult = dispatchGroupChatUserMessage(this.groupId, this.sessionId, msg, reason)
+				if (dispatchResult.saved == false) {
 					uni.showToast({ position: 'bottom', title: '消息保存失败', icon: 'none' })
 					return
 				}
 				this.inputText = ''
+				if (privateSend == true) {
+					this.removePrivateDraft(this.privateTargetAgentId)
+				} else {
+					this.publicDraftText = ''
+				}
 				this.showToolPanel = false
+				this.syncGroupTurnRuntime()
 				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
-				const started = startGroupChatTurn(this.groupId, this.sessionId, '用户发送消息', true)
-				if (started == false) {
-					uni.showToast({ position: 'bottom', title: '讨论启动失败，请检查成员或存储', icon: 'none' })
+				if (dispatchResult.started == false) {
+					uni.showToast({ position: 'bottom', title: '消息已保存，但讨论启动失败', icon: 'none' })
 				}
 				this.isGenerating = isGroupChatTurnRunning(this.sessionId)
 			},
@@ -957,11 +1041,6 @@ let groupTurnRuntimeSyncTimer: number = -1
 				if (readNyxFloatVoiceContext() != NYX_FLOAT_CONTEXT_GROUP) { return }
 				const content = consumePendingNyxFloatVoiceText()
 				if (content == '') { return }
-				if (this.isGenerating == true) {
-					this.inputText = content
-					uni.showToast({ position: 'bottom', title: '已填入输入框，等本轮结束再发', icon: 'none' })
-					return
-				}
 				this.inputText = content
 				this.sendMessage()
 			},
@@ -1043,10 +1122,14 @@ let groupTurnRuntimeSyncTimer: number = -1
 					this.startGroupGenerationForMedia(fallbackReason)
 				})
 			},
-			pickImage(): void {
+				pickImage(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
-				this.showToolPanel = false
-				if (this.isGenerating == true) { return }
+					this.showToolPanel = false
+					if (this.isGenerating == true) { return }
+					if (this.privateTargetAgentId != '') {
+						uni.showToast({ position: 'bottom', title: '群内私聊暂支持文字消息', icon: 'none' })
+						return
+					}
 				uni.chooseImage({
 					count: 1,
 					sourceType: ['album'],
@@ -1062,10 +1145,14 @@ let groupTurnRuntimeSyncTimer: number = -1
 					}
 				})
 			},
-			takePhoto(): void {
+				takePhoto(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
-				this.showToolPanel = false
-				if (this.isGenerating == true) { return }
+					this.showToolPanel = false
+					if (this.isGenerating == true) { return }
+					if (this.privateTargetAgentId != '') {
+						uni.showToast({ position: 'bottom', title: '群内私聊暂支持文字消息', icon: 'none' })
+						return
+					}
 				uni.chooseImage({
 					count: 1,
 					sourceType: ['camera'],
@@ -1080,10 +1167,14 @@ let groupTurnRuntimeSyncTimer: number = -1
 					}
 				})
 			},
-			pickFile(): void {
+				pickFile(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
-				this.showToolPanel = false
-				if (this.isGenerating == true) { return }
+					this.showToolPanel = false
+					if (this.isGenerating == true) { return }
+					if (this.privateTargetAgentId != '') {
+						uni.showToast({ position: 'bottom', title: '群内私聊暂支持文字消息', icon: 'none' })
+						return
+					}
 				uni.chooseFile({
 					count: 1,
 					success: (res: any) => {
@@ -1168,9 +1259,88 @@ let groupTurnRuntimeSyncTimer: number = -1
 				this.scrollToBottom()
 				this.startGroupGenerationForMedia('用户发送了一个文件：' + file.name)
 			},
-			buildGroupMemberAgentItems(): UTSJSONObject[] {
-				return buildGroupMemberAgentItemsForPage(this.groupId, this.group)
-			},
+				buildGroupMemberAgentItems(): UTSJSONObject[] {
+					return buildGroupMemberAgentItemsForPage(this.groupId, this.group)
+				},
+				buildGroupPrivateAgentItems(): UTSJSONObject[] {
+					return buildGroupPrivateAgentItemsForPage(this.groupId)
+				},
+				isPrivateTargetActive(): boolean {
+					if (this.privateTargetAgentId == '') { return false }
+					const items = this.buildGroupPrivateAgentItems()
+					for (let i = 0; i < items.length; i++) {
+						const agentId = items[i]['agentId'] as string | null
+						if (agentId == this.privateTargetAgentId) { return true }
+					}
+					return false
+				},
+				readPrivateDraft(agentId: string): string {
+					if (agentId == '') { return '' }
+					for (let i = 0; i < this.privateDrafts.length; i++) {
+						const draft = this.privateDrafts[i] as GroupPrivateDraft
+						if (draft.agentId == agentId) { return draft.text }
+					}
+					return ''
+				},
+				writePrivateDraft(agentId: string, text: string): void {
+					if (agentId == '') { return }
+					for (let i = 0; i < this.privateDrafts.length; i++) {
+						const draft = this.privateDrafts[i] as GroupPrivateDraft
+						if (draft.agentId != agentId) { continue }
+						draft.text = text
+						return
+					}
+					const draft: GroupPrivateDraft = {
+						agentId: agentId,
+						text: text,
+					}
+					this.privateDrafts.push(draft)
+				},
+				removePrivateDraft(agentId: string): void {
+					if (agentId == '') { return }
+					for (let i = this.privateDrafts.length - 1; i >= 0; i--) {
+						const draft = this.privateDrafts[i] as GroupPrivateDraft
+						if (draft.agentId == agentId) {
+							this.privateDrafts.splice(i, 1)
+						}
+					}
+				},
+				clearPrivateTarget(): void {
+					if (this.privateTargetAgentId != '') {
+						this.writePrivateDraft(this.privateTargetAgentId, this.inputText)
+						this.inputText = this.publicDraftText
+						this.publicDraftText = ''
+					}
+					this.privateTargetAgentId = ''
+					this.privateTargetAgentName = ''
+				},
+				chooseAgentForPrivateMessage(): void {
+					if (this.consumeToolbarSwipeClick() == true) { return }
+					this.showToolPanel = false
+					const items = this.buildGroupPrivateAgentItems()
+					if (items.length == 0) {
+						uni.showToast({ position: 'bottom', title: '群里还没有成员', icon: 'none' })
+						return
+					}
+					const names = buildGroupMemberAgentNames(items)
+					uni.showActionSheet({
+						itemList: names,
+						success: (res) => {
+							const index = res.tapIndex
+							if (index < 0 || index >= items.length) { return }
+							const agentId = items[index]['agentId'] as string | null
+							if (agentId == null || agentId == '') { return }
+							if (this.privateTargetAgentId != '') {
+								this.writePrivateDraft(this.privateTargetAgentId, this.inputText)
+							} else {
+								this.publicDraftText = this.inputText
+							}
+							this.inputText = this.readPrivateDraft(agentId)
+							this.privateTargetAgentId = agentId
+							this.privateTargetAgentName = names[index]
+						}
+					})
+				},
 			chooseAgentForMemory(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
 				this.showToolPanel = false
@@ -1432,6 +1602,46 @@ let groupTurnRuntimeSyncTimer: number = -1
 		box-shadow: none;
 	}
 
+	.private-compose-bar {
+		min-height: 34px;
+		margin-left: 12px;
+		margin-right: 12px;
+		margin-bottom: 6px;
+		padding-left: 10px;
+		padding-right: 7px;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		background-color: #FFF0F5;
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(154, 90, 114, 0.18);
+		border-radius: 8px;
+	}
+
+	.private-compose-main {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		min-width: 0;
+	}
+
+	.private-compose-text {
+		flex: 1;
+		margin-left: 6px;
+		font-size: 12px;
+		line-height: 16px;
+		color: #7F4B5E;
+	}
+
+	.private-compose-close {
+		width: 28px;
+		height: 28px;
+		flex-shrink: 0;
+		align-items: center;
+		justify-content: center;
+	}
+
 	.input-bar {
 		flex-direction: row;
 		align-items: center;
@@ -1504,8 +1714,15 @@ let groupTurnRuntimeSyncTimer: number = -1
 		box-shadow: 0 2px 7px rgba(251, 143, 171, 0.10);
 	}
 
-	.send-chip-stop {
+	.stop-discussion-chip {
+		width: 30px;
+		height: 30px;
+		border-radius: 15px;
+		margin-right: 6px;
 		background-color: #F87171;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 2px 7px rgba(248, 113, 113, 0.12);
 	}
 
 	.send-chip-text {

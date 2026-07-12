@@ -712,7 +712,8 @@ export function callChatAPIStream(
 	conversationId: string = '',
 	supportsVision: boolean = true,
 	agentId: string = '',
-	workspaceRoot: string = ''
+	workspaceRoot: string = '',
+	sensitiveMode: boolean = false
 ): RequestTask {
 	const apiMessages = buildOpenAIMessages(systemPrompt, messages, supportsVision)
 	clearLastTokenUsage()
@@ -723,13 +724,15 @@ export function callChatAPIStream(
 		'Authorization': 'Bearer ' + apiKey,
 	} as UTSJSONObject
 	const body: UTSJSONObject = buildOpenAIChatBody(model, apiMessages, tools, settings, reasoningEnabled, baseUrl, true, cacheKey)
-	saveLastLLMRequestSnapshot(baseUrl, url, model, body, apiMessages.length, tools.length, true, cacheKey, agentId, conversationId, workspaceRoot)
+	if (sensitiveMode == false) {
+		saveLastLLMRequestSnapshot(baseUrl, url, model, body, apiMessages.length, tools.length, true, cacheKey, agentId, conversationId, workspaceRoot)
+	}
 
 	if (isLLMDebugLogEnabled() == true) {
 		console.log('[LLM] ====== STREAM REQUEST ======')
 		console.log('[LLM] URL: ' + url)
 		console.log('[LLM] Model: ' + model + ' | Messages: ' + apiMessages.length + ' | Tools: ' + tools.length + (cacheKey != '' ? ' | Cache: ' + cacheKey : ''))
-		console.log('[LLM] Body: ' + formatBodyForLog(body))
+		console.log(sensitiveMode == true ? '[LLM] Body: [sensitive request omitted]' : '[LLM] Body: ' + formatBodyForLog(body))
 		console.log('[LLM] =============================')
 	}
 
@@ -776,12 +779,13 @@ export function callChatAPIStream(
 						} catch (_e1: any) {}
 					}
 				} catch (_e2: any) {}
-				console.log('[LLM] STREAM 请求失败 Status: ' + statusCode + errDetail)
+				const visibleErrorDetail = sensitiveMode == true ? '' : errDetail
+				console.log('[LLM] STREAM 请求失败 Status: ' + statusCode + visibleErrorDetail)
 				if (isLLMDebugLogEnabled() == true) {
-					console.log('[LLM] Request body: ' + formatBodyForLog(body))
+					console.log(sensitiveMode == true ? '[LLM] Request body: [sensitive request omitted]' : '[LLM] Request body: ' + formatBodyForLog(body))
 				}
-				saveLastLLMCall(false, true, model, baseUrl, statusCode, 'API 请求失败' + errDetail, null, apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
-				done(null, null, null, 'API 请求失败 (状态码: ' + statusCode + errDetail + ')')
+				saveLastLLMCall(false, true, model, baseUrl, statusCode, 'API 请求失败' + visibleErrorDetail, null, apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
+				done(null, null, null, 'API 请求失败 (状态码: ' + statusCode + visibleErrorDetail + ')')
 				return
 			}
 			if (pendingUtf8Bytes.length > 0 && parseErrorRef[0] == '') {
@@ -828,7 +832,7 @@ export function callChatAPIStream(
 					} as ToolCallInfo)
 				}
 				const preview = fullTextRef[0] != '' ? fullTextRef[0].substring(0, fullTextRef[0].length < 200 ? fullTextRef[0].length : 200) : ''
-				if (isLLMDebugLogEnabled() == true) {
+				if (isLLMDebugLogEnabled() == true && sensitiveMode == false) {
 					console.log('[LLM] ====== STREAM RESPONSE ======')
 					console.log('[LLM] Status: 200 tools:' + tcNames + ' | ' + preview)
 					console.log('[LLM] ==============================')
@@ -837,7 +841,7 @@ export function callChatAPIStream(
 				done(fullTextRef[0], tcList, fullThinkingRef[0], null)
 			} else {
 				const preview = fullTextRef[0] != '' ? fullTextRef[0].substring(0, fullTextRef[0].length < 200 ? fullTextRef[0].length : 200) : ''
-				if (isLLMDebugLogEnabled() == true) {
+				if (isLLMDebugLogEnabled() == true && sensitiveMode == false) {
 					console.log('[LLM] ====== STREAM RESPONSE ======')
 					console.log('[LLM] Status: 200 | ' + preview)
 					console.log('[LLM] ==============================')
@@ -856,12 +860,13 @@ export function callChatAPIStream(
 			)) {
 				console.log('[LLM] 模型不支持 function calling，去除 tools 后重试')
 				uni.showToast({ position: 'bottom', title: '当前模型不支持工具调用，已自动忽略', icon: 'none' })
-				callChatAPIStream(baseUrl, apiKey, model, systemPrompt, messages, [], settings, reasoningEnabled, onChunk, done, cacheKey, onThinking, null, conversationId, supportsVision, agentId, workspaceRoot)
+					callChatAPIStream(baseUrl, apiKey, model, systemPrompt, messages, [], settings, reasoningEnabled, onChunk, done, cacheKey, onThinking, null, conversationId, supportsVision, agentId, workspaceRoot, sensitiveMode)
 				return
 			}
-			saveLastLLMCall(false, true, model, baseUrl, -1, '网络请求失败: ' + _err, null, apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
+			const networkError = sensitiveMode == true ? '敏感请求网络失败' : '网络请求失败: ' + _err
+			saveLastLLMCall(false, true, model, baseUrl, -1, networkError, null, apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
 			streamEnded = true
-			done(null, null, null, '网络请求失败: ' + _err)
+			done(null, null, null, networkError)
 		},
 	})
 

@@ -32,9 +32,9 @@
 | 设置 | `pages/settings/diagnostics/diagnostics` | 错误记录、诊断编号、技术详情、清空、空状态 | 测试中 | ADB 已通过入口与空状态；错误注入、详情和清空待测 |
 | 私聊 | `pages/chat/chat` | 文本发送、流式状态、停止/续跑、工具栏、图片/拍照/文件、滚动、重进恢复 | 测试中 | ADB 已通过文本发送、退出页面后台续流、重进恢复和防重复；图片 runtime、删除失效、长历史滚动与键盘继续回归 |
 | 私聊 | `pages/agent-settings/agent-settings` | 名称/备注/头像/Prompt/规则/模型/语音/生成参数/Skills/工具/截断/删除 | 测试中 | ADB 已通过临时改名、全屏编辑往返保留未保存状态、不保存退出、Agent 删除；其余设置继续覆盖 |
-| 群聊 | `pages/group-chat/group-chat` | 文本/媒体、调度、暂停、后台续流、成员消息、上下文/文件/记忆入口 | 测试中 | ADB 已通过历史渲染、拍照入口、普通/永久权限拒绝恢复；文本发送、后台流、相册/文件和键盘继续覆盖 |
+| 群聊 | `pages/group-chat/group-chat` | 文本/媒体、调度、暂停、后台续流、成员消息、上下文/文件/记忆入口 | 测试中 | ADB 已通过历史渲染、私聊目标选择与草稿隔离、私发后公开续接、调度控制面隔离、拍照入口及权限拒绝恢复；真实用户→成员私发、延迟唤醒、无限续谈、公开交接、流中插话、相册/文件和键盘继续覆盖 |
 | 群聊 | `pages/group-chat-settings/group-chat-settings` | 群名、成员、调度 Prompt、共享 Prompt、未保存退出 | 测试中 | ADB 已通过页面进入和成员列表；编辑、保存与退出保护待测 |
-| 群聊 | `pages/group-chat-sessions/group-chat-sessions` | 会话新增、切换、重命名、删除 | 测试中 | ADB 已通过页面进入和当前会话展示；写操作待测 |
+| 群聊 | `pages/group-chat-sessions/group-chat-sessions` | 会话新增、切换、重命名、删除 | 测试中 | ADB 已通过新增、切换、删除并清空文件；SQLite 验证消息、复盘、上下文、指标、任务、记忆和工作区均级联清理；重命名待测 |
 | 历史 | `pages/history/history` | 私聊/群上下文切换、预览、恢复、批量删除、清空 | 测试中 | ADB 已通过历史预览、切换到对话和管理模式选择；未对用户数据执行批量删除 |
 | 编辑器 | `pages/note-editor/note-editor` | 新建/编辑/保存/返回保护 | ADB 通过 | 新建、保存、删除及 Android 物理返回放弃确认均通过 |
 | 编辑器 | `pages/common/editor/editor` | 全屏编辑、保存、取消、空内容、长文本 | 测试中 | 跨页保留未保存内容已通过；补齐 Android 物理返回确认，文件读写和长文本继续覆盖 |
@@ -86,7 +86,11 @@
 | DATA-007 | P2 | Agent/群聊实体删除但工作区保留时，文件页把内部 ID 当名称显示 | 已修复，ADB 待回归 | 当前名称、中央元数据、SQLite 快照、内置名称依次回退；无历史名称时显示删除占位 | `utils/workspace-name-snapshot.uts`、`utils/file-manager.uts` 等 |
 | PERF-001 | P1 | 对话消息过多时渲染节点持续增长，流式更新导致列表性能快速下降 | 部分修复，继续优化 | 私聊 380 条历史上下边缘按 40 条批量换窗，跨窗后 UI hierarchy 约 59 个 ViewGroup；流式高度测量增加 260ms max-wait，图片/展开内容贴底补偿。当前窗口仍按消息条数而非真实渲染单元限制 | `utils/chat-message-window.uts`、`pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` |
 | RUNTIME-001 | P0 | Android 消息 key 读取时间戳时触发 `Long cannot be cast to String`，历史私聊白屏 | 已修复，ADB 通过 | 私聊和群聊列表 key 改为窗口 source index；历史页可正常渲染 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` |
-| GROUP-001 | P1 | 群聊缺少只对用户可见的成员私发；其他成员/调度/复盘可能读取私密正文 | 已修复，ADB 待回归 | 私发由用户原文显式触发；只对用户和原 Agent 可见，原 Agent 后续公开发言保留连续性但不得主动泄露；不进入公开计数和复盘 | `utils/group-chat-*`、`components/ChatBubble/ChatBubble.uvue` |
+| GROUP-001 | P1 | 群聊缺少只对用户可见的成员私发；其他成员或复盘可能读取私密正文 | 已修复，ADB 通过 | 私发只对用户和原 Agent 展示；其他成员既看不到正文也看不到送达回执；普通复盘仅读公开消息，不读隐藏调度记录或可推断私发的指标。调度器作为受信任控制面，按完整消息边界分段聚合会话内全部公开/私发正文，不再按最近条数或单条字数静默截断；敏感请求、原始输出和思考不落盘 | `utils/group-chat-*`、`components/ChatBubble/ChatBubble.uvue` |
+| GROUP-002 | P1 | 私发没有请求关联和真实送达状态，失效目标可能显示假成功 | 已修复，ADB 通过 | 用户私发初始为 `pending`，服务层校验群、会话和真实 active member；Agent 开始处理后改为 `delivered`，启动/路由失败改为 `failed`；选择器不再包含 scheduler/reviewer | `utils/group-chat-scheduler.uts`、`utils/group-chat-turn-runtime.uts`、`utils/group-chat-service.uts`、`utils/group-chat-page-helpers.uts` |
+| GROUP-003 | P0 | 原 Agent 的私发历史作为 assistant XML 注入后，模型可能把内部标签和私发正文原样公开 | 已修复，ADB 通过 | 私发历史改为当前请求的临时 `<private_group_dialogue_history>` 上下文，不进入长期记忆或历史 reasoning；公开输出只含目标正文；内部标签与私发引用加入流式审核窄触发 | `utils/message-context.uts`、`llm-client.uts`、`group-chat-scheduler.uts`、`group-chat-moderation.uts` |
+| GROUP-004 | P1 | Agent 说“稍后回复”后没有运行实体，群聊又会被固定轮数截断，用户只能停止不能插话 | 已修复，真机待回归 | 移除固定自动轮数和申请过期上限；`group_request_speak` 支持立即调度、`after_delay` 与公开 `next_agent_id` 交接，均由 scheduler 决定；申请持久化并保持原 `public/user_private` 通道，冷启动恢复中断 claim，已落库回复带终态标记避免重复发言，审核中断的占位会撤回；终态写失败后台重试。停止或新用户消息会取消旧申请；运行中发送文字原子失效旧流、写入新消息并重新路由 | `utils/group-chat-speak-intent.uts`、`utils/group-chat-turn-runtime.uts`、`pages/group-chat/group-chat.uvue`、`App.uvue` |
+| GROUP-005 | P1 | 私聊草稿退出模式后可能被当成公开消息发送，私聊目标还可能包含内部控制 Agent | 已修复，ADB 通过 | 公开/私聊草稿分离；退出私聊恢复公开草稿，再选原成员恢复私聊草稿；目标列表仅真实 active member，同名成员追加短 ID | `pages/group-chat/group-chat.uvue`、`utils/group-chat-page-helpers.uts` |
 | ERROR-001 | P1 | LLM 网络/API/SSE 失败被当作正常 assistant 正文，或流结束后无提示 | 已修复，ADB 待回归 | transport error 独立传递；失败气泡、toast、诊断记录；失败不写成功快照、不触发 TTS | `llm-api-client.uts`、`llm-client.uts`、`utils/event.uts`、聊天页面 |
 | ERROR-002 | P1 | Provider、模型、资料、生成参数、插件、Skill 等保存失败仍更新 UI 或提示成功 | 部分修复，ADB 待回归 | DAO 与主要页面已补回滚/dirty 状态；Provider 拉取、AstrBot diagnostics 和跨引用事务仍有缺口 | 设置页面、`database-settings.uts`、`provider.uts` 等 |
 | ERROR-003 | P2 | App 每次启动尝试重复 `ALTER TABLE`，logcat 持续输出 `duplicate column` | 已修复，ADB 通过 | 迁移前使用 `PRAGMA table_info` 检查字段；冷启动清空 logcat 后无重复字段错误 | `utils/database-core.uts`、`utils/database.uts` |
@@ -100,6 +104,7 @@
 | UI-003 | P1 | 笔记和通用全屏编辑器的 Android 物理返回绕过放弃确认 | 已修复，ADB 通过 | `onBackPress` 统一进入确认逻辑，放弃前清 dirty 防止重复确认循环 | `pages/note-editor/note-editor.uvue`、`pages/common/editor/editor.uvue` |
 | PERF-002 | P1 | 长消息滚到底部先写 `scrollTop=0`，误触双向滑窗向旧消息换窗，造成底部位置错误 | 已修复，私聊 ADB 通过 | 380 条历史跨窗后点击“到底部”准确恢复最后一批消息，按钮消失；程序化滚底和会话重置均取消旧换窗回调 | 私聊/群聊页面 |
 | PERF-003 | P1 | 滑动窗口按消息条数而非真实渲染单元限制，单条超长分段消息或 80 条复杂消息仍可能卡顿 | 待重构 | Android 开发基座对 380 条历史执行 8 次强制跨窗滑动，节点量稳定但 `gfxinfo` jank 为 `50.57%`；需把窗口边界升级为 render-unit 索引并保留稳定消息身份 | `utils/chat-message-window.uts`、私聊/群聊页面 |
+| PERF-004 | P1 | 群聊每次流式保存仍整会话删除重插，scheduler 每轮仍拼接完整公开/私聊正文；无限续谈时会触发 DB 与上下文的线性增长 | 待重构 | 不可用静默截断解决，调度器必须保留完整正文可见性；后续改为消息增量持久化、稳定上下文前缀缓存和显式长会话上下文策略，同时保留原文可审计 | `utils/database-group-chat.uts`、`utils/group-chat-service.uts`、`utils/group-chat-scheduler.uts` |
 | RUNTIME-003 | P1 | 兼容旧页面保留的 void 包装器因无可达调用被 DCE 删除，热更新仍可能 `NoSuchMethodError` | 已修复，字节码验证通过 | 新 boolean 入口真实调用旧 void ABI；`javap` 确认两个 JVM 签名同时存在 | `utils/agent-settings-page-helpers.uts` |
 | SECURITY-001 | P0 | 导入备份可携带伪造的群会话 `workspace_path`，后续复制/删除可能越出群聊工作区；系统文件选择器返回的文件名也可包含路径片段 | 已修复，ADB 入口通过 | 导入时只按受限 group/session ID 重建应用私有路径；Android 使用 canonical path 校验目录包含关系；递归复制拒绝 symlink，递归删除只移除链接本身；文件导入只接受 basename | `utils/data-import.uts`、`utils/file-manager-io.uts`、`utils/group-chat-service.uts`、`pages/files/files.uvue` |
 | MEDIA-002 | P1 | 私聊生成过程中仍可追加图片/文件/位置，新增消息不会进入当前请求；群聊图片转述异步完成后可能写入已切换的会话，停止讨论也未失效 caption | 已修复，ADB 入口通过 | 媒体入口统一阻止并发追加；位置失败进入诊断；群聊 caption 绑定 group/session/message ID，切换与停止时失效；文件保存失败回滚消息 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` |
@@ -132,6 +137,7 @@
 
 | 日期 | 文件 | 修改 | 验证 | commit |
 | --- | --- | --- | --- | --- |
+| 2026-07-12 | 群聊 scheduler/runtime、消息语义上下文与流式审核 | 私发增加请求关联和送达状态；调度器读取全量公开/私聊正文但禁止任何字段外传，普通 Agent 与复盘既不读其他私聊正文也不接收回执；原 Agent 通过临时语义上下文延续，私发不进入长期记忆；修复继续讨论重复私发和 XML 公开回显 | HBuilderX 5.15 多轮 Android class 差量编译并同步成功；ADB 覆盖私发、冲突意图、公开续接、上下文/思考隔离、调度脱敏、指标/复盘隔离和临时会话级联清理 | 本轮提交 |
 | 2026-07-12 | 数据管理页、群聊模型/服务、App Guide、Skill 功能地图 | 按需求下线旧 `uni.storage` 手动迁移：移除设置入口、Storage/DCStorage 读取清理器、群聊旧 Storage 解析和死代码；保留备份/导入及仍在用的旧用户目录兼容 | HBuilderX 5.15 Android class 28 页面编译通过；CLI 同步模拟器后 ADB UI hierarchy 仅保留备份/导入入口；测试探针、触发器、临时备份均已清理 | 本轮提交 |
 | 2026-07-11 | `pages/settings/generation/generation.uvue` | 数值输入从逐字符保存改为 blur/confirm 提交；流式开关不再顺带提交编辑中的半成品 | HBuilderX 28 页面编译并同步成功；ADB + SQLite 验证编辑中、非法失焦和 force-stop 均不污染原值 | 本轮提交 |
 | 2026-07-11 | 私聊 runtime、聊天页、会话恢复、历史/Agent 删除与数据导入 | 私聊流脱离页面生命周期；图片 caption/停止/保存统一进入 runtime；删除或覆盖恢复后旧页面不可复活数据；进程遗留流式消息转为明确中断态 | HBuilderX 5.15 clean 与差量编译 28 页面成功；ADB 退出续流、重进防重复、SQLite 终态和日志回归通过 | 本轮提交 |
@@ -164,7 +170,7 @@
 | 12 | 旧用户目录迁移 | 复制失败清理半成品且保留重试机会 | UTS 扫描、Android compile-only | `8a44236` |
 | 13 | 残留工作区显示名 | 名称快照与中央元数据保留最后名称；旧内置目录恢复默认名称 | UTS 静态扫描、HBuilderX 5.15 Android class 编译通过 | `1603d00` |
 | 14 | 长对话渲染性能 | 私聊/群聊固定大小双向滑动窗口；上下均批量加载和卸载；群流式事件合并刷新 | UTS 静态扫描、HBuilderX 5.15 Android class 编译通过；模拟器已关闭，滚动手感待回归 | `1603d00` |
-| 15 | 群聊成员私发 | 用户显式请求时锁定 `user_private`；其他成员、调度与复盘只读公开投影；原成员保留自己的私发历史 | HBuilderX 5.15 Android class 全量编译通过；ADB 消息投递待回归 | `1603d00` |
+| 15 | 群聊成员私发 | 用户显式请求时锁定 `user_private`；调度器读取全量公开/私发正文，其他成员和复盘不读其他私聊正文或回执；原成员保留自己的私发历史 | HBuilderX 5.15 Android class 全量编译通过；ADB 消息投递待回归 | `1603d00` |
 | 16 | 统一错误链 | 结构化诊断、LLM transport error、失败气泡、设置事务与文件操作错误提示 | HBuilderX 5.15 Android class 全量及多轮热编译通过；ADB 冷启动日志通过 | `1603d00` |
 | 17 | 页面错误与生命周期复审 | Agent、历史、文件、头像裁剪、资料、诊断、Provider、Skill 和导入流程补齐状态写入检查、统一提示与离页保护 | UTS 静态扫描、HBuilderX 5.15 `--cleanCache` 全量编译通过；ADB 主页面与诊断入口通过 | `997e7b1` |
 | 18 | 群聊回滚、持久化与 ABI 复审 | 群聊创建失败回滚数据库和工作区；调度副作用写入失败可见；恢复既有导出函数 JVM 签名 | SQLite 注入回滚验证、28 页面 Android class 干净编译、ADB 群聊/会话/设置入口通过 | `997e7b1` |
@@ -240,6 +246,9 @@
 | 2026-07-11 20:42 | 生成参数同步部署与持久化回归 | HBuilderX 28 页面编译成功并明确“同步手机端程序文件成功”；恢复测试前 `max_tokens=4096`，编辑为 `65` 时 DB 不变，输入 `abc` 失焦后 UI/DB 回退 `4096`，force-stop 前后仍为 `4096` |
 | 2026-07-11 21:15 | 长对话滚动时序修复编译 | 私聊/群聊的稳定高度测量改为 debounce + max-wait，异步内容增高时维持原贴底状态，会话重置/离页取消旧换窗回调；28 页面 Android class 编译成功 |
 | 2026-07-11 21:20 | ADB 380 条私聊双向窗口回归 | 从最近消息向旧消息跨窗后内容连续、节点量约 59 个 ViewGroup；“到底部”恢复最后消息且按钮消失；无 fatal、ABI、SQLite 或 UTS 异常。开发基座强制滑动 jank `50.57%`，登记 PERF-003 继续重构 |
+| 2026-07-12 16:34 | 群内私聊控制面与主动发言唤醒编译 | HBuilderX 5.15 完成 28 页面 Android class 编译并同步 `emulator-5554`；scheduler 可临时读取完整私聊，敏感请求不保存快照或 debug 正文；`group_request_speak` 增加持久化延迟唤醒 |
+| 2026-07-12 16:37 | 群内私聊目标与草稿 ADB 回归 | 选择器仅显示真实 active member“千夏”，无 scheduler/reviewer；`PRIVATE_DRAFT` 退出私聊后未进入公开输入框，再次选择原成员可恢复；未发送测试消息、未修改用户会话 |
+| 2026-07-12 17:06 | 调度器全量上下文、分线程唤醒与私聊状态回归 | HBuilderX 5.15 完成 28 页面 Android class 编译并启动 `emulator-5554`；私聊草稿按 Agent 隔离，失败/中止状态持久显示；启动日志无 fatal、ABI、UTS 或 SQLite 异常 |
 
 ## 手动真机回归
 

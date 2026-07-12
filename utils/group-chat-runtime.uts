@@ -10,7 +10,9 @@ import {
 	DEFAULT_SHARED_PROMPT_TEXT,
 	GROUP_DELIVERY_MODE_PUBLIC,
 	GROUP_DELIVERY_MODE_USER_PRIVATE,
+	GROUP_MESSAGE_AUDIENCE_AGENT,
 	GROUP_MESSAGE_AUDIENCE_USER,
+	GROUP_MESSAGE_SENDER_USER,
 	GROUP_MESSAGE_VISIBILITY_PRIVATE,
 	GROUP_MESSAGE_VISIBILITY_PUBLIC,
 	LEGACY_DIRECTIVE_SCHEDULER_PROMPT_TEXT,
@@ -183,10 +185,13 @@ export function getGroupMessagesVisibleToUser(messages: UTSJSONObject[]): UTSJSO
 			result.push(msg)
 			continue
 		}
-		const audience = msg['audience'] as string | null
-		if (visibility == GROUP_MESSAGE_VISIBILITY_PRIVATE && audience == GROUP_MESSAGE_AUDIENCE_USER) {
-			result.push(msg)
-		}
+			const audience = msg['audience'] as string | null
+			if (visibility == GROUP_MESSAGE_VISIBILITY_PRIVATE && audience == GROUP_MESSAGE_AUDIENCE_USER) {
+				result.push(msg)
+			} else if (visibility == GROUP_MESSAGE_VISIBILITY_PRIVATE && audience == GROUP_MESSAGE_AUDIENCE_AGENT && senderType == GROUP_MESSAGE_SENDER_USER) {
+				// 用户始终可以看到自己发出的群内私聊，目标 Agent 由 visibleAgentIds 单独控制。
+				result.push(msg)
+			}
 	}
 	return result
 }

@@ -110,6 +110,9 @@ export function markGroupMessageRevokedFields(message: UTSJSONObject): void {
 	message['content'] = text
 	message['message'] = [createPlainPart(text)]
 	message['isStreaming'] = false
+	if ((message['deliveryStatus'] as string | null) != null) {
+		message['deliveryStatus'] = 'revoked'
+	}
 }
 
 export function cloneGroupMessagesForFork(oldMessages: UTSJSONObject[], forkId: string): UTSJSONObject[] {
@@ -118,6 +121,10 @@ export function cloneGroupMessagesForFork(oldMessages: UTSJSONObject[], forkId: 
 		const copied = JSON.parse(JSON.stringify(oldMessages[i])) as UTSJSONObject
 		copied['id'] = createId('gmsg')
 		copied['sessionId'] = forkId
+		if ((copied['sourceUserMessageId'] as string | null) != null) {
+			// fork 后消息 ID 全部变化，改用会话内时序回执，避免引用旧会话 ID。
+			copied['sourceUserMessageId'] = ''
+		}
 		copied['isStreaming'] = false
 		copiedMessages.push(copied)
 	}
