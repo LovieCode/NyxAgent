@@ -94,6 +94,7 @@ export function getGroupChatRowById(groupId: string): UTSJSONObject | null {
 	ensureGroupChatTables(db)
 	const result = db.query('SELECT * FROM group_chats WHERE id = ? AND ? = ? LIMIT 1', [groupId, 1, 1])
 	db.close()
+	assertSqlSuccess(result, '读取群聊设置失败')
 	const rows = rowsToObjects(result)
 	if (rows.length > 0) { return rows[0] }
 	return null
@@ -137,6 +138,7 @@ export function getGroupMemberRows(groupId: string): UTSJSONObject[] {
 	ensureGroupChatTables(db)
 	const result = db.query('SELECT * FROM group_chat_members WHERE group_id = ? AND ? = ? ORDER BY order_index ASC, joined_at ASC', [groupId, 1, 1])
 	db.close()
+	assertSqlSuccess(result, '读取群聊成员失败')
 	return rowsToObjects(result)
 }
 
@@ -451,6 +453,7 @@ export function getGroupAgentMetricRows(groupId: string, sessionId: string): UTS
 	ensureGroupChatTables(db)
 	const result = db.query('SELECT * FROM group_agent_metrics WHERE group_id = ? AND session_id = ? ORDER BY useful_count DESC, speak_count DESC', [groupId, sessionId])
 	db.close()
+	assertSqlSuccess(result, '读取群聊成员指标失败')
 	return rowsToObjects(result)
 }
 
@@ -459,6 +462,7 @@ export function getGroupTaskRows(groupId: string, sessionId: string): UTSJSONObj
 	ensureGroupChatTables(db)
 	const result = db.query('SELECT * FROM group_chat_tasks WHERE group_id = ? AND session_id = ? ORDER BY updated_at DESC', [groupId, sessionId])
 	db.close()
+	assertSqlSuccess(result, '读取群聊任务失败')
 	return rowsToObjects(result)
 }
 
@@ -470,6 +474,7 @@ export function getGroupAgentMemoryRows(groupId: string, sessionId: string, agen
 		[groupId, sessionId, agentId, '']
 	)
 	db.close()
+	assertSqlSuccess(result, '读取群聊成员记忆失败')
 	return rowsToObjects(result)
 }
 
@@ -491,6 +496,7 @@ export function getGroupChatState(key: string): string {
 	ensureGroupChatTables(db)
 	const result = db.query('SELECT value FROM group_chat_state WHERE key = ? AND ? = ? LIMIT 1', [key, 1, 1])
 	db.close()
+	assertSqlSuccess(result, '读取群聊运行状态失败')
 	const rows = rowsToObjects(result)
 	if (rows.length > 0) {
 		return readStringField(rows[0], 'value')

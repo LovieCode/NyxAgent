@@ -123,8 +123,17 @@ export function importSettingsTables(providers: UTSJSONObject[], appSettings: UT
 	let oldProviderKeys: UTSJSONObject[] = []
 	let oldApiSettings: UTSJSONObject[] = []
 	if (preserveEmptyApiKeys == true) {
-		oldProviderKeys = rowsToObjects(db.query('SELECT id, api_key FROM providers'))
-		oldApiSettings = rowsToObjects(db.query('SELECT key, value FROM app_settings WHERE key IN (?, ?)', ['settings_api_key', 'settings_astrbot_api_key']))
+		const providerKeysResult = db.query('SELECT id, api_key FROM providers')
+		const apiSettingsResult = db.query('SELECT key, value FROM app_settings WHERE key IN (?, ?)', ['settings_api_key', 'settings_astrbot_api_key'])
+		try {
+			assertSqlSuccess(providerKeysResult, '读取现有提供商密钥')
+			assertSqlSuccess(apiSettingsResult, '读取现有兼容密钥')
+		} catch (e: any) {
+			db.close()
+			throw e
+		}
+		oldProviderKeys = rowsToObjects(providerKeysResult)
+		oldApiSettings = rowsToObjects(apiSettingsResult)
 	}
 	try {
 		assertSqlSuccess(db.beginTransaction(), '无法开始设置导入事务')
@@ -359,6 +368,7 @@ export function getAppSetting(key: string): string | null {
 	ensureAppSettingsTable(db)
 	const result = db.query('SELECT value FROM app_settings WHERE key = ? AND ? = ? LIMIT 1', [key, 1, 1])
 	db.close()
+	assertSqlSuccess(result, '读取应用设置失败')
 	const rows = rowsToObjects(result)
 	if (rows.length > 0) {
 		const value = rows[0]['value'] as string | null
