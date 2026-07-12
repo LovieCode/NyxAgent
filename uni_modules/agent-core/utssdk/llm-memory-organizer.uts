@@ -18,6 +18,11 @@ export type MemoryManagerLoopStarter = (allMessages: UTSJSONObject[], providerId
 
 let memoryManagerLoopStarter: MemoryManagerLoopStarter | null = null
 
+function isTransientRuntimeMessage(msg: UTSJSONObject): boolean {
+	const messageTag = msg['agent_message_tag'] as string | null
+	return messageTag == 'group_turn_anchor'
+}
+
 export function registerMemoryManagerLoopStarter(starter: MemoryManagerLoopStarter): void {
 	memoryManagerLoopStarter = starter
 }
@@ -81,6 +86,7 @@ function buildDroppedMessagesTranscript(messages: UTSJSONObject[]): string {
 export function findLatestMessageTimestamp(messages: UTSJSONObject[]): number {
 	let latest = 0
 	for (let i = 0; i < messages.length; i++) {
+		if (isTransientRuntimeMessage(messages[i]) == true) continue
 		const rawTimestamp = messages[i]['timestamp'] as number | null
 		const timestamp = rawTimestamp != null ? rawTimestamp : 0
 		if (timestamp > latest) {
@@ -181,6 +187,7 @@ export function clearMemoryCompactionRunning(agentId: string, conversationId: st
 }
 
 export function isMemoryTextCandidate(msg: UTSJSONObject): boolean {
+	if (isTransientRuntimeMessage(msg) == true) return false
 	const role = msg['role'] as string | null
 	if (role != 'user' && role != 'assistant') return false
 	if (role == 'assistant' && hasAssistantToolCalls(msg) == true) return false
@@ -238,6 +245,7 @@ export function organizeAgentMemory(
 }
 
 export function getContextMessageScore(msg: UTSJSONObject): number {
+	if (isTransientRuntimeMessage(msg) == true) return 0
 	const role = msg['role'] as string | null
 	if (role == 'user') return 1
 	if (role == 'assistant') {

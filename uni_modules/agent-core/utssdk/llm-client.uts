@@ -147,6 +147,9 @@ function buildUserMessageForAgent(msg: UTSJSONObject, suffixBlocks: AgentContext
 	const baseContent = getMessageApiText(msg)
 	const prefixBlocks = buildUserPrefixContextBlocks(msg)
 	const storedSuffixBlocks = buildUserSuffixContextBlocks(msg)
+	const rawMessageTag = msg['agent_message_tag'] as string | null
+	const messageTag = rawMessageTag != null ? rawMessageTag : 'user_message'
+	const requiresSemanticWrap = messageTag == 'group_member_message' || messageTag == 'private_user_message' || messageTag == 'group_turn_anchor'
 	const mergedSuffixBlocks: AgentContextBlock[] = []
 	for (let i = 0; i < storedSuffixBlocks.length; i++) {
 		mergedSuffixBlocks.push(storedSuffixBlocks[i])
@@ -154,13 +157,13 @@ function buildUserMessageForAgent(msg: UTSJSONObject, suffixBlocks: AgentContext
 	for (let i = 0; i < suffixBlocks.length; i++) {
 		mergedSuffixBlocks.push(suffixBlocks[i])
 	}
-	if (prefixBlocks.length == 0 && mergedSuffixBlocks.length == 0) {
+	if (prefixBlocks.length == 0 && mergedSuffixBlocks.length == 0 && requiresSemanticWrap == false) {
 		return msg
 	}
 	const raw = JSON.stringify(msg)
 	const cloned = JSON.parse(raw) as UTSJSONObject
 	cloned['role'] = 'user'
-	cloned['agent_text_override'] = wrapUserContentForAgent(baseContent, prefixBlocks, mergedSuffixBlocks)
+	cloned['agent_text_override'] = wrapUserContentForAgent(baseContent, prefixBlocks, mergedSuffixBlocks, messageTag)
 	cloned['content'] = cloned['agent_text_override']
 	return cloned
 }
@@ -254,7 +257,8 @@ function prepareAgentContext(
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i]
 		const role = msg['role'] as string | null
-		if (role == 'user') {
+		const messageTag = msg['agent_message_tag'] as string | null
+		if (role == 'user' && messageTag != 'group_member_message') {
 			lastUserIndex = i
 		}
 	}

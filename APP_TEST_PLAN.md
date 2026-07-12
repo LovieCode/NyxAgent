@@ -26,15 +26,15 @@
 | 区域 | 页面 / 功能 | 核心检查 | 状态 | 证据 / 备注 |
 | --- | --- | --- | --- | --- |
 | 主导航 | `pages/agents/agents` | 筛选、私聊/群聊入口、新建 Agent、新建群聊、头像选择、首次引导 | 测试中 | ADB 已通过私聊/群聊筛选与会话入口、Agent 新建/删除；首次引导待测 |
-| 主导航 | `pages/todo/todo` | 待办新增/完成/筛选/删除、笔记搜索/新增/编辑 | ADB 通过 | 已实测待办新增、单击完成、筛选、删除，以及笔记新增、编辑、保存、删除；测试数据已清理 |
-| 主导航 | `pages/files/files` | 根目录、面包屑、搜索、排序、导入、新建文件/目录、打开、重命名、删除 | 测试中 | ADB 已通过根目录、名称回退、新建空名称校验、弹窗返回和遮罩行为；导入和实际写操作继续覆盖 |
+| 主导航 | `pages/todo/todo` | 待办新增/完成/筛选/删除、笔记搜索/新增/编辑 | 测试中 | 2026-07-12 ADB 实测待办新增、整行完成、已完成筛选、重启后持久化、删除；笔记新增、编辑、保存、删除均通过且测试数据已清理。发现直接点复选框只变内部视觉状态、重启回退，源码已改为受页面状态控制的静态勾选视图，待重新编译部署回归。 |
+| 主导航 | `pages/files/files` | 根目录、面包屑、搜索、排序、导入、新建文件/目录、打开、重命名、删除 | 测试中 | ADB 已通过根目录、名称回退、新建空名称校验、弹窗返回和遮罩行为；2026-07-12 新建临时文件夹、重命名为 `CodexADB_Renamed_0712`、通过 UI 删除，并以 `run-as` 的 `find` 确认无残留；导入、搜索、排序和文件读写继续覆盖 |
 | 主导航 | `pages/settings/settings` | 所有设置入口、资料摘要、状态展示 | 测试中 | ADB 已通过设置列表与运行诊断入口；各设置写操作继续回归 |
 | 设置 | `pages/settings/diagnostics/diagnostics` | 错误记录、诊断编号、技术详情、清空、空状态 | 测试中 | ADB 已通过入口与空状态；错误注入、详情和清空待测 |
 | 私聊 | `pages/chat/chat` | 文本发送、流式状态、停止/续跑、工具栏、图片/拍照/文件、滚动、重进恢复 | 测试中 | ADB 已通过文本发送、退出页面后台续流、重进恢复和防重复；图片 runtime、删除失效、长历史滚动与键盘继续回归 |
 | 私聊 | `pages/agent-settings/agent-settings` | 名称/备注/头像/Prompt/规则/模型/语音/生成参数/Skills/工具/截断/删除 | 测试中 | ADB 已通过临时改名、全屏编辑往返保留未保存状态、不保存退出、Agent 删除；其余设置继续覆盖 |
 | 群聊 | `pages/group-chat/group-chat` | 文本/媒体、调度、暂停、后台续流、成员消息、上下文/文件/记忆入口 | 测试中 | ADB 已通过历史渲染、私聊目标选择与草稿隔离、私发后公开续接、调度控制面隔离、拍照入口及权限拒绝恢复；真实用户→成员私发、延迟唤醒、无限续谈、公开交接、流中插话、相册/文件和键盘继续覆盖 |
 | 群聊 | `pages/group-chat-settings/group-chat-settings` | 群名、成员、调度 Prompt、共享 Prompt、未保存退出 | 测试中 | ADB 已通过页面进入和成员列表；编辑、保存与退出保护待测 |
-| 群聊 | `pages/group-chat-sessions/group-chat-sessions` | 会话新增、切换、重命名、删除 | 测试中 | ADB 已通过新增、切换、删除并清空文件；SQLite 验证消息、复盘、上下文、指标、任务、记忆和工作区均级联清理；重命名待测 |
+| 群聊 | `pages/group-chat-sessions/group-chat-sessions` | 会话新增、切换、重命名、删除 | 测试中 | ADB 已通过新增、切换、删除并清空文件；SQLite 验证消息、复盘、上下文、指标、任务、记忆和工作区均级联清理。此前无重命名入口，已补页面 UI，待重新编译部署后回归。 |
 | 历史 | `pages/history/history` | 私聊/群上下文切换、预览、恢复、批量删除、清空 | 测试中 | ADB 已通过历史预览、切换到对话和管理模式选择；未对用户数据执行批量删除 |
 | 编辑器 | `pages/note-editor/note-editor` | 新建/编辑/保存/返回保护 | ADB 通过 | 新建、保存、删除及 Android 物理返回放弃确认均通过 |
 | 编辑器 | `pages/common/editor/editor` | 全屏编辑、保存、取消、空内容、长文本 | 测试中 | 跨页保留未保存内容已通过；补齐 Android 物理返回确认，文件读写和长文本继续覆盖 |
@@ -129,6 +129,9 @@
 | UI-006 | P1 | Rice Dialog 点击确认后无条件关闭，业务空值校验或写入失败无法保留输入重试 | 已修复，ADB 通过 | 新增兼容默认开启的 `closeOnClickConfirm`；Todo/文件弹窗由成功分支关窗；空标题/名称确认、物理返回和遮罩行为均通过 | Rice Dialog、Todo、Files，`815ecf6` |
 | SET-014 | P1 | Agent 旧裸 `modelId` 在标签、选择面板和运行时分别猜测不同 Provider | 已修复，Android 编译通过 | 标签和面板统一按运行时默认 Chat Provider 解释；不迁移用户数据，未配置模型明确标注 | `utils/agent-settings-models.uts`，`815ecf6` |
 | UI-007 | P1 | Rice Dialog/ActionSheet 小程序 API 分支引用错误字段、未声明变量及错误的 fail 参数类型 | 已修复，待 MP 编译 | `cancelText` 改为 `cancelButtonText`，失败信息统一传字符串 `err.errMsg` | Rice Dialog/ActionSheet API，`815ecf6` |
+| UI-008 | P1 | 待办直接点击 `rice-checkbox` 时组件只更新内部 model，页面未收到持久化写入；界面显示已完成但重启后回退 | 已修复，待重新编译 ADB 回归 | 2026-07-12 在模拟器创建测试待办后复现：点复选框后 `todo.md` 仍为 `- [ ]`，点整行才写为 `- [x]`。已换为页面状态驱动的静态勾选视图，避免内部状态脱节 | `pages/todo/todo.uvue` |
+| UI-009 | P1 | 群聊会话数据层支持重命名，但会话页没有入口，台账误写为“待测” | 已修复，待重新编译 ADB 回归 | `updateGroupSessionTitle` 已存在；会话页补充预填名称、空值/失败提示、刷新和返回关闭逻辑 | `pages/group-chat-sessions/group-chat-sessions.uvue` |
+| PERF-005 | P1 | 无限续谈后 scheduler 每轮拼接全量消息，恢复/唤醒又全表读取并 JSON 解析所有已完成发言申请 | 待重构 | 静态审计确认不能用硬轮数回避：需做保留原文审计能力的 token 预算/摘要策略，并按任务状态查询或归档已终态申请 | `utils/group-chat-scheduler.uts`、`utils/group-chat-speak-intent.uts`、`utils/database-group-chat.uts` |
 | SET-015 | P2 | 生成参数保存失败后页面继续展示未持久化值，重进时才突然回退 | 已修复，故障注入待回归 | 两条保存路径失败时立即重新读取最后成功配置 | `pages/settings/generation/generation.uvue`，`815ecf6` |
 | SET-016 | P2 | 旧模型设置页仍注册并参与备份白名单，但已无入口和运行态写入方 | 待兼容决策 | 直接删除可能影响外部深链或旧备份语义；可选重定向到默认模型页或正式下线 | 待用户确认兼容清理策略 |
 | SET-017 | P2 | 生成参数数值框在 `@input` 每字符保存，清空旧值时会把中间态裁剪后写库并污染非法输入回退 | 已修复，ADB 通过 | 数值仅在 blur/confirm 提交；流式开关只更新已持久化快照。编辑 `4096 -> 65` 时 DB 保持 `4096`，`abc` 失焦与 force-stop 后仍恢复 `4096` | `pages/settings/generation/generation.uvue` |
@@ -138,6 +141,7 @@
 | 日期 | 文件 | 修改 | 验证 | commit |
 | --- | --- | --- | --- | --- |
 | 2026-07-12 | 群聊 scheduler/runtime、消息语义上下文与流式审核 | 私发增加请求关联和送达状态；调度器读取全量公开/私聊正文但禁止任何字段外传，普通 Agent 与复盘既不读其他私聊正文也不接收回执；原 Agent 通过临时语义上下文延续，私发不进入长期记忆；修复继续讨论重复私发和 XML 公开回显 | HBuilderX 5.15 多轮 Android class 差量编译并同步成功；ADB 覆盖私发、冲突意图、公开续接、上下文/思考隔离、调度脱敏、指标/复盘隔离和临时会话级联清理 | 本轮提交 |
+| 2026-07-12 | `pages/todo/todo.uvue`、`pages/group-chat-sessions/group-chat-sessions.uvue` | 待办勾选改为页面状态驱动，避免视觉勾选未落盘；群聊会话补重命名入口与失败处理 | ADB 已复现待办复选框未落盘、整行写入与笔记 CRUD 均通过；源代码 `git diff --check` 通过。HBuilderX CLI 主进程 IPC 断连，最新改动待重新部署 ADB 回归 | 待提交 |
 | 2026-07-12 | 数据管理页、群聊模型/服务、App Guide、Skill 功能地图 | 按需求下线旧 `uni.storage` 手动迁移：移除设置入口、Storage/DCStorage 读取清理器、群聊旧 Storage 解析和死代码；保留备份/导入及仍在用的旧用户目录兼容 | HBuilderX 5.15 Android class 28 页面编译通过；CLI 同步模拟器后 ADB UI hierarchy 仅保留备份/导入入口；测试探针、触发器、临时备份均已清理 | 本轮提交 |
 | 2026-07-11 | `pages/settings/generation/generation.uvue` | 数值输入从逐字符保存改为 blur/confirm 提交；流式开关不再顺带提交编辑中的半成品 | HBuilderX 28 页面编译并同步成功；ADB + SQLite 验证编辑中、非法失焦和 force-stop 均不污染原值 | 本轮提交 |
 | 2026-07-11 | 私聊 runtime、聊天页、会话恢复、历史/Agent 删除与数据导入 | 私聊流脱离页面生命周期；图片 caption/停止/保存统一进入 runtime；删除或覆盖恢复后旧页面不可复活数据；进程遗留流式消息转为明确中断态 | HBuilderX 5.15 clean 与差量编译 28 页面成功；ADB 退出续流、重进防重复、SQLite 终态和日志回归通过 | 本轮提交 |
@@ -249,6 +253,7 @@
 | 2026-07-12 16:34 | 群内私聊控制面与主动发言唤醒编译 | HBuilderX 5.15 完成 28 页面 Android class 编译并同步 `emulator-5554`；scheduler 可临时读取完整私聊，敏感请求不保存快照或 debug 正文；`group_request_speak` 增加持久化延迟唤醒 |
 | 2026-07-12 16:37 | 群内私聊目标与草稿 ADB 回归 | 选择器仅显示真实 active member“千夏”，无 scheduler/reviewer；`PRIVATE_DRAFT` 退出私聊后未进入公开输入框，再次选择原成员可恢复；未发送测试消息、未修改用户会话 |
 | 2026-07-12 17:06 | 调度器全量上下文、分线程唤醒与私聊状态回归 | HBuilderX 5.15 完成 28 页面 Android class 编译并启动 `emulator-5554`；私聊草稿按 Agent 隔离，失败/中止状态持久显示；启动日志无 fatal、ABI、UTS 或 SQLite 异常 |
+| 2026-07-12 | ADB 文件页临时目录 CRUD | 新建临时文件夹后重命名为 `CodexADB_Renamed_0712`，通过 UI 删除；`run-as io.dcloud.uniappx find` 未发现同名路径残留 |
 
 ## 手动真机回归
 

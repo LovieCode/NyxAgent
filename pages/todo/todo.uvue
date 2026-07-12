@@ -44,12 +44,10 @@
 								@click="toggleTodo(todo['id'] as string)"
 							>
 								<view class="todo-left" @click.stop="toggleTodo(todo['id'] as string)">
-									<rice-checkbox
-										:model-value="(todo['completed'] as boolean)"
-										shape="round"
-										checked-color="#FB8FAB"
-										icon-size="20px"
-									/>
+									<!-- 静态图标由页面状态驱动，避免组件内部值与持久化状态脱节。 -->
+									<view :class="['todo-check', (todo['completed'] as boolean) ? 'todo-check-done' : '']">
+										<rice-icon v-if="(todo['completed'] as boolean)" name="checked" size="12px" color="#FFFFFF" />
+									</view>
 								</view>
 								<view class="todo-content">
 									<text :class="['todo-title', (todo['completed'] as boolean) ? 'todo-title-done' : '']">
@@ -734,6 +732,23 @@
 	.todo-left {
 		padding-right: 10px;
 		padding-top: 1px;
+	}
+
+	.todo-check {
+		width: 20px;
+		height: 20px;
+		border-radius: 10px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #D8C8D0;
+		align-items: center;
+		justify-content: center;
+		background-color: #FFFFFF;
+	}
+
+	.todo-check-done {
+		border-color: #FB8FAB;
+		background-color: #FB8FAB;
 	}
 
 	.todo-content {

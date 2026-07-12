@@ -41,6 +41,12 @@ function escapeAgentTagText(text: string): string {
 	result = result.replace(/<private_group_reply_history>/g, '< private_group_reply_history>')
 	result = result.replace(/<\/private_group_dialogue_history>/g, '</ private_group_dialogue_history>')
 	result = result.replace(/<private_group_dialogue_history>/g, '< private_group_dialogue_history>')
+	result = result.replace(/<\/group_member_message>/g, '</ group_member_message>')
+	result = result.replace(/<group_member_message>/g, '< group_member_message>')
+	result = result.replace(/<\/private_user_message>/g, '</ private_user_message>')
+	result = result.replace(/<private_user_message>/g, '< private_user_message>')
+	result = result.replace(/<\/group_turn_anchor>/g, '</ group_turn_anchor>')
+	result = result.replace(/<group_turn_anchor>/g, '< group_turn_anchor>')
 	return result
 }
 
@@ -60,6 +66,13 @@ function normalizeContextTag(tag: string): string {
 	return 'conversation_context'
 }
 
+function normalizeMessageContentTag(tag: string): string {
+	if (tag == 'group_member_message') { return tag }
+	if (tag == 'private_user_message') { return tag }
+	if (tag == 'group_turn_anchor') { return tag }
+	return 'user_message'
+}
+
 function appendContextBlock(parts: string[], block: AgentContextBlock): void {
 	const content = block.content.trim()
 	if (content == '') {
@@ -74,19 +87,20 @@ function appendContextBlock(parts: string[], block: AgentContextBlock): void {
 	parts.push('</' + tag + '>')
 }
 
-export function wrapUserContentForAgent(userContent: string, prefixBlocks: AgentContextBlock[], suffixBlocks: AgentContextBlock[]): string {
+export function wrapUserContentForAgent(userContent: string, prefixBlocks: AgentContextBlock[], suffixBlocks: AgentContextBlock[], messageTag: string = 'user_message'): string {
 	const hasPrefix = prefixBlocks.length > 0
 	const hasSuffix = suffixBlocks.length > 0
-	if (hasPrefix == false && hasSuffix == false) {
+	const normalizedMessageTag = normalizeMessageContentTag(messageTag)
+	if (hasPrefix == false && hasSuffix == false && normalizedMessageTag == 'user_message') {
 		return userContent
 	}
 	const parts: string[] = []
 	for (let i = 0; i < prefixBlocks.length; i++) {
 		appendContextBlock(parts, prefixBlocks[i])
 	}
-	parts.push('<user_message>')
+	parts.push('<' + normalizedMessageTag + '>')
 	parts.push(escapeAgentTagText(userContent))
-	parts.push('</user_message>')
+	parts.push('</' + normalizedMessageTag + '>')
 	for (let i = 0; i < suffixBlocks.length; i++) {
 		appendContextBlock(parts, suffixBlocks[i])
 	}

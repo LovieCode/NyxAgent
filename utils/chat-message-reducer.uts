@@ -406,7 +406,8 @@ export function buildRuntimeMessages(messages: UTSJSONObject[], options: ChatRun
 		}
 		const copied = cloneMessage(messages[i])
 		runtimeMessages.push(copied)
-		if (getMessageRole(copied) == CHAT_ROLE_USER) {
+		const rawMessageTag = copied['agent_message_tag'] as string | null
+		if (getMessageRole(copied) == CHAT_ROLE_USER && rawMessageTag != 'group_member_message') {
 			lastUserIndex = runtimeMessages.length - 1
 		}
 	}

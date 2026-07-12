@@ -83,6 +83,7 @@
 		getActiveGroupChatId,
 		getGroupChatById,
 		getGroupSchedulerPrompt,
+		getGroupSharedPrompt,
 		isAgentInGroup,
 		removeGroupMember,
 		saveGroupChat,
@@ -144,7 +145,7 @@
 				this.groupName = group.name
 				this.groupAvatar = group.avatar
 				this.schedulerPrompt = getGroupSchedulerPrompt(group)
-				this.sharedPrompt = group.sharedPrompt != '' ? group.sharedPrompt : buildDefaultSharedPrompt()
+				this.sharedPrompt = getGroupSharedPrompt(group)
 				this.captureSavedState()
 			},
 			captureSavedState(): void {
@@ -291,7 +292,7 @@
 				this.group = group
 				this.groupName = group.name
 				this.schedulerPrompt = getGroupSchedulerPrompt(group)
-				this.sharedPrompt = group.sharedPrompt
+				this.sharedPrompt = getGroupSharedPrompt(group)
 				this.captureSavedState()
 				uni.showToast({ position: 'bottom', title: '已保存', icon: 'success' })
 				return true

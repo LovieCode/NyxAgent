@@ -17,6 +17,11 @@ import {
 	GROUP_MESSAGE_VISIBILITY_PUBLIC,
 	LEGACY_DIRECTIVE_SCHEDULER_PROMPT_TEXT,
 	LEGACY_ENVIRONMENT_SCHEDULER_PROMPT_TEXT,
+	LEGACY_GENERIC_SHARED_PROMPT_TEXT,
+	LEGACY_NATURAL_ROUTING_SCHEDULER_PROMPT_TEXT,
+	LEGACY_STORY_SHARED_PROMPT_TEXT,
+	PREVIOUS_DEFAULT_SCHEDULER_PROMPT_TEXT,
+	PREVIOUS_DEFAULT_SHARED_PROMPT_TEXT,
 	isInternalGroupSenderType,
 	isInternalGroupVisibility,
 	type GroupChat,
@@ -29,7 +34,7 @@ export function buildDefaultSchedulerPrompt(): string {
 
 export function getGroupSchedulerPrompt(group: GroupChat): string {
 	const text = group.schedulerPrompt.trim()
-	if (text == LEGACY_DIRECTIVE_SCHEDULER_PROMPT_TEXT || text == LEGACY_ENVIRONMENT_SCHEDULER_PROMPT_TEXT) {
+	if (text == LEGACY_DIRECTIVE_SCHEDULER_PROMPT_TEXT || text == LEGACY_ENVIRONMENT_SCHEDULER_PROMPT_TEXT || text == LEGACY_NATURAL_ROUTING_SCHEDULER_PROMPT_TEXT || text == PREVIOUS_DEFAULT_SCHEDULER_PROMPT_TEXT) {
 		return buildDefaultSchedulerPrompt()
 	}
 	if (text != '') { return text }
@@ -38,6 +43,15 @@ export function getGroupSchedulerPrompt(group: GroupChat): string {
 
 export function buildDefaultSharedPrompt(): string {
 	return DEFAULT_SHARED_PROMPT_TEXT
+}
+
+export function getGroupSharedPrompt(group: GroupChat): string {
+	const text = group.sharedPrompt.trim()
+	if (text == LEGACY_GENERIC_SHARED_PROMPT_TEXT || text == LEGACY_STORY_SHARED_PROMPT_TEXT || text == PREVIOUS_DEFAULT_SHARED_PROMPT_TEXT) {
+		return buildDefaultSharedPrompt()
+	}
+	if (text != '') { return text }
+	return buildDefaultSharedPrompt()
 }
 
 export function displaySessionTitle(session: GroupChatSession | null): string {

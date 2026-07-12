@@ -63,6 +63,7 @@ import {
 	getGroupMessages,
 	getGroupSessionById,
 	getGroupSessionWorkspaceDir,
+	getGroupSharedPrompt,
 	isAgentInGroup,
 	markGroupAgentMessageRevoked,
 	readAgentInjectDatetime,
@@ -1108,8 +1109,8 @@ class GroupChatTurnRuntime {
 		const injectDatetime = readAgentInjectDatetime(agent)
 		const interactionRules = readAgentInteractionRules(agent)
 		const msgSegmentation = readAgentMsgSegmentation(agent)
-		const systemPrompt = buildMemberSystemPrompt(agent, group.sharedPrompt)
-		const tempMessages = buildMemberRuntimeMessages(group, session, this.messages, action, agentName, injectDatetime, buildChatDatetimePrefix(), interactionRules)
+		const systemPrompt = buildMemberSystemPrompt(agent, getGroupSharedPrompt(group))
+		const tempMessages = buildMemberRuntimeMessages(group, session, this.messages, action, injectDatetime, buildChatDatetimePrefix(), interactionRules)
 		const privateDialogueText = isPrivateDelivery == true ? '' : readPrivateDialogueContext(tempMessages)
 		const requiresPrivateBoundaryReview = isPrivateDelivery == false && privateDialogueText != ''
 		const sensitiveMemberMode = isPrivateDelivery == true || requiresPrivateBoundaryReview == true

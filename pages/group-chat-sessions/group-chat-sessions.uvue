@@ -28,12 +28,28 @@
 					</view>
 					<view class="session-actions" @click.stop>
 						<text class="session-action" @click="showSessionJson(session)">查看</text>
+						<text class="session-action" @click="startRenameSession(session)">重命名</text>
 						<text class="session-action" @click="forkSession(session)">分支</text>
 						<text class="session-action danger" @click="askDeleteSession(session)">删除</text>
 					</view>
 				</view>
 			</view>
 		</scroll-view>
+
+		<rice-dialog
+			v-model:show="showRenameDialog"
+			title="重命名会话"
+			:show-cancel-button="true"
+			cancel-button-text="取消"
+			confirm-button-text="确认"
+			:close-on-click-confirm="false"
+			@confirm="renameSession"
+			@cancel="cancelRenameSession"
+		>
+			<view class="dialog-content">
+				<rice-input v-model="renameTitle" placeholder="输入会话名称" border="none" />
+			</view>
+		</rice-dialog>
 
 		<view v-if="previewVisible" class="preview-overlay">
 			<view class="preview-card">
@@ -64,6 +80,7 @@
 		getGroupMessages,
 		getGroupSessions,
 		setActiveGroupSession,
+		updateGroupSessionTitle,
 	} from '@/utils/group-chat-service.uts'
 	import { disposeGroupChatTurn } from '@/utils/group-chat-turn-runtime.uts'
 
@@ -77,10 +94,24 @@
 				previewVisible: false as boolean,
 				previewTitle: '' as string,
 				previewJson: '[]' as string,
+				showRenameDialog: false as boolean,
+				renameSessionId: '' as string,
+				renameTitle: '' as string,
 			}
 		},
 		onLoad() { this.loadData() },
 		onShow() { this.loadData() },
+		onBackPress(): boolean {
+			if (this.previewVisible == true) {
+				this.closePreview()
+				return true
+			}
+			if (this.showRenameDialog == true) {
+				this.cancelRenameSession()
+				return true
+			}
+			return false
+		},
 		methods: {
 			loadData(): void {
 				const groupId = getActiveGroupChatId()
@@ -96,6 +127,10 @@
 			goBack(): void {
 				if (this.previewVisible == true) {
 					this.closePreview()
+					return
+				}
+				if (this.showRenameDialog == true) {
+					this.cancelRenameSession()
 					return
 				}
 				uni.navigateBack()
@@ -139,6 +174,35 @@
 				} else {
 					uni.showToast({ position: 'bottom', title: '分支创建失败', icon: 'none' })
 				}
+			},
+			startRenameSession(session: GroupChatSession): void {
+				this.renameSessionId = session.id
+				this.renameTitle = displaySessionTitle(session)
+				this.showRenameDialog = true
+			},
+			cancelRenameSession(): void {
+				this.showRenameDialog = false
+				this.renameSessionId = ''
+				this.renameTitle = ''
+			},
+			renameSession(): void {
+				const title = this.renameTitle.trim()
+				if (title == '') {
+					uni.showToast({ position: 'bottom', title: '请输入会话名称', icon: 'none' })
+					return
+				}
+				if (this.groupId == '' || this.renameSessionId == '') {
+					uni.showToast({ position: 'bottom', title: '会话状态已失效，请重试', icon: 'none' })
+					return
+				}
+				const updated = updateGroupSessionTitle(this.groupId, this.renameSessionId, title)
+				if (updated == false) {
+					uni.showToast({ position: 'bottom', title: '会话重命名失败，请重试', icon: 'none' })
+					return
+				}
+				this.cancelRenameSession()
+				this.loadData()
+				uni.showToast({ position: 'bottom', title: '会话已重命名', icon: 'success' })
 			},
 			askDeleteSession(session: GroupChatSession): void {
 				if (this.sessionList.length <= 1) {
@@ -191,8 +255,9 @@
 	.session-title { font-size: 15px; color: var(--rice-text-color); font-weight: bold; max-width: 180px; lines: 1; text-overflow: ellipsis; }
 	.active-badge { margin-left: 6px; color: var(--rice-primary-color); font-size: 11px; font-weight: bold; }
 	.session-desc { margin-top: 4px; font-size: 11px; color: var(--rice-text-color-3); }
-	.session-actions { flex-direction: row; align-items: center; margin-left: 5px; }
-	.session-action { font-size: 12px; color: var(--rice-primary-color); padding: 5px; }
+	.session-actions { width: 114px; flex-shrink: 0; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; align-items: center; margin-left: 5px; }
+	.session-action { font-size: 12px; color: var(--rice-primary-color); padding: 5px 4px; }
+	.dialog-content { width: 100%; }
 	.danger { color: #EF4444; }
 	.preview-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(17,24,39,0.38); z-index: 1000; justify-content: flex-end; }
 	.preview-card { width: 100%; flex: 1; background-color: #FFFFFF; padding: 14px 16px 18px; flex-direction: column; }
