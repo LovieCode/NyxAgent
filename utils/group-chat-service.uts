@@ -55,7 +55,6 @@ import {
 import {
 	ACTIVE_GROUP_CHAT_ID_KEY,
 	ACTIVE_GROUP_SESSION_ID_KEY,
-	GROUP_CHAT_LIST_KEY,
 	GROUP_DELIVERY_MODE_PUBLIC,
 	GROUP_DELIVERY_MODE_USER_PRIVATE,
 	GROUP_MESSAGE_AUDIENCE_GROUP,
@@ -75,17 +74,8 @@ import {
 	dbRowToGroupSession,
 	groupChatToDbRow,
 	memberToDbRow,
-	parseAgentContextRecords,
-	parseGroupChats,
-	parseGroupMembers,
-	parseGroupMessages,
-	parseGroupSessions,
 	readStringField,
-	safeJsonText,
 	sessionToDbRow,
-	storageMembersKey,
-	storageMessagesKey,
-	storageSessionsKey,
 	type GroupChat,
 	type GroupChatMember,
 	type GroupChatSession,
@@ -126,26 +116,6 @@ const LEGACY_GLOBAL_SCHEDULER_PROMPT_SETTING_KEY = 'global_scheduler_prompt'
 function readLegacySchedulerPrompt(): string {
 	const legacyPrompt = getAppSetting(LEGACY_GLOBAL_SCHEDULER_PROMPT_SETTING_KEY)
 	return legacyPrompt != null ? legacyPrompt : ''
-}
-
-function legacyGetGroupChats(): GroupChat[] {
-	const raw = uni.getStorageSync(GROUP_CHAT_LIST_KEY) as string | null
-	return parseGroupChats(safeJsonText(raw), readLegacySchedulerPrompt())
-}
-
-function legacyGetGroupMembers(groupId: string): GroupChatMember[] {
-	const raw = uni.getStorageSync(storageMembersKey(groupId)) as string | null
-	return parseGroupMembers(safeJsonText(raw))
-}
-
-function legacyGetGroupSessions(groupId: string): GroupChatSession[] {
-	const raw = uni.getStorageSync(storageSessionsKey(groupId)) as string | null
-	return parseGroupSessions(safeJsonText(raw))
-}
-
-function legacyGetGroupMessages(groupId: string, sessionId: string): UTSJSONObject[] {
-	const raw = uni.getStorageSync(storageMessagesKey(groupId, sessionId)) as string | null
-	return parseGroupMessages(safeJsonText(raw))
 }
 
 function isSafeId(id: string): boolean {
@@ -545,75 +515,6 @@ export function saveGroupAgentContextRecord(record: UTSJSONObject): boolean {
 	const agentId = record['agentId'] as string | null
 	if (agentId == null || agentId == '') { return false }
 	return saveGroupAgentContextRow(record)
-}
-
-export function migrateLegacyGroupChatStorage(storageKeys: string[]): number {
-	let migrated = 0
-	const groups = legacyGetGroupChats()
-	if (groups.length > 0) {
-		if (getGroupChatRows().length == 0) {
-			if (saveGroupChats(groups) == false) { throw new Error('旧群聊迁移失败') }
-			migrated += groups.length
-		}
-		for (let i = 0; i < groups.length; i++) {
-			const groupId = groups[i].id
-			if (getGroupChatById(groupId) == null) { continue }
-			const members = legacyGetGroupMembers(groupId)
-			if (members.length > 0 && getGroupMembers(groupId).length == 0) {
-				if (saveGroupMembers(groupId, members) == false) { throw new Error('旧群成员迁移失败') }
-				migrated += members.length
-			}
-			const sessions = legacyGetGroupSessions(groupId)
-			if (sessions.length > 0 && getGroupSessions(groupId).length == 0) {
-				if (saveGroupSessions(groupId, sessions) == false) { throw new Error('旧群会话迁移失败') }
-				migrated += sessions.length
-			}
-			for (let j = 0; j < sessions.length; j++) {
-				if (getGroupSessionById(groupId, sessions[j].id) == null) { continue }
-				const messages = legacyGetGroupMessages(groupId, sessions[j].id)
-				if (messages.length == 0 || getGroupMessages(groupId, sessions[j].id).length > 0) { continue }
-				if (saveGroupMessages(groupId, sessions[j].id, messages) == false) {
-					throw new Error('旧群消息迁移失败')
-				}
-				migrated += messages.length
-			}
-		}
-	}
-
-	if (groups.length > 0) {
-		try {
-			const activeGroupId = uni.getStorageSync(ACTIVE_GROUP_CHAT_ID_KEY) as string | null
-			if (activeGroupId != null && activeGroupId != '' && getGroupChatState(ACTIVE_GROUP_CHAT_ID_KEY) == '') {
-				setGroupChatState(ACTIVE_GROUP_CHAT_ID_KEY, activeGroupId)
-				migrated++
-			}
-		} catch (_e: any) {
-		}
-		try {
-			const activeSessionId = uni.getStorageSync(ACTIVE_GROUP_SESSION_ID_KEY) as string | null
-			if (activeSessionId != null && activeSessionId != '' && getGroupChatState(ACTIVE_GROUP_SESSION_ID_KEY) == '') {
-				setGroupChatState(ACTIVE_GROUP_SESSION_ID_KEY, activeSessionId)
-				migrated++
-			}
-		} catch (_e2: any) {
-		}
-	}
-
-	const agentContextPrefix = 'group_agent_context_records_'
-	for (let k = 0; k < storageKeys.length; k++) {
-		const key = storageKeys[k]
-		if (key.startsWith(agentContextPrefix) == false) { continue }
-		const agentId = key.substring(agentContextPrefix.length)
-		if (agentId == '') { continue }
-		if (getGroupAgentContextRows(agentId).length > 0) { continue }
-		const raw = uni.getStorageSync(key) as string | null
-		const records = parseAgentContextRecords(safeJsonText(raw))
-		for (let r = 0; r < records.length; r++) {
-			if (saveGroupAgentContextRecord(records[r]) == false) { throw new Error('旧群聊上下文迁移失败') }
-			migrated++
-		}
-	}
-	return migrated
 }
 
 export function createGroupAgentContextRecord(group: GroupChat, session: GroupChatSession, agentId: string, agentName: string, action: UTSJSONObject, runtimeMessages: UTSJSONObject[], systemPrompt: string): UTSJSONObject {

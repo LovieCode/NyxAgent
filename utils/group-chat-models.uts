@@ -4,7 +4,6 @@
  * 不依赖数据库和文件系统；服务层负责持久化与副作用。
  */
 
-export const GROUP_CHAT_LIST_KEY = 'group_chat_list'
 export const ACTIVE_GROUP_CHAT_ID_KEY = 'active_group_chat_id'
 export const ACTIVE_GROUP_SESSION_ID_KEY = 'active_group_session_id'
 export const NYX_ADMIN_AGENT_ID = 'nyx-admin'
@@ -138,26 +137,6 @@ export function resolveGroupReviewerDisplayName(group: GroupChat | null): string
 	return GROUP_REVIEWER_AGENT_NAME
 }
 
-export function storageMembersKey(groupId: string): string {
-	return 'group_chat_members_' + groupId
-}
-
-export function storageSessionsKey(groupId: string): string {
-	return 'group_chat_sessions_' + groupId
-}
-
-export function storageMessagesKey(groupId: string, sessionId: string): string {
-	return 'group_chat_messages_' + groupId + '_' + sessionId
-}
-
-export function storageAgentContextKey(agentId: string): string {
-	return 'group_agent_context_records_' + agentId
-}
-
-export function safeJsonText(raw: string | null): string {
-	return raw != null ? raw : ''
-}
-
 export function createId(prefix: string): string {
 	return prefix + '-' + Date.now() + '-' + Math.floor(Math.random() * 100000)
 }
@@ -247,81 +226,6 @@ export function normalizeGroupSession(item: UTSJSONObject): GroupChatSession {
 	} as GroupChatSession
 }
 
-export function parseGroupChats(raw: string, legacySchedulerPrompt: string = ''): GroupChat[] {
-	if (raw == '') { return [] as GroupChat[] }
-	try {
-		const list = JSON.parse(raw) as UTSJSONObject[]
-		const result: GroupChat[] = []
-		if (list != null) {
-			for (let i = 0; i < list.length; i++) {
-				const group = normalizeGroupChat(list[i], legacySchedulerPrompt)
-				if (group.id != '') {
-					result.push(group)
-				}
-			}
-		}
-		return result
-	} catch (_e: any) {
-	}
-	return [] as GroupChat[]
-}
-
-export function parseGroupMembers(raw: string): GroupChatMember[] {
-	if (raw == '') { return [] as GroupChatMember[] }
-	try {
-		const list = JSON.parse(raw) as UTSJSONObject[]
-		const result: GroupChatMember[] = []
-		if (list != null) {
-			for (let i = 0; i < list.length; i++) {
-				const member = normalizeGroupMember(list[i])
-				if (member.groupId != '' && member.agentId != '') {
-					result.push(member)
-				}
-			}
-		}
-		return result
-	} catch (_e: any) {
-	}
-	return [] as GroupChatMember[]
-}
-
-export function parseGroupSessions(raw: string): GroupChatSession[] {
-	if (raw == '') { return [] as GroupChatSession[] }
-	try {
-		const list = JSON.parse(raw) as UTSJSONObject[]
-		const result: GroupChatSession[] = []
-		if (list != null) {
-			for (let i = 0; i < list.length; i++) {
-				const session = normalizeGroupSession(list[i])
-				if (session.id != '' && session.groupId != '') {
-					result.push(session)
-				}
-			}
-		}
-		return result
-	} catch (_e: any) {
-	}
-	return [] as GroupChatSession[]
-}
-
-export function parseGroupMessages(raw: string): UTSJSONObject[] {
-	if (raw == '') { return [] as UTSJSONObject[] }
-	try {
-		const list = JSON.parse(raw) as UTSJSONObject[]
-		if (list != null) {
-			for (let i = 0; i < list.length; i++) {
-				const audience = list[i]['audience'] as string | null
-				if (audience == null || audience == '') {
-					list[i]['audience'] = GROUP_MESSAGE_AUDIENCE_GROUP
-				}
-			}
-			return list
-		}
-	} catch (_e: any) {
-	}
-	return [] as UTSJSONObject[]
-}
-
 export function parseStringList(raw: string): string[] {
 	if (raw == '') { return [] as string[] }
 	try {
@@ -330,16 +234,6 @@ export function parseStringList(raw: string): string[] {
 	} catch (_e: any) {
 	}
 	return [] as string[]
-}
-
-export function parseAgentContextRecords(raw: string): UTSJSONObject[] {
-	if (raw == '') { return [] as UTSJSONObject[] }
-	try {
-		const list = JSON.parse(raw) as UTSJSONObject[]
-		if (list != null) { return list }
-	} catch (_e: any) {
-	}
-	return [] as UTSJSONObject[]
 }
 
 export function groupChatToDbRow(group: GroupChat): UTSJSONObject {

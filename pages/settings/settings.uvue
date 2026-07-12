@@ -101,7 +101,7 @@
 						</view>
 						<view class="menu-text">
 							<text class="menu-title">数据与备份</text>
-							<text class="menu-desc">安全备份、完整迁移、导入预览、旧数据迁移</text>
+						<text class="menu-desc">安全备份、完整迁移、导入预览</text>
 						</view>
 					</view>
 					<oui-icon-unix name="right" size="14px" color="var(--rice-text-color-3)" />

@@ -46,7 +46,7 @@ function buildAppGuideHowTo(topic: string): string {
 		return '群聊用法：\n1. 首页进入群聊。\n2. 每个群有自己的成员、会话和调度，不共用全局调度。\n3. 群聊文件放群共享工作区，原始上下文可用于排查调度和用量。'
 	}
 	if (t.indexOf('backup') >= 0 || t.indexOf('导入') >= 0 || t.indexOf('导出') >= 0 || t.indexOf('数据') >= 0) {
-		return '数据管理：\n1. 打开 设置 → 数据管理。\n2. 安全备份适合分享或日常存档，会移除已知 API Key。\n3. 完整迁移备份适合换机，不要随便分享。\n4. 导入/旧数据迁移前先备份，覆盖类动作必须确认。'
+		return '数据管理：\n1. 打开 设置 → 数据管理。\n2. 安全备份适合分享或日常存档，会移除已知 API Key。\n3. 完整迁移备份适合换机，不要随便分享。\n4. 导入前先备份，覆盖类动作必须确认。'
 	}
 	if (t.indexOf('skill') >= 0 || t.indexOf('技能') >= 0) {
 		return 'Skills 用法：\n1. 打开 设置 → Skills 创建纯文本技能包。\n2. 到某个 Agent 设置里选择启用哪些 Skills。\n3. 眠汐自带 App 管理与教学 Skill，不需要手动创建。'

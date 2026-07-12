@@ -1,6 +1,6 @@
 # NyxAgent CLI / ADB 全功能测试台账
 
-更新日期：2026-07-11
+更新日期：2026-07-12
 
 ## 目标与环境
 
@@ -49,7 +49,7 @@
 | 设置 | `pages/settings/generation/generation` | 温度、Token、迭代、流式配置与边界值 | ADB 通过 | 上下界裁剪、流式开关、退出重进与 force-stop 持久化通过；数值改为 blur/confirm 提交，编辑中间态不再写库 |
 | 设置 | `pages/settings/plugin/plugin` | 插件配置、启停、输入校验、错误态 | 测试中 | ADB 已通过页面入口、搜索与 AstrBot 配置渲染；401/500/超时/断网及 diagnostics 待测 |
 | 设置 | `pages/settings/skills/skills` | Skill 新增/编辑/删除、Agent 绑定、长文本编辑 | 测试中 | ADB 已通过页面入口、空状态和返回；损坏 JSON 全链路写保护已编译，CRUD/长文/绑定待隔离数据回归 |
-| 设置 | `pages/settings/data/data` | 导出、导入、取消、无效文件、覆盖确认 | 测试中 | ADB 安全备份生成与 Android 分享选择器通过；导入增加字段/资源完整性拒绝，真实覆盖恢复仍待隔离数据回归 |
+| 设置 | `pages/settings/data/data` | 导出、导入、取消、无效文件、覆盖确认 | 测试中 | ADB 安全备份生成与 Android 分享选择器通过；导入增加字段/资源完整性拒绝，真实覆盖恢复仍待隔离数据回归。旧 `uni.storage` 手动迁移入口已下线 |
 | 设置 | `pages/settings/about/about` | 版本信息、外链打开 | ADB 通过 | 版本 `1.5.0`、构建号 `150` 正常；开发者链接打开 `https://github.com/LovieCode` |
 | 通用组件 | `rice-ui/action-sheet` | 展示、选择、取消、遮罩关闭 | ADB 通过 | 头像来源与文件新建操作表展示、选择、取消和点击遮罩关闭均通过；MP API 字段类型错误已静态修复 |
 | 通用组件 | `rice-ui/dialog` | 确认、取消、输入校验、遮罩行为 | ADB 通过 | Todo/文件空输入确认后保持弹窗；物理返回只关弹窗；遮罩按 `closeOnClickOverlay=false` 不误关；权限提示确认/取消通过 |
@@ -132,6 +132,7 @@
 
 | 日期 | 文件 | 修改 | 验证 | commit |
 | --- | --- | --- | --- | --- |
+| 2026-07-12 | 数据管理页、群聊模型/服务、App Guide、Skill 功能地图 | 按需求下线旧 `uni.storage` 手动迁移：移除设置入口、Storage/DCStorage 读取清理器、群聊旧 Storage 解析和死代码；保留备份/导入及仍在用的旧用户目录兼容 | HBuilderX 5.15 Android class 28 页面编译通过；CLI 同步模拟器后 ADB UI hierarchy 仅保留备份/导入入口；测试探针、触发器、临时备份均已清理 | 本轮提交 |
 | 2026-07-11 | `pages/settings/generation/generation.uvue` | 数值输入从逐字符保存改为 blur/confirm 提交；流式开关不再顺带提交编辑中的半成品 | HBuilderX 28 页面编译并同步成功；ADB + SQLite 验证编辑中、非法失焦和 force-stop 均不污染原值 | 本轮提交 |
 | 2026-07-11 | 私聊 runtime、聊天页、会话恢复、历史/Agent 删除与数据导入 | 私聊流脱离页面生命周期；图片 caption/停止/保存统一进入 runtime；删除或覆盖恢复后旧页面不可复活数据；进程遗留流式消息转为明确中断态 | HBuilderX 5.15 clean 与差量编译 28 页面成功；ADB 退出续流、重进防重复、SQLite 终态和日志回归通过 | 本轮提交 |
 | 2026-07-11 | 私聊/群聊媒体错误、Rice Dialog/ActionSheet、Todo、Files、Agent 模型标签、生成设置 | 补文件/相册/图片失败诊断；修复 Dialog 校验保留、物理返回和外部关闭；统一旧裸模型 Provider 语义；生成保存失败立即回滚；修正 MP API 字段 | HBuilderX 5.15 对 28 页面连续编译并同步成功；ADB 群聊相机权限、Todo/文件空输入、返回/遮罩、冷启动和前后台切换通过 | `82d7223`、`815ecf6` |
