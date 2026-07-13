@@ -13,9 +13,10 @@ import {
 	exists,
 	copyItem,
 	deleteItem,
+	hasSecurePathContainmentSupport,
 	isPathInsideDirectory,
 } from '@/utils/file-manager.uts'
-import { rememberGroupWorkspaceName, writeGroupWorkspaceNameMetadata } from '@/utils/workspace-name-snapshot.uts'
+import { rememberGroupSessionWorkspaceName, rememberGroupWorkspaceName, writeGroupWorkspaceNameMetadata } from '@/utils/workspace-name-snapshot.uts'
 import {
 	APP_ERROR_CATEGORY_DATABASE,
 	APP_ERROR_CATEGORY_STORAGE,
@@ -35,21 +36,28 @@ import {
 import {
 	deleteGroupAgentContextRow,
 	deleteGroupChatCreationRows,
+	deleteGroupMessageRow,
 	deleteGroupSessionDbRows,
-	getAppSetting,
 	getGroupAgentContextRows,
 	getGroupChatRowById,
 	getGroupChatRows,
 	getGroupChatState,
+	getGroupMessageRowCount,
+	getGroupMessageRowsBefore,
 	getGroupMemberRows,
 	getGroupMessageRows,
+	getRecentGroupMessageRows,
 	getGroupSessionRows,
 	saveGroupAgentContextRow,
 	saveGroupChatRow,
 	saveGroupMemberRows,
 	saveGroupMessageRows,
+	saveGroupMessageRowsDetailed,
 	saveGroupSessionRows,
+	setActiveGroupSessionState,
+	setGroupChatRouteState,
 	setGroupChatState,
+	type GroupMessageSaveResult,
 } from '@/utils/database.uts'
 
 import {
@@ -111,12 +119,10 @@ export type GroupSessionDeleteResult = {
 	stateUpdated: boolean
 }
 
-// LEGACY_COMPAT: 旧版曾把群调度提示词存成全局设置；未来清兼容时删除。
-const LEGACY_GLOBAL_SCHEDULER_PROMPT_SETTING_KEY = 'global_scheduler_prompt'
-
-function readLegacySchedulerPrompt(): string {
-	const legacyPrompt = getAppSetting(LEGACY_GLOBAL_SCHEDULER_PROMPT_SETTING_KEY)
-	return legacyPrompt != null ? legacyPrompt : ''
+export type GroupMessagePageCursor = {
+	timestamp: number
+	updatedAt: number
+	id: string
 }
 
 function isSafeId(id: string): boolean {
@@ -141,9 +147,8 @@ function syncGroupWorkspaceNameMetadata(group: GroupChat): void {
 export function getGroupChats(): GroupChat[] {
 	const rows = getGroupChatRows()
 	const result: GroupChat[] = []
-	const legacySchedulerPrompt = readLegacySchedulerPrompt()
 	for (let i = 0; i < rows.length; i++) {
-		const group = dbRowToGroupChat(rows[i], legacySchedulerPrompt)
+		const group = dbRowToGroupChat(rows[i])
 		result.push(group)
 	}
 	return result
@@ -161,7 +166,7 @@ export function saveGroupChats(groups: GroupChat[]): boolean {
 export function getGroupChatById(groupId: string): GroupChat | null {
 	const row = getGroupChatRowById(groupId)
 	if (row != null) {
-		const group = dbRowToGroupChat(row, readLegacySchedulerPrompt())
+		const group = dbRowToGroupChat(row)
 		return group
 	}
 	return null
@@ -197,6 +202,28 @@ export function getGroupSessionWorkspaceDir(groupId: string, sessionId: string):
 
 function isInsideGroupWorkspace(path: string): boolean {
 	return isPathInsideDirectory(buildGroupWorkspaceRoot(), path)
+}
+
+function reportSecureWorkspaceOperationUnsupported(operation: string): void {
+	reportAppErrorFromCause(
+		'GROUP_WORKSPACE_SECURE_PATH_UNSUPPORTED',
+		APP_ERROR_CATEGORY_STORAGE,
+		operation,
+		'当前平台暂不支持安全的群聊工作区文件操作',
+		'缺少 realpath/lstat 级目录包含校验，已拒绝执行',
+		true,
+	)
+}
+
+function reportUnsafeGroupWorkspacePath(operation: string, path: string): void {
+	reportAppErrorFromCause(
+		'GROUP_WORKSPACE_PATH_REJECTED',
+		APP_ERROR_CATEGORY_STORAGE,
+		operation,
+		'群聊工作区路径不安全，已拒绝执行',
+		path,
+		true,
+	)
 }
 
 export function getGroupMembers(groupId: string): GroupChatMember[] {
@@ -296,7 +323,13 @@ export function saveGroupSessions(groupId: string, sessions: GroupChatSession[])
 	for (let i = 0; i < sessions.length; i++) {
 		rows.push(sessionToDbRow(sessions[i]))
 	}
-	return saveGroupSessionRows(groupId, rows)
+	const saved = saveGroupSessionRows(groupId, rows)
+	if (saved == true) {
+		for (let i = 0; i < sessions.length; i++) {
+			rememberGroupSessionWorkspaceName(groupId, sessions[i].id, displaySessionTitle(sessions[i]))
+		}
+	}
+	return saved
 }
 
 export function getGroupSessionById(groupId: string, sessionId: string): GroupChatSession | null {
@@ -390,9 +423,10 @@ export function setActiveGroupSession(groupId: string, sessionId: string): boole
 	if (session == null) { return false }
 	group.activeSessionId = sessionId
 	group.updatedAt = Date.now()
-	if (saveGroupChat(group) == false) { return false }
-	if (setActiveGroupChat(groupId) == false) { return false }
-	return setActiveGroupSessionId(sessionId)
+	if (setActiveGroupSessionState(groupId, sessionId, group.updatedAt) == false) { return false }
+	rememberGroupWorkspaceName(group.id, group.name)
+	syncGroupWorkspaceNameMetadata(group)
+	return true
 }
 
 export function getActiveGroupChatId(): string {
@@ -413,6 +447,10 @@ export function getActiveGroupSessionId(): string {
 export function setActiveGroupSessionId(sessionId: string): boolean {
 	if (sessionId == '') { return false }
 	return setGroupChatState(ACTIVE_GROUP_SESSION_ID_KEY, sessionId)
+}
+
+export function restoreActiveGroupRouteState(groupId: string, sessionId: string): boolean {
+	return setGroupChatRouteState(groupId, sessionId)
 }
 
 export function updateGroupSessionTitle(groupId: string, sessionId: string, title: string): boolean {
@@ -438,8 +476,7 @@ export function applyGroupSessionTitleSuggestion(groupId: string, sessionId: str
 	return saveGroupSession(session)
 }
 
-export function getGroupMessages(groupId: string, sessionId: string): UTSJSONObject[] {
-	const rows = getGroupMessageRows(groupId, sessionId)
+function groupMessageRowsToMessages(rows: UTSJSONObject[]): UTSJSONObject[] {
 	const result: UTSJSONObject[] = []
 	for (let i = 0; i < rows.length; i++) {
 		result.push(dbRowToGroupMessage(rows[i]))
@@ -447,25 +484,58 @@ export function getGroupMessages(groupId: string, sessionId: string): UTSJSONObj
 	return result
 }
 
+export function getGroupMessages(groupId: string, sessionId: string): UTSJSONObject[] {
+	return groupMessageRowsToMessages(getGroupMessageRows(groupId, sessionId))
+}
+
+export function getGroupMessageCount(groupId: string, sessionId: string): number {
+	return getGroupMessageRowCount(groupId, sessionId)
+}
+
+export function getRecentGroupMessages(groupId: string, sessionId: string, batchSize: number): UTSJSONObject[] {
+	return groupMessageRowsToMessages(getRecentGroupMessageRows(groupId, sessionId, batchSize))
+}
+
+export function createGroupMessagePageCursor(message: UTSJSONObject): GroupMessagePageCursor | null {
+	const id = message['id'] as string | null
+	const timestamp = message['timestamp'] as number | null
+	const updatedAt = message['persistedUpdatedAt'] as number | null
+	if (id == null || id == '' || timestamp == null || timestamp < 0 || updatedAt == null || updatedAt < 0) {
+		return null
+	}
+	return {
+		timestamp: timestamp,
+		updatedAt: updatedAt,
+		id: id,
+	} as GroupMessagePageCursor
+}
+
+export function getGroupMessagesBefore(
+	groupId: string,
+	sessionId: string,
+	cursor: GroupMessagePageCursor,
+	batchSize: number
+): UTSJSONObject[] {
+	return groupMessageRowsToMessages(getGroupMessageRowsBefore(
+		groupId,
+		sessionId,
+		cursor.timestamp,
+		cursor.updatedAt,
+		cursor.id,
+		batchSize
+	))
+}
+
 export function saveGroupMessages(groupId: string, sessionId: string, messages: UTSJSONObject[]): boolean {
-	if (saveGroupMessageRows(groupId, sessionId, messages) == false) {
-		return false
-	}
-	try {
-		const session = getGroupSessionById(groupId, sessionId)
-		if (session != null) {
-			session.updatedAt = Date.now()
-			if (saveGroupSession(session) == false) { return false }
-		}
-	} catch (_e: any) {
-		return false
-	}
-	const group = getGroupChatById(groupId)
-	if (group != null) {
-		group.updatedAt = Date.now()
-		if (saveGroupChat(group) == false) { return false }
-	}
-	return true
+	return saveGroupMessageRows(groupId, sessionId, messages)
+}
+
+export function saveGroupMessagesDetailed(groupId: string, sessionId: string, messages: UTSJSONObject[]): GroupMessageSaveResult {
+	return saveGroupMessageRowsDetailed(groupId, sessionId, messages)
+}
+
+export function deleteGroupMessage(groupId: string, sessionId: string, messageId: string, persistedUpdatedAt: number): boolean {
+	return deleteGroupMessageRow(groupId, sessionId, messageId, persistedUpdatedAt)
 }
 
 export function listGroupAgentContextRecords(agentId: string): UTSJSONObject[] {
@@ -523,9 +593,7 @@ export function createGroupAgentContextRecord(group: GroupChat, session: GroupCh
 }
 
 export function appendGroupMessage(groupId: string, sessionId: string, message: UTSJSONObject): boolean {
-	const messages = getGroupMessages(groupId, sessionId)
-	messages.push(message)
-	return saveGroupMessages(groupId, sessionId, messages)
+	return saveGroupMessages(groupId, sessionId, [message] as UTSJSONObject[])
 }
 
 
@@ -615,18 +683,15 @@ export function createGroupUserFileMessage(groupId: string, sessionId: string, f
 
 export function revokeGroupAgentMessage(groupId: string, sessionId: string, messageId: string): boolean {
 	const messages = getGroupMessages(groupId, sessionId)
-	let found = false
 	for (let i = 0; i < messages.length; i++) {
 		const id = messages[i]['id'] as string | null
 		const senderType = messages[i]['senderType'] as string | null
 		if (id == messageId && senderType == GROUP_MESSAGE_SENDER_AGENT) {
 			markGroupMessageRevokedFields(messages[i])
-			found = true
-			break
+			return saveGroupMessages(groupId, sessionId, [messages[i]] as UTSJSONObject[])
 		}
 	}
-	if (found == false) { return false }
-	return saveGroupMessages(groupId, sessionId, messages)
+	return false
 }
 
 export function markGroupAgentMessageRevoked(message: UTSJSONObject): void {
@@ -649,13 +714,23 @@ export function deleteGroupSession(groupId: string, sessionId: string, clearFile
 	if (found == false) {
 		return { ok: false, filesCleared: false, stateUpdated: false } as GroupSessionDeleteResult
 	}
+	if (clearFiles == true && targetWorkspace != '' && exists(targetWorkspace) == true) {
+		if (hasSecurePathContainmentSupport() == false) {
+			reportSecureWorkspaceOperationUnsupported('删除群会话工作区')
+			return { ok: false, filesCleared: false, stateUpdated: false } as GroupSessionDeleteResult
+		}
+		if (isInsideGroupWorkspace(targetWorkspace) == false) {
+			reportUnsafeGroupWorkspacePath('删除群会话工作区', targetWorkspace)
+			return { ok: false, filesCleared: false, stateUpdated: false } as GroupSessionDeleteResult
+		}
+	}
 	try {
 		deleteGroupSessionDbRows(groupId, sessionId)
 	} catch (_e: any) {
 		return { ok: false, filesCleared: false, stateUpdated: false } as GroupSessionDeleteResult
 	}
 	let filesCleared = true
-	if (clearFiles == true && targetWorkspace != '' && isInsideGroupWorkspace(targetWorkspace) == true && exists(targetWorkspace) == true) {
+	if (clearFiles == true && targetWorkspace != '' && exists(targetWorkspace) == true) {
 		const deleteResult = deleteItem(targetWorkspace, true)
 		filesCleared = deleteResult.ok
 	}
@@ -688,7 +763,15 @@ export function forkGroupSession(groupId: string, sessionId: string): GroupChatS
 	const destWorkspace = buildGroupWorkspacePath(groupId, forkId)
 	if (destWorkspace == '') { return null }
 	let workspaceReady = false
-	if (source.workspacePath != '' && destWorkspace != '' && exists(source.workspacePath) == true && isInsideGroupWorkspace(source.workspacePath) == true && isInsideGroupWorkspace(destWorkspace) == true) {
+	if (source.workspacePath != '' && destWorkspace != '' && exists(source.workspacePath) == true) {
+		if (hasSecurePathContainmentSupport() == false) {
+			reportSecureWorkspaceOperationUnsupported('复制群会话工作区')
+			return null
+		}
+		if (isInsideGroupWorkspace(source.workspacePath) == false || isInsideGroupWorkspace(destWorkspace) == false) {
+			reportUnsafeGroupWorkspacePath('复制群会话工作区', source.workspacePath)
+			return null
+		}
 		workspaceReady = copyItem(source.workspacePath, destWorkspace).ok
 	} else {
 		workspaceReady = createDir(destWorkspace, true).ok
@@ -712,6 +795,9 @@ export function forkGroupSession(groupId: string, sessionId: string): GroupChatS
 		}
 		const oldMessages = getGroupMessages(groupId, sessionId)
 		const copiedMessages = cloneGroupMessagesForFork(oldMessages, forkId)
+		for (let i = 0; i < copiedMessages.length; i++) {
+			copiedMessages[i]['persistedUpdatedAt'] = null
+		}
 		if (saveGroupMessages(groupId, forkId, copiedMessages) == false) {
 			throw new Error('群会话消息复制失败')
 		}

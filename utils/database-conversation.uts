@@ -225,7 +225,7 @@ export function getConversationsByAgent(agentId: string): UTSJSONObject[] {
 export function getMessages(conversationId: string): UTSJSONObject[] {
 	const db = getDb()
 	const result = db.query(
-		'SELECT id, conversation_id, role, content, timestamp, extra FROM messages WHERE conversation_id = ? AND ? = ? ORDER BY timestamp ASC',
+		'SELECT id, conversation_id, role, content, timestamp, extra FROM messages WHERE conversation_id = ? AND ? = ? ORDER BY timestamp ASC, id ASC',
 		[conversationId, 1, 1]
 	)
 	db.close()

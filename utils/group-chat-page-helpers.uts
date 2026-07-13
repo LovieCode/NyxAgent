@@ -21,6 +21,7 @@ import {
 	resolveGroupSchedulerAgentId,
 	resolveGroupSchedulerDisplayName,
 } from '@/utils/group-chat-service.uts'
+import { markGroupMessageDirty } from '@/utils/group-chat-models.uts'
 
 export type GroupTextStreamState = {
 	text: string
@@ -120,6 +121,7 @@ export function normalizeGroupUserSenderNames(messages: UTSJSONObject[], userNic
 			const raw = msg['senderName'] as string | null
 			const name = raw != null ? raw.trim() : ''
 			if (name == '' || name == '用户' || name == '我') {
+				markGroupMessageDirty(msg)
 				msg['senderName'] = displayName
 				changed = true
 			}
@@ -150,6 +152,7 @@ export function findLastGroupAssistantMessageFrom(list: UTSJSONObject[], startIn
 
 export function appendGroupVisiblePlainText(msg: UTSJSONObject, text: string): void {
 	if (text == '') { return }
+	markGroupMessageDirty(msg)
 	const parts = msg['message'] as UTSJSONObject[] | null
 	let list: UTSJSONObject[] = []
 	if (parts != null) {
@@ -176,6 +179,7 @@ export function appendGroupVisiblePlainText(msg: UTSJSONObject, text: string): v
 }
 
 export function replaceGroupVisiblePlainText(msg: UTSJSONObject, text: string): void {
+	markGroupMessageDirty(msg)
 	msg['content'] = text
 	if (text != '') {
 		msg['message'] = [createPlainPart(text)]

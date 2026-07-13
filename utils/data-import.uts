@@ -3,14 +3,51 @@
  * 从导出的 ZIP 备份包中恢复结构化数据与 Agent 工作区。
  */
 
-import { importDatabaseTables, importSettingsTables, setAppSetting, setRuntimeState } from '@/utils/database.uts'
-import { saveAgents } from '@/utils/agent.uts'
-import { getAgentDir, getInternalFilesDir, joinPath, exists, createDir, writeContent } from '@/utils/file-manager.uts'
-import { readImportManifest, importAgentWorkspaceFiles, importBackupAssets, importGroupWorkspaceFiles, importUserWorkspaceFiles } from '@/utssdk/app-data-export/index.uts'
+import {
+	deleteRuntimeState,
+	getAllAppSettings,
+	getAllConversationTokenUsageStatsForExport,
+	getAllConversationsForExport,
+	getAllGroupChatDataForExport,
+	getAllMemoryBuffersForExport,
+	getAllMemoryCompactionStatesForExport,
+	getAllMemoryCoreForExport,
+	getAllMessagesForExport,
+	getAllProviders,
+	getAllRuntimeStatesForExport,
+	getRuntimeState,
+	importDatabaseTables,
+	importSettingsTables,
+	replaceAllRuntimeStates,
+	setAppSetting,
+	setRuntimeState,
+} from '@/utils/database.uts'
+import { getAgents, saveAgents } from '@/utils/agent.uts'
+import { exists, getInternalFilesDir, joinPath, readContent, writeContent } from '@/utils/file-manager.uts'
+import {
+	commitImportFileTransaction,
+	finalizeImportFileTransaction,
+	getLastDataArchiveError,
+	prepareImportFileTransaction,
+	readImportManifest,
+	rollbackImportFileTransaction,
+} from '@/utssdk/app-data-export/index.uts'
 import { APP_ERROR_CATEGORY_STORAGE, reportAppErrorFromCause } from '@/utils/app-error.uts'
-import { disposeAllChatTurns } from '@/utils/chat-turn-runtime.uts'
+import { quiesceAllChatTurnsForDataImport } from '@/utils/chat-turn-runtime.uts'
+import { quiesceAllGroupChatTurnsForDataImport, tryResumeGroupSpeakIntentWakes } from '@/utils/group-chat-turn-runtime.uts'
 
 const IMPORT_SCHEMA_VERSION = 1
+let dataImportRecoveryBlocked = false
+
+export function isDataImportRecoveryBlocked(): boolean {
+	return dataImportRecoveryBlocked
+}
+
+function quiesceChatRuntimesForDataImport(): boolean {
+	const privateChatsReady = quiesceAllChatTurnsForDataImport()
+	const groupChatsReady = quiesceAllGroupChatTurnsForDataImport()
+	return privateChatsReady == true && groupChatsReady == true
+}
 
 function recordDataImportFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
 	reportAppErrorFromCause(
@@ -21,6 +58,19 @@ function recordDataImportFailure(code: string, operation: string, userMessage: s
 		cause,
 		true,
 	)
+}
+
+function resumeGroupBackgroundWorkAfterImport(): boolean {
+	try {
+		const resumed = tryResumeGroupSpeakIntentWakes()
+		if (resumed == false) {
+			recordDataImportFailure('IMPORT_BACKGROUND_RESUME_INCOMPLETE', 'data_import_background_resume', '数据已处理，但部分群聊后台发言恢复失败', 'tryResumeGroupSpeakIntentWakes 返回 false')
+		}
+		return resumed
+	} catch (e: any) {
+		recordDataImportFailure('IMPORT_BACKGROUND_RESUME_FAILED', 'data_import_background_resume', '数据已处理，但部分群聊后台发言恢复失败', e)
+		return false
+	}
 }
 
 export type ImportBackupSummary = {
@@ -38,6 +88,42 @@ export type ImportBackupSummary = {
 	assets: number
 	apiKeys: boolean
 	summary: string
+	error: string
+}
+
+type RuntimeStateSnapshot = {
+	key: string
+	value: string
+}
+
+type SettingsImportSnapshot = {
+	providers: UTSJSONObject[]
+	appSettings: UTSJSONObject[]
+	agents: UTSJSONObject[]
+	runtimeStates: RuntimeStateSnapshot[]
+}
+
+type FullImportSnapshot = {
+	providers: UTSJSONObject[]
+	conversations: UTSJSONObject[]
+	messages: UTSJSONObject[]
+	appSettings: UTSJSONObject[]
+	memoryBuffers: UTSJSONObject[]
+	memoryCore: UTSJSONObject[]
+	conversationTokenUsageStats: UTSJSONObject[]
+	memoryCompactionStates: UTSJSONObject[]
+	groupChatData: UTSJSONObject
+	agents: UTSJSONObject[]
+	runtimeStates: UTSJSONObject[]
+}
+
+type PreparedFileImport = {
+	ok: boolean
+	token: string
+	assetMap: UTSJSONObject
+	agentWorkspaceCount: number
+	groupWorkspaceCount: number
+	userWorkspaceCount: number
 	error: string
 }
 
@@ -102,6 +188,7 @@ function validateBackupData(data: UTSJSONObject): string {
 		'memoryCore',
 		'conversationTokenUsageStats',
 		'memoryCompactionStates',
+		'runtimeStates',
 		'notes',
 		'todos',
 	]
@@ -123,10 +210,6 @@ function buildFallbackStorageKeys(): string[] {
 		'agent_list',
 		'active_agent_id',
 		'active_conversation_id',
-		'settings_provider_id',
-		'settings_api_key',
-		'settings_base_url',
-		'settings_model',
 		'settings_gh_proxy_enabled',
 		'settings_gh_proxy_domain',
 		'settings_web_search_enabled',
@@ -164,7 +247,7 @@ function buildFallbackStorageKeys(): string[] {
 		'pending_agent_model_id',
 		'editor_title',
 		'editor_content',
-		'editor_draft',
+		'editor_owner',
 		'editor_target',
 		'editor_result',
 		'editor_mode',
@@ -177,6 +260,336 @@ function buildFallbackStorageKeys(): string[] {
 		'crop_image_path',
 		'crop_result',
 	]
+}
+
+function isRuntimeStorageKey(key: string): boolean {
+	return key == 'active_agent_id' ||
+		key == 'active_conversation_id' ||
+		key == 'memory_agent_id' ||
+		key == 'memory_conversation_id' ||
+		key == 'provider_edit_data' ||
+		key == 'pending_agent_model_id' ||
+		key.startsWith('editor_') ||
+		key.startsWith('crop_')
+}
+
+function containsRuntimeSnapshotKey(items: RuntimeStateSnapshot[], key: string): boolean {
+	for (let i = 0; i < items.length; i++) {
+		if (items[i].key == key) { return true }
+	}
+	return false
+}
+
+function captureRuntimeStateSnapshot(storageKeys: string[]): RuntimeStateSnapshot[] {
+	let keys = storageKeys
+	if (keys.length == 0) { keys = buildFallbackStorageKeys() }
+	const result: RuntimeStateSnapshot[] = []
+	for (let i = 0; i < keys.length; i++) {
+		const key = keys[i]
+		if (isRuntimeStorageKey(key) == true && containsRuntimeSnapshotKey(result, key) == false) {
+			result.push({ key: key, value: getRuntimeState(key) } as RuntimeStateSnapshot)
+		}
+	}
+	return result
+}
+
+function restoreRuntimeStateSnapshot(items: RuntimeStateSnapshot[]): boolean {
+	let ok = true
+	for (let i = 0; i < items.length; i++) {
+		const item = items[i]
+		const saved = item.value == '' ? deleteRuntimeState(item.key) : setRuntimeState(item.key, item.value)
+		if (saved == false) { ok = false }
+	}
+	return ok
+}
+
+function captureSettingsImportSnapshot(storageKeys: string[]): SettingsImportSnapshot {
+	return {
+		providers: getAllProviders(),
+		appSettings: getAllAppSettings(),
+		agents: getAgents(),
+		runtimeStates: captureRuntimeStateSnapshot(storageKeys),
+	} as SettingsImportSnapshot
+}
+
+function restoreSettingsImportSnapshot(snapshot: SettingsImportSnapshot): boolean {
+	try {
+		importSettingsTables(snapshot.providers, snapshot.appSettings, false)
+		if (saveAgents(snapshot.agents) == false) { return false }
+		return restoreRuntimeStateSnapshot(snapshot.runtimeStates)
+	} catch (e: any) {
+		recordDataImportFailure('IMPORT_SETTINGS_ROLLBACK_FAILED', 'data_import_settings_rollback', '设置导入回滚失败', e)
+		return false
+	}
+}
+
+function captureFullImportSnapshot(): FullImportSnapshot {
+	return {
+		providers: getAllProviders(),
+		conversations: getAllConversationsForExport(),
+		messages: getAllMessagesForExport(),
+		appSettings: getAllAppSettings(),
+		memoryBuffers: getAllMemoryBuffersForExport(),
+		memoryCore: getAllMemoryCoreForExport(),
+		conversationTokenUsageStats: getAllConversationTokenUsageStatsForExport(),
+		memoryCompactionStates: getAllMemoryCompactionStatesForExport(),
+		groupChatData: getAllGroupChatDataForExport(),
+		agents: getAgents(),
+		runtimeStates: getAllRuntimeStatesForExport(),
+	} as FullImportSnapshot
+}
+
+function restoreFullImportSnapshot(snapshot: FullImportSnapshot): boolean {
+	try {
+		importDatabaseTables(
+			snapshot.providers,
+			snapshot.conversations,
+			snapshot.messages,
+			snapshot.appSettings,
+			snapshot.memoryBuffers,
+			snapshot.memoryCore,
+			snapshot.conversationTokenUsageStats,
+			snapshot.memoryCompactionStates,
+			snapshot.groupChatData,
+		)
+		if (replaceAllRuntimeStates(snapshot.runtimeStates) == false) { return false }
+		if (saveAgents(snapshot.agents) == false) { return false }
+		return true
+	} catch (e: any) {
+		recordDataImportFailure('IMPORT_ALL_ROLLBACK_FAILED', 'data_import_all_rollback', '全量导入回滚失败', e)
+		return false
+	}
+}
+
+function readPreparedFileImport(raw: UTSJSONObject): PreparedFileImport {
+	const okValue = raw['ok'] as boolean | null
+	const tokenValue = raw['token'] as string | null
+	const assetMapValue = raw['assetMap'] as UTSJSONObject | null
+	const agentCountValue = raw['agentWorkspaceCount'] as number | null
+	const groupCountValue = raw['groupWorkspaceCount'] as number | null
+	const userCountValue = raw['userWorkspaceCount'] as number | null
+	const errorValue = raw['error'] as string | null
+	return {
+		ok: okValue == true,
+		token: tokenValue != null ? tokenValue : '',
+		assetMap: assetMapValue != null ? assetMapValue : ({} as UTSJSONObject),
+		agentWorkspaceCount: agentCountValue != null ? agentCountValue : 0,
+		groupWorkspaceCount: groupCountValue != null ? groupCountValue : 0,
+		userWorkspaceCount: userCountValue != null ? userCountValue : 0,
+		error: errorValue != null ? errorValue : '',
+	} as PreparedFileImport
+}
+
+const IMPORT_TRANSACTION_JOURNAL_FILE = 'database-snapshot.json'
+const IMPORT_TRANSACTION_COMMITTED_FILE = 'committed.marker'
+
+function getImportTransactionRootPath(): string {
+	const filesDir = getInternalFilesDir()
+	if (filesDir == '') { return '' }
+	return joinPath(joinPath(filesDir, 'imports'), 'data-import-transaction')
+}
+
+function getImportTransactionJournalPath(token: string): string {
+	if (token == '') { return '' }
+	return joinPath(token, IMPORT_TRANSACTION_JOURNAL_FILE)
+}
+
+function getImportTransactionCommittedPath(token: string): string {
+	if (token == '') { return '' }
+	return joinPath(token, IMPORT_TRANSACTION_COMMITTED_FILE)
+}
+
+function runtimeSnapshotsToObjects(items: RuntimeStateSnapshot[]): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = 0; i < items.length; i++) {
+		result.push({ key: items[i].key, value: items[i].value } as UTSJSONObject)
+	}
+	return result
+}
+
+function readRuntimeSnapshots(root: UTSJSONObject): RuntimeStateSnapshot[] {
+	const raw = readObjectArray(root, 'runtimeStates')
+	const result: RuntimeStateSnapshot[] = []
+	for (let i = 0; i < raw.length; i++) {
+		const keyValue = raw[i]['key'] as string | null
+		const valueValue = raw[i]['value'] as string | null
+		if (keyValue != null && keyValue != '') {
+			result.push({ key: keyValue, value: valueValue != null ? valueValue : '' } as RuntimeStateSnapshot)
+		}
+	}
+	return result
+}
+
+function persistSettingsImportSnapshot(token: string, snapshot: SettingsImportSnapshot): boolean {
+	const journalPath = getImportTransactionJournalPath(token)
+	if (journalPath == '') { return false }
+	const journal: UTSJSONObject = {
+		journalVersion: 1,
+		kind: 'settings',
+		phase: 'prepared',
+		providers: snapshot.providers,
+		appSettings: snapshot.appSettings,
+		agents: snapshot.agents,
+		runtimeStates: snapshot.runtimeStates,
+	}
+	return writeContent(journalPath, JSON.stringify(journal)).ok
+}
+
+function persistFullImportSnapshot(token: string, snapshot: FullImportSnapshot): boolean {
+	const journalPath = getImportTransactionJournalPath(token)
+	if (journalPath == '') { return false }
+	const journal: UTSJSONObject = {
+		journalVersion: 1,
+		kind: 'full',
+		phase: 'prepared',
+		providers: snapshot.providers,
+		conversations: snapshot.conversations,
+		messages: snapshot.messages,
+		appSettings: snapshot.appSettings,
+		memoryBuffers: snapshot.memoryBuffers,
+		memoryCore: snapshot.memoryCore,
+		conversationTokenUsageStats: snapshot.conversationTokenUsageStats,
+		memoryCompactionStates: snapshot.memoryCompactionStates,
+		groupChatData: snapshot.groupChatData,
+		agents: snapshot.agents,
+		runtimeStates: snapshot.runtimeStates,
+	}
+	return writeContent(journalPath, JSON.stringify(journal)).ok
+}
+
+function readSettingsSnapshotFromJournal(journal: UTSJSONObject): SettingsImportSnapshot {
+	return {
+		providers: readObjectArray(journal, 'providers'),
+		appSettings: readObjectArray(journal, 'appSettings'),
+		agents: readObjectArray(journal, 'agents'),
+		runtimeStates: readRuntimeSnapshots(journal),
+	} as SettingsImportSnapshot
+}
+
+function readFullSnapshotFromJournal(journal: UTSJSONObject): FullImportSnapshot | null {
+	const groupChatData = journal['groupChatData'] as UTSJSONObject | null
+	if (groupChatData == null) { return null }
+	return {
+		providers: readObjectArray(journal, 'providers'),
+		conversations: readObjectArray(journal, 'conversations'),
+		messages: readObjectArray(journal, 'messages'),
+		appSettings: readObjectArray(journal, 'appSettings'),
+		memoryBuffers: readObjectArray(journal, 'memoryBuffers'),
+		memoryCore: readObjectArray(journal, 'memoryCore'),
+		conversationTokenUsageStats: readObjectArray(journal, 'conversationTokenUsageStats'),
+		memoryCompactionStates: readObjectArray(journal, 'memoryCompactionStates'),
+		groupChatData: groupChatData,
+		agents: readObjectArray(journal, 'agents'),
+		runtimeStates: readObjectArray(journal, 'runtimeStates'),
+	} as FullImportSnapshot
+}
+
+function hasJournalObjectArray(journal: UTSJSONObject, key: string): boolean {
+	return (journal[key] as UTSJSONObject[] | null) != null
+}
+
+function validateImportJournal(journal: UTSJSONObject, kind: string): boolean {
+	const version = journal['journalVersion'] as number | null
+	if (version == null || version != 1) { return false }
+	const phase = journal['phase'] as string | null
+	if (phase != 'prepared' && phase != 'committed') { return false }
+	if (hasJournalObjectArray(journal, 'providers') == false ||
+		hasJournalObjectArray(journal, 'appSettings') == false ||
+		hasJournalObjectArray(journal, 'agents') == false ||
+		hasJournalObjectArray(journal, 'runtimeStates') == false) {
+		return false
+	}
+	if (kind == 'settings') { return true }
+	if (kind != 'full') { return false }
+	if (hasJournalObjectArray(journal, 'conversations') == false ||
+		hasJournalObjectArray(journal, 'messages') == false ||
+		hasJournalObjectArray(journal, 'memoryBuffers') == false ||
+		hasJournalObjectArray(journal, 'memoryCore') == false ||
+		hasJournalObjectArray(journal, 'conversationTokenUsageStats') == false ||
+		hasJournalObjectArray(journal, 'memoryCompactionStates') == false) {
+		return false
+	}
+	return (journal['groupChatData'] as UTSJSONObject | null) != null
+}
+
+function markImportTransactionCommitted(token: string): boolean {
+	const markerPath = getImportTransactionCommittedPath(token)
+	if (markerPath == '') { return false }
+	return writeContent(markerPath, 'committed').ok
+}
+
+/** 启动时恢复被进程中断的跨介质导入；成功导入在删除 journal 后才算完成。 */
+export function recoverInterruptedDataImport(): boolean {
+	const token = getImportTransactionRootPath()
+	if (token == '' || exists(token) == false) {
+		dataImportRecoveryBlocked = false
+		return true
+	}
+	const journalPath = getImportTransactionJournalPath(token)
+	if (journalPath == '' || exists(journalPath) == false) {
+		if (finalizeImportFileTransaction(token) == false) {
+			recordDataImportFailure('IMPORT_RECOVERY_CLEANUP_FAILED', 'data_import_recovery_cleanup', '上次导入临时文件清理失败', token)
+		}
+		dataImportRecoveryBlocked = false
+		return true
+	}
+	const journalText = readContent(journalPath)
+	if (journalText == null || journalText == '') {
+		recordDataImportFailure('IMPORT_RECOVERY_JOURNAL_READ_FAILED', 'data_import_recovery_journal', '上次导入恢复信息损坏，请重试启动', journalPath)
+		dataImportRecoveryBlocked = true
+		return false
+	}
+	try {
+		const journal = JSON.parse(journalText) as UTSJSONObject
+		const kind = journal['kind'] as string | null
+		if (kind == null || validateImportJournal(journal, kind) == false) {
+			recordDataImportFailure('IMPORT_RECOVERY_JOURNAL_INVALID', 'data_import_recovery_validate', '上次导入恢复信息不完整，请重试启动', journalPath)
+			dataImportRecoveryBlocked = true
+			return false
+		}
+		const phase = journal['phase'] as string | null
+		const committedPath = getImportTransactionCommittedPath(token)
+		if (phase == 'committed' || (committedPath != '' && exists(committedPath) == true)) {
+			if (finalizeImportFileTransaction(token) == false) {
+				recordDataImportFailure('IMPORT_COMMITTED_CLEANUP_FAILED', 'data_import_committed_cleanup', '已完成导入，旧快照清理失败', token)
+			}
+			dataImportRecoveryBlocked = false
+			return true
+		}
+		let databaseRestored = false
+		if (kind == 'settings') {
+			databaseRestored = restoreSettingsImportSnapshot(readSettingsSnapshotFromJournal(journal))
+		} else if (kind == 'full') {
+			const snapshot = readFullSnapshotFromJournal(journal)
+			if (snapshot != null) {
+				databaseRestored = restoreFullImportSnapshot(snapshot)
+			}
+		}
+		if (databaseRestored == false) {
+			recordDataImportFailure('IMPORT_RECOVERY_DATABASE_FAILED', 'data_import_recovery_database', '上次导入数据库回滚失败，请重试启动', kind)
+			dataImportRecoveryBlocked = true
+			return false
+		}
+		if (rollbackImportFileTransaction(token) == false) {
+			recordDataImportFailure('IMPORT_RECOVERY_FILES_FAILED', 'data_import_recovery_files', '上次导入文件回滚失败，请重试启动', token)
+			dataImportRecoveryBlocked = true
+			return false
+		}
+		dataImportRecoveryBlocked = false
+		return true
+	} catch (e: any) {
+		recordDataImportFailure('IMPORT_RECOVERY_FAILED', 'data_import_recovery', '上次导入恢复失败，请重试启动', e)
+		dataImportRecoveryBlocked = true
+		return false
+	}
+}
+
+function recoverDataImportBeforeNewWork(): boolean {
+	const token = getImportTransactionRootPath()
+	if (token != '' && exists(token) == true) {
+		if (quiesceChatRuntimesForDataImport() == false) { return false }
+	}
+	return recoverInterruptedDataImport()
 }
 
 function readStringArray(obj: UTSJSONObject, key: string): string[] {
@@ -252,7 +665,7 @@ function hasAppSettingsApiKey(appSettings: UTSJSONObject[]): boolean {
 	for (let i = 0; i < appSettings.length; i++) {
 		const key = appSettings[i]['key'] as string | null
 		const value = appSettings[i]['value'] as string | null
-		if ((key == 'settings_api_key' || key == 'settings_astrbot_api_key') && value != null && value != '') {
+		if (key == 'settings_astrbot_api_key' && value != null && value != '') {
 			return true
 		}
 	}
@@ -262,10 +675,6 @@ function hasAppSettingsApiKey(appSettings: UTSJSONObject[]): boolean {
 function hasStorageApiKey(storage: UTSJSONObject | null): boolean {
 	if (storage == null) {
 		return false
-	}
-	const value = storage['settings_api_key'] as string | null
-	if (value != null && value != '') {
-		return true
 	}
 	const astrBotValue = storage['settings_astrbot_api_key'] as string | null
 	if (astrBotValue != null && astrBotValue != '') {
@@ -342,7 +751,7 @@ function filterEmptySensitiveStorageKeys(keys: string[], storage: UTSJSONObject)
 	const result: string[] = []
 	for (let i = 0; i < keys.length; i++) {
 		const key = keys[i]
-		if (key == 'settings_api_key' || key == 'settings_astrbot_api_key') {
+		if (key == 'settings_astrbot_api_key') {
 			const value = storage[key] as string | null
 			if (value == null || value == '') {
 				continue
@@ -449,13 +858,14 @@ function updateMappedMessageAssets(messages: UTSJSONObject[], assetMap: UTSJSONO
 	}
 }
 
-function writeStorageObject(storage: UTSJSONObject, storageKeys: string[]): boolean {
+function writeStorageObject(storage: UTSJSONObject, storageKeys: string[], includeRuntimeStates: boolean = true): boolean {
 	let keys = storageKeys
 	if (keys.length == 0) {
 		keys = buildFallbackStorageKeys()
 	}
 	for (let i = 0; i < keys.length; i++) {
 		const key = keys[i]
+		if (includeRuntimeStates == false && isRuntimeStorageKey(key) == true) { continue }
 		const value = storage[key]
 		if (value != null) {
 			const text = value as string
@@ -492,7 +902,8 @@ function restoreListStorage(key: string, list: UTSJSONObject[]): boolean {
 export function previewImportBackup(zipPath: string): ImportBackupSummary {
 	const manifestJson = readImportManifest(zipPath)
 	if (manifestJson == '') {
-		recordDataImportFailure('IMPORT_MANIFEST_READ_FAILED', 'data_import_preview_manifest', '无法读取备份清单', 'readImportManifest 返回空内容')
+		const archiveError = getLastDataArchiveError()
+		recordDataImportFailure('IMPORT_MANIFEST_READ_FAILED', 'data_import_preview_manifest', '无法读取备份清单', archiveError != '' ? archiveError : 'readImportManifest 返回空内容')
 		return buildImportBackupError(zipPath, '无法读取备份清单')
 	}
 	try {
@@ -549,11 +960,20 @@ export function previewImportBackup(zipPath: string): ImportBackupSummary {
 
 /** 仅恢复设置、提供商、个人资料、Agent 和 Skills，不覆盖聊天记录或工作区文件。 */
 export function importSettingsOnlyFromZip(zipPath: string): string {
-	const manifestJson = readImportManifest(zipPath)
-	if (manifestJson == '') {
-		recordDataImportFailure('IMPORT_SETTINGS_MANIFEST_READ_FAILED', 'data_import_settings_manifest', '无法读取备份清单', 'readImportManifest 返回空内容')
+	if (recoverDataImportBeforeNewWork() == false) {
 		return ''
 	}
+	const manifestJson = readImportManifest(zipPath)
+	if (manifestJson == '') {
+		const archiveError = getLastDataArchiveError()
+		recordDataImportFailure('IMPORT_SETTINGS_MANIFEST_READ_FAILED', 'data_import_settings_manifest', '无法读取备份清单', archiveError != '' ? archiveError : 'readImportManifest 返回空内容')
+		return ''
+	}
+	let fileTransactionToken = ''
+	let fileCommitStarted = false
+	let databaseApplyStarted = false
+	let transactionMarkedCommitted = false
+	let snapshot: SettingsImportSnapshot | null = null
 	try {
 		const root = JSON.parse(manifestJson) as UTSJSONObject
 		const validationError = validateBackupRoot(root)
@@ -573,7 +993,12 @@ export function importSettingsOnlyFromZip(zipPath: string): string {
 		const storage = data['storage'] as UTSJSONObject | null
 		let storageKeys = buildSettingsOnlyStorageKeys(readStringArray(data, 'storageKeys'))
 		const assets = filterSettingsAssets(readObjectArray(data, 'assets'))
-		const assetMap = importBackupAssets(zipPath, assets)
+		const prepared = readPreparedFileImport(prepareImportFileTransaction(zipPath, assets, false))
+		if (prepared.ok == false) {
+			throw new Error(prepared.error != '' ? prepared.error : '资源暂存失败')
+		}
+		fileTransactionToken = prepared.token
+		const assetMap = prepared.assetMap
 		const assetError = validateImportedAssets(assets, assetMap)
 		if (assetError != '') { throw new Error(assetError) }
 
@@ -582,26 +1007,72 @@ export function importSettingsOnlyFromZip(zipPath: string): string {
 			updateMappedStorageAssets(storage, assetMap)
 		}
 		updateMappedAgentAssets(agents, assetMap)
-			if (storage != null) {
-				storage['agent_list'] = JSON.stringify(agents)
-				storage['skills_list'] = JSON.stringify(skills)
-			}
+		if (storage != null) {
+			storage['agent_list'] = JSON.stringify(agents)
+			storage['skills_list'] = JSON.stringify(skills)
+		}
 
-			importSettingsTables(providers, appSettings, true)
-			if (saveAgents(agents) == false) {
-				throw new Error('Agent 设置恢复失败')
-			}
-			disposeAllChatTurns()
-			if (restoreListStorage('skills_list', skills) == false) {
-				throw new Error('Skill 设置恢复失败')
-			}
+		if (quiesceChatRuntimesForDataImport() == false) {
+			throw new Error('仍有聊天进度无法保存，已取消导入')
+		}
+		snapshot = captureSettingsImportSnapshot(storageKeys)
+		if (persistSettingsImportSnapshot(fileTransactionToken, snapshot) == false) {
+			throw new Error('设置回滚快照写入失败')
+		}
+		fileCommitStarted = true
+		if (commitImportFileTransaction(fileTransactionToken) == false) {
+			throw new Error('资源目录提交失败')
+		}
+		databaseApplyStarted = true
+		importSettingsTables(providers, appSettings, true)
+		if (saveAgents(agents) == false) {
+			throw new Error('Agent 设置恢复失败')
+		}
+		if (restoreListStorage('skills_list', skills) == false) {
+			throw new Error('Skill 设置恢复失败')
+		}
 		if (storage != null) {
 			if (writeStorageObject(storage, storageKeys) == false) {
 				throw new Error('应用设置恢复失败')
 			}
 		}
-		return '已恢复设置：提供商 ' + providers.length + ' 个，Agent ' + agents.length + ' 个，Skills ' + skills.length + ' 个，资源 ' + assets.length + ' 个。聊天记录和工作区文件未覆盖。'
+		if (markImportTransactionCommitted(fileTransactionToken) == false) {
+			throw new Error('设置导入提交标记写入失败')
+		}
+		transactionMarkedCommitted = true
+		if (finalizeImportFileTransaction(fileTransactionToken) == false) {
+			recordDataImportFailure('IMPORT_SETTINGS_FINALIZE_FAILED', 'data_import_settings_finalize', '设置已恢复，但旧资源快照清理失败', fileTransactionToken)
+		}
+		const backgroundResumed = resumeGroupBackgroundWorkAfterImport()
+		return '已恢复设置：提供商 ' + providers.length + ' 个，Agent ' + agents.length + ' 个，Skills ' + skills.length + ' 个，资源 ' + assets.length + ' 个。聊天记录和工作区文件未覆盖。' + (backgroundResumed == true ? '' : ' 部分群聊后台发言将在重启后继续恢复。')
 	} catch (e: any) {
+		let databaseRestored = true
+		let rollbackSafe = true
+		if (databaseApplyStarted == true && snapshot != null) {
+			databaseRestored = restoreSettingsImportSnapshot(snapshot)
+			if (databaseRestored == false) { rollbackSafe = false }
+		}
+		if (transactionMarkedCommitted == true) {
+			if (finalizeImportFileTransaction(fileTransactionToken) == false) {
+				rollbackSafe = false
+				recordDataImportFailure('IMPORT_SETTINGS_FINALIZE_AFTER_ERROR_FAILED', 'data_import_settings_finalize_after_error', '设置导入异常后事务目录清理失败', fileTransactionToken)
+			}
+		} else if (fileCommitStarted == true && databaseRestored == true) {
+			if (rollbackImportFileTransaction(fileTransactionToken) == false) {
+				rollbackSafe = false
+				recordDataImportFailure('IMPORT_SETTINGS_FILE_ROLLBACK_FAILED', 'data_import_settings_file_rollback', '设置导入失败，资源目录回滚失败', fileTransactionToken)
+			}
+		} else if (fileCommitStarted == false && fileTransactionToken != '') {
+			if (finalizeImportFileTransaction(fileTransactionToken) == false) {
+				rollbackSafe = false
+				recordDataImportFailure('IMPORT_SETTINGS_STAGING_CLEANUP_FAILED', 'data_import_settings_staging_cleanup', '设置导入暂存目录清理失败', fileTransactionToken)
+			}
+		}
+		if (rollbackSafe == false) {
+			dataImportRecoveryBlocked = true
+		} else {
+			resumeGroupBackgroundWorkAfterImport()
+		}
 		recordDataImportFailure('IMPORT_SETTINGS_FAILED', 'data_import_settings_apply', '恢复设置失败', e)
 		return ''
 	}
@@ -609,11 +1080,20 @@ export function importSettingsOnlyFromZip(zipPath: string): string {
 
 /** 导入 ZIP 备份包，成功返回摘要，失败返回空字符串。 */
 export function importAllDataFromZip(zipPath: string): string {
-	const manifestJson = readImportManifest(zipPath)
-	if (manifestJson == '') {
-		recordDataImportFailure('IMPORT_ALL_MANIFEST_READ_FAILED', 'data_import_all_manifest', '无法读取备份清单', 'readImportManifest 返回空内容')
+	if (recoverDataImportBeforeNewWork() == false) {
 		return ''
 	}
+	const manifestJson = readImportManifest(zipPath)
+	if (manifestJson == '') {
+		const archiveError = getLastDataArchiveError()
+		recordDataImportFailure('IMPORT_ALL_MANIFEST_READ_FAILED', 'data_import_all_manifest', '无法读取备份清单', archiveError != '' ? archiveError : 'readImportManifest 返回空内容')
+		return ''
+	}
+	let fileTransactionToken = ''
+	let fileCommitStarted = false
+	let databaseApplyStarted = false
+	let transactionMarkedCommitted = false
+	let snapshot: FullImportSnapshot | null = null
 	try {
 		const root = JSON.parse(manifestJson) as UTSJSONObject
 		const validationError = validateBackupRoot(root)
@@ -635,6 +1115,7 @@ export function importAllDataFromZip(zipPath: string): string {
 		const memoryCore = readObjectArray(data, 'memoryCore')
 		const conversationTokenUsageStats = readObjectArray(data, 'conversationTokenUsageStats')
 		const memoryCompactionStates = readObjectArray(data, 'memoryCompactionStates')
+		const runtimeStates = readObjectArray(data, 'runtimeStates')
 		const groupChatData = data['groupChatData'] as UTSJSONObject | null
 		if (groupChatData == null) {
 			throw new Error('备份包缺少 groupChatData 对象')
@@ -650,7 +1131,12 @@ export function importAllDataFromZip(zipPath: string): string {
 		const storage = data['storage'] as UTSJSONObject | null
 		const storageKeys = readStringArray(data, 'storageKeys')
 		const assets = readObjectArray(data, 'assets')
-		const assetMap = importBackupAssets(zipPath, assets)
+		const prepared = readPreparedFileImport(prepareImportFileTransaction(zipPath, assets, true))
+		if (prepared.ok == false) {
+			throw new Error(prepared.error != '' ? prepared.error : '资源与工作区暂存失败')
+		}
+		fileTransactionToken = prepared.token
+		const assetMap = prepared.assetMap
 		const assetError = validateImportedAssets(assets, assetMap)
 		if (assetError != '') { throw new Error(assetError) }
 
@@ -659,21 +1145,35 @@ export function importAllDataFromZip(zipPath: string): string {
 		}
 		updateMappedAgentAssets(agents, assetMap)
 		updateMappedMessageAssets(messages, assetMap)
-			if (storage != null) {
-				storage['agent_list'] = JSON.stringify(agents)
-				storage['skills_list'] = JSON.stringify(skills)
+		if (storage != null) {
+			storage['agent_list'] = JSON.stringify(agents)
+			storage['skills_list'] = JSON.stringify(skills)
 			storage['notes_list'] = JSON.stringify(notes)
 			storage['todo_list'] = JSON.stringify(todos)
 		}
 
-			importDatabaseTables(providers, conversations, messages, appSettings, memoryBuffers, memoryCore, conversationTokenUsageStats, memoryCompactionStates, groupChatData != null ? groupChatData : ({} as UTSJSONObject))
-			disposeAllChatTurns()
-			if (saveAgents(agents) == false) {
-				throw new Error('Agent 数据恢复失败')
-			}
-			if (restoreListStorage('skills_list', skills) == false) {
-				throw new Error('Skill 数据恢复失败')
-			}
+		if (quiesceChatRuntimesForDataImport() == false) {
+			throw new Error('仍有聊天进度无法保存，已取消导入')
+		}
+		snapshot = captureFullImportSnapshot()
+		if (persistFullImportSnapshot(fileTransactionToken, snapshot) == false) {
+			throw new Error('全量回滚快照写入失败')
+		}
+		fileCommitStarted = true
+		if (commitImportFileTransaction(fileTransactionToken) == false) {
+			throw new Error('资源与工作区目录提交失败')
+		}
+		databaseApplyStarted = true
+		importDatabaseTables(providers, conversations, messages, appSettings, memoryBuffers, memoryCore, conversationTokenUsageStats, memoryCompactionStates, groupChatData)
+		if (replaceAllRuntimeStates(runtimeStates) == false) {
+			throw new Error('页面运行状态恢复失败')
+		}
+		if (saveAgents(agents) == false) {
+			throw new Error('Agent 数据恢复失败')
+		}
+		if (restoreListStorage('skills_list', skills) == false) {
+			throw new Error('Skill 数据恢复失败')
+		}
 		if (restoreListStorage('notes_list', notes) == false) {
 			throw new Error('笔记数据恢复失败')
 		}
@@ -681,18 +1181,47 @@ export function importAllDataFromZip(zipPath: string): string {
 			throw new Error('待办数据恢复失败')
 		}
 		if (storage != null) {
-			if (writeStorageObject(storage, storageKeys) == false) {
+			if (writeStorageObject(storage, storageKeys, false) == false) {
 				throw new Error('应用设置恢复失败')
 			}
 		}
-		const workspaceCount = importAgentWorkspaceFiles(zipPath)
-		const groupWorkspaceCount = importGroupWorkspaceFiles(zipPath)
-		const userWorkspaceCount = importUserWorkspaceFiles(zipPath)
-		if (workspaceCount < 0 || groupWorkspaceCount < 0 || userWorkspaceCount < 0) {
-			throw new Error('工作区文件恢复失败')
+		if (markImportTransactionCommitted(fileTransactionToken) == false) {
+			throw new Error('全量导入提交标记写入失败')
 		}
-		return '已导入：提供商 ' + providers.length + ' 个，对话 ' + conversations.length + ' 条，消息 ' + messages.length + ' 条，记忆 ' + memoryCore.length + ' 条，Skills ' + skills.length + ' 个，资源 ' + assets.length + ' 个，用户文件 ' + userWorkspaceCount + ' 个，Agent 文件 ' + workspaceCount + ' 个，群聊文件 ' + groupWorkspaceCount + ' 个。'
+		transactionMarkedCommitted = true
+		if (finalizeImportFileTransaction(fileTransactionToken) == false) {
+			recordDataImportFailure('IMPORT_ALL_FINALIZE_FAILED', 'data_import_all_finalize', '数据已导入，但旧目录快照清理失败', fileTransactionToken)
+		}
+		const backgroundResumed = resumeGroupBackgroundWorkAfterImport()
+		return '已导入：提供商 ' + providers.length + ' 个，对话 ' + conversations.length + ' 条，消息 ' + messages.length + ' 条，记忆 ' + memoryCore.length + ' 条，Skills ' + skills.length + ' 个，资源 ' + assets.length + ' 个，用户文件 ' + prepared.userWorkspaceCount + ' 个，Agent 文件 ' + prepared.agentWorkspaceCount + ' 个，群聊文件 ' + prepared.groupWorkspaceCount + ' 个。' + (backgroundResumed == true ? '' : ' 部分群聊后台发言将在重启后继续恢复。')
 	} catch (e: any) {
+		let databaseRestored = true
+		let rollbackSafe = true
+		if (databaseApplyStarted == true && snapshot != null) {
+			databaseRestored = restoreFullImportSnapshot(snapshot)
+			if (databaseRestored == false) { rollbackSafe = false }
+		}
+		if (transactionMarkedCommitted == true) {
+			if (finalizeImportFileTransaction(fileTransactionToken) == false) {
+				rollbackSafe = false
+				recordDataImportFailure('IMPORT_ALL_FINALIZE_AFTER_ERROR_FAILED', 'data_import_all_finalize_after_error', '全量导入异常后事务目录清理失败', fileTransactionToken)
+			}
+		} else if (fileCommitStarted == true && databaseRestored == true) {
+			if (rollbackImportFileTransaction(fileTransactionToken) == false) {
+				rollbackSafe = false
+				recordDataImportFailure('IMPORT_ALL_FILE_ROLLBACK_FAILED', 'data_import_all_file_rollback', '全量导入失败，工作区回滚失败', fileTransactionToken)
+			}
+		} else if (fileCommitStarted == false && fileTransactionToken != '') {
+			if (finalizeImportFileTransaction(fileTransactionToken) == false) {
+				rollbackSafe = false
+				recordDataImportFailure('IMPORT_ALL_STAGING_CLEANUP_FAILED', 'data_import_all_staging_cleanup', '全量导入暂存目录清理失败', fileTransactionToken)
+			}
+		}
+		if (rollbackSafe == false) {
+			dataImportRecoveryBlocked = true
+		} else {
+			resumeGroupBackgroundWorkAfterImport()
+		}
 		recordDataImportFailure('IMPORT_ALL_FAILED', 'data_import_all_apply', '导入备份失败', e)
 		return ''
 	}

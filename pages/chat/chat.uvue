@@ -41,6 +41,7 @@
 						:msgSegmentation="msgSegmentation"
 						:isError="item.renderMessage.isError == true"
 							:isStreaming="item.renderMessage.isStreaming == true"
+							:windowAnchorPrefix="messageWindowUnitAnchorPrefix(item.sourceIndex)"
 							:cancelToken="longpressCancelToken"
 							@contentResize="onMessageContentResize"
 							@bubbleLongpress="onMessageLongpress(item.sourceIndex)"
@@ -61,7 +62,7 @@
 		</view>
 
 		<!-- 底部区域（输入栏 + 工具栏） -->
-		<view class="chat-bottom" :style="{ marginBottom: keyboardInset + 'px' }">
+		<view id="chat-bottom" class="chat-bottom" :style="{ marginBottom: keyboardInset + 'px' }">
 			<!-- 输入栏 -->
 			<view class="input-bar">
 				<view class="toolbar-toggle" @click="toggleToolPanel">
@@ -156,7 +157,7 @@
 		truncateFromMessage,
 		buildRuntimeMessages as buildRuntimeChatMessages,
 	} from '@/utils/chat-message-reducer.uts'
-	import { setActiveAgentRuntimeId, setContextPreviewPayload, setMemoryRouteState } from '@/utils/runtime-state.uts'
+	import { getActiveAgentRuntimeId, getActiveConversationRuntimeId, setActiveAgentRuntimeId, setActiveChatRouteState, setContextPreviewPayload, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import { transcribeAudio, synthesizeSpeech } from '@/utils/speech-service.uts'
 	import {
 		buildChatVoiceStartGuard,
@@ -206,8 +207,11 @@
 		getChatTurnMessages,
 		isChatTurnAvailable,
 		isChatTurnRunning,
+		isChatTurnSaveFailed,
 		releaseChatTurn,
 		retainChatTurn,
+		reportChatTurnSaveFailure,
+		rollbackFailedChatTurnStart,
 		saveChatTurn,
 		startChatImageTurn,
 		startChatTurn,
@@ -216,30 +220,54 @@
 		unsubscribeChatTurn,
 	} from '@/utils/chat-turn-runtime.uts'
 	import {
+		buildChatVirtualScrollbarThumbStyle,
 		buildChatScrollbarThumbStyle,
 		clampChatScrollTarget,
 		isChatScrollAtBottom,
+		resolveChatVirtualScrollbarCurrentUnit,
+		resolveChatVirtualScrollbarDragUnit,
+		resolveChatVirtualScrollbarTarget,
+		resolveChatVirtualScrollbarTrackUnit,
 		resolveChatScrollbarDragTarget,
 		resolveChatScrollbarTrackTarget,
 	} from '@/utils/chat-scroll-helpers.uts'
 	import {
-		CHAT_MESSAGE_WINDOW_BASE_SIZE,
+		CHAT_MESSAGE_WINDOW_BASE_UNITS,
 		CHAT_MESSAGE_WINDOW_EDGE_THRESHOLD_PX,
 		type ChatMessageWindowItem,
-		buildChatMessageWindowRange,
+		buildChatMessageWindowRangeFromMetrics,
 		isChatMessageWindowAtRecentEnd,
-		resolveChatMessageWindowEnd,
-		resolveRecentChatMessageWindowStart,
-		resolveShiftedChatMessageWindowStart,
+		refreshChatMessageWindowMetrics,
+		resolveChatMessageWindowAnchor,
+		resolveChatMessageWindowUnitEnd,
+		resolveRecentChatMessageWindowUnitStart,
+		resolveShiftedChatMessageWindowUnitStart,
 	} from '@/utils/chat-message-window.uts'
 	import { isChooseCancelError, parsePickedImagePath, readPickedFileSelection, readPickedImageSelection } from '@/utils/attachment-reader.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
-	import { resolveKeyboardInset } from '@/utils/keyboard-inset.uts'
+	import { resolveKeyboardInsetFromLayout } from '@/utils/keyboard-inset.uts'
 	import { NYX_FLOAT_CONTEXT_CHAT, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
-	import { APP_ERROR_CATEGORY_RUNTIME, reportAppErrorFromCause } from '@/utils/app-error.uts'
+	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 	import { handleCameraPickerFailure } from '@/utils/media-permission.uts'
 
 	let chatNyxFloatVoiceCallback: (() => void) | null = null
+
+	function showChatRuntimeStateFailure(operation: string, userMessage: string): void {
+		const error = reportAppErrorFromCause(
+			'CHAT_RUNTIME_STATE_SAVE_FAILED',
+			APP_ERROR_CATEGORY_RUNTIME,
+			operation,
+			userMessage,
+			'跨页运行状态写入 SQLite 失败',
+			true,
+		)
+		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+	}
+
+	function showChatNavigationFailure(operation: string, userMessage: string, cause: any | null): void {
+		const error = reportAppErrorFromCause('CHAT_NAVIGATION_FAILED', APP_ERROR_CATEGORY_RUNTIME, operation, userMessage, cause, true)
+		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+	}
 
 	export default {
 		data() {
@@ -302,9 +330,14 @@
 				/** 滚动位置 */
 				scrollTop: 0 as number,
 				/** 当前 UI 渲染的消息窗口范围，完整上下文不受影响 */
-				messageWindowStartIndex: 0 as number,
-				messageWindowEndIndex: 0 as number,
+				messageWindowStartUnit: 0 as number,
+				messageWindowEndUnit: 0 as number,
+				messageTotalUnits: 0 as number,
 				messageTotalCount: 0 as number,
+				messageWindowUnitCounts: [] as number[],
+				messageWindowUnitPrefix: [] as number[],
+				messageWindowMetricsSegmentation: true as boolean,
+				messageWindowMetricsDirtyAll: true as boolean,
 				messageWindowShifting: false as boolean,
 					messageWindowShiftToken: 0 as number,
 					messageWindowShiftLockUntil: 0 as number,
@@ -323,6 +356,7 @@
 				scrollbarDragging: false as boolean,
 				scrollbarDragStartY: 0 as number,
 				scrollbarDragStartTop: 0 as number,
+				scrollbarDragStartGlobalUnit: 0 as number,
 				scrollbarTrackTop: 0 as number,
 				/** 当前对话唯一 ID */
 				conversationId: '' as string,
@@ -363,13 +397,18 @@
 			visibleMessageItems(): ChatMessageWindowItem[] {
 				const revision = this.messagesRevision
 				if (revision < 0) { return [] as ChatMessageWindowItem[] }
-				return buildChatMessageWindowRange(this.messages, this.messageWindowStartIndex, this.messageWindowEndIndex)
+				return buildChatMessageWindowRangeFromMetrics(this.messages, this.messageWindowUnitCounts, this.messageWindowUnitPrefix, this.messageWindowStartUnit, this.messageWindowEndUnit, this.msgSegmentation)
 			},
 			scrollbarThumbStyle(): string {
+				if (this.messageTotalUnits > CHAT_MESSAGE_WINDOW_BASE_UNITS) {
+					return buildChatVirtualScrollbarThumbStyle(this.messageTotalUnits, this.messageWindowStartUnit, this.messageWindowEndUnit, this.scrollContentHeight, this.scrollViewHeight, this.scrollOffset)
+				}
 				return buildChatScrollbarThumbStyle(this.scrollContentHeight, this.scrollViewHeight, this.scrollOffset)
 			},
 			showCustomScrollbar(): boolean {
-				return this.messageTotalCount <= CHAT_MESSAGE_WINDOW_BASE_SIZE && this.scrollViewHeight > 0 && this.scrollContentHeight > this.scrollViewHeight + 2
+				if (this.scrollViewHeight <= 0) { return false }
+				if (this.messageTotalUnits > CHAT_MESSAGE_WINDOW_BASE_UNITS) { return true }
+				return this.scrollContentHeight > this.scrollViewHeight + 2
 			},
 			showBackToBottom(): boolean {
 				return this.messageTotalCount > 0 && this.isAtBottom == false
@@ -403,18 +442,19 @@
 			// 监听软键盘高度变化：键盘弹出时自动收起工具栏面板，避免遮挡消息列表
 			this.keyboardHeightListenerId = uni.onKeyboardHeightChange((res: OnKeyboardHeightChangeCallbackResult) => {
 				const keepBottom = this.isAtBottom
-				let currentWindowHeight = this.keyboardBaseWindowHeight
-				try {
-					const windowInfo = uni.getWindowInfo()
-					currentWindowHeight = windowInfo.windowHeight
-				} catch (error) {
-					currentWindowHeight = this.keyboardBaseWindowHeight
-				}
-				if (res.height == 0 && currentWindowHeight > 0) {
-					this.keyboardBaseWindowHeight = currentWindowHeight
-				}
 				this.keyboardHeight = res.height
-				this.keyboardInset = resolveKeyboardInset(res.height, this.keyboardBaseWindowHeight, currentWindowHeight)
+				if (res.height == 0) {
+					this.keyboardInset = 0
+					try {
+						const windowInfo = uni.getWindowInfo()
+						if (windowInfo.windowHeight > 0) { this.keyboardBaseWindowHeight = windowInfo.windowHeight }
+					} catch (_error: any) {}
+				} else {
+					this.measureKeyboardInset(res.height)
+					setTimeout(() => {
+						if (this.pageVisible == true && this.keyboardHeight == res.height) { this.measureKeyboardInset(res.height) }
+					}, 120)
+				}
 				if (res.height > 0 && this.showToolPanel == true) {
 					this.showToolPanel = false
 				}
@@ -441,18 +481,24 @@
 				this.handleChatTurnInvalidated()
 				return
 			}
-			if (this.conversationSaveFailed == true) {
+			if (this.conversationSaveFailed == true && this.chatTurnSubscriptionToken == '') {
 				uni.showToast({ position: 'bottom', title: '对话保存失败，内容仍保留，请重试', icon: 'none' })
+				this.conversationSaveFailed = false
 			}
 			// 每次显示页面时刷新智能体信息和用户昵称
 			this.loadUserNickname()
 			// 页面栈里可能同时存在多个私聊页；恢复本页绑定的联系人，避免返回后串线保存。
 			if (this.currentAgentId != '') {
-				setActiveAgentRuntimeId(this.currentAgentId)
+				if (setActiveAgentRuntimeId(this.currentAgentId) == false) {
+					showChatRuntimeStateFailure('chat_restore_active_agent', '当前联系人状态恢复失败')
+					return
+				}
 			}
 			this.loadCurrentAgent()
 			this.syncChatTurnRuntime(false)
-			activateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_CHAT)
+			if (activateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_CHAT) == false) {
+				showChatRuntimeStateFailure('chat_activate_voice_context', '语音入口状态保存失败')
+			}
 			this.consumeNyxFloatVoiceText()
 		},
 
@@ -473,7 +519,9 @@
 			if (this.saveCurrentConversation() == false) {
 				this.conversationSaveFailed = true
 			}
-			deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_CHAT)
+			if (deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_CHAT) == false) {
+				reportAppErrorFromCause('CHAT_RUNTIME_STATE_SAVE_FAILED', APP_ERROR_CATEGORY_RUNTIME, 'chat_deactivate_voice_context', '语音入口状态清理失败', '跨页运行状态写入 SQLite 失败', true)
+			}
 		},
 
 		onUnload() {
@@ -494,10 +542,27 @@
 				eventBus.off(NYX_FLOAT_VOICE_EVENT, callback)
 			}
 			chatNyxFloatVoiceCallback = null
-			deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_CHAT)
+			if (deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_CHAT) == false) {
+				reportAppErrorFromCause('CHAT_RUNTIME_STATE_SAVE_FAILED', APP_ERROR_CATEGORY_RUNTIME, 'chat_unload_voice_context', '语音入口状态清理失败', '跨页运行状态写入 SQLite 失败', true)
+			}
 		},
 
 		methods: {
+			measureKeyboardInset(keyboardHeight: number): void {
+				if (keyboardHeight <= 0) { this.keyboardInset = 0; return }
+				const appliedInset = this.keyboardInset
+				const query = uni.createSelectorQuery().in(this)
+				query.select('#chat-bottom').boundingClientRect()
+				query.exec((res: any) => {
+					if (this.pageVisible == false || this.keyboardHeight != keyboardHeight) { return }
+					const rows = res as UTSArray<any> | null
+					if (rows == null || rows.length == 0) { this.keyboardInset = keyboardHeight; return }
+					const rect = rows[0] as NodeInfo | null
+					const bottom = rect != null ? (rect.bottom as number | null) : null
+					if (bottom == null || bottom <= 0) { this.keyboardInset = keyboardHeight; return }
+					this.keyboardInset = resolveKeyboardInsetFromLayout(keyboardHeight, this.keyboardBaseWindowHeight, bottom + appliedInset)
+				})
+			},
 			/** 加载当前智能体信息 */
 			/** 加载用户昵称 */
 			hasValidDefaultTaskModel(type: string): boolean {
@@ -520,10 +585,12 @@
 				if (this.currentAgentId == '' || this.conversationId == '') { return }
 				if (this.chatTurnSubscriptionToken != '') { this.unbindChatTurnRuntime() }
 				this.messages = retainChatTurn(this.currentAgentId, this.conversationId, this.messages)
+				this.invalidateMessageWindowMetrics()
 				this.boundChatAgentId = this.currentAgentId
 				this.boundChatConversationId = this.conversationId
 				this.chatTurnInvalidated = false
 				const running = isChatTurnRunning(this.boundChatAgentId, this.boundChatConversationId)
+				let saveFailed = isChatTurnSaveFailed(this.boundChatAgentId, this.boundChatConversationId)
 				if (running == false) {
 					const recovered = recoverInterruptedChatConversation(
 						this.boundChatConversationId,
@@ -531,15 +598,20 @@
 						this.getCurrentSystemPrompt(),
 						this.messages
 					)
-					if (recovered == false) { this.conversationSaveFailed = true }
+					if (recovered == false) {
+						this.conversationSaveFailed = true
+						reportChatTurnSaveFailure(this.boundChatAgentId, this.boundChatConversationId, '中断状态保存失败，内容仍保留，请重试')
+						saveFailed = true
+					}
 				}
 				this.seenChatTurnCompletionRevision = getChatTurnCompletionRevision(this.boundChatAgentId, this.boundChatConversationId)
-				this.seenChatTurnErrorRevision = running == true ? 0 : getChatTurnErrorRevision(this.boundChatAgentId, this.boundChatConversationId)
+				this.seenChatTurnErrorRevision = running == true || saveFailed == true ? 0 : getChatTurnErrorRevision(this.boundChatAgentId, this.boundChatConversationId)
 				this.seenChatTurnMemoryNoticeRevision = running == true ? 0 : getChatTurnMemoryNoticeRevision(this.boundChatAgentId, this.boundChatConversationId)
 				this.chatTurnSubscriptionToken = subscribeChatTurn(this.boundChatAgentId, this.boundChatConversationId, () => {
 					this.syncChatTurnRuntime(false)
 				})
 				this.isGenerating = running
+				if (saveFailed == true) { this.conversationSaveFailed = true }
 				this.syncChatTurnRuntime(false)
 			},
 
@@ -574,13 +646,19 @@
 				this.unbindChatTurnRuntime()
 				this.isGenerating = false
 				this.messages = [] as UTSJSONObject[]
+				this.invalidateMessageWindowMetrics()
 				if (agentId == '' || getAgentById(agentId) == null) {
 					this.chatTurnInvalidated = false
 					uni.showToast({ position: 'bottom', title: '当前联系人已被删除', icon: 'none' })
 					uni.reLaunch({ url: '/pages/agents/agents' })
 					return
 				}
-				setActiveAgentRuntimeId(agentId)
+				if (setActiveAgentRuntimeId(agentId) == false) {
+					this.chatTurnInvalidated = false
+					showChatRuntimeStateFailure('chat_recover_active_agent', '对话恢复状态保存失败')
+					uni.reLaunch({ url: '/pages/agents/agents' })
+					return
+				}
 				if (this.loadCurrentAgent() == false) {
 					uni.reLaunch({ url: '/pages/agents/agents' })
 					return
@@ -588,13 +666,16 @@
 				const loaded = loadInitialConversation(agentId)
 				this.conversationId = loaded.conversationId
 				this.messages = loaded.messages
+				this.invalidateMessageWindowMetrics()
 				this.savedFlag = loaded.saved
 				this.conversationSaveFailed = false
 				this.chatTurnInvalidated = false
 				this.bindChatTurnRuntime()
 				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
-				activateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_CHAT)
+				if (activateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_CHAT) == false) {
+					showChatRuntimeStateFailure('chat_recover_voice_context', '语音入口状态保存失败')
+				}
 				this.consumeNyxFloatVoiceText()
 				uni.showToast({ position: 'bottom', title: '原对话已失效，已切换到可用对话', icon: 'none' })
 			},
@@ -626,9 +707,14 @@
 					}
 				}
 				const completionRevision = getChatTurnCompletionRevision(this.boundChatAgentId, this.boundChatConversationId)
-				if (this.pageVisible == true && completionRevision > this.seenChatTurnCompletionRevision) {
+				if (completionRevision > this.seenChatTurnCompletionRevision) {
 					this.seenChatTurnCompletionRevision = completionRevision
-					if (wasGenerating == true && getChatTurnLastCompletionSucceeded(this.boundChatAgentId, this.boundChatConversationId) == true) {
+					const completionSucceeded = getChatTurnLastCompletionSucceeded(this.boundChatAgentId, this.boundChatConversationId)
+					if (completionSucceeded == true) {
+						this.savedFlag = true
+						this.conversationSaveFailed = false
+					}
+					if (this.pageVisible == true && wasGenerating == true && completionSucceeded == true) {
 						this.maybeSynthesizeLatestAssistantSpeech()
 					}
 				}
@@ -669,6 +755,7 @@
 					const loaded = loadInitialConversation(this.currentAgentId)
 					this.conversationId = loaded.conversationId
 					this.messages = loaded.messages
+					this.invalidateMessageWindowMetrics()
 					this.savedFlag = loaded.saved
 					return true
 				} catch (_e: any) {
@@ -684,6 +771,7 @@
 					const loaded = loadInitialConversation(this.currentAgentId)
 					this.conversationId = loaded.conversationId
 					this.messages = loaded.messages
+					this.invalidateMessageWindowMetrics()
 					this.savedFlag = loaded.saved
 				} catch (_e: any) {
 					uni.showToast({ position: 'bottom', title: '最近对话加载失败，请重试', icon: 'none' })
@@ -708,7 +796,7 @@
 			},
 
 			updateBottomState(): void {
-				const windowAtRecentEnd = isChatMessageWindowAtRecentEnd(this.messageTotalCount, this.messageWindowEndIndex)
+				const windowAtRecentEnd = isChatMessageWindowAtRecentEnd(this.messageTotalUnits, this.messageWindowEndUnit)
 				this.isAtBottom = windowAtRecentEnd == true && isChatScrollAtBottom(this.scrollOffset, this.scrollContentHeight, this.scrollViewHeight)
 			},
 
@@ -773,29 +861,69 @@
 				this.scrollOffset = safeTop
 				this.updateBottomState()
 			},
+			commitVirtualScrollbarUnit(globalUnit: number): void {
+				const target = resolveChatVirtualScrollbarTarget(globalUnit, this.messageTotalUnits, CHAT_MESSAGE_WINDOW_BASE_UNITS, this.scrollContentHeight, this.scrollViewHeight)
+				this.cancelMessageWindowShift()
+				this.messageWindowStartUnit = target.windowStartUnit
+				this.messageWindowEndUnit = resolveChatMessageWindowUnitEnd(this.messageTotalUnits, target.windowStartUnit)
+				this.messageWindowShiftLockUntil = Date.now() + 180
+				let localMax = this.scrollContentHeight - this.scrollViewHeight
+				if (localMax < 0) { localMax = 0 }
+				const targetTop = target.localScrollRatio * localMax
+				this.scrollTop = targetTop
+				this.scrollOffset = targetTop
+				this.updateBottomState()
+				this.scheduleMeasureMessageScroll()
+				const shiftToken = this.messageWindowShiftToken
+				setTimeout(() => {
+					if (this.pageVisible == false || shiftToken != this.messageWindowShiftToken) { return }
+					this.measureMessageScrollSize()
+					setTimeout(() => {
+						if (this.pageVisible == false || shiftToken != this.messageWindowShiftToken) { return }
+						let measuredMax = this.scrollContentHeight - this.scrollViewHeight
+						if (measuredMax < 0) { measuredMax = 0 }
+						const measuredTop = target.localScrollRatio * measuredMax
+						this.scrollTop = measuredTop
+						this.scrollOffset = measuredTop
+						this.updateBottomState()
+					}, 48)
+				}, 48)
+			},
 
 			onScrollbarTrackTap(e: UniTouchEvent): void {
 				const y = this.getScrollbarTouchY(e)
 				if (y == null) { return }
 				if (this.isGenerating == true) { this.streamFollowBottom = false }
 				this.clearStreamScrollTimer()
+				if (this.messageTotalUnits > CHAT_MESSAGE_WINDOW_BASE_UNITS) {
+					this.commitVirtualScrollbarUnit(resolveChatVirtualScrollbarTrackUnit(y, this.messageTotalUnits, this.messageWindowStartUnit, this.messageWindowEndUnit, this.scrollContentHeight, this.scrollViewHeight))
+					return
+				}
 				this.commitMessageScrollTop(resolveChatScrollbarTrackTarget(y, this.scrollContentHeight, this.scrollViewHeight))
 			},
 
-			onScrollbarThumbStart(e: UniTouchEvent): void {
+				onScrollbarThumbStart(e: UniTouchEvent): void {
 				const y = this.getScrollbarTouchY(e)
 				if (y == null) { return }
 				if (this.isGenerating == true) { this.streamFollowBottom = false }
 				this.scrollbarDragging = true
 				this.scrollbarDragStartY = y
 				this.scrollbarDragStartTop = this.scrollOffset
+				if (this.messageTotalUnits > CHAT_MESSAGE_WINDOW_BASE_UNITS) {
+					this.scrollbarDragStartGlobalUnit = resolveChatVirtualScrollbarCurrentUnit(this.messageTotalUnits, this.messageWindowStartUnit, this.messageWindowEndUnit, this.scrollContentHeight, this.scrollViewHeight, this.scrollOffset)
+				}
 				this.clearStreamScrollTimer()
 			},
 
-			onScrollbarThumbMove(e: UniTouchEvent): void {
+				onScrollbarThumbMove(e: UniTouchEvent): void {
 				if (this.scrollbarDragging == false) { return }
 				const y = this.getScrollbarTouchY(e)
 				if (y == null) { return }
+				if (this.messageTotalUnits > CHAT_MESSAGE_WINDOW_BASE_UNITS) {
+					const targetUnit = resolveChatVirtualScrollbarDragUnit(this.scrollbarDragStartGlobalUnit, y - this.scrollbarDragStartY, this.messageTotalUnits, this.messageWindowStartUnit, this.messageWindowEndUnit, this.scrollContentHeight, this.scrollViewHeight)
+					this.commitVirtualScrollbarUnit(targetUnit)
+					return
+				}
 				const target = resolveChatScrollbarDragTarget(this.scrollbarDragStartTop, y - this.scrollbarDragStartY, this.scrollContentHeight, this.scrollViewHeight)
 				this.commitMessageScrollTop(target)
 			},
@@ -808,13 +936,31 @@
 				this.scrollToBottom()
 			},
 
-			messageViewKey(_msg: UTSJSONObject, index: number): string {
-				// SQLite 的消息主键在 Android 上是 Long；sourceIndex 在滑动窗口移动时保持稳定。
-				return 'index-' + index
+			messageViewKey(msg: UTSJSONObject, index: number): string {
+				const rawId = msg['id']
+				if (rawId != null) {
+					const id = '' + rawId
+					if (id != '') { return 'id-' + id }
+				}
+				const timestamp = msg['timestamp'] as number | null
+				if (timestamp != null && timestamp > 0) { return 'timestamp-' + timestamp.toString() }
+				return 'index-' + index.toString()
 			},
 
 			messageWindowItemId(sourceIndex: number): string {
 				return 'chat-window-message-' + sourceIndex
+			},
+
+			messageWindowUnitAnchorPrefix(sourceIndex: number): string {
+				return this.messageWindowItemId(sourceIndex) + '-unit-'
+			},
+
+			messageWindowUnitAnchorId(sourceIndex: number, localUnit: number): string {
+				return this.messageWindowUnitAnchorPrefix(sourceIndex) + localUnit.toString()
+			},
+
+			invalidateMessageWindowMetrics(): void {
+				this.messageWindowMetricsDirtyAll = true
 			},
 
 			refreshMessagesView(): void {
@@ -835,14 +981,19 @@
 			syncMessageWindowBounds(keepRecent: boolean): void {
 				const total = this.messages.length
 				this.messageTotalCount = total
-				let start = this.messageWindowStartIndex
-				if (keepRecent == true || this.messageWindowEndIndex <= this.messageWindowStartIndex) {
-					start = resolveRecentChatMessageWindowStart(total)
+				const forceFull = this.messageWindowMetricsDirtyAll == true || this.messageWindowMetricsSegmentation != this.msgSegmentation
+				const totalUnits = refreshChatMessageWindowMetrics(this.messages, this.messageWindowUnitCounts, this.messageWindowUnitPrefix, this.msgSegmentation, forceFull)
+				this.messageWindowMetricsDirtyAll = false
+				this.messageWindowMetricsSegmentation = this.msgSegmentation
+				this.messageTotalUnits = totalUnits
+				let start = this.messageWindowStartUnit
+				if (keepRecent == true || this.messageWindowEndUnit <= this.messageWindowStartUnit) {
+					start = resolveRecentChatMessageWindowUnitStart(totalUnits)
 				} else {
-					start = resolveShiftedChatMessageWindowStart(total, start, 0)
+					start = resolveShiftedChatMessageWindowUnitStart(totalUnits, start, 0)
 				}
-				this.messageWindowStartIndex = start
-				this.messageWindowEndIndex = resolveChatMessageWindowEnd(total, start)
+				this.messageWindowStartUnit = start
+				this.messageWindowEndUnit = resolveChatMessageWindowUnitEnd(totalUnits, start)
 			},
 
 			cancelMessageWindowShift(): void {
@@ -859,29 +1010,28 @@
 
 			maybeShiftMessageWindow(): void {
 				if (this.messageWindowShifting == true || Date.now() < this.messageWindowShiftLockUntil) { return }
-				if (this.messageTotalCount <= CHAT_MESSAGE_WINDOW_BASE_SIZE || this.scrollViewHeight <= 0) { return }
-				if (this.scrollOffset <= CHAT_MESSAGE_WINDOW_EDGE_THRESHOLD_PX && this.messageWindowStartIndex > 0) {
+				if (this.messageTotalUnits <= CHAT_MESSAGE_WINDOW_BASE_UNITS || this.scrollViewHeight <= 0) { return }
+				if (this.scrollOffset <= CHAT_MESSAGE_WINDOW_EDGE_THRESHOLD_PX && this.messageWindowStartUnit > 0) {
 					this.shiftMessageWindow(-1)
 					return
 				}
 				const bottomGap = this.scrollContentHeight - this.scrollOffset - this.scrollViewHeight
-				if (bottomGap <= CHAT_MESSAGE_WINDOW_EDGE_THRESHOLD_PX && this.messageWindowEndIndex < this.messageTotalCount) {
+				if (bottomGap <= CHAT_MESSAGE_WINDOW_EDGE_THRESHOLD_PX && this.messageWindowEndUnit < this.messageTotalUnits) {
 					this.shiftMessageWindow(1)
 				}
 			},
 
 			shiftMessageWindow(direction: number): void {
-				const nextStart = resolveShiftedChatMessageWindowStart(this.messageTotalCount, this.messageWindowStartIndex, direction)
-				if (nextStart == this.messageWindowStartIndex) { return }
+				const nextStart = resolveShiftedChatMessageWindowUnitStart(this.messageTotalUnits, this.messageWindowStartUnit, direction)
+				if (nextStart == this.messageWindowStartUnit) { return }
 				const items = this.visibleMessageItems
 				if (items.length == 0) { return }
-				let anchorPosition = direction < 0 ? 1 : items.length - 2
-				if (anchorPosition < 0) { anchorPosition = 0 }
-				if (anchorPosition >= items.length) { anchorPosition = items.length - 1 }
-				const anchorIndex = items[anchorPosition].sourceIndex
-				const anchorSelector = '#' + this.messageWindowItemId(anchorIndex)
+				const anchorUnit = direction < 0 ? this.messageWindowStartUnit : nextStart
+				const anchor = resolveChatMessageWindowAnchor(items, anchorUnit)
+				if (anchor == null) { return }
+				const anchorSelector = '#' + this.messageWindowUnitAnchorId(anchor.sourceIndex, anchor.localUnit)
 				const oldScrollOffset = this.scrollOffset
-				const oldStart = this.messageWindowStartIndex
+				const oldStart = this.messageWindowStartUnit
 				this.messageWindowShifting = true
 				this.messageWindowShiftToken++
 				const shiftToken = this.messageWindowShiftToken
@@ -896,8 +1046,8 @@
 						this.messageWindowShiftLockUntil = Date.now() + 80
 						return
 					}
-					this.messageWindowStartIndex = nextStart
-					this.messageWindowEndIndex = resolveChatMessageWindowEnd(this.messageTotalCount, nextStart)
+					this.messageWindowStartUnit = nextStart
+					this.messageWindowEndUnit = resolveChatMessageWindowUnitEnd(this.messageTotalUnits, nextStart)
 					setTimeout(() => {
 						this.finishMessageWindowShift(anchorSelector, oldTop, oldScrollOffset, oldStart, shiftToken, 0)
 					}, 32)
@@ -920,8 +1070,8 @@
 						return
 					}
 					if (nextTop == null) {
-						this.messageWindowStartIndex = oldStart
-						this.messageWindowEndIndex = resolveChatMessageWindowEnd(this.messageTotalCount, oldStart)
+						this.messageWindowStartUnit = oldStart
+						this.messageWindowEndUnit = resolveChatMessageWindowUnitEnd(this.messageTotalUnits, oldStart)
 					} else {
 						let targetTop = oldScrollOffset + nextTop - oldTop
 						if (targetTop < 0) { targetTop = 0 }
@@ -939,13 +1089,19 @@
 				if (text == '' || this.isGenerating == true) {
 					return
 				}
+				const messageStartIndex = this.messages.length
+				const previousSavedFlag = this.savedFlag
 				// 发新消息时允许保存（从历史加载后 savedFlag 为 true 会阻止保存）
 				this.savedFlag = false
 				this.addTextMessage('user', text)
-				this.inputText = ''
 				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
-				this.simulateAIResponse(text)
+				const started = this.simulateAIResponse(text)
+				if (started == false && this.rollbackFailedOutgoingMessages(messageStartIndex, previousSavedFlag) == true) {
+					this.inputText = text
+					return
+				}
+				this.inputText = ''
 			},
 
 			sendMessage() {
@@ -1002,6 +1158,7 @@
 			deleteMessage(index: number) {
 				const keepRecent = this.isAtBottom == true
 				deleteChatMessage(this.messages, index)
+				this.invalidateMessageWindowMetrics()
 				this.savedFlag = false
 				this.syncMessageWindowBounds(keepRecent)
 				this.scheduleMeasureMessageScroll()
@@ -1019,6 +1176,7 @@
 			saveEdit() {
 				const idx = this.editingIndex
 				updateChatMessageContent(this.messages, idx, this.editBuffer)
+				this.invalidateMessageWindowMetrics()
 				this.cancelEdit()
 				this.savedFlag = false
 				this.syncMessageWindowBounds(this.isAtBottom == true)
@@ -1030,6 +1188,7 @@
 				const idx = this.editingIndex
 				if (idx < 0 || idx >= this.messages.length) { return }
 				const lastUserText = saveEditAndFindLastUserText(this.messages, idx, this.editBuffer)
+				this.invalidateMessageWindowMetrics()
 				this.editingIndex = -1
 				this.editBuffer = ''
 				this.savedFlag = false
@@ -1050,6 +1209,7 @@
 			/** 重新生成 AI 回答：删除该 AI 消息，重新触发 AI */
 			regenerateResponse(index: number) {
 				const lastUserText = truncateFromMessage(this.messages, index)
+				this.invalidateMessageWindowMetrics()
 				this.savedFlag = false
 				if (lastUserText != '') {
 					this.streamFollowBottom = true
@@ -1059,12 +1219,28 @@
 				}
 			},
 
-			startGenerationForMedia(prompt: string) {
+			startGenerationForMedia(prompt: string): boolean {
 				if (this.isGenerating == true) {
-					return
+					return false
 				}
 				this.savedFlag = false
-				this.simulateAIResponse(prompt)
+				return this.simulateAIResponse(prompt)
+			},
+
+			rollbackFailedOutgoingMessages(messageStartIndex: number, previousSavedFlag: boolean): boolean {
+				let rolledBack = rollbackFailedChatTurnStart(this.boundChatAgentId, this.boundChatConversationId, messageStartIndex)
+				if (rolledBack == false && (isChatTurnRunning(this.boundChatAgentId, this.boundChatConversationId) == true || isChatTurnAvailable(this.boundChatAgentId, this.boundChatConversationId) == false)) {
+					if (messageStartIndex >= 0 && messageStartIndex <= this.messages.length && this.messages.length > messageStartIndex) {
+						this.messages.splice(messageStartIndex, this.messages.length - messageStartIndex)
+					}
+					rolledBack = true
+				}
+				if (rolledBack == false) { return false }
+				this.savedFlag = previousSavedFlag
+				this.invalidateMessageWindowMetrics()
+				this.syncMessageWindowBounds(this.isAtBottom == true)
+				this.scheduleMeasureMessageScroll()
+				return true
 			},
 
 			/** 添加文本消息 */
@@ -1087,14 +1263,18 @@
 					uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
 					return
 				}
+				const previousSavedFlag = this.savedFlag
 				const msgIndex = this.addImageMessage(imagePath)
-				this.startGenerationForImage(imagePath, fallbackPrompt, msgIndex)
+				const started = this.startGenerationForImage(imagePath, fallbackPrompt, msgIndex)
+				if (started == false) {
+					this.rollbackFailedOutgoingMessages(msgIndex, previousSavedFlag)
+				}
 			},
 
 			/** 参考 AstrBot：先用默认图片转述模型生成 caption，再把 caption 注入普通对话上下文。 */
-			startGenerationForImage(imagePath: string, _fallbackPrompt: string, messageIndex: number) {
+			startGenerationForImage(imagePath: string, _fallbackPrompt: string, messageIndex: number): boolean {
 				if (this.isGenerating == true) {
-					return
+					return false
 				}
 				this.savedFlag = false
 				this.streamFollowBottom = this.isAtBottom == true
@@ -1114,6 +1294,7 @@
 				)
 				this.isGenerating = started
 				this.syncChatTurnRuntime(false)
+				return started
 			},
 
 			/** 添加文件消息 */
@@ -1128,20 +1309,28 @@
 					this.handlePickedImagePath(picked.file.path, '用户通过文件发送了一张图片')
 					return
 				}
+				const messageStartIndex = this.messages.length
+				const previousSavedFlag = this.savedFlag
 				appendChatFileMessage(this.messages, picked.file.name, picked.file.path, picked.contextText)
 				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
-				this.startGenerationForMedia('用户发送了一个文件：' + picked.file.name)
+				if (this.startGenerationForMedia('用户发送了一个文件：' + picked.file.name) == false) {
+					this.rollbackFailedOutgoingMessages(messageStartIndex, previousSavedFlag)
+				}
 			},
 
 			/** 添加位置消息 */
 			addLocationMessage(location: UTSJSONObject) {
 				if (this.canAppendMediaMessage() == false) { return }
 				const content = buildChatLocationContent(location)
+				const messageStartIndex = this.messages.length
+				const previousSavedFlag = this.savedFlag
 				appendChatLocationMessage(this.messages, content)
 				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
-				this.startGenerationForMedia(content)
+				if (this.startGenerationForMedia(content) == false) {
+					this.rollbackFailedOutgoingMessages(messageStartIndex, previousSavedFlag)
+				}
 			},
 
 			/** 添加语音消息 */
@@ -1547,22 +1736,69 @@
 			},
 
 			goAgentSettings() {
+				let previousAgentId = ''
+				let previousConversationId = ''
+				try {
+					previousAgentId = getActiveAgentRuntimeId()
+					previousConversationId = getActiveConversationRuntimeId()
+				} catch (e: any) {
+					showChatNavigationFailure('chat_agent_settings_state_read', '无法准备联系人设置', e)
+					return
+				}
+				if (setActiveChatRouteState(this.currentAgentId, previousConversationId) == false) {
+					showChatRuntimeStateFailure('chat_open_agent_settings', '无法打开联系人设置')
+					return
+				}
 				uni.navigateTo({
-					url: '/pages/agent-settings/agent-settings'
+					url: '/pages/agent-settings/agent-settings',
+					fail: (err: any) => {
+						if (setActiveChatRouteState(previousAgentId, previousConversationId) == false) {
+							showChatRuntimeStateFailure('chat_agent_settings_state_rollback', '联系人设置路由状态恢复失败')
+						}
+						showChatNavigationFailure('chat_navigate_agent_settings', '无法打开联系人设置', err)
+					}
 				})
 			},
 
 			goHistory() {
+				let previousAgentId = ''
+				let previousConversationId = ''
+				try {
+					previousAgentId = getActiveAgentRuntimeId()
+					previousConversationId = getActiveConversationRuntimeId()
+				} catch (e: any) {
+					showChatNavigationFailure('chat_history_state_read', '无法准备历史记录', e)
+					return
+				}
+				if (setActiveChatRouteState(this.currentAgentId, previousConversationId) == false) {
+					showChatRuntimeStateFailure('chat_open_history', '无法打开历史记录')
+					return
+				}
 				uni.navigateTo({
-					url: '/pages/history/history'
+					url: '/pages/history/history',
+					fail: (err: any) => {
+						if (setActiveChatRouteState(previousAgentId, previousConversationId) == false) {
+							showChatRuntimeStateFailure('chat_history_state_rollback', '历史记录路由状态恢复失败')
+						}
+						showChatNavigationFailure('chat_navigate_history', '无法打开历史记录', err)
+					}
 				})
 			},
 
 			goMemoryManager() {
 				this.showToolPanel = false
-				setMemoryRouteState(this.currentAgentId, this.conversationId)
+				if (setMemoryRouteState(this.currentAgentId, this.conversationId) == false) {
+					showChatRuntimeStateFailure('chat_open_memory', '无法打开记忆管理')
+					return
+				}
 				uni.navigateTo({
-					url: '/pages/memory/memory'
+					url: '/pages/memory/memory',
+					fail: (err: any) => {
+						if (setMemoryRouteState('', '') == false) {
+							showChatRuntimeStateFailure('chat_memory_navigation_rollback', '记忆管理路由状态清理失败')
+						}
+						showChatNavigationFailure('chat_navigate_memory', '无法打开记忆管理', err)
+					}
 				})
 			},
 
@@ -1573,9 +1809,18 @@
 					uni.showToast({ position: 'bottom', title: '还没有真实请求快照', icon: 'none' })
 					return
 				}
-				setContextPreviewPayload(stringifyChatContextPreview(preview))
+				if (setContextPreviewPayload(stringifyChatContextPreview(preview)) == false) {
+					showChatRuntimeStateFailure('chat_open_context_preview', '无法打开上下文预览')
+					return
+				}
 				uni.navigateTo({
-					url: '/pages/context-preview/context-preview'
+					url: '/pages/context-preview/context-preview',
+					fail: (err: any) => {
+						if (setContextPreviewPayload('') == false) {
+							showChatRuntimeStateFailure('chat_context_navigation_rollback', '上下文预览路由状态清理失败')
+						}
+						showChatNavigationFailure('chat_navigate_context_preview', '无法打开上下文预览', err)
+					}
 				})
 			},
 
@@ -1597,6 +1842,7 @@
 				this.unbindChatTurnRuntime()
 				// 清空消息
 				this.messages = [] as UTSJSONObject[]
+				this.invalidateMessageWindowMetrics()
 				// 新对话 ID
 				this.conversationId = '' + Date.now()
 				this.savedFlag = false
@@ -1681,7 +1927,7 @@
 				return getCurrentAgentSystemPrompt(this.currentAgentId)
 			},
 
-			simulateAIResponse(_userText: string) {
+			simulateAIResponse(_userText: string): boolean {
 				this.streamFollowBottom = this.isAtBottom == true
 				this._streamScrollTick = 0
 				const runtimeMessages = this.buildRuntimeMessages()
@@ -1696,6 +1942,7 @@
 				)
 				this.isGenerating = started == true
 				this.syncChatTurnRuntime(false)
+				return started
 			}
 
 		}

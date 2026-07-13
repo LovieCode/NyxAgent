@@ -16,6 +16,16 @@ import {
 	safeJsonArrayForDb,
 	safeJsonForDb,
 } from '@/utils/database-core.uts'
+import {
+	ACTIVE_GROUP_CHAT_ID_KEY,
+	ACTIVE_GROUP_SESSION_ID_KEY,
+} from '@/utils/group-chat-models.uts'
+import { xSqlite } from '@/uni_modules/laoqianjunzi-sqlite'
+
+export type RuntimeStateMutation = {
+	key: string
+	value: string
+}
 
 export function setRuntimeState(key: string, value: string): boolean {
 	if (key == '') { return false }
@@ -76,6 +86,202 @@ export function deleteRuntimeState(key: string): boolean {
 	} catch (_e: any) {
 		return false
 	}
+	return true
+}
+
+function validateRuntimeStateMutations(items: RuntimeStateMutation[]): boolean {
+	if (items.length == 0) { return false }
+	for (let i = 0; i < items.length; i++) {
+		if (items[i].key == '') { return false }
+		for (let j = 0; j < i; j++) {
+			if (items[j].key == items[i].key) { return false }
+		}
+	}
+	return true
+}
+
+function validateRuntimeStateKeys(keys: string[]): boolean {
+	if (keys.length == 0) { return false }
+	for (let i = 0; i < keys.length; i++) {
+		if (keys[i] == '') { return false }
+		for (let j = 0; j < i; j++) {
+			if (keys[j] == keys[i]) { return false }
+		}
+	}
+	return true
+}
+
+function readRuntimeStateValueFromDb(db: xSqlite, key: string): string {
+	const result = db.query('SELECT value FROM app_runtime_state WHERE key = ? AND ? = ? LIMIT 1', [key, 1, 1])
+	assertSqlSuccess(result, '读取页面组合运行状态失败')
+	const rows = rowsToObjects(result)
+	if (rows.length == 0) { return '' }
+	return readStringField(rows[0], 'value')
+}
+
+function runtimeStateGuardsMatch(db: xSqlite, guards: RuntimeStateMutation[]): boolean {
+	for (let i = 0; i < guards.length; i++) {
+		if (readRuntimeStateValueFromDb(db, guards[i].key) != guards[i].value) {
+			return false
+		}
+	}
+	return true
+}
+
+function applyRuntimeStateMutations(db: xSqlite, items: RuntimeStateMutation[], updatedAt: number): void {
+	for (let i = 0; i < items.length; i++) {
+		const item = items[i]
+		if (item.value == '') {
+			runSqlOrThrow(db, 'DELETE FROM app_runtime_state WHERE key = ?', [item.key])
+		} else {
+			runSqlOrThrow(
+				db,
+				'INSERT OR REPLACE INTO app_runtime_state (key, value, updated_at) VALUES (?, ?, ?)',
+				[item.key, item.value, updatedAt],
+			)
+		}
+	}
+}
+
+/** 原子写入或删除多项跨页状态；空值表示删除。 */
+export function setRuntimeStates(items: RuntimeStateMutation[]): boolean {
+	if (validateRuntimeStateMutations(items) == false) { return false }
+	const db = getDb()
+	ensureAppRuntimeStateTable(db)
+	try {
+		assertSqlSuccess(db.beginTransaction(), '开始保存页面批量运行状态')
+		applyRuntimeStateMutations(db, items, Date.now())
+		assertSqlSuccess(db.commit(), '提交页面组合运行状态')
+	} catch (_e: any) {
+		db.rollback()
+		db.close()
+		return false
+	}
+	db.close()
+	return true
+}
+
+/** 仅当 guard 仍匹配时原子写入，防止旧页面覆盖新页面的跨页状态。 */
+export function setRuntimeStatesIf(guards: RuntimeStateMutation[], items: RuntimeStateMutation[]): boolean {
+	if (validateRuntimeStateMutations(guards) == false || validateRuntimeStateMutations(items) == false) { return false }
+	const db = getDb()
+	ensureAppRuntimeStateTable(db)
+	try {
+		assertSqlSuccess(db.beginTransaction(), '开始条件保存页面运行状态')
+		if (runtimeStateGuardsMatch(db, guards) == false) {
+			assertSqlSuccess(db.commit(), '结束页面运行状态条件检查')
+			db.close()
+			return false
+		}
+		applyRuntimeStateMutations(db, items, Date.now())
+		assertSqlSuccess(db.commit(), '提交条件页面运行状态')
+	} catch (_e: any) {
+		db.rollback()
+		db.close()
+		return false
+	}
+	db.close()
+	return true
+}
+
+/** 在同一读事务中获取整组状态；返回值顺序与 keys 一致。 */
+export function getRuntimeStates(keys: string[]): string[] {
+	if (validateRuntimeStateKeys(keys) == false) {
+		throw new Error('页面运行状态批量读取参数无效')
+	}
+	const db = getDb()
+	ensureAppRuntimeStateTable(db)
+	const values: string[] = []
+	try {
+		assertSqlSuccess(db.beginTransaction(), '开始读取页面批量运行状态')
+		for (let i = 0; i < keys.length; i++) {
+			values.push(readRuntimeStateValueFromDb(db, keys[i]))
+		}
+		assertSqlSuccess(db.commit(), '提交页面批量运行状态读取')
+	} catch (e: any) {
+		db.rollback()
+		db.close()
+		throw e
+	}
+	db.close()
+	return values
+}
+
+/** guard 匹配时，在同一事务中读取并删除整组状态；返回值顺序与 keys 一致。 */
+export function consumeRuntimeStatesIf(guards: RuntimeStateMutation[], keys: string[]): string[] | null {
+	if (validateRuntimeStateMutations(guards) == false || validateRuntimeStateKeys(keys) == false) {
+		throw new Error('页面运行状态批量消费参数无效')
+	}
+	const db = getDb()
+	ensureAppRuntimeStateTable(db)
+	const values: string[] = []
+	try {
+		assertSqlSuccess(db.beginTransaction(), '开始消费页面批量运行状态')
+		if (runtimeStateGuardsMatch(db, guards) == false) {
+			assertSqlSuccess(db.commit(), '结束页面运行状态消费检查')
+			db.close()
+			return null
+		}
+		for (let i = 0; i < keys.length; i++) {
+			values.push(readRuntimeStateValueFromDb(db, keys[i]))
+		}
+		for (let i = 0; i < keys.length; i++) {
+			runSqlOrThrow(db, 'DELETE FROM app_runtime_state WHERE key = ?', [keys[i]])
+		}
+		assertSqlSuccess(db.commit(), '提交页面批量运行状态消费')
+	} catch (e: any) {
+		db.rollback()
+		db.close()
+		throw e
+	}
+	db.close()
+	return values
+}
+
+/** 原子写入两个跨页状态键；空值表示删除，避免路由准备只提交一半。 */
+export function setRuntimeStatePair(firstKey: string, firstValue: string, secondKey: string, secondValue: string): boolean {
+	if (firstKey == '' || secondKey == '' || firstKey == secondKey) { return false }
+	const items: RuntimeStateMutation[] = [
+		{ key: firstKey, value: firstValue } as RuntimeStateMutation,
+		{ key: secondKey, value: secondValue } as RuntimeStateMutation,
+	]
+	return setRuntimeStates(items)
+}
+
+/** 导出全部页面运行态，供全量备份与导入回滚使用。 */
+export function getAllRuntimeStatesForExport(): UTSJSONObject[] {
+	const db = getDb()
+	ensureAppRuntimeStateTable(db)
+	const result = db.query('SELECT key, value, updated_at FROM app_runtime_state ORDER BY key ASC')
+	db.close()
+	assertSqlSuccess(result, '导出页面运行状态失败')
+	return rowsToObjects(result)
+}
+
+/** 覆盖全部页面运行态，避免导入后保留指向旧实体的草稿和活动 ID。 */
+export function replaceAllRuntimeStates(rows: UTSJSONObject[]): boolean {
+	const db = getDb()
+	ensureAppRuntimeStateTable(db)
+	try {
+		assertSqlSuccess(db.beginTransaction(), '开始恢复页面运行状态')
+		runSqlOrThrow(db, 'DELETE FROM app_runtime_state')
+		for (let i = 0; i < rows.length; i++) {
+			const key = readStringField(rows[i], 'key')
+			if (key == '') { throw new Error('页面运行状态缺少 key') }
+			const updatedAt = readNumberField(rows[i], 'updated_at')
+			runSqlOrThrow(
+				db,
+				'INSERT INTO app_runtime_state (key, value, updated_at) VALUES (?, ?, ?)',
+				[key, readStringField(rows[i], 'value'), updatedAt > 0 ? updatedAt : Date.now()],
+			)
+		}
+		assertSqlSuccess(db.commit(), '提交页面运行状态恢复')
+	} catch (_e: any) {
+		db.rollback()
+		db.close()
+		return false
+	}
+	db.close()
 	return true
 }
 
@@ -217,21 +423,242 @@ export function saveGroupSessionRows(groupId: string, rows: UTSJSONObject[]): bo
 export function getGroupMessageRows(groupId: string, sessionId: string): UTSJSONObject[] {
 	const db = getDb()
 	ensureGroupChatTables(db)
-	const result = db.query('SELECT * FROM group_chat_messages WHERE group_id = ? AND session_id = ? ORDER BY timestamp ASC, updated_at ASC', [groupId, sessionId])
+	const result = db.query('SELECT * FROM group_chat_messages WHERE group_id = ? AND session_id = ? ORDER BY timestamp ASC, updated_at ASC, id ASC', [groupId, sessionId])
 	db.close()
 	assertSqlSuccess(result, '读取群聊消息失败')
 	return rowsToObjects(result)
 }
 
-export function saveGroupMessageRows(groupId: string, sessionId: string, messages: UTSJSONObject[]): boolean {
-	const now = Date.now()
+const GROUP_MESSAGE_PAGE_SIZE_MAX = 200
+
+function assertValidGroupMessagePageSize(batchSize: number): void {
+	if (batchSize <= 0 || batchSize > GROUP_MESSAGE_PAGE_SIZE_MAX || Math.floor(batchSize) != batchSize) {
+		throw new Error('群聊消息批大小必须是 1 到 ' + GROUP_MESSAGE_PAGE_SIZE_MAX + ' 的整数')
+	}
+}
+
+function reverseGroupMessageRows(rows: UTSJSONObject[]): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	for (let i = rows.length - 1; i >= 0; i--) {
+		result.push(rows[i])
+	}
+	return result
+}
+
+export function getGroupMessageRowCount(groupId: string, sessionId: string): number {
+	if (groupId == '' || sessionId == '') { return 0 }
 	const db = getDb()
 	ensureGroupChatTables(db)
+	const result = db.query(
+		'SELECT COUNT(*) AS total_count FROM group_chat_messages WHERE group_id = ? AND session_id = ?',
+		[groupId, sessionId]
+	)
+	db.close()
+	assertSqlSuccess(result, '读取群聊消息总数失败')
+	const rows = rowsToObjects(result)
+	return rows.length > 0 ? readNumberField(rows[0], 'total_count') : 0
+}
+
+export function getRecentGroupMessageRows(groupId: string, sessionId: string, batchSize: number): UTSJSONObject[] {
+	assertValidGroupMessagePageSize(batchSize)
+	if (groupId == '' || sessionId == '') { return [] as UTSJSONObject[] }
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query(
+		'SELECT * FROM group_chat_messages WHERE group_id = ? AND session_id = ? ORDER BY timestamp DESC, updated_at DESC, id DESC LIMIT ?',
+		[groupId, sessionId, batchSize]
+	)
+	db.close()
+	assertSqlSuccess(result, '读取最近群聊消息失败')
+	return reverseGroupMessageRows(rowsToObjects(result))
+}
+
+export function getGroupMessageRowsBefore(
+	groupId: string,
+	sessionId: string,
+	beforeTimestamp: number,
+	beforeUpdatedAt: number,
+	beforeId: string,
+	batchSize: number
+): UTSJSONObject[] {
+	assertValidGroupMessagePageSize(batchSize)
+	if (groupId == '' || sessionId == '' || beforeTimestamp < 0 || beforeUpdatedAt < 0 || beforeId == '') {
+		throw new Error('群聊消息分页游标无效')
+	}
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query(
+		'SELECT * FROM group_chat_messages WHERE group_id = ? AND session_id = ? AND (' +
+		'timestamp < ? OR (timestamp = ? AND updated_at < ?) OR (timestamp = ? AND updated_at = ? AND id < ?)' +
+		') ORDER BY timestamp DESC, updated_at DESC, id DESC LIMIT ?',
+		[
+			groupId,
+			sessionId,
+			beforeTimestamp,
+			beforeTimestamp,
+			beforeUpdatedAt,
+			beforeTimestamp,
+			beforeUpdatedAt,
+			beforeId,
+			batchSize,
+		]
+	)
+	db.close()
+	assertSqlSuccess(result, '向前读取群聊消息失败')
+	return reverseGroupMessageRows(rowsToObjects(result))
+}
+
+const GROUP_MESSAGE_PERSISTED_UPDATED_AT_FIELD = 'persistedUpdatedAt'
+const GROUP_MESSAGE_PERSISTED_PAYLOAD_FIELD = 'persistedPayloadJson'
+const GROUP_MESSAGE_QUERY_BATCH_SIZE = 400
+
+export type GroupMessageSaveResult = {
+	ok: boolean
+	conflicted: boolean
+	conflictMessageIds: string[]
+}
+
+function buildGroupMessageSaveResult(ok: boolean, conflictMessageIds: string[]): GroupMessageSaveResult {
+	return {
+		ok: ok,
+		conflicted: conflictMessageIds.length > 0,
+		conflictMessageIds: conflictMessageIds,
+	} as GroupMessageSaveResult
+}
+
+function buildGroupMessagePayloadJson(message: UTSJSONObject): string {
+	const rawJson = safeJsonForDb(message)
+	const payload = JSON.parse(rawJson) as UTSJSONObject
+	// 数据库 updated_at 才是版本源；两个本地缓存字段都不能参与内容比较。
+	payload[GROUP_MESSAGE_PERSISTED_UPDATED_AT_FIELD] = 0
+	payload[GROUP_MESSAGE_PERSISTED_PAYLOAD_FIELD] = ''
+	return safeJsonForDb(payload)
+}
+
+function normalizeStoredGroupMessagePayloadJson(payloadJson: string): string {
+	if (payloadJson == '') { return '' }
 	try {
-		assertSqlSuccess(db.beginTransaction(), '无法开始群消息保存事务')
-		runSqlOrThrow(db, 'DELETE FROM group_chat_messages WHERE group_id = ? AND session_id = ?', [groupId, sessionId])
+		const payload = JSON.parse(payloadJson) as UTSJSONObject
+		payload[GROUP_MESSAGE_PERSISTED_UPDATED_AT_FIELD] = 0
+		payload[GROUP_MESSAGE_PERSISTED_PAYLOAD_FIELD] = ''
+		return safeJsonForDb(payload)
+	} catch (_e: any) {
+		return payloadJson
+	}
+}
+
+export function saveGroupMessageRowsDetailed(groupId: string, sessionId: string, messages: UTSJSONObject[]): GroupMessageSaveResult {
+	const now = Date.now()
+	const candidateMessages: UTSJSONObject[] = []
+	const candidatePayloads: string[] = []
+	const candidateIds: string[] = []
+	const seenIds: Map<string, boolean> = new Map<string, boolean>()
+	try {
 		for (let i = 0; i < messages.length; i++) {
 			const msg = messages[i]
+			const messageId = readStringField(msg, 'id')
+			if (messageId == '' || seenIds.has(messageId) == true) {
+				return buildGroupMessageSaveResult(false, [] as string[])
+			}
+			const expectedVersionRaw = msg[GROUP_MESSAGE_PERSISTED_UPDATED_AT_FIELD] as number | null
+			const cachedPayloadRaw = msg[GROUP_MESSAGE_PERSISTED_PAYLOAD_FIELD] as string | null
+			seenIds.set(messageId, true)
+			if (expectedVersionRaw != null && expectedVersionRaw >= 0 && cachedPayloadRaw != null && cachedPayloadRaw != '') {
+				continue
+			}
+			const payloadJson = buildGroupMessagePayloadJson(msg)
+			candidateMessages.push(msg)
+			candidatePayloads.push(payloadJson)
+			candidateIds.push(messageId)
+		}
+	} catch (_e: any) {
+		return buildGroupMessageSaveResult(false, [] as string[])
+	}
+	if (candidateMessages.length == 0) {
+		return buildGroupMessageSaveResult(true, [] as string[])
+	}
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const persistedMessages: UTSJSONObject[] = []
+	const persistedVersions: number[] = []
+	const persistedPayloads: string[] = []
+	const conflictMessageIds: string[] = []
+	try {
+		assertSqlSuccess(db.beginTransaction(), '无法开始群消息保存事务')
+		const existingRowById: Map<string, UTSJSONObject> = new Map<string, UTSJSONObject>()
+		for (let batchStart = 0; batchStart < candidateIds.length; batchStart += GROUP_MESSAGE_QUERY_BATCH_SIZE) {
+			let batchEnd = batchStart + GROUP_MESSAGE_QUERY_BATCH_SIZE
+			if (batchEnd > candidateIds.length) { batchEnd = candidateIds.length }
+			const placeholders: string[] = []
+			const queryParams: any[] = [groupId, sessionId]
+			for (let i = batchStart; i < batchEnd; i++) {
+				placeholders.push('?')
+				queryParams.push(candidateIds[i])
+			}
+			const existingResult = db.query(
+				'SELECT id, payload_json, updated_at FROM group_chat_messages WHERE group_id = ? AND session_id = ? AND id IN (' + placeholders.join(',') + ')',
+				queryParams
+			)
+			assertSqlSuccess(existingResult, '无法读取群消息保存快照')
+			const existingRows = rowsToObjects(existingResult)
+			for (let i = 0; i < existingRows.length; i++) {
+				const existingId = readStringField(existingRows[i], 'id')
+				if (existingId != '') {
+					existingRowById.set(existingId, existingRows[i])
+				}
+			}
+		}
+		// 整批先做 CAS 预检；任一冲突都不能让同批其他消息先提交。
+		for (let i = 0; i < candidateMessages.length; i++) {
+			const msg = candidateMessages[i]
+			const messageId = candidateIds[i]
+			const payloadJson = candidatePayloads[i]
+			const expectedVersionRaw = msg[GROUP_MESSAGE_PERSISTED_UPDATED_AT_FIELD] as number | null
+			const hasExpectedVersion = expectedVersionRaw != null && expectedVersionRaw >= 0
+			const existingRow = existingRowById.get(messageId)
+			if (existingRow != null) {
+				const existingPayloadJson = normalizeStoredGroupMessagePayloadJson(readStringField(existingRow, 'payload_json'))
+				if (existingPayloadJson == payloadJson) { continue }
+				const existingVersion = readNumberField(existingRow, 'updated_at')
+				if (hasExpectedVersion == false || expectedVersionRaw == null || expectedVersionRaw != existingVersion) {
+					conflictMessageIds.push(messageId)
+				}
+			} else if (hasExpectedVersion == true) {
+				conflictMessageIds.push(messageId)
+			}
+		}
+		if (conflictMessageIds.length > 0) {
+			db.rollback()
+			db.close()
+			return buildGroupMessageSaveResult(true, conflictMessageIds)
+		}
+		let changed = false
+		let metadataUpdatedAt = now
+		for (let i = 0; i < candidateMessages.length; i++) {
+			const msg = candidateMessages[i]
+			const messageId = candidateIds[i]
+			const payloadJson = candidatePayloads[i]
+			const expectedVersionRaw = msg[GROUP_MESSAGE_PERSISTED_UPDATED_AT_FIELD] as number | null
+			const hasExpectedVersion = expectedVersionRaw != null && expectedVersionRaw >= 0
+			const expectedVersion = hasExpectedVersion == true && expectedVersionRaw != null ? expectedVersionRaw : 0
+			const existingRow = existingRowById.get(messageId)
+			if (existingRow != null) {
+				const existingVersion = readNumberField(existingRow, 'updated_at')
+				const existingPayloadJson = normalizeStoredGroupMessagePayloadJson(readStringField(existingRow, 'payload_json'))
+				if (existingPayloadJson == payloadJson) {
+					persistedMessages.push(msg)
+					persistedVersions.push(existingVersion)
+					persistedPayloads.push(payloadJson)
+					continue
+				}
+				if (hasExpectedVersion == false || expectedVersion != existingVersion) {
+					conflictMessageIds.push(messageId)
+					continue
+				}
+			} else if (hasExpectedVersion == true) {
+				conflictMessageIds.push(messageId)
+				continue
+			}
 			const visibleRaw = msg['visible'] as boolean | null
 			const visible = visibleRaw == false ? 0 : 1
 			const visibilityRaw = msg['visibility'] as string | null
@@ -240,25 +667,134 @@ export function saveGroupMessageRows(groupId: string, sessionId: string, message
 			const timestamp = timestampRaw != null && timestampRaw > 0 ? timestampRaw : now
 			const visibleAgentIdsRaw = msg['visibleAgentIds'] as string[] | null
 			const visibleAgentIds = visibleAgentIdsRaw != null ? visibleAgentIdsRaw : ([] as string[])
-			runSqlOrThrow(db,
-				'INSERT OR REPLACE INTO group_chat_messages (id, group_id, session_id, role, sender_type, sender_agent_id, visibility, visible_agent_ids_json, visible, timestamp, payload_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-				[
-					readStringField(msg, 'id'),
-					groupId,
-					sessionId,
-					readStringField(msg, 'role'),
-					readStringField(msg, 'senderType'),
-					readStringField(msg, 'senderAgentId'),
-					visibility,
-					safeJsonArrayForDb(visibleAgentIds),
-					visible,
-					timestamp,
-					safeJsonForDb(msg),
-					now,
-				]
-			)
+			let writeVersion = now
+			if (existingRow != null) {
+				const existingVersion = readNumberField(existingRow, 'updated_at')
+				if (writeVersion <= existingVersion) { writeVersion = existingVersion + 1 }
+				const updateResult = db.run(
+					'UPDATE group_chat_messages SET role = ?, sender_type = ?, sender_agent_id = ?, visibility = ?, visible_agent_ids_json = ?, visible = ?, timestamp = ?, payload_json = ?, updated_at = ? WHERE id = ? AND group_id = ? AND session_id = ? AND updated_at = ?',
+					[
+						readStringField(msg, 'role'),
+						readStringField(msg, 'senderType'),
+						readStringField(msg, 'senderAgentId'),
+						visibility,
+						safeJsonArrayForDb(visibleAgentIds),
+						visible,
+						timestamp,
+						payloadJson,
+						writeVersion,
+						messageId,
+						groupId,
+						sessionId,
+						existingVersion,
+					]
+				)
+				assertSqlSuccess(updateResult, '更新群聊消息失败')
+				const updateChanges = updateResult.changes
+				if (updateChanges == null || updateChanges <= 0) {
+					const currentResult = db.query(
+						'SELECT payload_json, updated_at FROM group_chat_messages WHERE id = ? AND group_id = ? AND session_id = ? LIMIT 1',
+						[messageId, groupId, sessionId]
+					)
+					assertSqlSuccess(currentResult, '读取群消息并发更新结果失败')
+					const currentRows = rowsToObjects(currentResult)
+					if (currentRows.length > 0 && normalizeStoredGroupMessagePayloadJson(readStringField(currentRows[0], 'payload_json')) == payloadJson) {
+						persistedMessages.push(msg)
+						persistedVersions.push(readNumberField(currentRows[0], 'updated_at'))
+						persistedPayloads.push(payloadJson)
+					} else {
+						conflictMessageIds.push(messageId)
+						throw new Error('群消息并发更新冲突：' + messageId)
+					}
+					continue
+				}
+			} else {
+				const insertResult = db.run(
+					'INSERT OR IGNORE INTO group_chat_messages (id, group_id, session_id, role, sender_type, sender_agent_id, visibility, visible_agent_ids_json, visible, timestamp, payload_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+					[
+						messageId,
+						groupId,
+						sessionId,
+						readStringField(msg, 'role'),
+						readStringField(msg, 'senderType'),
+						readStringField(msg, 'senderAgentId'),
+						visibility,
+						safeJsonArrayForDb(visibleAgentIds),
+						visible,
+						timestamp,
+						payloadJson,
+						writeVersion,
+					]
+				)
+				assertSqlSuccess(insertResult, '新增群聊消息失败')
+				const insertChanges = insertResult.changes
+				if (insertChanges == null || insertChanges <= 0) {
+					const currentResult = db.query(
+						'SELECT payload_json, updated_at FROM group_chat_messages WHERE id = ? AND group_id = ? AND session_id = ? LIMIT 1',
+						[messageId, groupId, sessionId]
+					)
+					assertSqlSuccess(currentResult, '读取群消息并发新增结果失败')
+					const currentRows = rowsToObjects(currentResult)
+					if (currentRows.length > 0 && normalizeStoredGroupMessagePayloadJson(readStringField(currentRows[0], 'payload_json')) == payloadJson) {
+						persistedMessages.push(msg)
+						persistedVersions.push(readNumberField(currentRows[0], 'updated_at'))
+						persistedPayloads.push(payloadJson)
+					} else {
+						conflictMessageIds.push(messageId)
+						throw new Error('群消息并发新增冲突：' + messageId)
+					}
+					continue
+				}
+			}
+			changed = true
+			if (writeVersion > metadataUpdatedAt) { metadataUpdatedAt = writeVersion }
+			persistedMessages.push(msg)
+			persistedVersions.push(writeVersion)
+			persistedPayloads.push(payloadJson)
+		}
+		if (changed == true) {
+			runSqlOrThrow(db, 'UPDATE group_chat_sessions SET updated_at = CASE WHEN updated_at < ? THEN ? ELSE updated_at END WHERE group_id = ? AND id = ?', [metadataUpdatedAt, metadataUpdatedAt, groupId, sessionId])
+			runSqlOrThrow(db, 'UPDATE group_chats SET updated_at = CASE WHEN updated_at < ? THEN ? ELSE updated_at END WHERE id = ?', [metadataUpdatedAt, metadataUpdatedAt, groupId])
 		}
 		assertSqlSuccess(db.commit(), '无法提交群消息保存事务')
+	} catch (_e: any) {
+		db.rollback()
+		db.close()
+		return buildGroupMessageSaveResult(false, conflictMessageIds)
+	}
+	db.close()
+	for (let i = 0; i < persistedMessages.length; i++) {
+		persistedMessages[i][GROUP_MESSAGE_PERSISTED_UPDATED_AT_FIELD] = persistedVersions[i]
+		persistedMessages[i][GROUP_MESSAGE_PERSISTED_PAYLOAD_FIELD] = persistedPayloads[i]
+	}
+	return buildGroupMessageSaveResult(true, conflictMessageIds)
+}
+
+export function saveGroupMessageRows(groupId: string, sessionId: string, messages: UTSJSONObject[]): boolean {
+	const result = saveGroupMessageRowsDetailed(groupId, sessionId, messages)
+	return result.ok == true && result.conflicted == false
+}
+
+export function deleteGroupMessageRow(groupId: string, sessionId: string, messageId: string, expectedUpdatedAt: number): boolean {
+	if (groupId == '' || sessionId == '' || messageId == '' || expectedUpdatedAt < 0) { return false }
+	const db = getDb()
+	ensureGroupChatTables(db)
+	try {
+		assertSqlSuccess(db.beginTransaction(), '无法开始群消息删除事务')
+		const deleteResult = db.run(
+			'DELETE FROM group_chat_messages WHERE group_id = ? AND session_id = ? AND id = ? AND updated_at = ?',
+			[groupId, sessionId, messageId, expectedUpdatedAt]
+		)
+		assertSqlSuccess(deleteResult, '删除群聊消息失败')
+		const deleteChanges = deleteResult.changes
+		if (deleteChanges == null || deleteChanges <= 0) {
+			throw new Error('群消息删除冲突：' + messageId)
+		}
+		let metadataUpdatedAt = Date.now()
+		if (metadataUpdatedAt <= expectedUpdatedAt) { metadataUpdatedAt = expectedUpdatedAt + 1 }
+		runSqlOrThrow(db, 'UPDATE group_chat_sessions SET updated_at = CASE WHEN updated_at < ? THEN ? ELSE updated_at END WHERE group_id = ? AND id = ?', [metadataUpdatedAt, metadataUpdatedAt, groupId, sessionId])
+		runSqlOrThrow(db, 'UPDATE group_chats SET updated_at = CASE WHEN updated_at < ? THEN ? ELSE updated_at END WHERE id = ?', [metadataUpdatedAt, metadataUpdatedAt, groupId])
+		assertSqlSuccess(db.commit(), '无法提交群消息删除事务')
 	} catch (_e: any) {
 		db.rollback()
 		db.close()
@@ -291,6 +827,12 @@ export function getGroupAgentContextRows(agentId: string): UTSJSONObject[] {
 }
 
 export function saveGroupAgentContextRow(record: UTSJSONObject): boolean {
+	let payloadJson = ''
+	try {
+		payloadJson = safeJsonForDb(record)
+	} catch (_e: any) {
+		return false
+	}
 	const db = getDb()
 	ensureGroupChatTables(db)
 	const result = db.run(
@@ -301,7 +843,7 @@ export function saveGroupAgentContextRow(record: UTSJSONObject): boolean {
 			readStringField(record, 'groupId') != '' ? readStringField(record, 'groupId') : readStringField(record, 'group_id'),
 			readStringField(record, 'sessionId') != '' ? readStringField(record, 'sessionId') : readStringField(record, 'session_id'),
 			readNumberField(record, 'createdAt') > 0 ? readNumberField(record, 'createdAt') : readNumberField(record, 'created_at'),
-			safeJsonForDb(record),
+			payloadJson,
 		]
 	)
 	db.close()
@@ -327,6 +869,12 @@ export function deleteGroupAgentContextRow(agentId: string, recordId: string): b
 }
 
 export function saveGroupReviewRow(record: UTSJSONObject): boolean {
+	let payloadJson = ''
+	try {
+		payloadJson = safeJsonForDb(record)
+	} catch (_e: any) {
+		return false
+	}
 	const db = getDb()
 	ensureGroupChatTables(db)
 	const result = db.run(
@@ -338,7 +886,7 @@ export function saveGroupReviewRow(record: UTSJSONObject): boolean {
 			readStringField(record, 'messageId'),
 			readStringField(record, 'summary'),
 			readStringField(record, 'continueAdvice') != '' ? readStringField(record, 'continueAdvice') : 'neutral',
-			safeJsonForDb(record),
+			payloadJson,
 			readNumberField(record, 'createdAt') > 0 ? readNumberField(record, 'createdAt') : Date.now(),
 		]
 	)
@@ -354,6 +902,14 @@ export function saveGroupReviewRow(record: UTSJSONObject): boolean {
 export function saveGroupTaskRow(record: UTSJSONObject): boolean {
 	const now = Date.now()
 	const participants = record['participants'] as string[] | null
+	let participantsJson = '[]'
+	let payloadJson = ''
+	try {
+		participantsJson = participants != null ? safeJsonArrayForDb(participants) : '[]'
+		payloadJson = safeJsonForDb(record)
+	} catch (_e: any) {
+		return false
+	}
 	const db = getDb()
 	ensureGroupChatTables(db)
 	const result = db.run(
@@ -364,10 +920,10 @@ export function saveGroupTaskRow(record: UTSJSONObject): boolean {
 			readStringField(record, 'sessionId'),
 			readStringField(record, 'title'),
 			readStringField(record, 'ownerAgentId'),
-			participants != null ? safeJsonArrayForDb(participants) : '[]',
+			participantsJson,
 			readStringField(record, 'status') != '' ? readStringField(record, 'status') : 'open',
 			readStringField(record, 'sourceReviewId'),
-			safeJsonForDb(record),
+			payloadJson,
 			readNumberField(record, 'createdAt') > 0 ? readNumberField(record, 'createdAt') : now,
 			now,
 		]
@@ -383,6 +939,12 @@ export function saveGroupTaskRow(record: UTSJSONObject): boolean {
 
 export function saveGroupMemoryRow(record: UTSJSONObject): boolean {
 	const now = Date.now()
+	let payloadJson = ''
+	try {
+		payloadJson = safeJsonForDb(record)
+	} catch (_e: any) {
+		return false
+	}
 	const db = getDb()
 	ensureGroupChatTables(db)
 	const result = db.run(
@@ -396,7 +958,7 @@ export function saveGroupMemoryRow(record: UTSJSONObject): boolean {
 			readStringField(record, 'visibility') != '' ? readStringField(record, 'visibility') : 'private',
 			readStringField(record, 'content'),
 			readStringField(record, 'sourceReviewId'),
-			safeJsonForDb(record),
+			payloadJson,
 			readNumberField(record, 'createdAt') > 0 ? readNumberField(record, 'createdAt') : now,
 			now,
 		]
@@ -466,6 +1028,65 @@ export function getGroupTaskRows(groupId: string, sessionId: string): UTSJSONObj
 	return rowsToObjects(result)
 }
 
+export function getOpenGroupTaskRows(groupId: string, sessionId: string): UTSJSONObject[] {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query(
+		'SELECT * FROM group_chat_tasks WHERE group_id = ? AND session_id = ? AND (status = ? OR status = ?) AND id NOT LIKE ? ORDER BY updated_at DESC LIMIT 32',
+		[groupId, sessionId, 'open', 'doing', 'gspeak-%']
+	)
+	db.close()
+	assertSqlSuccess(result, '读取群聊进行中任务失败')
+	return rowsToObjects(result)
+}
+
+/**
+ * 发言申请热路径只需要活动申请和取消保护记录。
+ * 已完成的普通任务与历史申请不参与路由，避免长会话每轮全表 JSON 解析。
+ */
+export function getGroupSpeakIntentTaskRows(groupId: string, sessionId: string): UTSJSONObject[] {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query(
+		'SELECT * FROM group_chat_tasks WHERE group_id = ? AND session_id = ? AND (' +
+		'((status = ? OR status = ?) AND id LIKE ?) OR id LIKE ? OR id IN (' +
+		'SELECT ? || id FROM group_chat_tasks WHERE group_id = ? AND session_id = ? AND (status = ? OR status = ?) AND id LIKE ?' +
+		')) ORDER BY updated_at DESC',
+		[groupId, sessionId, 'open', 'claimed', 'gspeak-%', 'gspeak-session-tombstone-%', 'gspeak-tombstone-', groupId, sessionId, 'open', 'claimed', 'gspeak-%']
+	)
+	db.close()
+	assertSqlSuccess(result, '读取群聊活动发言申请失败')
+	return rowsToObjects(result)
+}
+
+export function getAllGroupSpeakIntentTaskRows(): UTSJSONObject[] {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query(
+		'SELECT * FROM group_chat_tasks WHERE ((status = ? OR status = ?) AND id LIKE ?) OR id LIKE ? OR id IN (' +
+		'SELECT ? || id FROM group_chat_tasks WHERE (status = ? OR status = ?) AND id LIKE ?' +
+		') ORDER BY updated_at DESC',
+		['open', 'claimed', 'gspeak-%', 'gspeak-session-tombstone-%', 'gspeak-tombstone-', 'open', 'claimed', 'gspeak-%']
+	)
+	db.close()
+	assertSqlSuccess(result, '读取全部活动发言申请失败')
+	return rowsToObjects(result)
+}
+
+export function getGroupTaskRowById(groupId: string, sessionId: string, taskId: string): UTSJSONObject | null {
+	if (groupId == '' || sessionId == '' || taskId == '') { return null }
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const result = db.query(
+		'SELECT * FROM group_chat_tasks WHERE group_id = ? AND session_id = ? AND id = ? LIMIT 1',
+		[groupId, sessionId, taskId]
+	)
+	db.close()
+	assertSqlSuccess(result, '读取群聊任务失败')
+	const rows = rowsToObjects(result)
+	return rows.length > 0 ? rows[0] : null
+}
+
 export function getAllGroupTaskRows(): UTSJSONObject[] {
 	const db = getDb()
 	ensureGroupChatTables(db)
@@ -497,6 +1118,77 @@ export function setGroupChatState(key: string, value: string): boolean {
 	} catch (_e: any) {
 		return false
 	}
+	return true
+}
+
+/** 原子恢复两个群聊路由键；空值表示删除，不修改任何群聊自身的当前会话。 */
+export function setGroupChatRouteState(groupId: string, sessionId: string): boolean {
+	const db = getDb()
+	ensureGroupChatTables(db)
+	try {
+		assertSqlSuccess(db.beginTransaction(), '开始恢复群聊路由状态')
+		if (groupId == '') {
+			runSqlOrThrow(db, 'DELETE FROM group_chat_state WHERE key = ?', [ACTIVE_GROUP_CHAT_ID_KEY])
+		} else {
+			runSqlOrThrow(db, 'INSERT OR REPLACE INTO group_chat_state (key, value, updated_at) VALUES (?, ?, ?)', [ACTIVE_GROUP_CHAT_ID_KEY, groupId, Date.now()])
+		}
+		if (sessionId == '') {
+			runSqlOrThrow(db, 'DELETE FROM group_chat_state WHERE key = ?', [ACTIVE_GROUP_SESSION_ID_KEY])
+		} else {
+			runSqlOrThrow(db, 'INSERT OR REPLACE INTO group_chat_state (key, value, updated_at) VALUES (?, ?, ?)', [ACTIVE_GROUP_SESSION_ID_KEY, sessionId, Date.now()])
+		}
+		assertSqlSuccess(db.commit(), '提交群聊路由状态恢复')
+	} catch (_e: any) {
+		db.rollback()
+		db.close()
+		return false
+	}
+	db.close()
+	return true
+}
+
+/** 原子切换当前群聊会话，避免群聊记录和两个活动状态键部分提交。 */
+export function setActiveGroupSessionState(groupId: string, sessionId: string, updatedAt: number): boolean {
+	if (groupId == '' || sessionId == '') { return false }
+	const db = getDb()
+	ensureGroupChatTables(db)
+	const writeAt = updatedAt > 0 ? updatedAt : Date.now()
+	try {
+		assertSqlSuccess(db.beginTransaction(), '开始切换当前群聊会话')
+		const targetResult = db.query(
+			'SELECT group_chats.id FROM group_chats INNER JOIN group_chat_sessions ON group_chat_sessions.group_id = group_chats.id WHERE group_chats.id = ? AND group_chat_sessions.id = ? LIMIT 1',
+			[groupId, sessionId]
+		)
+		assertSqlSuccess(targetResult, '校验群聊当前会话')
+		if (rowsToObjects(targetResult).length == 0) { throw new Error('群聊或群会话不存在') }
+		assertSqlSuccess(
+			db.run(
+				'UPDATE group_chats SET active_session_id = ?, updated_at = ? WHERE id = ?',
+				[sessionId, writeAt, groupId]
+			),
+			'更新群聊当前会话'
+		)
+		assertSqlSuccess(
+			db.run(
+				'INSERT OR REPLACE INTO group_chat_state (key, value, updated_at) VALUES (?, ?, ?)',
+				[ACTIVE_GROUP_CHAT_ID_KEY, groupId, writeAt]
+			),
+			'保存当前群聊状态'
+		)
+		assertSqlSuccess(
+			db.run(
+				'INSERT OR REPLACE INTO group_chat_state (key, value, updated_at) VALUES (?, ?, ?)',
+				[ACTIVE_GROUP_SESSION_ID_KEY, sessionId, writeAt]
+			),
+			'保存当前群会话状态'
+		)
+		assertSqlSuccess(db.commit(), '提交当前群聊会话切换')
+	} catch (_e: any) {
+		db.rollback()
+		db.close()
+		return false
+	}
+	db.close()
 	return true
 }
 

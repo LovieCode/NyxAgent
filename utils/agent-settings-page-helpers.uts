@@ -1,5 +1,5 @@
-import { deleteRuntimeState, setRuntimeState } from '@/utils/database.uts'
 import { DEFAULT_AGENT_INTERACTION_RULES } from '@/utils/agent.uts'
+import { clearEditorRuntimeStateFor, prepareTextEditorRuntimeState } from '@/utils/editor-runtime-state.uts'
 import { getSkillDocumentCount, readSkillDescription, readSkillEnabled, readSkillId, readSkillName, skillIdListContains } from '@/utils/skills.uts'
 
 export type AgentSettingsProfileForm = {
@@ -76,46 +76,29 @@ export function readAgentSettingsSkillDesc(skill: UTSJSONObject): string {
 	return readSkillDescription(skill)
 }
 
-export function clearAgentSettingsEditorRuntime(): void {
-	deleteRuntimeState('editor_draft')
-	deleteRuntimeState('editor_result')
-	deleteRuntimeState('editor_result_ready')
-	deleteRuntimeState('editor_file_path')
-	deleteRuntimeState('editor_saved')
-	deleteRuntimeState('editor_saved_path')
-	deleteRuntimeState('editor_mode')
-	deleteRuntimeState('editor_content')
-	deleteRuntimeState('editor_title')
-	deleteRuntimeState('editor_target')
-	deleteRuntimeState('editor_placeholder')
-	deleteRuntimeState('editor_readonly')
+export function buildAgentSettingsEditorOwner(agentId: string): string {
+	if (agentId == '') { return '' }
+	return 'agent-settings:' + agentId
+}
+
+export function clearAgentSettingsEditorRuntime(agentId: string, target: string): boolean {
+	return clearEditorRuntimeStateFor(buildAgentSettingsEditorOwner(agentId), target)
 }
 
 let lastAgentSettingsEditorPrepareSucceeded = false
 
-function prepareAgentSettingsTextEditorInternal(content: string, title: string, target: string, placeholder: string): boolean {
-	if (target == '') { return false }
-	clearAgentSettingsEditorRuntime()
-	const modeSaved = setRuntimeState('editor_mode', 'text')
-	const contentSaved = setRuntimeState('editor_content', content)
-	const titleSaved = setRuntimeState('editor_title', title)
-	const targetSaved = setRuntimeState('editor_target', target)
-	const placeholderSaved = setRuntimeState('editor_placeholder', placeholder)
-	if (modeSaved == false || contentSaved == false || titleSaved == false || targetSaved == false || placeholderSaved == false) {
-		clearAgentSettingsEditorRuntime()
-		return false
-	}
-	return true
+function prepareAgentSettingsTextEditorInternal(content: string, title: string, agentId: string, target: string, placeholder: string): boolean {
+	return prepareTextEditorRuntimeState(content, title, buildAgentSettingsEditorOwner(agentId), target, placeholder)
 }
 
 /** 保留旧 void ABI，并让当前调用链真实引用它，避免 Android 增量编译将其裁掉。 */
-export function prepareAgentSettingsTextEditor(content: string, title: string, target: string, placeholder: string): void {
-	lastAgentSettingsEditorPrepareSucceeded = prepareAgentSettingsTextEditorInternal(content, title, target, placeholder)
+export function prepareAgentSettingsTextEditor(content: string, title: string, agentId: string, target: string, placeholder: string): void {
+	lastAgentSettingsEditorPrepareSucceeded = prepareAgentSettingsTextEditorInternal(content, title, agentId, target, placeholder)
 
 }
 
-export function tryPrepareAgentSettingsTextEditor(content: string, title: string, target: string, placeholder: string): boolean {
-	prepareAgentSettingsTextEditor(content, title, target, placeholder)
+export function tryPrepareAgentSettingsTextEditor(content: string, title: string, agentId: string, target: string, placeholder: string): boolean {
+	prepareAgentSettingsTextEditor(content, title, agentId, target, placeholder)
 	return lastAgentSettingsEditorPrepareSucceeded
 }
 

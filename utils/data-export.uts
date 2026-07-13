@@ -3,13 +3,13 @@
  * 聚合 SQLite、app_settings 和本地资源，生成可备份 ZIP 清单。
  */
 
-import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings, getDatabaseFilePathForExport, getAllMemoryBuffersForExport, getAllMemoryCoreForExport, getAllConversationTokenUsageStatsForExport, getAllMemoryCompactionStatesForExport, getAllGroupChatDataForExport } from '@/utils/database.uts'
+import { getAllProviders, getAllConversationsForExport, getAllMessagesForExport, getAllAppSettings, getDatabaseFilePathForExport, getAllMemoryBuffersForExport, getAllMemoryCoreForExport, getAllConversationTokenUsageStatsForExport, getAllMemoryCompactionStatesForExport, getAllGroupChatDataForExport, getAllRuntimeStatesForExport, getRuntimeState } from '@/utils/database.uts'
 import { getAllDefaultTaskModels } from '@/uni_modules/agent-core/utssdk/provider.uts'
 import { getAgents } from '@/utils/agent.uts'
 import { getSkills, hasSkillsStorageReadError } from '@/utils/skills.uts'
 import { getAgentDir, getAgentsRoot, getInternalFilesDir, getUserDir, listDir, joinPath, exists, readContent, formatFileSize, formatTime } from '@/utils/file-manager.uts'
 import { buildTodoMarkdown, buildNoteMarkdown } from '@/utils/markdown.uts'
-import { writeExportZipFile, shareExportFile, getLastShareExportError } from '@/utssdk/app-data-export/index.uts'
+import { writeExportZipFile, shareExportFile, getLastDataArchiveError, getLastShareExportError } from '@/utssdk/app-data-export/index.uts'
 import { appendDirectorySpec, appendFileSpec, appendTextSpec, cloneExportObject, inferExtension, isLocalExportPath, sanitizeFilePart, sanitizeRelativeZipPath, sanitizeZipSegment, stripFileSpecContent } from '@/utils/data-export-helpers.uts'
 import { APP_ERROR_CATEGORY_STORAGE, reportAppErrorFromCause } from '@/utils/app-error.uts'
 
@@ -37,10 +37,24 @@ function findAppSettingValue(appSettings: UTSJSONObject[], key: string): string 
 	return null
 }
 
+function isRuntimeStorageKey(key: string): boolean {
+	return key == 'active_agent_id' ||
+		key == 'active_conversation_id' ||
+		key == 'memory_agent_id' ||
+		key == 'memory_conversation_id' ||
+		key == 'provider_edit_data' ||
+		key == 'pending_agent_model_id' ||
+		key.startsWith('editor_') ||
+		key.startsWith('crop_')
+}
+
 function addStorageValue(target: UTSJSONObject, key: string, appSettings: UTSJSONObject[]): void {
 	let value: any | null = findAppSettingValue(appSettings, key)
 	if (value == null && key.startsWith('app_setting_')) {
 		value = findAppSettingValue(appSettings, key.substring(12))
+	}
+	if (value == null && isRuntimeStorageKey(key) == true) {
+		value = getRuntimeState(key)
 	}
 	if (value != null) {
 		target[key] = value
@@ -64,10 +78,6 @@ function buildKnownStorageKeys(): string[] {
 		'agent_list',
 		'active_agent_id',
 		'active_conversation_id',
-		'settings_provider_id',
-		'settings_api_key',
-		'settings_base_url',
-		'settings_model',
 		'settings_gh_proxy_enabled',
 		'settings_gh_proxy_domain',
 		'settings_web_search_enabled',
@@ -105,7 +115,7 @@ function buildKnownStorageKeys(): string[] {
 		'pending_agent_model_id',
 		'editor_title',
 		'editor_content',
-		'editor_draft',
+		'editor_owner',
 		'editor_target',
 		'editor_result',
 		'editor_mode',
@@ -541,7 +551,7 @@ function sanitizeAppSettingsForExport(appSettings: UTSJSONObject[], options: Dat
 	for (let i = 0; i < appSettings.length; i++) {
 		const clean = cloneExportObject(appSettings[i])
 		const key = clean['key'] as string | null
-		if (options.includeApiKeys == false && (key == 'settings_api_key' || key == 'settings_astrbot_api_key')) {
+		if (options.includeApiKeys == false && key == 'settings_astrbot_api_key') {
 			clean['value'] = ''
 		}
 		result.push(clean)
@@ -552,7 +562,6 @@ function sanitizeAppSettingsForExport(appSettings: UTSJSONObject[], options: Dat
 function sanitizeStorageForExport(storage: UTSJSONObject, options: DataExportOptions): UTSJSONObject {
 	const clean = cloneExportObject(storage)
 	if (options.includeApiKeys == false) {
-		clean['settings_api_key'] = ''
 		clean['settings_astrbot_api_key'] = ''
 		// 临时编辑缓存可能携带 API Key，安全备份里直接丢弃。
 		clean['provider_edit_data'] = ''
@@ -629,6 +638,7 @@ export function buildAllDataExportWithOptions(options: DataExportOptions): UTSJS
 			memoryCore: memoryCore,
 			conversationTokenUsageStats: conversationTokenUsageStats,
 			memoryCompactionStates: memoryCompactionStates,
+			runtimeStates: getAllRuntimeStatesForExport(),
 			groupChatData: groupChatData,
 			notes: notes,
 			todos: todos,
@@ -686,4 +696,9 @@ export function shareExportedDataFile(filePath: string): boolean {
 /** 获取最近一次分享失败原因。 */
 export function getLastShareExportErrorMessage(): string {
 	return getLastShareExportError()
+}
+
+/** 获取最近一次 ZIP 创建或清单读取失败原因。 */
+export function getLastDataArchiveErrorMessage(): string {
+	return getLastDataArchiveError()
 }

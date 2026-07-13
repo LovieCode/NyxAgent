@@ -11,7 +11,7 @@
  * - 其他平台：uni.env.USER_DATA_PATH
  */
 
-import { getAppSetting, getGroupChatRows, setAppSetting } from '@/utils/database.uts'
+import { getAppSetting, getGroupChatRows } from '@/utils/database.uts'
 import {
 	type FileItem,
 	type RootDirOption,
@@ -19,7 +19,7 @@ import {
 	joinPath,
 	normalizePath,
 } from '@/utils/file-manager-models.uts'
-import { copyItem, createDir, deleteItem, exists, listDir, statItem } from '@/utils/file-manager-io.uts'
+import { createDir, deleteItem, exists, listDir, statItem } from '@/utils/file-manager-io.uts'
 import {
 	rememberAgentWorkspaceNames,
 	rememberGroupWorkspaceNames,
@@ -34,8 +34,6 @@ export * from '@/utils/file-manager-io.uts'
 // #ifdef APP-ANDROID
 import File from 'java.io.File'
 // #endif
-
-const LEGACY_USER_DIR_MIGRATED_KEY = 'legacy_user_dir_migrated'
 
 // #ifdef APP-ANDROID
 /**
@@ -95,15 +93,6 @@ export function getUserDir(): string {
 		createDir(dirPath)
 	}
 	return dirPath
-}
-
-/**
- * 获取旧版用户伪 Agent 目录。只用于无损迁移，不再写入新数据。
- */
-export function getLegacyUserAgentDir(): string {
-	const root = getAgentsRoot()
-	if (root == '') return ''
-	return root + '/__user__'
 }
 
 /**
@@ -453,42 +442,4 @@ export function listRootContents(): FileItem[] {
 		result.push(internalItems[i])
 	}
 	return result
-}
-
-/**
- * 无损迁移旧版 `agents/__user__` 目录到新的用户目录。
- * 已存在的同名文件不会覆盖，避免误伤用户手动整理过的数据。
- */
-export function migrateLegacyUserDir(): void {
-	const migrated = getAppSetting(LEGACY_USER_DIR_MIGRATED_KEY)
-	if (migrated == '1') {
-		return
-	}
-	const legacyDir = getLegacyUserAgentDir()
-	const filesDir = getInternalFilesDir()
-	if (legacyDir == '' || filesDir == '') {
-		return
-	}
-	const userDir = filesDir + '/user'
-	if (userDir == '' || legacyDir == userDir) {
-		setAppSetting(LEGACY_USER_DIR_MIGRATED_KEY, '1')
-		return
-	}
-	if (exists(legacyDir) == false) {
-		setAppSetting(LEGACY_USER_DIR_MIGRATED_KEY, '1')
-		return
-	}
-	// LEGACY_COMPAT: 只在新 user 目录还没出现时做一次旧目录迁移，避免已删除文件反复复活。
-	if (exists(userDir) == true) {
-		setAppSetting(LEGACY_USER_DIR_MIGRATED_KEY, '1')
-		return
-	}
-	const copyResult = copyItem(legacyDir, userDir)
-	if (copyResult.ok == false) {
-		if (exists(userDir) == true) {
-			deleteItem(userDir, true)
-		}
-		return
-	}
-	setAppSetting(LEGACY_USER_DIR_MIGRATED_KEY, '1')
 }

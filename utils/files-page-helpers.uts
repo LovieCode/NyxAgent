@@ -1,7 +1,13 @@
-import { deleteRuntimeState, getConversationsByAgent, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+import { getConversationsByAgent } from '@/utils/database.uts'
 import { getAgents } from '@/utils/agent.uts'
+import { clearEditorRuntimeStateFor, consumeFileEditorSavedState, prepareFileEditorRuntimeState, readEditorRuntimeConfig } from '@/utils/editor-runtime-state.uts'
 import { displaySessionTitle, getGroupChats, getGroupSessions } from '@/utils/group-chat-service.uts'
-import { resolveAgentWorkspaceName, resolveGroupWorkspaceName } from '@/utils/workspace-name-snapshot.uts'
+import {
+	resolveAgentConversationWorkspaceName,
+	resolveAgentWorkspaceName,
+	resolveGroupSessionWorkspaceName,
+	resolveGroupWorkspaceName,
+} from '@/utils/workspace-name-snapshot.uts'
 import {
 	basename,
 	getAgentsRoot,
@@ -92,44 +98,25 @@ export function buildGroupWorkspacesRootPath(): string {
 	return joinPath(filesDir, 'group-workspaces')
 }
 
-export function clearManagedEditorRuntimeState(): void {
-	deleteRuntimeState('editor_mode')
-	deleteRuntimeState('editor_title')
-	deleteRuntimeState('editor_content')
-	deleteRuntimeState('editor_result')
-	deleteRuntimeState('editor_result_ready')
-	deleteRuntimeState('editor_target')
-	deleteRuntimeState('editor_file_path')
-	deleteRuntimeState('editor_saved')
-	deleteRuntimeState('editor_saved_path')
-	deleteRuntimeState('editor_readonly')
-	deleteRuntimeState('editor_placeholder')
-	deleteRuntimeState('editor_draft')
+function buildManagedFileEditorOwner(path: string): string {
+	if (path == '') { return '' }
+	return 'file-manager:' + path
+}
+
+export function clearManagedEditorRuntimeState(item: FileItem): boolean {
+	return clearEditorRuntimeStateFor(buildManagedFileEditorOwner(item.path), 'file-manager')
 }
 
 export function consumeManagedEditorSavedState(): boolean {
-	const saved = getRuntimeState('editor_saved')
-	if (saved != 'true') { return false }
-	deleteRuntimeState('editor_saved')
-	deleteRuntimeState('editor_saved_path')
-	deleteRuntimeState('editor_mode')
-	deleteRuntimeState('editor_file_path')
-	deleteRuntimeState('editor_title')
-	deleteRuntimeState('editor_target')
-	deleteRuntimeState('editor_placeholder')
-	return true
+	const config = readEditorRuntimeConfig()
+	if (config.mode != 'file' || config.target != 'file-manager' || config.filePath == '') { return false }
+	const owner = buildManagedFileEditorOwner(config.filePath)
+	if (config.owner != owner) { return false }
+	return consumeFileEditorSavedState(owner, 'file-manager')
 }
 
-export function prepareManagedTextEditorRuntimeState(item: FileItem): void {
-	clearManagedEditorRuntimeState()
-	const modeSaved = setRuntimeState('editor_mode', 'file')
-	const pathSaved = setRuntimeState('editor_file_path', item.path)
-	const titleSaved = setRuntimeState('editor_title', item.name)
-	const targetSaved = setRuntimeState('editor_target', 'file-manager')
-	const placeholderSaved = setRuntimeState('editor_placeholder', '文件内容为空')
-	if (modeSaved == false || pathSaved == false || titleSaved == false || targetSaved == false || placeholderSaved == false) {
-		clearManagedEditorRuntimeState()
-	}
+export function prepareManagedTextEditorRuntimeState(item: FileItem): boolean {
+	return prepareFileEditorRuntimeState(item.path, item.name, buildManagedFileEditorOwner(item.path), 'file-manager', '文件内容为空')
 }
 
 export function lookupManagedAgentName(agentId: string): string {
@@ -162,9 +149,10 @@ export function lookupManagedAgentConversationName(agentId: string, conversation
 			}
 		}
 	} catch (_e: any) {
-		// 数据库不可用时显示原 ID。
+		// 继续使用删除前的名称快照。
 	}
-	return ''
+	const preservedName = resolveAgentConversationWorkspaceName(agentId, conversationId)
+	return preservedName != '' ? preservedName : '已删除的会话'
 }
 
 export function lookupManagedGroupName(groupId: string): string {
@@ -189,7 +177,8 @@ export function lookupManagedGroupSessionName(groupId: string, sessionId: string
 			return displaySessionTitle(sessions[i])
 		}
 	}
-	return ''
+	const preservedName = resolveGroupSessionWorkspaceName(groupId, sessionId)
+	return preservedName != '' ? preservedName : '已删除的群会话'
 }
 
 export function buildManagedFilePathSegments(currentPath: string, virtualRoot: string): PathSegment[] {

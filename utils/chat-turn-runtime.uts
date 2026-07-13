@@ -5,7 +5,7 @@
  * 页面只订阅更新，退出页面不会中止当前回复。
  */
 
-import { agentChat, captionImage } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+import { agentChat, captionImageCancelable, CaptionImageRequest } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
 import { saveChatConversation } from '@/utils/chat-conversation-service.uts'
 import { buildRuntimeMessages as buildRuntimeChatMessages, finalizeAssistantTurn, markAssistantMessageError, reduceAgentEvent } from '@/utils/chat-message-reducer.uts'
 import { applyChatImageCaption } from '@/utils/chat-page-helpers.uts'
@@ -52,6 +52,7 @@ class ChatTurnRuntime {
 	phase: string
 	runId: string
 	currentStream: AgentEventStream | null
+	currentCaptionRequest: CaptionImageRequest | null
 	eventQueue: AgentEvent[]
 	flushTimer: number
 	systemPrompt: string
@@ -65,6 +66,8 @@ class ChatTurnRuntime {
 	lastCompletionSucceeded: boolean
 	refCount: number
 	generationFailed: boolean
+	startPersistenceFailed: boolean
+	startRollbackPhase: string
 
 	constructor(agentId: string, conversationId: string) {
 		this.agentId = agentId
@@ -74,6 +77,7 @@ class ChatTurnRuntime {
 		this.phase = 'idle'
 		this.runId = ''
 		this.currentStream = null
+		this.currentCaptionRequest = null
 		this.eventQueue = [] as AgentEvent[]
 		this.flushTimer = -1
 		this.systemPrompt = ''
@@ -87,6 +91,8 @@ class ChatTurnRuntime {
 		this.lastCompletionSucceeded = false
 		this.refCount = 0
 		this.generationFailed = false
+		this.startPersistenceFailed = false
+		this.startRollbackPhase = 'idle'
 	}
 
 	emitUpdate(): void {
@@ -239,12 +245,20 @@ class ChatTurnRuntime {
 
 	prepareStart(messages: UTSJSONObject[], systemPrompt: string, model: string, msgSegmentation: boolean): string {
 		if (this.running == true) { return '' }
+		this.startPersistenceFailed = false
+		this.startRollbackPhase = this.phase
+		this.systemPrompt = systemPrompt
+		let currentMessagesPersisted = false
 		if (this.phase == 'save_failed' && this.saveMessages() == false) {
+			this.startPersistenceFailed = true
 			this.reportError('上次对话仍未保存，请稍后重试')
 			return ''
+		} else if (this.startRollbackPhase == 'save_failed' && this.messages == messages) {
+			// 页面与 runtime 共用数组；重试旧保存时，本轮新增消息已经一并落库。
+			currentMessagesPersisted = true
 		}
+		this.startRollbackPhase = this.phase
 		this.messages = messages
-		this.systemPrompt = systemPrompt
 		this.model = model
 		this.msgSegmentation = msgSegmentation
 		this.lastErrorMessage = ''
@@ -257,14 +271,44 @@ class ChatTurnRuntime {
 		this.runId = '' + Date.now() + '-' + chatTurnRunSequence
 		const runId = this.runId
 		// 先持久化用户输入。进程被系统杀死时不会留下假的流式回复。
-		if (this.saveMessages() == false) {
+		if (currentMessagesPersisted == false && this.saveMessages() == false) {
 			this.running = false
 			this.phase = 'save_failed'
+			this.startPersistenceFailed = true
 			this.reportError('用户消息保存失败，未发起回复，请重试')
 			return ''
 		}
+		this.startPersistenceFailed = false
 		this.emitUpdate()
 		return runId
+	}
+
+	markSaveFailed(message: string): void {
+		this.phase = 'save_failed'
+		this.reportError(message)
+	}
+
+	rollbackFailedStart(messageStartIndex: number): boolean {
+		if (this.startPersistenceFailed == false) { return false }
+		if (messageStartIndex >= 0 && messageStartIndex <= this.messages.length && this.messages.length > messageStartIndex) {
+			this.messages.splice(messageStartIndex, this.messages.length - messageStartIndex)
+		}
+		this.running = false
+		this.runId = ''
+		this.phase = this.startRollbackPhase
+		this.startPersistenceFailed = false
+		this.emitUpdate()
+		return true
+	}
+
+	savePageMessages(systemPrompt: string, messages: UTSJSONObject[]): boolean {
+		this.systemPrompt = systemPrompt
+		this.messages = messages
+		const saved = this.saveMessages()
+		if (saved == false) {
+			this.markSaveFailed('对话保存失败，内容仍保留，请重试')
+		}
+		return saved
 	}
 
 	start(messages: UTSJSONObject[], runtimeMessages: UTSJSONObject[], systemPrompt: string, model: string, msgSegmentation: boolean): boolean {
@@ -288,7 +332,12 @@ class ChatTurnRuntime {
 		if (runId == '') { return false }
 		this.phase = 'captioning'
 		this.emitUpdate()
-		captionImage(imagePath).then((caption: string | null) => {
+		const captionRequest = captionImageCancelable(imagePath)
+		this.currentCaptionRequest = captionRequest
+		captionRequest.promise.then((caption: string | null) => {
+			if (this.currentCaptionRequest == captionRequest) {
+				this.currentCaptionRequest = null
+			}
 			if (this.isRunActive(runId) == false) { return }
 			applyChatImageCaption(this.messages, messageIndex, caption)
 			if (this.saveMessages() == false) {
@@ -312,10 +361,12 @@ class ChatTurnRuntime {
 	stop(): void {
 		if (this.running == false) { return }
 		const stream = this.currentStream
+		const captionRequest = this.currentCaptionRequest
 		this.running = false
 		this.phase = 'stopped'
 		this.runId = ''
 		this.currentStream = null
+		this.currentCaptionRequest = null
 		this.clearFlushTimer()
 		const result = flushBufferedChatStreamEvents(this.messages, this.eventQueue)
 		this.eventQueue = result.nextQueue
@@ -331,6 +382,9 @@ class ChatTurnRuntime {
 		if (stream != null) {
 			stream.abort()
 		}
+		if (captionRequest != null) {
+			captionRequest.abort()
+		}
 		if (this.refCount == 0 && this.phase != 'save_failed') {
 			this.phase = 'disposed'
 			eventBus.emit(CHAT_TURN_RUNTIME_CLEANUP_EVENT)
@@ -341,7 +395,9 @@ class ChatTurnRuntime {
 		this.clearFlushTimer()
 		this.eventQueue = [] as AgentEvent[]
 		const stream = this.currentStream
+		const captionRequest = this.currentCaptionRequest
 		this.currentStream = null
+		this.currentCaptionRequest = null
 		this.running = false
 		this.phase = 'disposed'
 		this.runId = ''
@@ -349,6 +405,33 @@ class ChatTurnRuntime {
 		if (stream != null) {
 			stream.abort()
 		}
+		if (captionRequest != null) {
+			captionRequest.abort()
+		}
+	}
+
+	/** 导入覆盖数据库前，先冻结回调并保存当前可见进度，避免旧流回写新数据。 */
+	quiesceForDataImport(): boolean {
+		const stream = this.currentStream
+		const captionRequest = this.currentCaptionRequest
+		const shouldSave = this.running == true || this.phase == 'save_failed' || this.eventQueue.length > 0
+		this.running = false
+		this.runId = ''
+		this.currentStream = null
+		this.currentCaptionRequest = null
+		this.clearFlushTimer()
+		const result = flushBufferedChatStreamEvents(this.messages, this.eventQueue)
+		this.eventQueue = result.nextQueue
+		finalizeAssistantTurn(this.messages, this.msgSegmentation)
+		let saved = true
+		if (shouldSave == true && this.messages.length > 0) {
+			saved = this.saveMessages()
+		}
+		this.phase = saved == true ? 'disposed' : 'save_failed'
+		this.emitUpdate()
+		if (stream != null) { stream.abort() }
+		if (captionRequest != null) { captionRequest.abort() }
+		return saved
 	}
 }
 
@@ -443,6 +526,11 @@ export function isChatTurnRunning(agentId: string, conversationId: string): bool
 	return runtime != null && runtime.running == true
 }
 
+export function isChatTurnSaveFailed(agentId: string, conversationId: string): boolean {
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	return runtime != null && runtime.phase == 'save_failed'
+}
+
 export function getChatTurnErrorMessage(agentId: string, conversationId: string): string {
 	const runtime = findChatTurnRuntime(agentId, conversationId)
 	return runtime != null ? runtime.lastErrorMessage : ''
@@ -523,12 +611,20 @@ export function stopChatTurn(agentId: string, conversationId: string): void {
 	if (runtime != null) { runtime.stop() }
 }
 
+export function rollbackFailedChatTurnStart(agentId: string, conversationId: string, messageStartIndex: number): boolean {
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	return runtime != null ? runtime.rollbackFailedStart(messageStartIndex) : false
+}
+
+export function reportChatTurnSaveFailure(agentId: string, conversationId: string, message: string): void {
+	const runtime = findChatTurnRuntime(agentId, conversationId)
+	if (runtime != null) { runtime.markSaveFailed(message) }
+}
+
 export function saveChatTurn(agentId: string, conversationId: string, systemPrompt: string, messages: UTSJSONObject[]): boolean {
 	const runtime = findChatTurnRuntime(agentId, conversationId)
 	if (runtime == null) { return false }
-	runtime.systemPrompt = systemPrompt
-	runtime.messages = messages
-	return runtime.saveMessages()
+	return runtime.savePageMessages(systemPrompt, messages)
 }
 
 export function disposeChatTurnByConversationId(conversationId: string): void {
@@ -554,4 +650,17 @@ export function disposeAllChatTurns(): void {
 		chatTurnRuntimes[i].dispose()
 		chatTurnRuntimes.splice(i, 1)
 	}
+}
+
+/** 导入专用：只有所有运行态都成功落库后才允许继续覆盖数据。 */
+export function quiesceAllChatTurnsForDataImport(): boolean {
+	let ok = true
+	for (let i = chatTurnRuntimes.length - 1; i >= 0; i--) {
+		if (chatTurnRuntimes[i].quiesceForDataImport() == true) {
+			chatTurnRuntimes.splice(i, 1)
+		} else {
+			ok = false
+		}
+	}
+	return ok
 }

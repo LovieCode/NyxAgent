@@ -1,11 +1,11 @@
 /**
- * OpenAI-compatible LLM API transport。
+ * LLM API transport。
  *
- * 负责 messages 转换、非流式/流式请求、SSE 解析和图片转述请求。
+ * 负责 OpenAI-compatible / Anthropic Messages 协议转换、请求和 SSE 解析。
  */
 
 import { GenerationSettings } from '@/utils/generation-settings.uts'
-import { stripThinkTags } from './provider'
+import { stripThinkTags, type ProviderModelAdapter } from './provider'
 import { buildImageUserMessageContent } from './llm-vision-utils'
 import {
 	collectApiToolCalls,
@@ -29,6 +29,17 @@ export type ToolCallInfo = {
 	id: string
 	name: string
 	arguments: string
+}
+
+type AnthropicMessageBuildResult = {
+	system: string
+	messages: UTSJSONObject[]
+}
+
+type ParsedChatResponse = {
+	text: string
+	thinking: string
+	toolCalls: ToolCallInfo[]
 }
 
 function readMessageToolCallId(msg: UTSJSONObject): string {
@@ -115,7 +126,16 @@ function consumePendingToolCallId(pendingToolCallIds: string[], toolCallId: stri
 	return true
 }
 
-export function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[], supportsVision: boolean): UTSJSONObject[] {
+/** 能力关闭或接口自动拒绝 tools 时，使用运行消息提供的完整替代正文。 */
+function getMessageApiTextWithToolCapability(msg: UTSJSONObject, supportsTools: boolean): string {
+	if (supportsTools == false) {
+		const fallbackText = msg['agent_text_no_tool_fallback'] as string | null
+		if (fallbackText != null && fallbackText != '') { return fallbackText }
+	}
+	return getMessageApiText(msg)
+}
+
+export function buildOpenAIMessagesWithCapabilities(systemPrompt: string, messages: UTSJSONObject[], supportsVision: boolean, supportsTools: boolean, supportsReasoning: boolean): UTSJSONObject[] {
 	const apiMessages: UTSJSONObject[] = []
 	const pendingToolCallIds: string[] = []
 	if (systemPrompt != '') {
@@ -128,10 +148,11 @@ export function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObjec
 		const msg = messages[i]
 		const role = msg['role'] as string | null
 		if (role == null) continue
-		const apiToolCalls = collectApiToolCalls(msg)
+		const apiToolCalls = supportsTools == true ? collectApiToolCalls(msg) : [] as UTSJSONObject[]
 		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && apiToolCalls.length == 0) continue
 
 		if (role == 'tool' || role == 'toolResult') {
+			if (supportsTools == false) { continue }
 			const tcId = readMessageToolCallId(msg)
 			if (tcId == '') continue
 			if (consumePendingToolCallId(pendingToolCallIds, tcId) == false) {
@@ -150,7 +171,7 @@ export function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObjec
 					content: getMessageApiText(msg),
 					tool_calls: apiToolCalls,
 				} as UTSJSONObject
-				const reasoningHistory = getMessageReasoningText(msg)
+				const reasoningHistory = supportsReasoning == true ? getMessageReasoningText(msg) : ''
 				if (reasoningHistory != '') {
 					amsg['reasoning_content'] = reasoningHistory
 				}
@@ -169,7 +190,7 @@ export function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObjec
 				}
 			}
 		} else {
-			const textContent = getMessageApiText(msg)
+			const textContent = getMessageApiTextWithToolCapability(msg, supportsTools)
 			const imagePath = getFirstImagePathFromParts(msg)
 			if (role == 'user' && imagePath != '') {
 				if (supportsVision == false) {
@@ -198,7 +219,7 @@ export function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObjec
 					role: role,
 					content: textContent,
 				} as UTSJSONObject
-				if (role == 'assistant') {
+				if (role == 'assistant' && supportsReasoning == true) {
 					const reasoningHistory = getMessageReasoningText(msg)
 					if (reasoningHistory != '') {
 						apiMsg['reasoning_content'] = reasoningHistory
@@ -209,6 +230,282 @@ export function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObjec
 		}
 	}
 	return apiMessages
+}
+
+/** 兼容旧调用签名；历史工具和 reasoning 字段保持原行为。 */
+export function buildOpenAIMessages(systemPrompt: string, messages: UTSJSONObject[], supportsVision: boolean): UTSJSONObject[] {
+	return buildOpenAIMessagesWithCapabilities(systemPrompt, messages, supportsVision, true, true)
+}
+
+function buildAnthropicContentBlocks(rawContent: any | null): UTSJSONObject[] {
+	const result: UTSJSONObject[] = []
+	if (rawContent == null) { return result }
+	if (typeof rawContent == 'string') {
+		const text = rawContent as string
+		if (text != '') {
+			result.push({ type: 'text', text: text } as UTSJSONObject)
+		}
+		return result
+	}
+	const sourceBlocks = rawContent as UTSJSONObject[]
+	for (let i = 0; i < sourceBlocks.length; i++) {
+		const sourceBlock = sourceBlocks[i]
+		const blockType = sourceBlock['type'] as string | null
+		if (blockType == 'text') {
+			const text = sourceBlock['text'] as string | null
+			if (text != null && text != '') {
+				result.push({ type: 'text', text: text } as UTSJSONObject)
+			}
+		} else if (blockType == 'image_url') {
+			const imageUrl = sourceBlock['image_url'] as UTSJSONObject | null
+			if (imageUrl == null) { continue }
+			const url = imageUrl['url'] as string | null
+			if (url == null || url.startsWith('data:') == false) { continue }
+			const marker = ';base64,'
+			const markerIndex = url.indexOf(marker)
+			if (markerIndex <= 5) { continue }
+			const mediaType = url.substring(5, markerIndex)
+			const data = url.substring(markerIndex + marker.length)
+			if (mediaType == '' || data == '') { continue }
+			const supportedImage = mediaType == 'image/jpeg' || mediaType == 'image/png' || mediaType == 'image/gif' || mediaType == 'image/webp'
+			if (supportedImage == false) {
+				console.log('[LLM] Anthropic 不支持图片格式: ' + mediaType)
+				continue
+			}
+			result.push({
+				type: 'image',
+				source: {
+					type: 'base64',
+					media_type: mediaType,
+					data: data,
+				} as UTSJSONObject,
+			} as UTSJSONObject)
+		}
+	}
+	return result
+}
+
+function parseToolArgumentsObject(rawArguments: string): UTSJSONObject {
+	if (rawArguments == '') { return {} as UTSJSONObject }
+	try {
+		const parsed = JSON.parse(rawArguments)
+		if (parsed != null && typeof parsed == 'object') {
+			return parsed as UTSJSONObject
+		}
+	} catch (_e: any) {}
+	return {} as UTSJSONObject
+}
+
+function appendAnthropicToolUseBlocks(contentBlocks: UTSJSONObject[], rawToolCalls: UTSJSONObject[]): void {
+	for (let i = 0; i < rawToolCalls.length; i++) {
+		const rawToolCall = rawToolCalls[i]
+		const functionInfo = rawToolCall['function'] as UTSJSONObject | null
+		if (functionInfo == null) { continue }
+		const rawName = functionInfo['name'] as string | null
+		const name = rawName != null ? rawName : ''
+		if (name == '') { continue }
+		const rawId = rawToolCall['id'] as string | null
+		const rawArguments = functionInfo['arguments'] as string | null
+		contentBlocks.push({
+			type: 'tool_use',
+			id: normalizeToolCallId(rawId, i, name),
+			name: name,
+			input: parseToolArgumentsObject(rawArguments != null ? rawArguments : '{}'),
+		} as UTSJSONObject)
+	}
+}
+
+function buildAnthropicMessagesFromOpenAI(apiMessages: UTSJSONObject[]): AnthropicMessageBuildResult {
+	const systemParts: string[] = []
+	const anthropicMessages: UTSJSONObject[] = []
+	for (let i = 0; i < apiMessages.length; i++) {
+		const apiMessage = apiMessages[i]
+		const role = apiMessage['role'] as string | null
+		if (role == null) { continue }
+		if (role == 'system') {
+			const systemText = apiMessage['content'] as string | null
+			if (systemText != null && systemText != '') { systemParts.push(systemText) }
+			continue
+		}
+		if (role == 'tool') {
+			const toolCallId = readMessageToolCallId(apiMessage)
+			if (toolCallId == '') { continue }
+			const toolText = apiMessage['content'] as string | null
+			anthropicMessages.push({
+				role: 'user',
+				content: [{
+					type: 'tool_result',
+					tool_use_id: toolCallId,
+					content: toolText != null ? toolText : '',
+				} as UTSJSONObject],
+			} as UTSJSONObject)
+			continue
+		}
+		if (role != 'user' && role != 'assistant') { continue }
+		const contentBlocks = buildAnthropicContentBlocks(apiMessage['content'])
+		if (role == 'assistant') {
+			const rawToolCalls = apiMessage['tool_calls'] as UTSJSONObject[] | null
+			if (rawToolCalls != null) {
+				appendAnthropicToolUseBlocks(contentBlocks, rawToolCalls)
+			}
+		}
+		if (contentBlocks.length == 0) { continue }
+		anthropicMessages.push({ role: role, content: contentBlocks } as UTSJSONObject)
+	}
+	return {
+		system: systemParts.join('\n\n'),
+		messages: anthropicMessages,
+	} as AnthropicMessageBuildResult
+}
+
+function readMessageReasoningSignature(msg: UTSJSONObject): string {
+	const parts = msg['message'] as UTSJSONObject[] | null
+	if (parts == null) { return '' }
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i]
+		const type = part['type'] as string | null
+		if (type != 'think' && type != 'thinking') { continue }
+		const signature = part['signature'] as string | null
+		if (signature != null && signature != '') { return signature }
+	}
+	return ''
+}
+
+function appendAnthropicThinkingBlock(contentBlocks: UTSJSONObject[], msg: UTSJSONObject, supportsReasoningHistory: boolean): void {
+	if (supportsReasoningHistory == false) { return }
+	const thinking = getMessageReasoningText(msg)
+	if (thinking == '') { return }
+	const signature = readMessageReasoningSignature(msg)
+	if (signature == '') {
+		console.log('[LLM] 跳过缺少 signature 的 Anthropic thinking 历史')
+		return
+	}
+	contentBlocks.push({ type: 'thinking', thinking: thinking, signature: signature } as UTSJSONObject)
+}
+
+function appendAnthropicToolResult(anthropicMessages: UTSJSONObject[], toolCallId: string, content: string, isError: boolean): void {
+	const resultBlock: UTSJSONObject = {
+		type: 'tool_result',
+		tool_use_id: toolCallId,
+		content: content,
+	} as UTSJSONObject
+	if (isError == true) { resultBlock['is_error'] = true }
+	anthropicMessages.push({ role: 'user', content: [resultBlock] } as UTSJSONObject)
+}
+
+function appendEmbeddedAnthropicToolResults(anthropicMessages: UTSJSONObject[], apiToolCalls: UTSJSONObject[], msg: UTSJSONObject): void {
+	for (let i = 0; i < apiToolCalls.length; i++) {
+		const rawId = apiToolCalls[i]['id'] as string | null
+		const id = rawId != null ? rawId : ''
+		if (id == '') { continue }
+		const embeddedResult = findEmbeddedToolResult(msg, id)
+		if (embeddedResult != null) {
+			appendAnthropicToolResult(anthropicMessages, id, embeddedResult, false)
+		}
+	}
+}
+
+function buildAnthropicMessages(systemPrompt: string, messages: UTSJSONObject[], supportsVision: boolean, supportsTools: boolean, supportsReasoningHistory: boolean): AnthropicMessageBuildResult {
+	const systemParts: string[] = []
+	const anthropicMessages: UTSJSONObject[] = []
+	const pendingToolCallIds: string[] = []
+	if (systemPrompt != '') { systemParts.push(systemPrompt) }
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]
+		const role = msg['role'] as string | null
+		if (role == null) { continue }
+		if (role == 'system') {
+			const systemText = getMessageApiText(msg)
+			if (systemText != '') { systemParts.push(systemText) }
+			continue
+		}
+		const apiToolCalls = supportsTools == true ? collectApiToolCalls(msg) : [] as UTSJSONObject[]
+		if (role == 'assistant' && (msg['isStreaming'] as boolean | null) == true && apiToolCalls.length == 0) { continue }
+		if (role == 'tool' || role == 'toolResult') {
+			if (supportsTools == false) { continue }
+			const toolCallId = readMessageToolCallId(msg)
+			if (toolCallId == '' || consumePendingToolCallId(pendingToolCallIds, toolCallId) == false) {
+				console.log('[LLM] 跳过孤立 Anthropic tool_result | tool_use_id=' + toolCallId)
+				continue
+			}
+			appendAnthropicToolResult(anthropicMessages, toolCallId, getMessageApiText(msg), (msg['isError'] as boolean | null) == true)
+			continue
+		}
+		if (role == 'assistant' && apiToolCalls.length > 0) {
+			if (hasCompleteFollowingToolResults(messages, i, apiToolCalls) == true) {
+				const contentBlocks: UTSJSONObject[] = []
+				appendAnthropicThinkingBlock(contentBlocks, msg, supportsReasoningHistory)
+				const assistantText = getMessageApiText(msg)
+				if (assistantText != '') { contentBlocks.push({ type: 'text', text: assistantText } as UTSJSONObject) }
+				appendAnthropicToolUseBlocks(contentBlocks, apiToolCalls)
+				if (contentBlocks.length > 0) {
+					anthropicMessages.push({ role: 'assistant', content: contentBlocks } as UTSJSONObject)
+					appendEmbeddedAnthropicToolResults(anthropicMessages, apiToolCalls, msg)
+					appendPendingToolCallIds(apiToolCalls, pendingToolCallIds, msg)
+				}
+			} else {
+				const assistantText = getMessageApiText(msg)
+				if (assistantText != '') {
+					anthropicMessages.push({ role: 'assistant', content: [{ type: 'text', text: assistantText } as UTSJSONObject] } as UTSJSONObject)
+				}
+			}
+			continue
+		}
+		const textContent = getMessageApiTextWithToolCapability(msg, supportsTools)
+		if (role == 'user') {
+			const imagePath = getFirstImagePathFromParts(msg)
+			if (imagePath != '' && supportsVision == true) {
+				const openAIContent = buildImageUserMessageContent(textContent != '' ? textContent : '[图片]', imagePath)
+				if (openAIContent != null) {
+					const contentBlocks = buildAnthropicContentBlocks(openAIContent)
+					if (contentBlocks.length > 0) { anthropicMessages.push({ role: 'user', content: contentBlocks } as UTSJSONObject) }
+					continue
+				}
+			}
+			const fallbackText = textContent != '' ? textContent : (imagePath != '' ? '[图片]' : '')
+			if (fallbackText != '') {
+				anthropicMessages.push({ role: 'user', content: [{ type: 'text', text: fallbackText } as UTSJSONObject] } as UTSJSONObject)
+			}
+		} else if (role == 'assistant') {
+			const contentBlocks: UTSJSONObject[] = []
+			appendAnthropicThinkingBlock(contentBlocks, msg, supportsReasoningHistory)
+			if (textContent != '') { contentBlocks.push({ type: 'text', text: textContent } as UTSJSONObject) }
+			if (contentBlocks.length > 0) { anthropicMessages.push({ role: 'assistant', content: contentBlocks } as UTSJSONObject) }
+		}
+	}
+	return { system: systemParts.join('\n\n'), messages: anthropicMessages } as AnthropicMessageBuildResult
+}
+
+function buildAnthropicMessagesUrl(baseUrl: string): string {
+	const hasApiVersion = baseUrl.endsWith('/v1') || baseUrl.indexOf('/v1/') >= 0
+	return hasApiVersion ? baseUrl + '/messages' : baseUrl + '/v1/messages'
+}
+
+function buildProviderHeaders(apiKey: string, adapter: ProviderModelAdapter): UTSJSONObject {
+	if (adapter == 'anthropic') {
+		return {
+			'Content-Type': 'application/json',
+			'x-api-key': apiKey,
+			'anthropic-version': '2023-06-01',
+		} as UTSJSONObject
+	}
+	return {
+		'Content-Type': 'application/json',
+		'Authorization': 'Bearer ' + apiKey,
+	} as UTSJSONObject
+}
+
+function buildAnthropicTools(tools: UTSJSONObject[]): UTSJSONObject[] {
+	const anthropicTools: UTSJSONObject[] = []
+	for (let i = 0; i < tools.length; i++) {
+		const tool = tools[i]
+		anthropicTools.push({
+			name: tool['name'] as string,
+			description: tool['description'] as string,
+			input_schema: tool['parameters'],
+		} as UTSJSONObject)
+	}
+	return anthropicTools
 }
 
 function buildChatCompletionUrl(baseUrl: string): string {
@@ -249,6 +546,58 @@ function buildOpenAITools(tools: UTSJSONObject[]): UTSJSONObject[] {
 	return openaiTools
 }
 
+function resolveRequestMaxTokens(settings: GenerationSettings, modelMaxTokens: number): number {
+	let maxTokens = settings.maxTokens
+	if (modelMaxTokens > 0 && maxTokens > modelMaxTokens) {
+		maxTokens = modelMaxTokens
+	}
+	if (maxTokens < 1) { maxTokens = 1 }
+	return maxTokens
+}
+
+function parseModelParams(raw: string): UTSJSONObject | null {
+	if (raw.trim() == '') { return null }
+	try {
+		const parsed = JSON.parse(raw)
+		if (parsed == null || typeof parsed != 'object') { return null }
+		return parsed as UTSJSONObject
+	} catch (_e: any) {
+		console.log('[LLM] 模型自定义参数 JSON 无法解析，已忽略')
+		return null
+	}
+}
+
+/** 复制常见 Provider-specific 参数；保留核心请求字段由运行时统一管理。 */
+function applyModelParams(body: UTSJSONObject, rawParams: string): void {
+	const params = parseModelParams(rawParams)
+	if (params == null) { return }
+	const keys: string[] = [
+		'temperature', 'top_p', 'top_k', 'min_p', 'frequency_penalty', 'presence_penalty',
+		'repetition_penalty', 'stop', 'seed', 'user', 'response_format', 'response_modalities',
+		'reasoning_effort', 'thinking', 'stream_options', 'service_tier', 'parallel_tool_calls',
+		'extra_body', 'logprobs', 'top_logprobs',
+	]
+	for (let i = 0; i < keys.length; i++) {
+		const key = keys[i]
+		const value = params[key]
+		if (value != null) { body[key] = value }
+	}
+}
+
+function applyAnthropicModelParams(body: UTSJSONObject, rawParams: string): void {
+	const params = parseModelParams(rawParams)
+	if (params == null) { return }
+	const keys: string[] = ['temperature', 'top_p', 'top_k', 'stop_sequences', 'metadata', 'thinking', 'service_tier']
+	for (let i = 0; i < keys.length; i++) {
+		const key = keys[i]
+		const value = params[key]
+		if (value != null) { body[key] = value }
+	}
+	if (body['stop_sequences'] == null && params['stop'] != null) {
+		body['stop_sequences'] = params['stop']
+	}
+}
+
 function applyReasoningOptions(body: UTSJSONObject, baseUrl: string, model: string, reasoningEnabled: boolean): void {
 	if (reasoningEnabled == false) { return }
 	if (baseUrl.indexOf('deepseek') >= 0 || model.indexOf('deepseek') >= 0) {
@@ -258,11 +607,11 @@ function applyReasoningOptions(body: UTSJSONObject, baseUrl: string, model: stri
 	}
 }
 
-function buildOpenAIChatBody(model: string, apiMessages: UTSJSONObject[], tools: UTSJSONObject[], settings: GenerationSettings, reasoningEnabled: boolean, baseUrl: string, stream: boolean, cacheKey: string): UTSJSONObject {
+function buildOpenAIChatBody(model: string, apiMessages: UTSJSONObject[], tools: UTSJSONObject[], settings: GenerationSettings, reasoningEnabled: boolean, baseUrl: string, stream: boolean, cacheKey: string, modelMaxTokens: number = 0, modelParams: string = ''): UTSJSONObject {
 	const body: UTSJSONObject = {
 		model: model,
 		messages: apiMessages,
-		max_tokens: settings.maxTokens,
+		max_tokens: resolveRequestMaxTokens(settings, modelMaxTokens),
 		temperature: settings.temperature,
 		stream: stream,
 	} as UTSJSONObject
@@ -272,35 +621,220 @@ function buildOpenAIChatBody(model: string, apiMessages: UTSJSONObject[], tools:
 	if (cacheKey != '') {
 		body['cache_key'] = cacheKey
 	}
+	applyModelParams(body, modelParams)
 	applyReasoningOptions(body, baseUrl, model, reasoningEnabled)
 	return body
 }
 
-export function callImageCaptionAPI(
+function buildAnthropicChatBody(model: string, prepared: AnthropicMessageBuildResult, tools: UTSJSONObject[], settings: GenerationSettings, reasoningEnabled: boolean, stream: boolean, modelMaxTokens: number, modelParams: string): UTSJSONObject {
+	const maxTokens = resolveRequestMaxTokens(settings, modelMaxTokens)
+	const body: UTSJSONObject = {
+		model: model,
+		messages: prepared.messages,
+		max_tokens: maxTokens,
+		temperature: settings.temperature,
+		stream: stream,
+	} as UTSJSONObject
+	if (prepared.system != '') { body['system'] = prepared.system }
+	if (tools.length > 0) { body['tools'] = buildAnthropicTools(tools) }
+	applyAnthropicModelParams(body, modelParams)
+	// 工具循环需要持久化 thinking.signature；当前 UI 历史未保存它，因此只在无工具请求自动开启。
+	if (reasoningEnabled == true && tools.length == 0 && body['thinking'] == null && maxTokens > 1024) {
+		let budgetTokens = Math.floor(maxTokens / 2)
+		if (budgetTokens < 1024) { budgetTokens = 1024 }
+		if (budgetTokens >= maxTokens) { budgetTokens = maxTokens - 1 }
+		if (budgetTokens >= 1024) {
+			body['thinking'] = { type: 'enabled', budget_tokens: budgetTokens } as UTSJSONObject
+		}
+	}
+	if (body['thinking'] != null) {
+		// Claude extended thinking 开启时 temperature 只能为 1。
+		body['temperature'] = 1
+	}
+	return body
+}
+
+function readApiErrorDetail(rawData: any | null): string {
+	if (rawData == null) { return '' }
+	try {
+		if (typeof rawData == 'string') {
+			const rawText = rawData as string
+			if (rawText == '') { return '' }
+			try {
+				const parsedValue = JSON.parse(rawText)
+				if (parsedValue != null) {
+					const parsed = parsedValue as UTSJSONObject
+					const parsedError = parsed['error'] as UTSJSONObject | null
+					if (parsedError != null) {
+						const parsedMessage = parsedError['message'] as string | null
+						if (parsedMessage != null && parsedMessage != '') { return parsedMessage }
+					}
+					const parsedMessage = parsed['message'] as string | null
+					if (parsedMessage != null && parsedMessage != '') { return parsedMessage }
+				}
+			} catch (_e1: any) {
+				// 非 JSON 文本在下方按长度返回。
+			}
+			return rawText.length > 500 ? rawText.substring(0, 500) : rawText
+		}
+		const obj = rawData as UTSJSONObject
+		const errorObj = obj['error'] as UTSJSONObject | null
+		if (errorObj != null) {
+			const message = errorObj['message'] as string | null
+			if (message != null && message != '') { return message }
+		}
+		const message = obj['message'] as string | null
+		if (message != null && message != '') { return message }
+		const serialized = JSON.stringify(rawData)
+		return serialized.length > 500 ? serialized.substring(0, 500) : serialized
+	} catch (_e2: any) {
+		return ''
+	}
+}
+
+function readStreamErrorDetail(rawText: string, responseData: any | null): string {
+	const lines = rawText.split('\n')
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i].trim()
+		if (line.startsWith('data:') == false) { continue }
+		let data = line.substring(5)
+		if (data.startsWith(' ')) { data = data.substring(1) }
+		const detail = readApiErrorDetail(data)
+		if (detail != '' && detail != data) { return detail }
+	}
+	const responseDetail = readApiErrorDetail(responseData)
+	if (responseDetail != '') { return responseDetail }
+	return readApiErrorDetail(rawText)
+}
+
+function isToolsUnsupportedError(statusCode: number, detail: string): boolean {
+	if (statusCode < 400 || detail == '') { return false }
+	const lower = detail.toLowerCase()
+	const mentionsTool = lower.indexOf('tool') >= 0 || lower.indexOf('function call') >= 0 || lower.indexOf('function_call') >= 0
+	if (mentionsTool == false) { return false }
+	return lower.indexOf('not support') >= 0 ||
+		lower.indexOf('unsupported') >= 0 ||
+		lower.indexOf('not enabled') >= 0 ||
+		lower.indexOf('disabled') >= 0 ||
+		lower.indexOf('not allowed') >= 0 ||
+		lower.indexOf('unknown field') >= 0 ||
+		lower.indexOf('unrecognized') >= 0 ||
+		lower.indexOf('invalid parameter') >= 0
+}
+
+function showToolsFallbackNotice(): void {
+	console.log('[LLM] 模型不支持工具调用，去除 tools 后重试')
+	uni.showToast({ position: 'bottom', title: '当前模型不支持工具调用，已自动忽略', icon: 'none' })
+}
+
+function parseAnthropicResponse(responseData: UTSJSONObject): ParsedChatResponse {
+	const content = responseData['content'] as UTSJSONObject[] | null
+	const toolCalls: ToolCallInfo[] = []
+	let text = ''
+	let thinking = ''
+	if (content != null) {
+		for (let i = 0; i < content.length; i++) {
+			const block = content[i]
+			const type = block['type'] as string | null
+			if (type == 'text') {
+				const blockText = block['text'] as string | null
+				if (blockText != null) { text += blockText }
+			} else if (type == 'thinking') {
+				const blockThinking = block['thinking'] as string | null
+				if (blockThinking != null) { thinking += blockThinking }
+			} else if (type == 'tool_use') {
+				const rawId = block['id'] as string | null
+				const rawName = block['name'] as string | null
+				const safeName = rawName != null ? rawName : ''
+				const input = block['input']
+				let argumentsText = '{}'
+				if (input != null) {
+					try { argumentsText = JSON.stringify(input) } catch (_e: any) {}
+				}
+				toolCalls.push({
+					id: normalizeToolCallId(rawId, toolCalls.length, safeName),
+					name: safeName,
+					arguments: argumentsText,
+				} as ToolCallInfo)
+			}
+		}
+	}
+	return { text: stripThinkTags(text), thinking: thinking, toolCalls: toolCalls } as ParsedChatResponse
+}
+
+function parseOpenAIResponse(responseData: UTSJSONObject): ParsedChatResponse | null {
+	const choices = responseData['choices'] as UTSJSONObject[] | null
+	if (choices == null || choices.length == 0) { return null }
+	const message = choices[0]['message'] as UTSJSONObject | null
+	if (message == null) { return null }
+	const rawText = message['content'] as string | null
+	const rawThinking = message['reasoning_content'] as string | null
+	const rawToolCalls = message['tool_calls'] as UTSJSONObject[] | null
+	const toolCalls: ToolCallInfo[] = []
+	if (rawToolCalls != null) {
+		for (let i = 0; i < rawToolCalls.length; i++) {
+			const rawToolCall = rawToolCalls[i]
+			const functionInfo = rawToolCall['function'] as UTSJSONObject | null
+			if (functionInfo == null) { continue }
+			const rawName = functionInfo['name'] as string | null
+			const safeName = rawName != null ? rawName : ''
+			const rawId = rawToolCall['id'] as string | null
+			const rawArguments = functionInfo['arguments'] as string | null
+			toolCalls.push({
+				id: normalizeToolCallId(rawId, toolCalls.length, safeName),
+				name: safeName,
+				arguments: rawArguments != null ? rawArguments : '{}',
+			} as ToolCallInfo)
+		}
+	}
+	return {
+		text: rawText != null ? stripThinkTags(rawText) : '',
+		thinking: rawThinking != null ? rawThinking : '',
+		toolCalls: toolCalls,
+	} as ParsedChatResponse
+}
+
+export function callImageCaptionAPIWithProviderRuntimeTask(
 	baseUrl: string,
 	apiKey: string,
 	model: string,
 	apiMessages: UTSJSONObject[],
 	settings: GenerationSettings,
-	done: (text: string | null) => void
-): void {
+	done: (text: string | null) => void,
+	modelMaxTokens: number,
+	modelParams: string,
+	adapter: ProviderModelAdapter,
+	isCancelled: (() => boolean) | null = null
+): RequestTask {
 	clearLastTokenUsage()
-	const url = buildChatCompletionUrl(baseUrl)
-	const headers: UTSJSONObject = {
-		'Content-Type': 'application/json',
-		'Authorization': 'Bearer ' + apiKey,
-	} as UTSJSONObject
 	let maxTokens = settings.maxTokens
-	if (maxTokens > 1024) {
-		maxTokens = 1024
+	maxTokens = resolveRequestMaxTokens(settings, modelMaxTokens)
+	if (maxTokens > 1024) { maxTokens = 1024 }
+	let url = buildChatCompletionUrl(baseUrl)
+	let body: UTSJSONObject = {} as UTSJSONObject
+	if (adapter == 'anthropic') {
+		url = buildAnthropicMessagesUrl(baseUrl)
+		const prepared = buildAnthropicMessagesFromOpenAI(apiMessages)
+		body = {
+			model: model,
+			messages: prepared.messages,
+			max_tokens: maxTokens,
+			temperature: settings.temperature,
+			stream: false,
+		} as UTSJSONObject
+		if (prepared.system != '') { body['system'] = prepared.system }
+		applyAnthropicModelParams(body, modelParams)
+	} else {
+		body = {
+			model: model,
+			messages: apiMessages,
+			max_tokens: maxTokens,
+			temperature: settings.temperature,
+			stream: false,
+		} as UTSJSONObject
+		applyModelParams(body, modelParams)
 	}
-	const body: UTSJSONObject = {
-		model: model,
-		messages: apiMessages,
-		max_tokens: maxTokens,
-		temperature: settings.temperature,
-		stream: false,
-	} as UTSJSONObject
+	const headers = buildProviderHeaders(apiKey, adapter)
 
 	if (isLLMDebugLogEnabled() == true) {
 		console.log('[LLM] ====== IMAGE CAPTION REQUEST ======')
@@ -312,27 +846,22 @@ export function callImageCaptionAPI(
 
 	const bodyStr = JSON.stringify(body)
 	const finalBody = JSON.parse(bodyStr)
-	uni.request({
+	const task = uni.request({
 		url: url,
 		method: 'POST',
 		header: headers,
 		data: finalBody,
 		success: (res) => {
+			if (isCancelled != null && isCancelled() == true) {
+				done(null)
+				return
+			}
 			const statusCode = res.statusCode as number
 			if (statusCode != 200) {
-				let errDetail = ''
-				try {
-					const errData = res.data as UTSJSONObject | null
-					if (errData != null) {
-						const errMsg = errData['error'] as UTSJSONObject | null
-						if (errMsg != null) {
-							const errMessage = errMsg['message'] as string | null
-							errDetail = ': ' + (errMessage != null ? errMessage : '')
-						}
-					}
-				} catch (_e: any) {}
-				console.log('[LLM] 图片转述失败 Status: ' + statusCode + errDetail)
-				saveLastLLMCall(false, false, model, baseUrl, statusCode, '图片转述失败' + errDetail, null, apiMessages.length, 0, 0, false)
+				const detail = readApiErrorDetail(res.data)
+				const suffix = detail != '' ? ': ' + detail : ''
+				console.log('[LLM] 图片转述失败 Status: ' + statusCode + suffix)
+				saveLastLLMCall(false, false, model, baseUrl, statusCode, '图片转述失败' + suffix, null, apiMessages.length, 0, 0, false)
 				done(null)
 				return
 			}
@@ -346,9 +875,14 @@ export function callImageCaptionAPI(
 				const usage = responseData['usage'] as UTSJSONObject | null
 				let normalizedUsage: UTSJSONObject | null = null
 				if (usage != null) { normalizedUsage = saveLastTokenUsage(usage) }
-				const text = readChatCompletionText(responseData)
+				let text: string | null = null
+				if (adapter == 'anthropic') {
+					text = parseAnthropicResponse(responseData).text
+				} else {
+					text = readChatCompletionText(responseData)
+				}
 				if (text == null) {
-					saveLastLLMCall(false, false, model, baseUrl, statusCode, '图片转述 choices 为空', normalizedUsage, apiMessages.length, 0, 0, false)
+					saveLastLLMCall(false, false, model, baseUrl, statusCode, '图片转述内容为空', normalizedUsage, apiMessages.length, 0, 0, false)
 					done(null)
 					return
 				}
@@ -366,13 +900,59 @@ export function callImageCaptionAPI(
 			}
 		},
 		fail: (_err: any) => {
+			if (isCancelled != null && isCancelled() == true) {
+				done(null)
+				return
+			}
 			saveLastLLMCall(false, false, model, baseUrl, -1, '图片转述网络失败: ' + _err, null, apiMessages.length, 0, 0, false)
 			done(null)
 		},
 	})
+	return task
 }
 
-export function callChatAPI(
+/** 保留既有 void ABI；需要取消底层请求时使用 Task 入口。 */
+export function callImageCaptionAPIWithProviderRuntime(
+	baseUrl: string,
+	apiKey: string,
+	model: string,
+	apiMessages: UTSJSONObject[],
+	settings: GenerationSettings,
+	done: (text: string | null) => void,
+	modelMaxTokens: number,
+	modelParams: string,
+	adapter: ProviderModelAdapter
+): void {
+	callImageCaptionAPIWithProviderRuntimeTask(baseUrl, apiKey, model, apiMessages, settings, done, modelMaxTokens, modelParams, adapter)
+}
+
+/** 兼容已生成的 runtime ABI；默认仍按 OpenAI-compatible 发送。 */
+export function callImageCaptionAPIWithRuntime(
+	baseUrl: string,
+	apiKey: string,
+	model: string,
+	apiMessages: UTSJSONObject[],
+	settings: GenerationSettings,
+	done: (text: string | null) => void,
+	modelMaxTokens: number,
+	modelParams: string
+): void {
+	callImageCaptionAPIWithProviderRuntime(baseUrl, apiKey, model, apiMessages, settings, done, modelMaxTokens, modelParams, 'openai_compatible')
+}
+
+/** 兼容旧调用签名；模型级运行参数由新入口显式传入。 */
+export function callImageCaptionAPI(
+	baseUrl: string,
+	apiKey: string,
+	model: string,
+	apiMessages: UTSJSONObject[],
+	settings: GenerationSettings,
+	done: (text: string | null) => void
+): void {
+	callImageCaptionAPIWithRuntime(baseUrl, apiKey, model, apiMessages, settings, done, 0, '')
+}
+
+export function callChatAPIWithProviderRuntime(
 	baseUrl: string,
 	apiKey: string,
 	model: string,
@@ -382,20 +962,30 @@ export function callChatAPI(
 	settings: GenerationSettings,
 	reasoningEnabled: boolean,
 	done: (text: string | null, toolCalls: ToolCallInfo[] | null, errorMessage: string | null) => void,
-	agentId: string = '',
-	conversationId: string = '',
-	workspaceRoot: string = ''
+	agentId: string,
+	conversationId: string,
+	workspaceRoot: string,
+	modelMaxTokens: number,
+	modelParams: string,
+	adapter: ProviderModelAdapter,
+	supportsVision: boolean,
+	supportsToolHistory: boolean,
+	supportsReasoningHistory: boolean
 ): void {
-	const apiMessages = buildOpenAIMessages(systemPrompt, messages, true)
 	clearLastTokenUsage()
-
-	// 构建请求体：检测 baseUrl 是否已包含 API 版本路径，避免重复
-	const url = buildChatCompletionUrl(baseUrl)
-	const headers: UTSJSONObject = {
-		'Content-Type': 'application/json',
-		'Authorization': 'Bearer ' + apiKey,
-	} as UTSJSONObject
-	const body: UTSJSONObject = buildOpenAIChatBody(model, apiMessages, tools, settings, reasoningEnabled, baseUrl, false, '')
+	let apiMessages: UTSJSONObject[] = []
+	let url = buildChatCompletionUrl(baseUrl)
+	let body: UTSJSONObject = {} as UTSJSONObject
+	if (adapter == 'anthropic') {
+		const prepared = buildAnthropicMessages(systemPrompt, messages, supportsVision, supportsToolHistory, supportsReasoningHistory)
+		apiMessages = prepared.messages
+		url = buildAnthropicMessagesUrl(baseUrl)
+		body = buildAnthropicChatBody(model, prepared, tools, settings, reasoningEnabled, false, modelMaxTokens, modelParams)
+	} else {
+		apiMessages = buildOpenAIMessagesWithCapabilities(systemPrompt, messages, supportsVision, supportsToolHistory, supportsReasoningHistory)
+		body = buildOpenAIChatBody(model, apiMessages, tools, settings, reasoningEnabled, baseUrl, false, '', modelMaxTokens, modelParams)
+	}
+	const headers = buildProviderHeaders(apiKey, adapter)
 	saveLastLLMRequestSnapshot(baseUrl, url, model, body, apiMessages.length, tools.length, false, '', agentId, conversationId, workspaceRoot)
 
 	if (isLLMDebugLogEnabled() == true) {
@@ -418,17 +1008,13 @@ export function callChatAPI(
 		success: (res) => {
 			const statusCode = res.statusCode as number
 			if (statusCode != 200) {
-				let errDetail = ''
-				try {
-					const errData = res.data as UTSJSONObject | null
-					if (errData != null) {
-						const errMsg = errData['error'] as UTSJSONObject | null
-						if (errMsg != null) {
-							const errMessage = errMsg['message'] as string | null
-							errDetail = ': ' + (errMessage != null ? errMessage : '')
-						}
-					}
-				} catch (_e1: any) {}
+				const detail = readApiErrorDetail(res.data)
+				if (tools.length > 0 && isToolsUnsupportedError(statusCode, detail) == true) {
+					showToolsFallbackNotice()
+					callChatAPIWithProviderRuntime(baseUrl, apiKey, model, systemPrompt, messages, [], settings, reasoningEnabled, done, agentId, conversationId, workspaceRoot, modelMaxTokens, modelParams, adapter, supportsVision, false, supportsReasoningHistory)
+					return
+				}
+				const errDetail = detail != '' ? ': ' + detail : ''
 				console.log('[LLM] API 请求失败 Status: ' + statusCode + errDetail)
 				if (isLLMDebugLogEnabled() == true) {
 					console.log('[LLM] Request body: ' + formatBodyForLog(body))
@@ -444,38 +1030,29 @@ export function callChatAPI(
 					done(null, null, 'API 响应为空')
 					return
 				}
-				// 保存 Token 用量
 				const usage = responseData['usage'] as UTSJSONObject | null
 				if (isLLMDebugLogEnabled() == true) {
 					console.log('[LLM] 非流式响应 usage: ' + (usage != null ? JSON.stringify(usage) : 'null'))
 				}
 				let normalizedUsage: UTSJSONObject | null = null
 				if (usage != null) { normalizedUsage = saveLastTokenUsage(usage) }
-				const choices = responseData['choices'] as UTSJSONObject[] | null
-				if (choices == null || choices.length == 0) {
-					saveLastLLMCall(false, false, model, baseUrl, statusCode, 'choices 为空', normalizedUsage, apiMessages.length, tools.length, 0, false)
-					done(null, null, 'API 响应 choices 为空')
+				let parsed: ParsedChatResponse | null = null
+				if (adapter == 'anthropic') {
+					parsed = parseAnthropicResponse(responseData)
+				} else {
+					parsed = parseOpenAIResponse(responseData)
+				}
+				if (parsed == null) {
+					saveLastLLMCall(false, false, model, baseUrl, statusCode, 'API 响应内容为空', normalizedUsage, apiMessages.length, tools.length, 0, false)
+					done(null, null, 'API 响应内容为空')
 					return
 				}
-				const choice = choices[0]
-				const message = choice['message'] as UTSJSONObject | null
-				if (message == null) {
-					saveLastLLMCall(false, false, model, baseUrl, statusCode, 'message 为空', normalizedUsage, apiMessages.length, tools.length, 0, false)
-					done(null, null, 'API 响应 message 为空')
-					return
-				}
-
-				const rawText = message['content'] as string | null
-				const text = rawText != null ? stripThinkTags(rawText) : ''
-				const rawToolCalls = message['tool_calls'] as UTSJSONObject[] | null
+				const text = parsed.text
 				let tcNames = ''
-				if (rawToolCalls != null) {
-					for (let i = 0; i < rawToolCalls.length; i++) {
-						const funcObj = rawToolCalls[i]['function'] as UTSJSONObject | null
-						if (funcObj != null && funcObj['name'] != null) {
-							if (tcNames != '') { tcNames = tcNames + ',' }
-							tcNames = tcNames + (funcObj['name'] as string)
-						}
+				for (let i = 0; i < parsed.toolCalls.length; i++) {
+					if (parsed.toolCalls[i].name != '') {
+						if (tcNames != '') { tcNames = tcNames + ',' }
+						tcNames = tcNames + parsed.toolCalls[i].name
 					}
 				}
 				const preview = text != '' ? text.substring(0, text.length < 200 ? text.length : 200) : ''
@@ -485,25 +1062,10 @@ export function callChatAPI(
 					console.log('[LLM] Status: 200' + tag + ' | ' + preview)
 					console.log('[LLM] =======================')
 				}
-				saveLastLLMCall(true, false, model, baseUrl, statusCode, '', normalizedUsage, apiMessages.length, tools.length, text.length, rawToolCalls != null && rawToolCalls.length > 0)
+				saveLastLLMCall(true, false, model, baseUrl, statusCode, '', normalizedUsage, apiMessages.length, tools.length, text.length, parsed.toolCalls.length > 0)
 
-				if (rawToolCalls != null && rawToolCalls.length > 0) {
-					const tcList: ToolCallInfo[] = []
-					for (let i = 0; i < rawToolCalls.length; i++) {
-						const tc = rawToolCalls[i]
-						const funcObj = tc['function'] as UTSJSONObject | null
-						if (funcObj == null) continue
-						const rawId = tc['id'] as string | null
-						const rawName = funcObj['name'] as string | null
-						const rawArgs = funcObj['arguments'] as string | null
-						const safeName = rawName != null ? rawName : ''
-						tcList.push({
-							id: normalizeToolCallId(rawId, i, safeName),
-							name: safeName,
-							arguments: rawArgs != null ? rawArgs : '{}',
-						} as ToolCallInfo)
-					}
-					done(text, tcList, null)
+				if (parsed.toolCalls.length > 0) {
+					done(text, parsed.toolCalls, null)
 				} else {
 					done(text, null, null)
 				}
@@ -514,22 +1076,54 @@ export function callChatAPI(
 			}
 		},
 		fail: (_err: any) => {
-			// 检测是否不支持 function calling，自动降级重试
 			const errMsg = JSON.stringify(_err)
-			if (tools.length > 0 && (
-				errMsg.indexOf('Function calling is not enabled') >= 0 ||
-				(errMsg.indexOf('tool') >= 0 && errMsg.indexOf('support') >= 0) ||
-				(errMsg.indexOf('function') >= 0 && errMsg.indexOf('support') >= 0)
-			)) {
-				console.log('[LLM] 模型不支持 function calling，去除 tools 后重试')
-				uni.showToast({ position: 'bottom', title: '当前模型不支持工具调用，已自动忽略', icon: 'none' })
-				callChatAPI(baseUrl, apiKey, model, systemPrompt, messages, [], settings, reasoningEnabled, done, agentId, conversationId, workspaceRoot)
+			if (tools.length > 0 && isToolsUnsupportedError(400, errMsg) == true) {
+				showToolsFallbackNotice()
+				callChatAPIWithProviderRuntime(baseUrl, apiKey, model, systemPrompt, messages, [], settings, reasoningEnabled, done, agentId, conversationId, workspaceRoot, modelMaxTokens, modelParams, adapter, supportsVision, false, supportsReasoningHistory)
 				return
 			}
 			saveLastLLMCall(false, false, model, baseUrl, -1, '网络请求失败: ' + _err, null, apiMessages.length, tools.length, 0, false)
 			done(null, null, '网络请求失败: ' + _err)
 		},
-	})
+		})
+}
+
+/** 兼容已生成的 runtime ABI；默认按 OpenAI-compatible 且保留历史能力字段。 */
+export function callChatAPIWithRuntime(
+	baseUrl: string,
+	apiKey: string,
+	model: string,
+	systemPrompt: string,
+	messages: UTSJSONObject[],
+	tools: UTSJSONObject[],
+	settings: GenerationSettings,
+	reasoningEnabled: boolean,
+	done: (text: string | null, toolCalls: ToolCallInfo[] | null, errorMessage: string | null) => void,
+	agentId: string,
+	conversationId: string,
+	workspaceRoot: string,
+	modelMaxTokens: number,
+	modelParams: string
+): void {
+	callChatAPIWithProviderRuntime(baseUrl, apiKey, model, systemPrompt, messages, tools, settings, reasoningEnabled, done, agentId, conversationId, workspaceRoot, modelMaxTokens, modelParams, 'openai_compatible', true, true, true)
+}
+
+/** 兼容旧调用签名，避免 Android 增量产物仍引用旧 JVM 方法。 */
+export function callChatAPI(
+	baseUrl: string,
+	apiKey: string,
+	model: string,
+	systemPrompt: string,
+	messages: UTSJSONObject[],
+	tools: UTSJSONObject[],
+	settings: GenerationSettings,
+	reasoningEnabled: boolean,
+	done: (text: string | null, toolCalls: ToolCallInfo[] | null, errorMessage: string | null) => void,
+	agentId: string = '',
+	conversationId: string = '',
+	workspaceRoot: string = ''
+): void {
+	callChatAPIWithRuntime(baseUrl, apiKey, model, systemPrompt, messages, tools, settings, reasoningEnabled, done, agentId, conversationId, workspaceRoot, 0, '')
 }
 
 /**
@@ -639,6 +1233,147 @@ function processSSELine(
 	}
 }
 
+function saveAnthropicStreamUsage(usage: UTSJSONObject): void {
+	const previous = readLastTokenUsageForCall()
+	let inputTokens = usage['input_tokens'] as number | null
+	let outputTokens = usage['output_tokens'] as number | null
+	if (previous != null) {
+		if (inputTokens == null) { inputTokens = previous['prompt_tokens'] as number | null }
+		if (outputTokens == null) { outputTokens = previous['completion_tokens'] as number | null }
+	}
+	const merged: UTSJSONObject = {} as UTSJSONObject
+	if (inputTokens != null) { merged['input_tokens'] = inputTokens }
+	if (outputTokens != null) { merged['output_tokens'] = outputTokens }
+	const cacheRead = usage['cache_read_input_tokens'] as number | null
+	if (cacheRead != null) {
+		merged['cache_read_input_tokens'] = cacheRead
+	} else if (previous != null) {
+		const previousCacheRead = previous['prompt_cache_hit_tokens'] as number | null
+		if (previousCacheRead != null) { merged['cache_read_input_tokens'] = previousCacheRead }
+	}
+	if (merged['input_tokens'] != null || merged['output_tokens'] != null) {
+		saveLastTokenUsage(merged)
+	}
+}
+
+function ensureStreamToolCall(toolCallList: UTSJSONObject[], index: number): UTSJSONObject {
+	while (toolCallList.length <= index) {
+		toolCallList.push({ id: '', name: '', arguments: '' } as UTSJSONObject)
+	}
+	return toolCallList[index]
+}
+
+function processAnthropicSSELine(
+	line: string,
+	fullTextRef: string[],
+	toolCallList: UTSJSONObject[],
+	hasToolCallsRef: boolean[],
+	onChunk: ((text: string) => void) | null,
+	fullThinkingRef: string[],
+	fullThinkingSignatureRef: string[],
+	onThinking: ((text: string) => void) | null,
+	onToolCallDelta: ((index: number, name: string | null, args: string | null) => void) | null,
+	parseErrorRef: string[]
+): void {
+	const trimmed = line.trim()
+	if (trimmed == '' || trimmed.startsWith(':')) { return }
+	if (trimmed.startsWith('data:') == false) { return }
+	let data = trimmed.substring(5)
+	if (data.startsWith(' ')) { data = data.substring(1) }
+	if (data == '' || data == '[DONE]') { return }
+	try {
+		const json = JSON.parse(data) as UTSJSONObject
+		const eventType = json['type'] as string | null
+		if (eventType == 'error' || json['error'] != null) {
+			const detail = readApiErrorDetail(json)
+			parseErrorRef[0] = detail != '' ? 'API 流式响应错误: ' + detail : 'API 流式响应错误'
+			return
+		}
+		if (eventType == 'message_start') {
+			const message = json['message'] as UTSJSONObject | null
+			if (message != null) {
+				const usage = message['usage'] as UTSJSONObject | null
+				if (usage != null) { saveAnthropicStreamUsage(usage) }
+			}
+			return
+		}
+		if (eventType == 'message_delta') {
+			const usage = json['usage'] as UTSJSONObject | null
+			if (usage != null) { saveAnthropicStreamUsage(usage) }
+			return
+		}
+		const rawIndex = json['index'] as number | null
+		const index = rawIndex != null ? rawIndex : 0
+		if (eventType == 'content_block_start') {
+			const block = json['content_block'] as UTSJSONObject | null
+			if (block == null) { return }
+			const blockType = block['type'] as string | null
+			if (blockType == 'tool_use') {
+				hasToolCallsRef[0] = true
+				const streamToolCall = ensureStreamToolCall(toolCallList, index)
+				const id = block['id'] as string | null
+				const name = block['name'] as string | null
+				if (id != null) { streamToolCall['id'] = id }
+				if (name != null) { streamToolCall['name'] = name }
+				const input = block['input']
+				if (input != null) {
+					const serializedInput = JSON.stringify(input)
+					if (serializedInput != '{}') { streamToolCall['arguments'] = serializedInput }
+				}
+				if (onToolCallDelta != null && name != null) { onToolCallDelta(index, name, null) }
+			} else if (blockType == 'text') {
+				const blockText = block['text'] as string | null
+				if (blockText != null && blockText != '') {
+					const cleaned = stripThinkTags(blockText)
+					fullTextRef[0] += cleaned
+					if (onChunk != null) { onChunk(cleaned) }
+				}
+			} else if (blockType == 'thinking') {
+				const blockThinking = block['thinking'] as string | null
+				const blockSignature = block['signature'] as string | null
+				if (blockThinking != null && blockThinking != '') {
+					fullThinkingRef[0] += blockThinking
+					if (onThinking != null) { onThinking(blockThinking) }
+				}
+				if (blockSignature != null && blockSignature != '') { fullThinkingSignatureRef[0] += blockSignature }
+			}
+			return
+		}
+		if (eventType != 'content_block_delta') { return }
+		const delta = json['delta'] as UTSJSONObject | null
+		if (delta == null) { return }
+		const deltaType = delta['type'] as string | null
+		if (deltaType == 'text_delta') {
+			const textDelta = delta['text'] as string | null
+			if (textDelta != null && textDelta != '') {
+				const cleaned = stripThinkTags(textDelta)
+				fullTextRef[0] += cleaned
+				if (onChunk != null) { onChunk(cleaned) }
+			}
+		} else if (deltaType == 'thinking_delta') {
+			const thinkingDelta = delta['thinking'] as string | null
+			if (thinkingDelta != null && thinkingDelta != '') {
+				fullThinkingRef[0] += thinkingDelta
+				if (onThinking != null) { onThinking(thinkingDelta) }
+			}
+		} else if (deltaType == 'input_json_delta') {
+			hasToolCallsRef[0] = true
+			const partialJson = delta['partial_json'] as string | null
+			if (partialJson != null && partialJson != '') {
+				const streamToolCall = ensureStreamToolCall(toolCallList, index)
+				const oldArguments = streamToolCall['arguments'] as string | null
+				streamToolCall['arguments'] = (oldArguments != null ? oldArguments : '') + partialJson
+				if (onToolCallDelta != null) { onToolCallDelta(index, null, partialJson) }
+			}
+		} else if (deltaType == 'signature_delta') {
+			const signatureDelta = delta['signature'] as string | null
+			if (signatureDelta != null && signatureDelta != '') { fullThinkingSignatureRef[0] += signatureDelta }
+		}
+	} catch (_e: any) {
+		if (parseErrorRef[0] == '') { parseErrorRef[0] = 'API 流式响应解析异常: ' + _e }
+	}
+}
+
 /**
  * ArrayBuffer → UTF-8 字符串。跨网络 chunk 的半个字符暂存在 pendingBytes。
  */
@@ -695,7 +1430,37 @@ function decodeArrayBuffer(buffer: ArrayBuffer, pendingBytes: number[]): string 
  * 流式调用 Chat Completions API（SSE）
  * 通过 enableChunked + onChunkReceived 实现真实流式传输
  */
-export function callChatAPIStream(
+export class LLMRequestController {
+	private activeTask: RequestTask | null = null
+	private aborted: boolean = false
+
+	attachTask(task: RequestTask): void {
+		if (this.aborted == true) {
+			try { task.abort() } catch (_e: any) {}
+			return
+		}
+		this.activeTask = task
+	}
+
+	clearActiveTask(): void {
+		this.activeTask = null
+	}
+
+	isAborted(): boolean {
+		return this.aborted
+	}
+
+	abort(): void {
+		this.aborted = true
+		const task = this.activeTask
+		this.activeTask = null
+		if (task != null) {
+			try { task.abort() } catch (_e: any) {}
+		}
+	}
+}
+
+function callChatAPIStreamWithProviderRuntimeControlled(
 	baseUrl: string,
 	apiKey: string,
 	model: string,
@@ -705,25 +1470,37 @@ export function callChatAPIStream(
 	settings: GenerationSettings,
 	reasoningEnabled: boolean,
 	onChunk: ((text: string) => void) | null,
-	done: (text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null, errorMessage: string | null) => void,
-	cacheKey: string = '',
-	onThinking: ((text: string) => void) | null = null,
-	onToolCallDelta: ((index: number, name: string | null, args: string | null) => void) | null = null,
-	conversationId: string = '',
-	supportsVision: boolean = true,
-	agentId: string = '',
-	workspaceRoot: string = '',
-	sensitiveMode: boolean = false
+	done: (text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null, thinkingSignature: string | null, errorMessage: string | null) => void,
+	cacheKey: string,
+	onThinking: ((text: string) => void) | null,
+	onToolCallDelta: ((index: number, name: string | null, args: string | null) => void) | null,
+	conversationId: string,
+	supportsVision: boolean,
+	agentId: string,
+	workspaceRoot: string,
+	sensitiveMode: boolean,
+	modelMaxTokens: number,
+	modelParams: string,
+	adapter: ProviderModelAdapter,
+	supportsToolHistory: boolean,
+	supportsReasoningHistory: boolean,
+	allowToolsFallback: boolean,
+	controller: LLMRequestController
 ): RequestTask {
-	const apiMessages = buildOpenAIMessages(systemPrompt, messages, supportsVision)
 	clearLastTokenUsage()
-
-	const url = buildChatCompletionUrl(baseUrl)
-	const headers: UTSJSONObject = {
-		'Content-Type': 'application/json',
-		'Authorization': 'Bearer ' + apiKey,
-	} as UTSJSONObject
-	const body: UTSJSONObject = buildOpenAIChatBody(model, apiMessages, tools, settings, reasoningEnabled, baseUrl, true, cacheKey)
+	let apiMessages: UTSJSONObject[] = []
+	let url = buildChatCompletionUrl(baseUrl)
+	let body: UTSJSONObject = {} as UTSJSONObject
+	if (adapter == 'anthropic') {
+		const prepared = buildAnthropicMessages(systemPrompt, messages, supportsVision, supportsToolHistory, supportsReasoningHistory)
+		apiMessages = prepared.messages
+		url = buildAnthropicMessagesUrl(baseUrl)
+		body = buildAnthropicChatBody(model, prepared, tools, settings, reasoningEnabled, true, modelMaxTokens, modelParams)
+	} else {
+		apiMessages = buildOpenAIMessagesWithCapabilities(systemPrompt, messages, supportsVision, supportsToolHistory, supportsReasoningHistory)
+		body = buildOpenAIChatBody(model, apiMessages, tools, settings, reasoningEnabled, baseUrl, true, cacheKey, modelMaxTokens, modelParams)
+	}
+	const headers = buildProviderHeaders(apiKey, adapter)
 	if (sensitiveMode == false) {
 		saveLastLLMRequestSnapshot(baseUrl, url, model, body, apiMessages.length, tools.length, true, cacheKey, agentId, conversationId, workspaceRoot)
 	}
@@ -746,7 +1523,9 @@ export function callChatAPIStream(
 	const toolCallList: UTSJSONObject[] = []
 	const hasToolCallsRef: boolean[] = [false]
 	const fullThinkingRef: string[] = ['']
+	const fullThinkingSignatureRef: string[] = ['']
 	const parseErrorRef: string[] = ['']
+	const rawResponseRef: string[] = ['']
 	const pendingUtf8Bytes: number[] = []
 	let streamEnded = false
 
@@ -757,35 +1536,24 @@ export function callChatAPIStream(
 		data: finalBody,
 		enableChunked: true,
 		success: (res) => {
+			if (controller.isAborted() == true) { return }
 			streamEnded = true
 			const statusCode = res.statusCode as number
 			if (statusCode != 200) {
-				let errDetail = ''
-				try {
-					// 优先从 chunked 响应体中提取错误
-					if (fullTextRef[0] != '') {
-						const errData = JSON.parse(fullTextRef[0]) as UTSJSONObject
-						const errObj = errData['error'] as UTSJSONObject
-						if (errObj != null) {
-							const errMessage = errObj['message'] as string | null
-							errDetail = ': ' + (errMessage != null ? errMessage : '')
-						}
-					}
-					// 如果 chunked 没有数据，尝试从 res.data 读取
-					if (errDetail == '' && res.data != null) {
-						try {
-							const resDataStr = JSON.stringify(res.data)
-							errDetail = ': ' + (resDataStr.length > 300 ? resDataStr.substring(0, 300) : resDataStr)
-						} catch (_e1: any) {}
-					}
-				} catch (_e2: any) {}
+				const detail = readStreamErrorDetail(rawResponseRef[0], res.data)
+				if (allowToolsFallback == true && tools.length > 0 && isToolsUnsupportedError(statusCode, detail) == true) {
+					showToolsFallbackNotice()
+					callChatAPIStreamWithProviderRuntimeControlled(baseUrl, apiKey, model, systemPrompt, messages, [], settings, reasoningEnabled, onChunk, done, cacheKey, onThinking, null, conversationId, supportsVision, agentId, workspaceRoot, sensitiveMode, modelMaxTokens, modelParams, adapter, false, supportsReasoningHistory, true, controller)
+					return
+				}
+				const errDetail = detail != '' ? ': ' + detail : ''
 				const visibleErrorDetail = sensitiveMode == true ? '' : errDetail
 				console.log('[LLM] STREAM 请求失败 Status: ' + statusCode + visibleErrorDetail)
 				if (isLLMDebugLogEnabled() == true) {
 					console.log(sensitiveMode == true ? '[LLM] Request body: [sensitive request omitted]' : '[LLM] Request body: ' + formatBodyForLog(body))
 				}
 				saveLastLLMCall(false, true, model, baseUrl, statusCode, 'API 请求失败' + visibleErrorDetail, null, apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
-				done(null, null, null, 'API 请求失败 (状态码: ' + statusCode + visibleErrorDetail + ')')
+				done(null, null, null, null, 'API 请求失败 (状态码: ' + statusCode + visibleErrorDetail + ')')
 				return
 			}
 			if (pendingUtf8Bytes.length > 0 && parseErrorRef[0] == '') {
@@ -793,13 +1561,17 @@ export function callChatAPIStream(
 			}
 			// 处理剩余 buffer
 			if (sseBufferRef[0] != '') {
-				processSSELine(sseBufferRef[0], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk, fullThinkingRef, onThinking, onToolCallDelta, parseErrorRef)
+				if (adapter == 'anthropic') {
+					processAnthropicSSELine(sseBufferRef[0], fullTextRef, toolCallList, hasToolCallsRef, onChunk, fullThinkingRef, fullThinkingSignatureRef, onThinking, onToolCallDelta, parseErrorRef)
+				} else {
+					processSSELine(sseBufferRef[0], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk, fullThinkingRef, onThinking, onToolCallDelta, parseErrorRef)
+				}
 				sseBufferRef[0] = ''
 			}
 			if (parseErrorRef[0] != '') {
 				const parseError = parseErrorRef[0]
 				saveLastLLMCall(false, true, model, baseUrl, statusCode, parseError, null, apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
-				done(null, null, null, parseError)
+				done(null, null, null, null, parseError)
 				return
 			}
 			// 最终清理可能跨 chunk 残留的 think 标签
@@ -807,7 +1579,7 @@ export function callChatAPIStream(
 			if (fullTextRef[0] == '' && hasToolCallsRef[0] == false) {
 				const emptyError = 'API 流式响应为空'
 				saveLastLLMCall(false, true, model, baseUrl, statusCode, emptyError, readLastTokenUsageForCall(), apiMessages.length, tools.length, 0, false, conversationId)
-				done(null, null, null, emptyError)
+				done(null, null, null, null, emptyError)
 				return
 			}
 
@@ -821,12 +1593,13 @@ export function callChatAPIStream(
 					const rawName = tc['name'] as string | null
 					const rawArgs = tc['arguments'] as string | null
 					const safeName = rawName != null ? rawName : ''
+					if (safeName == '' && (rawId == null || rawId == '')) { continue }
 					if (safeName != '') {
 						if (tcNames != '') { tcNames = tcNames + ',' }
 						tcNames = tcNames + safeName
 					}
 					tcList.push({
-						id: normalizeToolCallId(rawId, i, safeName),
+						id: normalizeToolCallId(rawId, tcList.length, safeName),
 						name: safeName,
 						arguments: rawArgs != null ? rawArgs : '{}',
 					} as ToolCallInfo)
@@ -838,7 +1611,7 @@ export function callChatAPIStream(
 					console.log('[LLM] ==============================')
 				}
 				saveLastLLMCall(true, true, model, baseUrl, statusCode, '', readLastTokenUsageForCall(), apiMessages.length, tools.length, fullTextRef[0].length, true, conversationId)
-				done(fullTextRef[0], tcList, fullThinkingRef[0], null)
+				done(fullTextRef[0], tcList, fullThinkingRef[0], fullThinkingSignatureRef[0], null)
 			} else {
 				const preview = fullTextRef[0] != '' ? fullTextRef[0].substring(0, fullTextRef[0].length < 200 ? fullTextRef[0].length : 200) : ''
 				if (isLLMDebugLogEnabled() == true && sensitiveMode == false) {
@@ -847,43 +1620,164 @@ export function callChatAPIStream(
 					console.log('[LLM] ==============================')
 				}
 				saveLastLLMCall(true, true, model, baseUrl, statusCode, '', readLastTokenUsageForCall(), apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
-				done(fullTextRef[0], null, fullThinkingRef[0], null)
+				done(fullTextRef[0], null, fullThinkingRef[0], fullThinkingSignatureRef[0], null)
 			}
 		},
 		fail: (_err: any) => {
-			// 检测是否不支持 function calling，自动降级重试
+			if (controller.isAborted() == true) {
+				streamEnded = true
+				return
+			}
 			const errMsg = JSON.stringify(_err)
-			if (tools.length > 0 && (
-				errMsg.indexOf('Function calling is not enabled') >= 0 ||
-				(errMsg.indexOf('tool') >= 0 && errMsg.indexOf('support') >= 0) ||
-				(errMsg.indexOf('function') >= 0 && errMsg.indexOf('support') >= 0)
-			)) {
-				console.log('[LLM] 模型不支持 function calling，去除 tools 后重试')
-				uni.showToast({ position: 'bottom', title: '当前模型不支持工具调用，已自动忽略', icon: 'none' })
-					callChatAPIStream(baseUrl, apiKey, model, systemPrompt, messages, [], settings, reasoningEnabled, onChunk, done, cacheKey, onThinking, null, conversationId, supportsVision, agentId, workspaceRoot, sensitiveMode)
+			if (allowToolsFallback == true && tools.length > 0 && isToolsUnsupportedError(400, errMsg) == true) {
+				showToolsFallbackNotice()
+				callChatAPIStreamWithProviderRuntimeControlled(baseUrl, apiKey, model, systemPrompt, messages, [], settings, reasoningEnabled, onChunk, done, cacheKey, onThinking, null, conversationId, supportsVision, agentId, workspaceRoot, sensitiveMode, modelMaxTokens, modelParams, adapter, false, supportsReasoningHistory, true, controller)
 				return
 			}
 			const networkError = sensitiveMode == true ? '敏感请求网络失败' : '网络请求失败: ' + _err
 			saveLastLLMCall(false, true, model, baseUrl, -1, networkError, null, apiMessages.length, tools.length, fullTextRef[0].length, false, conversationId)
 			streamEnded = true
-			done(null, null, null, networkError)
+			done(null, null, null, null, networkError)
 		},
 	})
+	controller.attachTask(task)
 
 	task.onChunkReceived((res: RequestTaskOnChunkReceivedListenerResult) => {
-		if (streamEnded == true) return
+		if (controller.isAborted() == true || streamEnded == true) { return }
 		const data = res.data
-		if (data == null) return
+		if (data == null) { return }
 		const chunk = decodeArrayBuffer(data as ArrayBuffer, pendingUtf8Bytes)
+		if (rawResponseRef[0].length < 16000) {
+			const remaining = 16000 - rawResponseRef[0].length
+			rawResponseRef[0] += chunk.length > remaining ? chunk.substring(0, remaining) : chunk
+		}
 		sseBufferRef[0] += chunk
 
 		// 按行拆分处理
 		const parts = sseBufferRef[0].split('\n')
 		sseBufferRef[0] = parts[parts.length - 1]
 		for (let i = 0; i < parts.length - 1; i++) {
-			processSSELine(parts[i], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk, fullThinkingRef, onThinking, onToolCallDelta, parseErrorRef)
+			if (adapter == 'anthropic') {
+				processAnthropicSSELine(parts[i], fullTextRef, toolCallList, hasToolCallsRef, onChunk, fullThinkingRef, fullThinkingSignatureRef, onThinking, onToolCallDelta, parseErrorRef)
+			} else {
+				processSSELine(parts[i], fullTextRef, sseBufferRef, toolCallList, hasToolCallsRef, onChunk, fullThinkingRef, onThinking, onToolCallDelta, parseErrorRef)
+			}
 		}
 	})
 
 	return task
+}
+
+/** 保留既有 RequestTask ABI；该入口不自动降级，避免返回句柄与真实请求失配。 */
+export function callChatAPIStreamWithProviderRuntime(
+	baseUrl: string,
+	apiKey: string,
+	model: string,
+	systemPrompt: string,
+	messages: UTSJSONObject[],
+	tools: UTSJSONObject[],
+	settings: GenerationSettings,
+	reasoningEnabled: boolean,
+	onChunk: ((text: string) => void) | null,
+	done: (text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null, thinkingSignature: string | null, errorMessage: string | null) => void,
+	cacheKey: string,
+	onThinking: ((text: string) => void) | null,
+	onToolCallDelta: ((index: number, name: string | null, args: string | null) => void) | null,
+	conversationId: string,
+	supportsVision: boolean,
+	agentId: string,
+	workspaceRoot: string,
+	sensitiveMode: boolean,
+	modelMaxTokens: number,
+	modelParams: string,
+	adapter: ProviderModelAdapter,
+	supportsToolHistory: boolean,
+	supportsReasoningHistory: boolean
+	): RequestTask {
+	const controller = new LLMRequestController()
+	return callChatAPIStreamWithProviderRuntimeControlled(baseUrl, apiKey, model, systemPrompt, messages, tools, settings, reasoningEnabled, onChunk, done, cacheKey, onThinking, onToolCallDelta, conversationId, supportsVision, agentId, workspaceRoot, sensitiveMode, modelMaxTokens, modelParams, adapter, supportsToolHistory, supportsReasoningHistory, false, controller)
+}
+
+/** 返回可跟随 tools 降级重试的稳定取消句柄。 */
+export function callChatAPIStreamWithProviderRuntimeCancelable(
+	baseUrl: string,
+	apiKey: string,
+	model: string,
+	systemPrompt: string,
+	messages: UTSJSONObject[],
+	tools: UTSJSONObject[],
+	settings: GenerationSettings,
+	reasoningEnabled: boolean,
+	onChunk: ((text: string) => void) | null,
+	done: (text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null, thinkingSignature: string | null, errorMessage: string | null) => void,
+	cacheKey: string,
+	onThinking: ((text: string) => void) | null,
+	onToolCallDelta: ((index: number, name: string | null, args: string | null) => void) | null,
+	conversationId: string,
+	supportsVision: boolean,
+	agentId: string,
+	workspaceRoot: string,
+	sensitiveMode: boolean,
+	modelMaxTokens: number,
+	modelParams: string,
+	adapter: ProviderModelAdapter,
+	supportsToolHistory: boolean,
+	supportsReasoningHistory: boolean
+	): LLMRequestController {
+	const controller = new LLMRequestController()
+	callChatAPIStreamWithProviderRuntimeControlled(baseUrl, apiKey, model, systemPrompt, messages, tools, settings, reasoningEnabled, onChunk, done, cacheKey, onThinking, onToolCallDelta, conversationId, supportsVision, agentId, workspaceRoot, sensitiveMode, modelMaxTokens, modelParams, adapter, supportsToolHistory, supportsReasoningHistory, true, controller)
+	return controller
+}
+
+/** 兼容已生成的 runtime ABI；默认按 OpenAI-compatible 且保留历史能力字段。 */
+export function callChatAPIStreamWithRuntime(
+	baseUrl: string,
+	apiKey: string,
+	model: string,
+	systemPrompt: string,
+	messages: UTSJSONObject[],
+	tools: UTSJSONObject[],
+	settings: GenerationSettings,
+	reasoningEnabled: boolean,
+	onChunk: ((text: string) => void) | null,
+	done: (text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null, errorMessage: string | null) => void,
+	cacheKey: string,
+	onThinking: ((text: string) => void) | null,
+	onToolCallDelta: ((index: number, name: string | null, args: string | null) => void) | null,
+	conversationId: string,
+	supportsVision: boolean,
+	agentId: string,
+	workspaceRoot: string,
+	sensitiveMode: boolean,
+	modelMaxTokens: number,
+	modelParams: string
+): RequestTask {
+	return callChatAPIStreamWithProviderRuntime(baseUrl, apiKey, model, systemPrompt, messages, tools, settings, reasoningEnabled, onChunk,
+		(text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null, _thinkingSignature: string | null, errorMessage: string | null): void => {
+			done(text, toolCalls, thinking, errorMessage)
+		}, cacheKey, onThinking, onToolCallDelta, conversationId, supportsVision, agentId, workspaceRoot, sensitiveMode, modelMaxTokens, modelParams, 'openai_compatible', true, true)
+}
+
+/** 兼容旧调用签名，模型级运行参数使用默认值。 */
+export function callChatAPIStream(
+	baseUrl: string,
+	apiKey: string,
+	model: string,
+	systemPrompt: string,
+	messages: UTSJSONObject[],
+	tools: UTSJSONObject[],
+	settings: GenerationSettings,
+	reasoningEnabled: boolean,
+	onChunk: ((text: string) => void) | null,
+	done: (text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null, errorMessage: string | null) => void,
+	cacheKey: string = '',
+	onThinking: ((text: string) => void) | null = null,
+	onToolCallDelta: ((index: number, name: string | null, args: string | null) => void) | null = null,
+	conversationId: string = '',
+	supportsVision: boolean = true,
+	agentId: string = '',
+	workspaceRoot: string = '',
+	sensitiveMode: boolean = false
+): RequestTask {
+	return callChatAPIStreamWithRuntime(baseUrl, apiKey, model, systemPrompt, messages, tools, settings, reasoningEnabled, onChunk, done, cacheKey, onThinking, onToolCallDelta, conversationId, supportsVision, agentId, workspaceRoot, sensitiveMode, 0, '')
 }

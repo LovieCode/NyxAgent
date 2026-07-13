@@ -33,7 +33,8 @@
 							:isPrivateMessage="isPrivateMessage(item.renderMessage)"
 							:privateMessageLabel="readPrivateMessageLabel(item.renderMessage)"
 							:privateDeliveryStatus="readPrivateDeliveryStatus(item.renderMessage)"
-						:cancelToken="longpressCancelToken"
+							:windowAnchorPrefix="messageWindowUnitAnchorPrefix(item.sourceIndex)"
+							:cancelToken="longpressCancelToken"
 						@contentResize="onMessageContentResize"
 						@bubbleLongpress="onMessageLongpress(item.sourceMessage)"
 						@avatarClick="openAgentPrivateChat(item.sourceMessage)"
@@ -53,7 +54,7 @@
 			</view>
 		</view>
 
-		<view class="chat-bottom" :style="{ marginBottom: keyboardInset + 'px' }">
+		<view id="group-chat-bottom" class="chat-bottom" :style="{ marginBottom: keyboardInset + 'px' }">
 			<view v-if="privateTargetAgentId != ''" class="private-compose-bar">
 				<view class="private-compose-main">
 					<oui-icon-unix name="lock" size="13px" color="#9A5A72" />
@@ -157,14 +158,13 @@
 </template>
 
 <script lang="uts">
-	import { readLastLLMRequestSnapshot, captionImage } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+	import { readLastLLMRequestSnapshot } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
 	import { getAgentById } from '@/utils/agent.uts'
 	import { loadChatUserProfile } from '@/utils/chat-conversation-service.uts'
-	import { setImageMessageCaption } from '@/utils/chat-models.uts'
-	import { setActiveAgentRuntimeId, setContextPreviewPayload, setFilesInitialPath, setMemoryRouteState } from '@/utils/runtime-state.uts'
+	import { getActiveAgentRuntimeId, getActiveConversationRuntimeId, setActiveChatRouteState, setContextPreviewPayload, setFilesInitialPath, setMemoryRouteState } from '@/utils/runtime-state.uts'
 	import { buildPickedFileContextText, isChooseCancelError, isPickedImageFile, parsePickedFileInfo, parsePickedImagePath, type PickedLocalFile } from '@/utils/attachment-reader.uts'
 	import { handleCameraPickerFailure } from '@/utils/media-permission.uts'
-	import { APP_ERROR_CATEGORY_RUNTIME, reportAppErrorFromCause } from '@/utils/app-error.uts'
+	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 	import {
 		buildGroupDispatchHistoryText,
 		buildGroupMemberAgentItems as buildGroupMemberAgentItemsForPage,
@@ -189,24 +189,31 @@
 			nextChatStreamScrollTick,
 		} from '@/utils/chat-stream-events.uts'
 		import {
-			buildChatScrollbarThumbStyle,
+		buildChatVirtualScrollbarThumbStyle,
+		buildChatScrollbarThumbStyle,
 		clampChatScrollTarget,
 		isChatScrollAtBottom,
+		resolveChatVirtualScrollbarCurrentUnit,
+		resolveChatVirtualScrollbarDragUnit,
+		resolveChatVirtualScrollbarTarget,
+		resolveChatVirtualScrollbarTrackUnit,
 		resolveChatScrollbarDragTarget,
 		resolveChatScrollbarTrackTarget,
 	} from '@/utils/chat-scroll-helpers.uts'
 	import {
-		CHAT_MESSAGE_WINDOW_BASE_SIZE,
+		CHAT_MESSAGE_WINDOW_BASE_UNITS,
 		CHAT_MESSAGE_WINDOW_EDGE_THRESHOLD_PX,
 		type ChatMessageWindowItem,
-		buildChatMessageWindowRange,
+		buildChatMessageWindowRangeFromMetrics,
 		isChatMessageWindowAtRecentEnd,
-		resolveChatMessageWindowEnd,
-		resolveRecentChatMessageWindowStart,
-		resolveShiftedChatMessageWindowStart,
+		refreshChatMessageWindowMetrics,
+		resolveChatMessageWindowAnchor,
+		resolveChatMessageWindowUnitEnd,
+		resolveRecentChatMessageWindowUnitStart,
+		resolveShiftedChatMessageWindowUnitStart,
 	} from '@/utils/chat-message-window.uts'
 	import { eventBus } from '@/utils/event-bus.uts'
-	import { resolveKeyboardInset } from '@/utils/keyboard-inset.uts'
+	import { resolveKeyboardInsetFromLayout } from '@/utils/keyboard-inset.uts'
 	import { NYX_FLOAT_CONTEXT_GROUP, NYX_FLOAT_VOICE_EVENT, activateNyxFloatVoiceContext, consumePendingNyxFloatVoiceText, deactivateNyxFloatVoiceContext, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
 	import {
 		acknowledgeGroupChatTurnError,
@@ -215,6 +222,7 @@
 		getGroupChatTurnErrorRevision,
 		getGroupChatTurnMessages,
 		isGroupChatTurnRunning,
+		dispatchGroupChatImageMessage,
 		dispatchGroupChatUserMessage,
 		startGroupChatTurn,
 		stopGroupChatTurn,
@@ -236,7 +244,7 @@
 		getGroupMessages,
 		getGroupSessionById,
 		getGroupSessionWorkspaceDir,
-		getGroupMessagesVisibleToUser,
+		isGroupMessageVisibleToUser,
 		resolveGroupReviewerAgentId,
 		resolveGroupSchedulerAgentId,
 		revokeGroupAgentMessage,
@@ -248,6 +256,24 @@
 let groupTurnRuntimeCallback: (() => void) | null = null
 let groupTurnRuntimeEventName: string = ''
 let groupTurnRuntimeSyncTimer: number = -1
+	const GROUP_VISIBLE_CACHE_TAIL_GUARD = 24
+
+	function showGroupRuntimeStateFailure(operation: string, userMessage: string): void {
+		const error = reportAppErrorFromCause(
+			'GROUP_CHAT_RUNTIME_STATE_SAVE_FAILED',
+			APP_ERROR_CATEGORY_RUNTIME,
+			operation,
+			userMessage,
+			'跨页运行状态写入 SQLite 失败',
+			true,
+		)
+		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+	}
+
+	function showGroupNavigationFailure(operation: string, userMessage: string, cause: any | null): void {
+		const error = reportAppErrorFromCause('GROUP_CHAT_NAVIGATION_FAILED', APP_ERROR_CATEGORY_RUNTIME, operation, userMessage, cause, true)
+		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+	}
 
 	type GroupPrivateDraft = {
 		agentId: string
@@ -262,6 +288,9 @@ let groupTurnRuntimeSyncTimer: number = -1
 				group: null as GroupChat | null,
 				session: null as GroupChatSession | null,
 				messages: [] as UTSJSONObject[],
+				visibleMessagesCache: [] as UTSJSONObject[],
+				visibleMessageSourceIndexes: [] as number[],
+				visibleMessagesSourceCount: 0 as number,
 				inputText: '' as string,
 				inputHeight: 36 as number,
 				isGenerating: false as boolean,
@@ -281,9 +310,13 @@ let groupTurnRuntimeSyncTimer: number = -1
 					_streamScrollTick: 0 as number,
 					streamScrollTimer: -1 as number,
 					scrollTop: 0 as number,
-				messageWindowStartIndex: 0 as number,
-				messageWindowEndIndex: 0 as number,
+				messageWindowStartUnit: 0 as number,
+				messageWindowEndUnit: 0 as number,
+				messageTotalUnits: 0 as number,
 				messageTotalCount: 0 as number,
+				messageWindowUnitCounts: [] as number[],
+				messageWindowUnitPrefix: [] as number[],
+				messageWindowMetricsDirtyAll: true as boolean,
 				messageWindowShifting: false as boolean,
 				messageWindowShiftToken: 0 as number,
 				messageWindowShiftLockUntil: 0 as number,
@@ -297,6 +330,7 @@ let groupTurnRuntimeSyncTimer: number = -1
 				scrollbarDragging: false as boolean,
 				scrollbarDragStartY: 0 as number,
 				scrollbarDragStartTop: 0 as number,
+				scrollbarDragStartGlobalUnit: 0 as number,
 				scrollbarTrackTop: 0 as number,
 				longpressCancelToken: 0 as number,
 				userNickname: '' as string,
@@ -305,7 +339,6 @@ let groupTurnRuntimeSyncTimer: number = -1
 				privateTargetAgentName: '' as string,
 				publicDraftText: '' as string,
 				privateDrafts: [] as GroupPrivateDraft[],
-					imageCaptionTaskId: 0 as number,
 					keyboardHeightListenerId: -1 as number,
 					measureScrollTimer: -1 as number,
 					measureStableTimer: -1 as number,
@@ -325,10 +358,10 @@ let groupTurnRuntimeSyncTimer: number = -1
 			allVisibleMessages(): UTSJSONObject[] {
 				const revision = this.messagesRevision
 				if (revision < 0) { return [] as UTSJSONObject[] }
-				return getGroupMessagesVisibleToUser(this.messages)
+				return this.visibleMessagesCache
 			},
 			visibleMessageItems(): ChatMessageWindowItem[] {
-				return buildChatMessageWindowRange(this.allVisibleMessages, this.messageWindowStartIndex, this.messageWindowEndIndex)
+				return buildChatMessageWindowRangeFromMetrics(this.allVisibleMessages, this.messageWindowUnitCounts, this.messageWindowUnitPrefix, this.messageWindowStartUnit, this.messageWindowEndUnit, true)
 			},
 			allVisibleMessageCount(): number {
 				return this.allVisibleMessages.length
@@ -337,10 +370,15 @@ let groupTurnRuntimeSyncTimer: number = -1
 				return buildGroupToolbarTrackStyle(this.toolbarPageIndex, this.toolbarViewportWidth, this.toolbarDragOffset)
 			},
 			scrollbarThumbStyle(): string {
+				if (this.messageTotalUnits > CHAT_MESSAGE_WINDOW_BASE_UNITS) {
+					return buildChatVirtualScrollbarThumbStyle(this.messageTotalUnits, this.messageWindowStartUnit, this.messageWindowEndUnit, this.scrollContentHeight, this.scrollViewHeight, this.scrollOffset)
+				}
 				return buildChatScrollbarThumbStyle(this.scrollContentHeight, this.scrollViewHeight, this.scrollOffset)
 			},
 			showCustomScrollbar(): boolean {
-				return this.messageTotalCount <= CHAT_MESSAGE_WINDOW_BASE_SIZE && this.scrollViewHeight > 0 && this.scrollContentHeight > this.scrollViewHeight + 2
+				if (this.scrollViewHeight <= 0) { return false }
+				if (this.messageTotalUnits > CHAT_MESSAGE_WINDOW_BASE_UNITS) { return true }
+				return this.scrollContentHeight > this.scrollViewHeight + 2
 			},
 			showBackToBottom(): boolean {
 				return this.messageTotalCount > 0 && this.isAtBottom == false
@@ -360,18 +398,19 @@ let groupTurnRuntimeSyncTimer: number = -1
 			}
 			this.keyboardHeightListenerId = uni.onKeyboardHeightChange((res: OnKeyboardHeightChangeCallbackResult) => {
 				const keepBottom = this.isAtBottom
-				let currentWindowHeight = this.keyboardBaseWindowHeight
-				try {
-					const windowInfo = uni.getWindowInfo()
-					currentWindowHeight = windowInfo.windowHeight
-				} catch (error) {
-					currentWindowHeight = this.keyboardBaseWindowHeight
-				}
-				if (res.height == 0 && currentWindowHeight > 0) {
-					this.keyboardBaseWindowHeight = currentWindowHeight
-				}
 				this.keyboardHeight = res.height
-				this.keyboardInset = resolveKeyboardInset(res.height, this.keyboardBaseWindowHeight, currentWindowHeight)
+				if (res.height == 0) {
+					this.keyboardInset = 0
+					try {
+						const windowInfo = uni.getWindowInfo()
+						if (windowInfo.windowHeight > 0) { this.keyboardBaseWindowHeight = windowInfo.windowHeight }
+					} catch (_error: any) {}
+				} else {
+					this.measureKeyboardInset(res.height)
+					setTimeout(() => {
+						if (this.pageVisible == true && this.keyboardHeight == res.height) { this.measureKeyboardInset(res.height) }
+					}, 120)
+				}
 				if (res.height > 0 && this.showToolPanel == true) {
 					this.showToolPanel = false
 				}
@@ -396,7 +435,9 @@ let groupTurnRuntimeSyncTimer: number = -1
 					this.loadUserProfile()
 				this.loadGroup()
 				this.syncGroupTurnRuntime()
-				activateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
+				if (activateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP) == false) {
+					showGroupRuntimeStateFailure('group_chat_activate_voice_context', '语音入口状态保存失败')
+				}
 			this.consumeNyxFloatVoiceText()
 		},
 		onReady() {
@@ -409,7 +450,9 @@ let groupTurnRuntimeSyncTimer: number = -1
 				if (this.streamScrollTimer != -1) { clearTimeout(this.streamScrollTimer); this.streamScrollTimer = -1 }
 				if (this.measureScrollTimer != -1) { clearTimeout(this.measureScrollTimer); this.measureScrollTimer = -1 }
 				if (this.measureStableTimer != -1) { clearTimeout(this.measureStableTimer); this.measureStableTimer = -1 }
-				deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
+				if (deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP) == false) {
+					reportAppErrorFromCause('GROUP_CHAT_RUNTIME_STATE_SAVE_FAILED', APP_ERROR_CATEGORY_RUNTIME, 'group_chat_deactivate_voice_context', '语音入口状态清理失败', '跨页运行状态写入 SQLite 失败', true)
+				}
 			},
 			onUnload() {
 				this.pageVisible = false
@@ -436,18 +479,34 @@ let groupTurnRuntimeSyncTimer: number = -1
 			}
 			groupTurnRuntimeCallback = null
 			groupTurnRuntimeEventName = ''
-			deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP)
+			if (deactivateNyxFloatVoiceContext(NYX_FLOAT_CONTEXT_GROUP) == false) {
+				reportAppErrorFromCause('GROUP_CHAT_RUNTIME_STATE_SAVE_FAILED', APP_ERROR_CATEGORY_RUNTIME, 'group_chat_unload_voice_context', '语音入口状态清理失败', '跨页运行状态写入 SQLite 失败', true)
+			}
 		},
 		methods: {
-			loadUserProfile(): void {
-				const profile = loadChatUserProfile()
-				this.userNickname = profile.nickname
-				this.userAvatar = profile.avatar
+			measureKeyboardInset(keyboardHeight: number): void {
+				if (keyboardHeight <= 0) { this.keyboardInset = 0; return }
+				const appliedInset = this.keyboardInset
+				const query = uni.createSelectorQuery().in(this)
+				query.select('#group-chat-bottom').boundingClientRect()
+				query.exec((res: any) => {
+					if (this.pageVisible == false || this.keyboardHeight != keyboardHeight) { return }
+					const rows = res as UTSArray<any> | null
+					if (rows == null || rows.length == 0) { this.keyboardInset = keyboardHeight; return }
+					const rect = rows[0] as NodeInfo | null
+					const bottom = rect != null ? (rect.bottom as number | null) : null
+					if (bottom == null || bottom <= 0) { this.keyboardInset = keyboardHeight; return }
+					this.keyboardInset = resolveKeyboardInsetFromLayout(keyboardHeight, this.keyboardBaseWindowHeight, bottom + appliedInset)
+				})
 			},
-			loadGroup(): void {
-				try {
-					this.imageCaptionTaskId++
-					let groupId = getActiveGroupChatId()
+				loadUserProfile(): void {
+					const profile = loadChatUserProfile()
+					this.userNickname = profile.nickname
+					this.userAvatar = profile.avatar
+				},
+				loadGroup(): void {
+					try {
+						let groupId = getActiveGroupChatId()
 					if (groupId == '') {
 						const group = createDefaultWritingGroupChat()
 						groupId = group.id
@@ -488,9 +547,11 @@ let groupTurnRuntimeSyncTimer: number = -1
 							this.privateTargetAgentName = privateLabel != null && privateLabel != '' ? privateLabel : (privateName != null ? privateName : '成员')
 							break
 						}
-					}
-					this.messages = getGroupChatTurnMessages(group.id, session.id)
-					this.isGenerating = isGroupChatTurnRunning(session.id)
+						}
+						this.messages = getGroupChatTurnMessages(group.id, session.id)
+						this.refreshVisibleMessagesCache(true)
+						this.invalidateMessageWindowMetrics()
+						this.isGenerating = isGroupChatTurnRunning(session.id)
 					this.bindGroupTurnRuntime()
 					this.normalizeUserSenderNames()
 					this.resetMessageWindowToRecent()
@@ -523,8 +584,8 @@ let groupTurnRuntimeSyncTimer: number = -1
 				if (this.groupId == '' || this.sessionId == '') { return }
 				const keepBottom = this.streamFollowBottom
 				this.messages = getGroupChatTurnMessages(this.groupId, this.sessionId)
-				this.messagesRevision++
 				this.isGenerating = isGroupChatTurnRunning(this.sessionId)
+				this.refreshVisibleMessagesCache(this.isGenerating == false)
 				const errorRevision = getGroupChatTurnErrorRevision(this.sessionId)
 				if (errorRevision > this.seenRuntimeErrorRevision) {
 					this.seenRuntimeErrorRevision = errorRevision
@@ -545,11 +606,17 @@ let groupTurnRuntimeSyncTimer: number = -1
 			},
 			goSettings(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
-				uni.navigateTo({ url: '/pages/group-chat-settings/group-chat-settings' })
+				uni.navigateTo({
+					url: '/pages/group-chat-settings/group-chat-settings',
+					fail: (err: any) => { showGroupNavigationFailure('group_chat_navigate_settings', '无法打开群聊设置', err) }
+				})
 			},
 			goSessions(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
-				uni.navigateTo({ url: '/pages/group-chat-sessions/group-chat-sessions' })
+				uni.navigateTo({
+					url: '/pages/group-chat-sessions/group-chat-sessions',
+					fail: (err: any) => { showGroupNavigationFailure('group_chat_navigate_sessions', '无法打开群聊会话', err) }
+				})
 			},
 			toggleToolPanel(): void {
 				const keepBottom = this.isAtBottom == true
@@ -677,7 +744,7 @@ let groupTurnRuntimeSyncTimer: number = -1
 				}
 			},
 			updateBottomState(): void {
-				const windowAtRecentEnd = isChatMessageWindowAtRecentEnd(this.messageTotalCount, this.messageWindowEndIndex)
+				const windowAtRecentEnd = isChatMessageWindowAtRecentEnd(this.messageTotalUnits, this.messageWindowEndUnit)
 				this.isAtBottom = windowAtRecentEnd == true && isChatScrollAtBottom(this.scrollOffset, this.scrollContentHeight, this.scrollViewHeight)
 			},
 			scheduleMeasureMessageScroll(): void {
@@ -738,11 +805,43 @@ let groupTurnRuntimeSyncTimer: number = -1
 				this.scrollOffset = safeTop
 				this.updateBottomState()
 			},
+			commitVirtualScrollbarUnit(globalUnit: number): void {
+				const target = resolveChatVirtualScrollbarTarget(globalUnit, this.messageTotalUnits, CHAT_MESSAGE_WINDOW_BASE_UNITS, this.scrollContentHeight, this.scrollViewHeight)
+				this.cancelMessageWindowShift()
+				this.messageWindowStartUnit = target.windowStartUnit
+				this.messageWindowEndUnit = resolveChatMessageWindowUnitEnd(this.messageTotalUnits, target.windowStartUnit)
+				this.messageWindowShiftLockUntil = Date.now() + 180
+				let localMax = this.scrollContentHeight - this.scrollViewHeight
+				if (localMax < 0) { localMax = 0 }
+				const targetTop = target.localScrollRatio * localMax
+				this.scrollTop = targetTop
+				this.scrollOffset = targetTop
+				this.updateBottomState()
+				this.scheduleMeasureMessageScroll()
+				const shiftToken = this.messageWindowShiftToken
+				setTimeout(() => {
+					if (this.pageVisible == false || shiftToken != this.messageWindowShiftToken) { return }
+					this.measureMessageScrollSize()
+					setTimeout(() => {
+						if (this.pageVisible == false || shiftToken != this.messageWindowShiftToken) { return }
+						let measuredMax = this.scrollContentHeight - this.scrollViewHeight
+						if (measuredMax < 0) { measuredMax = 0 }
+						const measuredTop = target.localScrollRatio * measuredMax
+						this.scrollTop = measuredTop
+						this.scrollOffset = measuredTop
+						this.updateBottomState()
+					}, 48)
+				}, 48)
+			},
 			onScrollbarTrackTap(e: UniTouchEvent): void {
 				const y = this.getScrollbarTouchY(e)
 				if (y == null) { return }
 				if (this.isGenerating == true) { this.streamFollowBottom = false }
 				this.clearGroupStreamScrollTimer()
+				if (this.messageTotalUnits > CHAT_MESSAGE_WINDOW_BASE_UNITS) {
+					this.commitVirtualScrollbarUnit(resolveChatVirtualScrollbarTrackUnit(y, this.messageTotalUnits, this.messageWindowStartUnit, this.messageWindowEndUnit, this.scrollContentHeight, this.scrollViewHeight))
+					return
+				}
 				this.commitMessageScrollTop(resolveChatScrollbarTrackTarget(y, this.scrollContentHeight, this.scrollViewHeight))
 			},
 			onScrollbarThumbStart(e: UniTouchEvent): void {
@@ -753,11 +852,19 @@ let groupTurnRuntimeSyncTimer: number = -1
 				this.scrollbarDragging = true
 				this.scrollbarDragStartY = y
 				this.scrollbarDragStartTop = this.scrollOffset
+				if (this.messageTotalUnits > CHAT_MESSAGE_WINDOW_BASE_UNITS) {
+					this.scrollbarDragStartGlobalUnit = resolveChatVirtualScrollbarCurrentUnit(this.messageTotalUnits, this.messageWindowStartUnit, this.messageWindowEndUnit, this.scrollContentHeight, this.scrollViewHeight, this.scrollOffset)
+				}
 			},
 			onScrollbarThumbMove(e: UniTouchEvent): void {
 				if (this.scrollbarDragging == false) { return }
 				const y = this.getScrollbarTouchY(e)
 				if (y == null) { return }
+				if (this.messageTotalUnits > CHAT_MESSAGE_WINDOW_BASE_UNITS) {
+					const targetUnit = resolveChatVirtualScrollbarDragUnit(this.scrollbarDragStartGlobalUnit, y - this.scrollbarDragStartY, this.messageTotalUnits, this.messageWindowStartUnit, this.messageWindowEndUnit, this.scrollContentHeight, this.scrollViewHeight)
+					this.commitVirtualScrollbarUnit(targetUnit)
+					return
+				}
 				const target = resolveChatScrollbarDragTarget(this.scrollbarDragStartTop, y - this.scrollbarDragStartY, this.scrollContentHeight, this.scrollViewHeight)
 				this.commitMessageScrollTop(target)
 			},
@@ -768,18 +875,61 @@ let groupTurnRuntimeSyncTimer: number = -1
 				this.scrollToBottom()
 			},
 
-			messageViewKey(_msg: UTSJSONObject, index: number): string {
-				// 不读取数据库原生主键，避免 Android Long 被强转为 string。
-				return 'index-' + index
+			messageViewKey(msg: UTSJSONObject, index: number): string {
+				const id = msg['id'] as string | null
+				return id != null && id != '' ? 'id-' + id : 'index-' + index.toString()
 			},
 
 			messageWindowItemId(sourceIndex: number): string {
 				return 'group-window-message-' + sourceIndex
 			},
 
+			messageWindowUnitAnchorPrefix(sourceIndex: number): string {
+				return this.messageWindowItemId(sourceIndex) + '-unit-'
+			},
+
+			messageWindowUnitAnchorId(sourceIndex: number, localUnit: number): string {
+				return this.messageWindowUnitAnchorPrefix(sourceIndex) + localUnit.toString()
+			},
+
+			invalidateMessageWindowMetrics(): void {
+				this.messageWindowMetricsDirtyAll = true
+			},
+
+			refreshVisibleMessagesCache(forceFull: boolean): void {
+				const total = this.messages.length
+				const previousVisibleCount = this.visibleMessagesCache.length
+				let rebuildStart = 0
+				if (forceFull == false && this.visibleMessagesSourceCount <= total) {
+					rebuildStart = this.visibleMessagesSourceCount - GROUP_VISIBLE_CACHE_TAIL_GUARD
+					if (rebuildStart < 0) { rebuildStart = 0 }
+				}
+				if (forceFull == true || rebuildStart == 0) {
+					this.visibleMessagesCache = [] as UTSJSONObject[]
+					this.visibleMessageSourceIndexes = [] as number[]
+				} else {
+					while (this.visibleMessageSourceIndexes.length > 0) {
+						const last = this.visibleMessageSourceIndexes.length - 1
+						if (this.visibleMessageSourceIndexes[last] < rebuildStart) { break }
+						this.visibleMessageSourceIndexes.splice(last, 1)
+						this.visibleMessagesCache.splice(last, 1)
+					}
+				}
+				for (let i = rebuildStart; i < total; i++) {
+					if (isGroupMessageVisibleToUser(this.messages[i]) == false) { continue }
+					this.visibleMessagesCache.push(this.messages[i])
+					this.visibleMessageSourceIndexes.push(i)
+				}
+				this.visibleMessagesSourceCount = total
+				if (forceFull == true || previousVisibleCount != this.visibleMessagesCache.length) {
+					this.messageWindowMetricsDirtyAll = true
+				}
+				this.messagesRevision++
+			},
+
 			refreshMessagesView(): void {
 				const keepRecent = this.isGenerating == true ? this.streamFollowBottom : this.isAtBottom == true
-				this.messagesRevision++
+				this.refreshVisibleMessagesCache(false)
 				this.syncMessageWindowBounds(keepRecent)
 			},
 
@@ -796,14 +946,17 @@ let groupTurnRuntimeSyncTimer: number = -1
 				const source = this.allVisibleMessages
 				const total = source.length
 				this.messageTotalCount = total
-				let start = this.messageWindowStartIndex
-				if (keepRecent == true || this.messageWindowEndIndex <= this.messageWindowStartIndex) {
-					start = resolveRecentChatMessageWindowStart(total)
+				const totalUnits = refreshChatMessageWindowMetrics(source, this.messageWindowUnitCounts, this.messageWindowUnitPrefix, true, this.messageWindowMetricsDirtyAll)
+				this.messageWindowMetricsDirtyAll = false
+				this.messageTotalUnits = totalUnits
+				let start = this.messageWindowStartUnit
+				if (keepRecent == true || this.messageWindowEndUnit <= this.messageWindowStartUnit) {
+					start = resolveRecentChatMessageWindowUnitStart(totalUnits)
 				} else {
-					start = resolveShiftedChatMessageWindowStart(total, start, 0)
+					start = resolveShiftedChatMessageWindowUnitStart(totalUnits, start, 0)
 				}
-				this.messageWindowStartIndex = start
-				this.messageWindowEndIndex = resolveChatMessageWindowEnd(total, start)
+				this.messageWindowStartUnit = start
+				this.messageWindowEndUnit = resolveChatMessageWindowUnitEnd(totalUnits, start)
 			},
 				cancelMessageWindowShift(): void {
 					this.messageWindowShiftToken++
@@ -818,28 +971,27 @@ let groupTurnRuntimeSyncTimer: number = -1
 				},
 			maybeShiftMessageWindow(): void {
 				if (this.messageWindowShifting == true || Date.now() < this.messageWindowShiftLockUntil) { return }
-				if (this.messageTotalCount <= CHAT_MESSAGE_WINDOW_BASE_SIZE || this.scrollViewHeight <= 0) { return }
-				if (this.scrollOffset <= CHAT_MESSAGE_WINDOW_EDGE_THRESHOLD_PX && this.messageWindowStartIndex > 0) {
+				if (this.messageTotalUnits <= CHAT_MESSAGE_WINDOW_BASE_UNITS || this.scrollViewHeight <= 0) { return }
+				if (this.scrollOffset <= CHAT_MESSAGE_WINDOW_EDGE_THRESHOLD_PX && this.messageWindowStartUnit > 0) {
 					this.shiftMessageWindow(-1)
 					return
 				}
 				const bottomGap = this.scrollContentHeight - this.scrollOffset - this.scrollViewHeight
-				if (bottomGap <= CHAT_MESSAGE_WINDOW_EDGE_THRESHOLD_PX && this.messageWindowEndIndex < this.messageTotalCount) {
+				if (bottomGap <= CHAT_MESSAGE_WINDOW_EDGE_THRESHOLD_PX && this.messageWindowEndUnit < this.messageTotalUnits) {
 					this.shiftMessageWindow(1)
 				}
 			},
 			shiftMessageWindow(direction: number): void {
-				const nextStart = resolveShiftedChatMessageWindowStart(this.messageTotalCount, this.messageWindowStartIndex, direction)
-				if (nextStart == this.messageWindowStartIndex) { return }
+				const nextStart = resolveShiftedChatMessageWindowUnitStart(this.messageTotalUnits, this.messageWindowStartUnit, direction)
+				if (nextStart == this.messageWindowStartUnit) { return }
 				const items = this.visibleMessageItems
 				if (items.length == 0) { return }
-				let anchorPosition = direction < 0 ? 1 : items.length - 2
-				if (anchorPosition < 0) { anchorPosition = 0 }
-				if (anchorPosition >= items.length) { anchorPosition = items.length - 1 }
-				const anchorIndex = items[anchorPosition].sourceIndex
-				const anchorSelector = '#' + this.messageWindowItemId(anchorIndex)
+				const anchorUnit = direction < 0 ? this.messageWindowStartUnit : nextStart
+				const anchor = resolveChatMessageWindowAnchor(items, anchorUnit)
+				if (anchor == null) { return }
+				const anchorSelector = '#' + this.messageWindowUnitAnchorId(anchor.sourceIndex, anchor.localUnit)
 				const oldScrollOffset = this.scrollOffset
-				const oldStart = this.messageWindowStartIndex
+				const oldStart = this.messageWindowStartUnit
 				this.messageWindowShifting = true
 				this.messageWindowShiftToken++
 				const shiftToken = this.messageWindowShiftToken
@@ -854,8 +1006,8 @@ let groupTurnRuntimeSyncTimer: number = -1
 						this.messageWindowShiftLockUntil = Date.now() + 80
 						return
 					}
-					this.messageWindowStartIndex = nextStart
-					this.messageWindowEndIndex = resolveChatMessageWindowEnd(this.messageTotalCount, nextStart)
+					this.messageWindowStartUnit = nextStart
+					this.messageWindowEndUnit = resolveChatMessageWindowUnitEnd(this.messageTotalUnits, nextStart)
 					setTimeout(() => {
 						this.finishMessageWindowShift(anchorSelector, oldTop, oldScrollOffset, oldStart, shiftToken, 0)
 					}, 32)
@@ -877,8 +1029,8 @@ let groupTurnRuntimeSyncTimer: number = -1
 						return
 					}
 					if (nextTop == null) {
-						this.messageWindowStartIndex = oldStart
-						this.messageWindowEndIndex = resolveChatMessageWindowEnd(this.messageTotalCount, oldStart)
+						this.messageWindowStartUnit = oldStart
+						this.messageWindowEndUnit = resolveChatMessageWindowUnitEnd(this.messageTotalUnits, oldStart)
 					} else {
 						let targetTop = oldScrollOffset + nextTop - oldTop
 						if (targetTop < 0) { targetTop = 0 }
@@ -933,11 +1085,13 @@ let groupTurnRuntimeSyncTimer: number = -1
 			readUserMessageSenderName(msg: UTSJSONObject): string {
 				return readGroupUserMessageSenderName(msg, this.userNickname)
 			},
-			normalizeUserSenderNames(): void {
-				if (normalizeGroupUserSenderNames(this.messages, this.userNickname) == true) {
-					this.saveMessages()
-				}
-			},
+				normalizeUserSenderNames(): void {
+					if (normalizeGroupUserSenderNames(this.messages, this.userNickname) == true) {
+						if (this.saveMessages() == false) {
+							uni.showToast({ position: 'bottom', title: '更新用户名显示失败，稍后会重试保存', icon: 'none' })
+						}
+					}
+				},
 				clearGroupStreamScrollTimer(): void {
 					if (this.streamScrollTimer != -1) {
 						clearTimeout(this.streamScrollTimer)
@@ -1057,72 +1211,34 @@ let groupTurnRuntimeSyncTimer: number = -1
 			},
 			stopDiscussion(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
-				this.imageCaptionTaskId++
 				this.isGenerating = false
 				stopGroupChatTurn(this.sessionId)
 				this.syncGroupTurnRuntime()
 				uni.showToast({ position: 'bottom', title: '已停止讨论', icon: 'none' })
-			},
-			addGroupImageMessage(imagePath: string): number {
-				if (imagePath == '') { return -1 }
-				const profile = loadChatUserProfile()
-				this.userNickname = profile.nickname
-				this.userAvatar = profile.avatar
-				const msg = createGroupUserImageMessage(this.groupId, this.sessionId, imagePath, profile.nickname)
-				this.messages.push(msg)
-				if (this.saveMessages() == false) {
-					this.messages.splice(this.messages.length - 1, 1)
-					return -1
-				}
-				this.resetMessageWindowToRecent()
-				this.scrollToBottom()
-				return this.messages.length - 1
 			},
 			handlePickedGroupImagePath(imagePath: string, fallbackReason: string): void {
 				if (imagePath == '') {
 					uni.showToast({ position: 'bottom', title: '未选择图片', icon: 'none' })
 					return
 				}
-				const msgIndex = this.addGroupImageMessage(imagePath)
-				if (msgIndex < 0) {
+				const profile = loadChatUserProfile()
+				this.userNickname = profile.nickname
+				this.userAvatar = profile.avatar
+				const message = createGroupUserImageMessage(this.groupId, this.sessionId, imagePath, profile.nickname)
+				const dispatchResult = dispatchGroupChatImageMessage(this.groupId, this.sessionId, message, imagePath, fallbackReason)
+				if (dispatchResult.saved == false) {
 					uni.showToast({ position: 'bottom', title: '图片消息保存失败', icon: 'none' })
 					return
 				}
-				this.startGenerationForImage(imagePath, fallbackReason, msgIndex)
-			},
-			startGroupGenerationForMedia(reason: string): void {
-				if (this.isGenerating == true) { return }
-				const started = startGroupChatTurn(this.groupId, this.sessionId, reason, true)
-				if (started == false) {
-					uni.showToast({ position: 'bottom', title: '讨论启动失败，请检查成员或存储', icon: 'none' })
+				this.showToolPanel = false
+				this.syncGroupTurnRuntime()
+				this.resetMessageWindowToRecent()
+				this.scrollToBottom()
+				if (dispatchResult.started == false) {
+					uni.showToast({ position: 'bottom', title: '图片已保存，但讨论启动失败', icon: 'none' })
 				}
-				this.isGenerating = isGroupChatTurnRunning(this.sessionId)
 			},
-			startGenerationForImage(imagePath: string, fallbackReason: string, messageIndex: number): void {
-				if (this.isGenerating == true) { return }
-				if (messageIndex < 0 || messageIndex >= this.messages.length) { return }
-				this.isGenerating = true
-				this.imageCaptionTaskId++
-				const taskId = this.imageCaptionTaskId
-				const taskGroupId = this.groupId
-				const taskSessionId = this.sessionId
-				const taskMessageId = this.messages[messageIndex].id
-				captionImage(imagePath).then((caption: string | null) => {
-					if (taskId != this.imageCaptionTaskId) { return }
-					if (this.groupId != taskGroupId || this.sessionId != taskSessionId) { return }
-					if (messageIndex >= 0 && messageIndex < this.messages.length && this.messages[messageIndex].id == taskMessageId && caption != null && caption != '') {
-						setImageMessageCaption(this.messages[messageIndex], caption)
-						this.messages.splice(messageIndex, 1, this.messages[messageIndex])
-						this.saveMessages()
-					}
-					this.isGenerating = false
-					if (caption == null || caption == '') {
-						uni.showToast({ position: 'bottom', title: '图片转述未配置或失败，已直接发送', icon: 'none' })
-					}
-					this.startGroupGenerationForMedia(fallbackReason)
-				})
-			},
-				pickImage(): void {
+			pickImage(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
 					this.showToolPanel = false
 					if (this.isGenerating == true) { return }
@@ -1249,15 +1365,18 @@ let groupTurnRuntimeSyncTimer: number = -1
 				const profile = loadChatUserProfile()
 				this.userNickname = profile.nickname
 				this.userAvatar = profile.avatar
-				this.messages.push(createGroupUserFileMessage(this.groupId, this.sessionId, file.name, file.path, profile.nickname, fileText))
-				if (this.saveMessages() == false) {
-					this.messages.splice(this.messages.length - 1, 1)
+				const message = createGroupUserFileMessage(this.groupId, this.sessionId, file.name, file.path, profile.nickname, fileText)
+				const dispatchResult = dispatchGroupChatUserMessage(this.groupId, this.sessionId, message, '用户发送了一个文件：' + file.name)
+				if (dispatchResult.saved == false) {
 					uni.showToast({ position: 'bottom', title: '文件消息保存失败', icon: 'none' })
 					return
 				}
+				this.syncGroupTurnRuntime()
 				this.resetMessageWindowToRecent()
 				this.scrollToBottom()
-				this.startGroupGenerationForMedia('用户发送了一个文件：' + file.name)
+				if (dispatchResult.started == false) {
+					uni.showToast({ position: 'bottom', title: '文件已保存，但讨论启动失败', icon: 'none' })
+				}
 			},
 				buildGroupMemberAgentItems(): UTSJSONObject[] {
 					return buildGroupMemberAgentItemsForPage(this.groupId, this.group)
@@ -1380,8 +1499,19 @@ let groupTurnRuntimeSyncTimer: number = -1
 					uni.showToast({ position: 'bottom', title: '该联系人已删除', icon: 'none' })
 					return
 				}
-				setMemoryRouteState(agentId, this.sessionId)
-				uni.navigateTo({ url: '/pages/memory/memory' })
+				if (setMemoryRouteState(agentId, this.sessionId) == false) {
+					showGroupRuntimeStateFailure('group_chat_open_memory', '无法打开成员记忆')
+					return
+				}
+				uni.navigateTo({
+					url: '/pages/memory/memory',
+					fail: (err: any) => {
+						if (setMemoryRouteState('', '') == false) {
+							showGroupRuntimeStateFailure('group_chat_memory_navigation_rollback', '成员记忆路由状态清理失败')
+						}
+						showGroupNavigationFailure('group_chat_navigate_memory', '无法打开成员记忆', err)
+					}
+				})
 			},
 			openContextForAgent(agentId: string): void {
 				const session = this.session
@@ -1397,8 +1527,19 @@ let groupTurnRuntimeSyncTimer: number = -1
 					uni.showToast({ position: 'bottom', title: '该成员还没有真实请求快照', icon: 'none' })
 					return
 				}
-				setContextPreviewPayload(stringifyGroupContextPreview(preview))
-				uni.navigateTo({ url: '/pages/context-preview/context-preview' })
+				if (setContextPreviewPayload(stringifyGroupContextPreview(preview)) == false) {
+					showGroupRuntimeStateFailure('group_chat_open_context_preview', '无法打开成员上下文')
+					return
+				}
+				uni.navigateTo({
+					url: '/pages/context-preview/context-preview',
+					fail: (err: any) => {
+						if (setContextPreviewPayload('') == false) {
+							showGroupRuntimeStateFailure('group_chat_context_navigation_rollback', '成员上下文路由状态清理失败')
+						}
+						showGroupNavigationFailure('group_chat_navigate_context', '无法打开成员上下文', err)
+					}
+				})
 			},
 			openGroupWorkspace(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
@@ -1411,8 +1552,19 @@ let groupTurnRuntimeSyncTimer: number = -1
 					uni.showToast({ position: 'bottom', title: '工作区不可用', icon: 'none' })
 					return
 				}
-				setFilesInitialPath(workspaceRoot)
-				uni.navigateTo({ url: '/pages/files/files' })
+				if (setFilesInitialPath(workspaceRoot) == false) {
+					showGroupRuntimeStateFailure('group_chat_open_workspace', '无法打开群聊工作区')
+					return
+				}
+				uni.navigateTo({
+					url: '/pages/files/files',
+					fail: (err: any) => {
+						if (setFilesInitialPath('') == false) {
+							showGroupRuntimeStateFailure('group_chat_workspace_navigation_rollback', '群聊工作区路由状态清理失败')
+						}
+						showGroupNavigationFailure('group_chat_navigate_workspace', '无法打开群聊工作区', err)
+					}
+				})
 			},
 			onMessageLongpress(msg: UTSJSONObject): void {
 				if (this.isGenerating == true) {
@@ -1432,7 +1584,9 @@ let groupTurnRuntimeSyncTimer: number = -1
 								uni.showToast({ position: 'bottom', title: '撤回失败，请重试', icon: 'none' })
 								return
 							}
-							this.messages = getGroupMessages(this.groupId, this.sessionId)
+								this.messages = getGroupMessages(this.groupId, this.sessionId)
+								this.refreshVisibleMessagesCache(true)
+								this.invalidateMessageWindowMetrics()
 							this.syncMessageWindowBounds(keepRecent)
 							this.scheduleMeasureMessageScroll()
 						} else if (res.tapIndex == 1) {
@@ -1448,8 +1602,28 @@ let groupTurnRuntimeSyncTimer: number = -1
 					uni.showToast({ position: 'bottom', title: '该联系人已删除', icon: 'none' })
 					return
 				}
-				setActiveAgentRuntimeId(agentId)
-				uni.navigateTo({ url: '/pages/chat/chat' })
+				let previousAgentId = ''
+				let previousConversationId = ''
+				try {
+					previousAgentId = getActiveAgentRuntimeId()
+					previousConversationId = getActiveConversationRuntimeId()
+				} catch (_e: any) {
+					showGroupRuntimeStateFailure('group_chat_read_private_chat_route', '无法读取当前私聊状态')
+					return
+				}
+				if (setActiveChatRouteState(agentId, '') == false) {
+					showGroupRuntimeStateFailure('group_chat_open_private_chat', '无法打开成员私聊')
+					return
+				}
+				uni.navigateTo({
+					url: '/pages/chat/chat',
+					fail: (err: any) => {
+						if (setActiveChatRouteState(previousAgentId, previousConversationId) == false) {
+							showGroupRuntimeStateFailure('group_chat_private_navigation_rollback', '成员私聊状态恢复失败')
+						}
+						showGroupNavigationFailure('group_chat_navigate_private_chat', '无法打开成员私聊', err)
+					}
+				})
 			},
 			showDispatchHistory(): void {
 				if (this.consumeToolbarSwipeClick() == true) { return }
@@ -1459,8 +1633,19 @@ let groupTurnRuntimeSyncTimer: number = -1
 					uni.showToast({ position: 'bottom', title: '还没有调度记录', icon: 'none' })
 					return
 				}
-				setContextPreviewPayload(previewText)
-				uni.navigateTo({ url: '/pages/context-preview/context-preview' })
+				if (setContextPreviewPayload(previewText) == false) {
+					showGroupRuntimeStateFailure('group_chat_open_dispatch_history', '无法打开调度记录')
+					return
+				}
+				uni.navigateTo({
+					url: '/pages/context-preview/context-preview',
+					fail: (err: any) => {
+						if (setContextPreviewPayload('') == false) {
+							showGroupRuntimeStateFailure('group_chat_dispatch_navigation_rollback', '调度记录路由状态清理失败')
+						}
+						showGroupNavigationFailure('group_chat_navigate_dispatch_history', '无法打开调度记录', err)
+					}
+				})
 			},
 		}
 	}

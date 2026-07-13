@@ -64,8 +64,8 @@
 </template>
 
 <script lang="uts">
-	import { buildDataExportOptions, exportAllDataToFileWithOptions, exportAllDataToJsonWithOptions, shareExportedDataFile, getLastShareExportErrorMessage } from '@/utils/data-export.uts'
-	import { previewImportBackup, importAllDataFromZip, importSettingsOnlyFromZip } from '@/utils/data-import.uts'
+	import { buildDataExportOptions, exportAllDataToFileWithOptions, exportAllDataToJsonWithOptions, shareExportedDataFile, getLastDataArchiveErrorMessage, getLastShareExportErrorMessage } from '@/utils/data-export.uts'
+	import { isDataImportRecoveryBlocked, previewImportBackup, importAllDataFromZip, importSettingsOnlyFromZip } from '@/utils/data-import.uts'
 	import { isChooseCancelError, parsePickedFileInfo } from '@/utils/attachment-reader.uts'
 	import { APP_ERROR_CATEGORY_STORAGE, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 
@@ -79,6 +79,28 @@
 			}
 		},
 		methods: {
+			showImportFailureState(): void {
+				if (isDataImportRecoveryBlocked() == true) {
+					uni.showModal({
+						title: '需要重启应用',
+						content: '导入回滚没有完整结束。为避免继续写入混合状态，应用将退出；请重新启动并等待自动恢复。',
+						showCancel: false,
+						success: (_result) => {
+							// #ifdef APP-ANDROID || APP-HARMONY
+							uni.exit()
+							// #endif
+						},
+						fail: (_error: any) => {
+							// #ifdef APP-ANDROID || APP-HARMONY
+							uni.exit()
+							// #endif
+						},
+					})
+					return
+				}
+				uni.showToast({ position: 'bottom', title: '导入失败，可在运行诊断查看详情', icon: 'none' })
+			},
+
 			showDataFailure(code: string, operation: string, userMessage: string, cause: any | null) {
 				const error = reportAppErrorFromCause(
 					code,
@@ -131,9 +153,9 @@
 					reportAppErrorFromCause(
 						'DATA_EXPORT_ZIP_FAILED',
 						APP_ERROR_CATEGORY_STORAGE,
-						'data_export_zip',
-						'ZIP 备份生成失败，已改为复制备份内容',
-						'writeExportZipFile 返回空路径',
+							'data_export_zip',
+							'ZIP 备份生成失败，已改为复制备份内容',
+							getLastDataArchiveErrorMessage() != '' ? getLastDataArchiveErrorMessage() : 'writeExportZipFile 返回空路径',
 						true,
 					)
 					// #endif
@@ -274,7 +296,7 @@
 					const summary = importSettingsOnlyFromZip(this.selectedImportPath)
 					this.isBusy = false
 					if (summary == '') {
-						uni.showToast({ position: 'bottom', title: '导入失败，可在运行诊断查看详情', icon: 'none' })
+						this.showImportFailureState()
 						return
 					}
 					uni.showModal({
@@ -294,7 +316,7 @@
 					const summary = importAllDataFromZip(this.selectedImportPath)
 					this.isBusy = false
 					if (summary == '') {
-						uni.showToast({ position: 'bottom', title: '导入失败，可在运行诊断查看详情', icon: 'none' })
+						this.showImportFailureState()
 						return
 					}
 					uni.showModal({

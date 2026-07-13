@@ -1,5 +1,5 @@
 <template>
-	<view :class="bubbleClass">
+	<view :class="bubbleClass" :id="fallbackWindowAnchorId">
 		<view v-if="role == 'user'" class="user-row">
 			<view class="user-stack">
 				<view v-if="userDisplayName != '' || isPrivateMessage == true" class="user-meta-row">
@@ -16,7 +16,7 @@
 					@touchstart="onBubbleTouchStart($event as UniTouchEvent)"
 					@touchmove="onBubbleTouchMove($event as UniTouchEvent)"
 					@touchend="onBubbleTouchEnd">
-					<view v-for="(part, pi) in renderContentParts" :key="'user-part-' + pi" class="part-wrap" :class="isLastContentPart(pi) == true ? '' : 'part-wrap-spaced'">
+					<view v-for="(part, pi) in renderContentParts" :key="'user-part-' + pi" :id="contentPartAnchorId(part, pi)" class="part-wrap" :class="isLastContentPart(pi) == true ? '' : 'part-wrap-spaced'">
 						<view v-if="part.type == 'image' && part.url != ''" class="image-part">
 							<image :src="part.url" class="bubble-image" mode="widthFix" @load="notifyContentResize" />
 							<view v-if="part.caption != ''" class="caption-card user-caption-card">
@@ -39,7 +39,7 @@
 		</view>
 
 		<view v-else-if="role == 'assistant' && msgSegmentation == true && renderContentParts.length > 1" class="assistant-segment-list">
-			<view v-for="(part, pi) in renderContentParts" :key="'assistant-segment-' + pi" class="ai-row assistant-segment-row">
+			<view v-for="(part, pi) in renderContentParts" :key="'assistant-segment-' + pi" :id="contentPartAnchorId(part, pi)" class="ai-row assistant-segment-row">
 				<image v-if="agentAvatar != ''" :src="agentAvatar" class="chat-avatar ai-avatar-image" mode="aspectFill" @click.stop="onAvatarClick" />
 				<view v-else class="chat-avatar ai-avatar" @click.stop="onAvatarClick">
 					<text class="chat-avatar-text">AI</text>
@@ -166,7 +166,7 @@
 						</view>
 					</view>
 
-					<view v-for="(part, pi) in renderContentParts" :key="'assistant-part-' + pi" class="part-wrap" :class="isLastContentPart(pi) == true ? '' : 'part-wrap-spaced'">
+					<view v-for="(part, pi) in renderContentParts" :key="'assistant-part-' + pi" :id="contentPartAnchorId(part, pi)" class="part-wrap" :class="isLastContentPart(pi) == true ? '' : 'part-wrap-spaced'">
 						<view v-if="part.type == 'image' && part.url != ''" class="image-part">
 								<image :src="part.url" class="bubble-image" mode="widthFix" @load="notifyContentResize" />
 							<view v-if="part.caption != ''" class="caption-card">
@@ -287,6 +287,10 @@
 				type: String,
 				default: ''
 			},
+			windowAnchorPrefix: {
+				type: String,
+				default: ''
+			},
 			cancelToken: {
 				type: Number,
 				default: 0
@@ -336,6 +340,11 @@
 			this.timerRunning = false
 		},
 		computed: {
+			fallbackWindowAnchorId(): string {
+				if (this.windowAnchorPrefix == '') { return '' }
+				if (this.role != 'toolResult' && this.renderContentParts.length > 0) { return '' }
+				return this.windowAnchorPrefix + '0'
+			},
 			messageParts(): UTSJSONObject[] {
 				const raw = this.parts as UTSJSONObject[]
 				if (raw != null && raw.length > 0) {
@@ -413,6 +422,11 @@
 			}
 		},
 		methods: {
+			contentPartAnchorId(part: ChatContentPartView, index: number): string {
+				if (this.windowAnchorPrefix == '') { return '' }
+				const unit = part.windowUnit
+				return this.windowAnchorPrefix + (unit >= 0 ? unit.toString() : 'fallback-' + index.toString())
+			},
 			notifyContentResize(): void {
 				this.$emit('contentResize')
 			},

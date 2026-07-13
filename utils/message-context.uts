@@ -11,42 +11,9 @@ export type AgentContextBlock = {
 }
 
 function escapeAgentTagText(text: string): string {
-	let result = text.replace(/<\/user_message>/g, '</ user_message>')
-	result = result.replace(/<user_message>/g, '< user_message>')
-	result = result.replace(/<\/agent_context>/g, '</ agent_context>')
-	result = result.replace(/<agent_context/g, '< agent_context')
-	result = result.replace(/<\/current_time>/g, '</ current_time>')
-	result = result.replace(/<current_time>/g, '< current_time>')
-	result = result.replace(/<\/user_profile>/g, '</ user_profile>')
-	result = result.replace(/<user_profile>/g, '< user_profile>')
-	result = result.replace(/<\/interaction_rules>/g, '</ interaction_rules>')
-	result = result.replace(/<interaction_rules>/g, '< interaction_rules>')
-	result = result.replace(/<\/short_term_memory>/g, '</ short_term_memory>')
-	result = result.replace(/<short_term_memory>/g, '< short_term_memory>')
-	result = result.replace(/<\/long_term_memory>/g, '</ long_term_memory>')
-	result = result.replace(/<long_term_memory>/g, '< long_term_memory>')
-	result = result.replace(/<\/group_memory>/g, '</ group_memory>')
-	result = result.replace(/<group_memory>/g, '< group_memory>')
-	result = result.replace(/<\/reply_constraints>/g, '</ reply_constraints>')
-	result = result.replace(/<reply_constraints>/g, '< reply_constraints>')
-	result = result.replace(/<\/group_message_metadata>/g, '</ group_message_metadata>')
-	result = result.replace(/<group_message_metadata>/g, '< group_message_metadata>')
-	result = result.replace(/<\/group_environment>/g, '</ group_environment>')
-	result = result.replace(/<group_environment>/g, '< group_environment>')
-	result = result.replace(/<\/conversation_context>/g, '</ conversation_context>')
-	result = result.replace(/<conversation_context>/g, '< conversation_context>')
-	result = result.replace(/<\/group_conversation_context>/g, '</ group_conversation_context>')
-	result = result.replace(/<group_conversation_context>/g, '< group_conversation_context>')
-	result = result.replace(/<\/private_group_reply_history>/g, '</ private_group_reply_history>')
-	result = result.replace(/<private_group_reply_history>/g, '< private_group_reply_history>')
-	result = result.replace(/<\/private_group_dialogue_history>/g, '</ private_group_dialogue_history>')
-	result = result.replace(/<private_group_dialogue_history>/g, '< private_group_dialogue_history>')
-	result = result.replace(/<\/group_member_message>/g, '</ group_member_message>')
-	result = result.replace(/<group_member_message>/g, '< group_member_message>')
-	result = result.replace(/<\/private_user_message>/g, '</ private_user_message>')
-	result = result.replace(/<private_user_message>/g, '< private_user_message>')
-	result = result.replace(/<\/group_turn_anchor>/g, '</ group_turn_anchor>')
-	result = result.replace(/<group_turn_anchor>/g, '< group_turn_anchor>')
+	let result = text.replace(/&/g, '&amp;')
+	result = result.replace(/</g, '&lt;')
+	result = result.replace(/>/g, '&gt;')
 	return result
 }
 
@@ -88,12 +55,7 @@ function appendContextBlock(parts: string[], block: AgentContextBlock): void {
 }
 
 export function wrapUserContentForAgent(userContent: string, prefixBlocks: AgentContextBlock[], suffixBlocks: AgentContextBlock[], messageTag: string = 'user_message'): string {
-	const hasPrefix = prefixBlocks.length > 0
-	const hasSuffix = suffixBlocks.length > 0
 	const normalizedMessageTag = normalizeMessageContentTag(messageTag)
-	if (hasPrefix == false && hasSuffix == false && normalizedMessageTag == 'user_message') {
-		return userContent
-	}
 	const parts: string[] = []
 	for (let i = 0; i < prefixBlocks.length; i++) {
 		appendContextBlock(parts, prefixBlocks[i])

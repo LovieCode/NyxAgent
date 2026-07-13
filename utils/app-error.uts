@@ -14,6 +14,7 @@ export const APP_ERROR_CATEGORY_UNKNOWN = 'unknown'
 
 const APP_DIAGNOSTIC_LIMIT = 80
 const APP_DIAGNOSTIC_DETAIL_LIMIT = 2000
+const APP_DIAGNOSTIC_STORAGE_KEY = 'nyxagent_runtime_diagnostics_v1'
 
 export type AppDiagnosticEntry = {
 	diagnosticId: string
@@ -79,6 +80,89 @@ export type AppNumberResult = {
 
 let diagnosticSequence = 0
 let diagnosticEntries: AppDiagnosticEntry[] = []
+let diagnosticEntriesLoaded = false
+
+function readDiagnosticString(source: UTSJSONObject, key: string): string {
+	const value = source[key]
+	if (value == null) { return '' }
+	return '' + value
+}
+
+function readDiagnosticNumber(source: UTSJSONObject, key: string): number {
+	const value = source[key]
+	if (value == null) { return 0 }
+	if (typeof value == 'number') { return value as number }
+	const parsed = parseInt('' + value)
+	return isNaN(parsed) ? 0 : parsed
+}
+
+function readDiagnosticBoolean(source: UTSJSONObject, key: string): boolean {
+	const value = source[key]
+	if (value == null) { return false }
+	if (typeof value == 'boolean') { return value as boolean }
+	const text = ('' + value).toLowerCase()
+	return text == 'true' || text == '1'
+}
+
+function parsePersistedDiagnostic(source: UTSJSONObject): AppDiagnosticEntry | null {
+	const diagnosticId = readDiagnosticString(source, 'diagnosticId').trim()
+	const code = readDiagnosticString(source, 'code').trim()
+	const category = readDiagnosticString(source, 'category').trim()
+	const operation = readDiagnosticString(source, 'operation').trim()
+	const userMessage = readDiagnosticString(source, 'userMessage').trim()
+	const createdAt = readDiagnosticNumber(source, 'createdAt')
+	if (diagnosticId == '' || code == '' || category == '' || operation == '' || userMessage == '' || createdAt <= 0) {
+		return null
+	}
+	return {
+		diagnosticId: diagnosticId,
+		code: code,
+		category: category,
+		operation: operation,
+		userMessage: userMessage,
+		detail: readDiagnosticString(source, 'detail'),
+		recoverable: readDiagnosticBoolean(source, 'recoverable'),
+		createdAt: createdAt,
+	} as AppDiagnosticEntry
+}
+
+/**
+ * 诊断存储必须独立于主 SQLite。这里的失败不可再次上报，否则会形成
+ * “记录错误时又记录错误”的递归链，因此只保留 best-effort 语义。
+ */
+function loadDiagnosticsBestEffort(): void {
+	if (diagnosticEntriesLoaded) { return }
+	diagnosticEntriesLoaded = true
+	diagnosticEntries = []
+	try {
+		const stored = uni.getStorageSync(APP_DIAGNOSTIC_STORAGE_KEY)
+		if (stored == null) { return }
+		const raw = ('' + stored).trim()
+		if (raw == '') { return }
+		const parsed = JSON.parse(raw) as UTSJSONObject[]
+		let start = parsed.length - APP_DIAGNOSTIC_LIMIT
+		if (start < 0) { start = 0 }
+		for (let i = start; i < parsed.length; i++) {
+			try {
+				const entry = parsePersistedDiagnostic(parsed[i])
+				if (entry != null) {
+					diagnosticEntries.push(entry)
+				}
+			} catch (_entryError: any) {
+			}
+		}
+		diagnosticSequence = diagnosticEntries.length
+	} catch (_e: any) {
+		diagnosticEntries = []
+	}
+}
+
+function persistDiagnosticsBestEffort(): void {
+	try {
+		uni.setStorageSync(APP_DIAGNOSTIC_STORAGE_KEY, JSON.stringify(diagnosticEntries))
+	} catch (_e: any) {
+	}
+}
 
 function createDiagnosticId(createdAt: number): string {
 	diagnosticSequence++
@@ -172,15 +256,14 @@ export function formatAppErrorForLog(error: AppError): string {
 	return text
 }
 
-/**
- * 记录到有界内存队列，供诊断页或日志导出功能读取。
- * 暂不持久化，避免错误记录依赖 SQLite 后形成递归失败链。
- */
+/** 记录到有界内存队列和独立持久化存储，供诊断页或日志导出功能读取。 */
 export function recordAppError(error: AppError): void {
+	loadDiagnosticsBestEffort()
 	diagnosticEntries.push(toDiagnosticEntry(error))
 	while (diagnosticEntries.length > APP_DIAGNOSTIC_LIMIT) {
 		diagnosticEntries.shift()
 	}
+	persistDiagnosticsBestEffort()
 	console.error(formatAppErrorForLog(error))
 }
 
@@ -211,6 +294,7 @@ export function reportAppErrorFromCause(
 }
 
 export function getRecentAppDiagnostics(limit: number = 20): AppDiagnosticEntry[] {
+	loadDiagnosticsBestEffort()
 	if (limit <= 0 || diagnosticEntries.length == 0) { return [] }
 	let start = diagnosticEntries.length - limit
 	if (start < 0) { start = 0 }
@@ -218,7 +302,12 @@ export function getRecentAppDiagnostics(limit: number = 20): AppDiagnosticEntry[
 }
 
 export function clearAppDiagnostics(): void {
+	diagnosticEntriesLoaded = true
 	diagnosticEntries = []
+	try {
+		uni.removeStorageSync(APP_DIAGNOSTIC_STORAGE_KEY)
+	} catch (_e: any) {
+	}
 }
 
 export function appOpSuccess(): AppOpResult {

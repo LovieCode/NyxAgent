@@ -14,12 +14,15 @@ import {
 	makeFileItem,
 	normalizePath,
 	okResult,
+	parentPath,
 } from '@/utils/file-manager-models.uts'
 import { APP_ERROR_CATEGORY_STORAGE, reportAppErrorFromCause } from '@/utils/app-error.uts'
 
 // #ifdef APP-ANDROID
 import File from 'java.io.File'
+import FileOutputStream from 'java.io.FileOutputStream'
 import Charset from 'java.nio.charset.Charset'
+import Os from 'android.system.Os'
 // #endif
 
 // #ifdef APP-ANDROID
@@ -94,15 +97,6 @@ function toAndroidAbsPath(path: string): string {
 }
 // #endif
 
-function containsParentPathSegment(path: string): boolean {
-	const normalized = normalizePath(path)
-	const parts = normalized.split('/')
-	for (let i = 0; i < parts.length; i++) {
-		if (parts[i] == '.' || parts[i] == '..') { return true }
-	}
-	return false
-}
-
 // #ifdef APP-ANDROID
 /** 检测路径项自身是否为符号链接，不把父目录本身的链接误判到子项。 */
 function isAndroidSymbolicLink(file: File): boolean {
@@ -117,6 +111,16 @@ function isAndroidSymbolicLink(file: File): boolean {
 	}
 }
 // #endif
+
+/** 当前平台是否能基于真实路径而不是字符串前缀验证目录包含关系。 */
+export function hasSecurePathContainmentSupport(): boolean {
+	// #ifdef APP-ANDROID
+	return true
+	// #endif
+	// #ifndef APP-ANDROID
+	return false
+	// #endif
+}
 
 /** 判断目标路径是否真实位于指定目录内。 */
 export function isPathInsideDirectory(rootPath: string, targetPath: string): boolean {
@@ -137,8 +141,8 @@ export function isPathInsideDirectory(rootPath: string, targetPath: string): boo
 	}
 	// #endif
 	// #ifndef APP-ANDROID
-	if (containsParentPathSegment(root) == true || containsParentPathSegment(target) == true) { return false }
-	return target == root || target.startsWith(root + '/')
+	// FileSystemManager 当前没有跨端 realpath/lstat 保证。宁可拒绝，也不能把词法前缀当作 symlink 安全校验。
+	return false
 	// #endif
 }
 
@@ -384,28 +388,72 @@ export function createFile(filePath: string): FileOpResult {
 	// #endif
 }
 
+function buildAtomicTempPath(filePath: string): string {
+	const parent = parentPath(filePath)
+	const name = basename(filePath)
+	if (parent == '' || name == '') { return '' }
+	const randomPart = Math.floor(Math.random() * 1000000)
+	return joinPath(parent, '.' + name + '.tmp-' + Date.now() + '-' + randomPart)
+}
+
 /**
- * 写入文件内容（覆盖写入）。
+ * 先写同目录临时文件，再以 rename 原子替换目标。
+ * 平台不支持覆盖 rename 时明确失败，不能用 copy 覆盖伪装成原子写入。
  */
 export function writeContent(filePath: string, content: string): FileOpResult {
 	const normalized = normalizePath(filePath)
 	if (normalized == '') {
 		return failResult('路径不能为空')
 	}
+	const tempPath = buildAtomicTempPath(normalized)
+	if (tempPath == '') {
+		return failResult('无法创建同目录临时文件')
+	}
 	// #ifdef APP-ANDROID
 	const absPath = toAndroidAbsPath(normalized)
-	if (absPath == '') {
+	const tempAbsPath = toAndroidAbsPath(tempPath)
+	if (absPath == '' || tempAbsPath == '') {
 		return failResult('路径转换失败')
 	}
+	let output: FileOutputStream | null = null
 	try {
 		const file = new File(absPath)
 		const parent = file.parentFile
-		if (parent != null && parent.exists() == false) {
-			parent.mkdirs()
+		if (parent == null) {
+			return failResult('目标目录不可用')
 		}
-		file.writeText(content, UTF8_CHARSET)
+		if (parent.exists() == false && parent.mkdirs() == false) {
+			return failResult('创建目标目录失败')
+		}
+		if (file.exists() == true && file.isDirectory() == true) {
+			return failResult('目标路径是目录')
+		}
+		const tempFile = new File(tempAbsPath)
+		if (tempFile.exists() == true && tempFile.delete() == false) {
+			return failResult('临时文件冲突')
+		}
+		output = new FileOutputStream(tempFile)
+		output.write(content.toByteArray(UTF8_CHARSET))
+		output.flush()
+		output.fd.sync()
+		output.close()
+		output = null
+		Os.rename(tempAbsPath, absPath)
 		return okResult()
 	} catch (e: any) {
+		if (output != null) {
+			try {
+				output.close()
+			} catch (_closeError: any) {
+			}
+		}
+		try {
+			const tempFile = new File(tempAbsPath)
+			if (tempFile.exists() == true) {
+				tempFile.delete()
+			}
+		} catch (_cleanupError: any) {
+		}
 		recordFileIoFailure('FILE_WRITE_FAILED', 'file_write', '写入文件失败', e)
 		const msg = e != null ? ('' + e) : '写入文件失败'
 		return failResult(msg)
@@ -414,9 +462,18 @@ export function writeContent(filePath: string, content: string): FileOpResult {
 	// #ifndef APP-ANDROID
 	const fm = uni.getFileSystemManager()
 	try {
-		fm.writeFileSync(normalized, content, 'utf-8')
+		fm.writeFileSync(tempPath, content, 'utf-8')
+		try {
+			fm.renameSync(tempPath, normalized)
+		} catch (renameError: any) {
+			throw new Error('当前平台不支持原子覆盖写入：' + ('' + renameError))
+		}
 		return okResult()
 	} catch (e: any) {
+		try {
+			fm.unlinkSync(tempPath)
+		} catch (_cleanupError: any) {
+		}
 		recordFileIoFailure('FILE_WRITE_FAILED', 'file_write', '写入文件失败', e)
 		const msg = e != null ? ('' + e) : '写入文件失败'
 		return failResult(msg)

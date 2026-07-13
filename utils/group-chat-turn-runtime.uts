@@ -4,13 +4,14 @@
  * 按 sessionId 持有流、消息和回合状态。页面只订阅更新，退出页面不会终止当前流。
  */
 
-import { agentChat } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
+import { agentChat, captionImageCancelable, CaptionImageRequest } from '@/uni_modules/agent-core/utssdk/llm-client.uts'
 import { getAgentById } from '@/utils/agent.uts'
 import { finalizeAssistantTurn, reduceAgentEvent } from '@/utils/chat-message-reducer.uts'
-import { getMessageContent, getMessageThinking } from '@/utils/chat-models.uts'
+import { cloneMessage, getMessageContent, getMessageThinking, setImageMessageCaption } from '@/utils/chat-models.uts'
 import { buildChatDatetimePrefix } from '@/utils/datetime-context.uts'
 import { eventBus } from '@/utils/event-bus.uts'
 import { AgentEvent, AgentEventStream } from '@/utils/event.uts'
+import { APP_ERROR_CATEGORY_RUNTIME, reportAppErrorFromCause } from '@/utils/app-error.uts'
 import { detectSchedulerLeakCandidate, getSchedulerLeakHoldSize } from '@/utils/group-chat-moderation.uts'
 import {
 	appendGroupVisiblePlainText,
@@ -30,6 +31,7 @@ import {
 	GROUP_MESSAGE_SENDER_USER,
 	GROUP_MESSAGE_VISIBILITY_PRIVATE,
 	createId,
+	markGroupMessageDirty,
 	type GroupChat,
 	type GroupChatSession,
 } from '@/utils/group-chat-models.uts'
@@ -44,6 +46,7 @@ import {
 	buildSchedulerReviewSystemPrompt,
 	buildSchedulerRuntimeMessages,
 	buildSchedulerSystemPrompt,
+	createGroupReadTranscriptTool,
 	hasRecentPrivateSchedulerContext,
 	parseGroupReviewDecision,
 	parseSchedulerDecision,
@@ -52,6 +55,7 @@ import {
 	recordGroupAgentSpeak,
 	redactSchedulerDecisionPrivateEgress,
 	resolveLatestUserRequestedDeliveryMode,
+	sanitizeSchedulerDecisionPrivateContextText,
 } from '@/utils/group-chat-scheduler.uts'
 import {
 	applyGroupSessionTitleSuggestion,
@@ -75,7 +79,7 @@ import {
 	resolveGroupReviewerAgentId,
 	resolveGroupSchedulerAgentId,
 	saveGroupAgentContextRecord,
-	saveGroupMessages,
+	saveGroupMessagesDetailed,
 	syncGroupStreamingMessage,
 } from '@/utils/group-chat-service.uts'
 import { createGroupHiddenStreamMessage, saveGroupAgentResponseSnapshot } from '@/utils/group-chat-stream-helpers.uts'
@@ -86,7 +90,7 @@ import {
 	claimPendingGroupSpeakIntents,
 	createGroupRequestSpeakTool,
 	hasPendingGroupSpeakIntent,
-	listOpenGroupSpeakIntentTargets,
+	listOpenGroupSpeakIntentTargetsDetailed,
 	recoverInterruptedGroupSpeakIntents,
 	resolvePendingGroupSpeakIntentDeliveryMode,
 	settleGroupSpeakIntent,
@@ -106,6 +110,11 @@ export type GroupChatMessageDispatchResult = {
 	started: boolean
 }
 
+type GroupSpeakIntentTargetCollectResult = {
+	targets: UTSJSONObject[]
+	cleanupSaved: boolean
+}
+
 function readRuntimeEventError(event: AgentEvent): string {
 	const raw = event.error != null ? (event.error as string).trim() : ''
 	return raw != '' ? raw : '未知错误'
@@ -121,18 +130,6 @@ function findLatestGroupUserMessageId(messages: UTSJSONObject[]): string {
 	return ''
 }
 
-function markUserPrivateRequestDeliveryStatus(messages: UTSJSONObject[], messageId: string, status: string): void {
-	if (messageId == '') { return }
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const id = messages[i]['id'] as string | null
-		const senderType = messages[i]['senderType'] as string | null
-		if (id == messageId && senderType == GROUP_MESSAGE_SENDER_USER) {
-			messages[i]['deliveryStatus'] = status
-			return
-		}
-	}
-}
-
 function markPendingUserPrivateRequestDeliveryStatus(messages: UTSJSONObject[], messageId: string, status: string): void {
 	if (messageId == '') { return }
 	for (let i = messages.length - 1; i >= 0; i--) {
@@ -140,6 +137,7 @@ function markPendingUserPrivateRequestDeliveryStatus(messages: UTSJSONObject[], 
 		const senderType = messages[i]['senderType'] as string | null
 		const currentStatus = messages[i]['deliveryStatus'] as string | null
 		if (id == messageId && senderType == GROUP_MESSAGE_SENDER_USER && currentStatus == 'pending') {
+			markGroupMessageDirty(messages[i])
 			messages[i]['deliveryStatus'] = status
 			return
 		}
@@ -192,16 +190,36 @@ function isPrivateGroupUserMessage(message: UTSJSONObject): boolean {
 	return senderType == GROUP_MESSAGE_SENDER_USER && visibility == GROUP_MESSAGE_VISIBILITY_PRIVATE
 }
 
+/** 仅在本次 Agent 上下文中放行正在投递的私聊，持久化状态仍保持 pending。 */
+function buildPrivateRequestRuntimeSource(messages: UTSJSONObject[], sourceUserMessageId: string): UTSJSONObject[] {
+	const runtimeSource: UTSJSONObject[] = []
+	for (let i = 0; i < messages.length; i++) {
+		const message = messages[i]
+		const messageId = message['id'] as string | null
+		const status = message['deliveryStatus'] as string | null
+		if (messageId == sourceUserMessageId && status == 'pending' && isPrivateGroupUserMessage(message) == true) {
+			const copied = cloneMessage(message)
+			copied['deliveryStatus'] = 'delivered'
+			runtimeSource.push(copied)
+		} else {
+			runtimeSource.push(message)
+		}
+	}
+	return runtimeSource
+}
+
 /** 进程中断后没有活跃流可继续审核，不能把“正在整理发言...”遗留给用户。 */
 function finalizeInterruptedGroupMessages(messages: UTSJSONObject[]): boolean {
 	let changed = false
 	for (let i = 0; i < messages.length; i++) {
 		const message = messages[i]
 		if (isPrivateGroupUserMessage(message) == true && (message['deliveryStatus'] as string | null) == 'pending') {
-			message['deliveryStatus'] = 'aborted'
+			markGroupMessageDirty(message)
+			message['deliveryStatus'] = 'failed'
 			changed = true
 		}
 		if ((message['moderationStatus'] as string | null) == 'pending') {
+			markGroupMessageDirty(message)
 			message['isStreaming'] = false
 			message['visible'] = false
 			message['revoked'] = true
@@ -213,9 +231,10 @@ function finalizeInterruptedGroupMessages(messages: UTSJSONObject[]): boolean {
 			continue
 		}
 		if ((message['isStreaming'] as boolean | null) != true) { continue }
+		markGroupMessageDirty(message)
 		message['isStreaming'] = false
 		if ((message['deliveryStatus'] as string | null) == 'pending') {
-			message['deliveryStatus'] = 'aborted'
+			message['deliveryStatus'] = (message['visibility'] as string | null) == GROUP_MESSAGE_VISIBILITY_PRIVATE ? 'failed' : 'aborted'
 		}
 		const content = getMessageContent(message).trim()
 		if (content == '' || content == '正在整理发言...') {
@@ -244,9 +263,11 @@ function isSpeakIntentTargetSuperseded(messages: UTSJSONObject[], target: UTSJSO
 	return false
 }
 
-function collectSessionSpeakIntentTargets(groupId: string, sessionId: string, messages: UTSJSONObject[]): UTSJSONObject[] {
-	const allTargets = listOpenGroupSpeakIntentTargets()
+function collectSessionSpeakIntentTargets(groupId: string, sessionId: string, messages: UTSJSONObject[]): GroupSpeakIntentTargetCollectResult {
+	const listed = listOpenGroupSpeakIntentTargetsDetailed()
+	const allTargets = listed.targets
 	const result: UTSJSONObject[] = []
+	let cleanupSaved = listed.cleanupSaved
 	for (let i = 0; i < allTargets.length; i++) {
 		const targetGroupRaw = allTargets[i]['groupId'] as string | null
 		const targetSessionRaw = allTargets[i]['sessionId'] as string | null
@@ -254,12 +275,14 @@ function collectSessionSpeakIntentTargets(groupId: string, sessionId: string, me
 		if (isSpeakIntentTargetSuperseded(messages, allTargets[i]) == true) {
 			const sourceRaw = allTargets[i]['sourceUserMessageId'] as string | null
 			const ownerRaw = allTargets[i]['ownerAgentId'] as string | null
-			cancelGroupSpeakIntentTarget(groupId, sessionId, sourceRaw != null ? sourceRaw : '', ownerRaw != null ? ownerRaw : '', 'superseded_by_user_message')
+			if (cancelGroupSpeakIntentTarget(groupId, sessionId, sourceRaw != null ? sourceRaw : '', ownerRaw != null ? ownerRaw : '', 'superseded_by_user_message') == false) {
+				cleanupSaved = false
+			}
 			continue
 		}
 		result.push(allTargets[i])
 	}
-	return result
+	return { targets: result, cleanupSaved: cleanupSaved } as GroupSpeakIntentTargetCollectResult
 }
 
 function getSpeakIntentTargetDelay(targets: UTSJSONObject[]): number {
@@ -333,9 +356,11 @@ class GroupChatTurnRuntime {
 	loopTurns: number
 	runId: string
 	currentStream: AgentEventStream | null
+	currentCaptionRequest: CaptionImageRequest | null
 	roundPublicSpeakCount: number
 	lastErrorMessage: string
 	errorRevision: number
+	lastSaveConflict: boolean
 	speakIntentTimer: number
 	activeSpeakIntentSourceUserMessageId: string
 	speakIntentWakeRetryCount: number
@@ -361,9 +386,11 @@ class GroupChatTurnRuntime {
 		this.loopTurns = 0
 		this.runId = ''
 		this.currentStream = null
+		this.currentCaptionRequest = null
 		this.roundPublicSpeakCount = 0
 		this.lastErrorMessage = ''
 		this.errorRevision = 0
+		this.lastSaveConflict = false
 		this.speakIntentTimer = -1
 		this.activeSpeakIntentSourceUserMessageId = ''
 		this.speakIntentWakeRetryCount = 0
@@ -457,6 +484,7 @@ class GroupChatTurnRuntime {
 		const intentId = intentRaw != null ? intentRaw : ''
 		const claimId = claimRaw != null ? claimRaw : ''
 		if (intentId == '' || claimId == '') { return }
+		markGroupMessageDirty(message)
 		message['speakIntentId'] = intentId
 		message['speakIntentClaimId'] = claimId
 		message['speakIntentOutcome'] = outcome
@@ -490,9 +518,52 @@ class GroupChatTurnRuntime {
 	}
 
 	saveMessages(): boolean {
-		const saved = saveGroupMessages(this.groupId, this.sessionId, this.messages)
+		const result = saveGroupMessagesDetailed(this.groupId, this.sessionId, this.messages)
+		this.lastSaveConflict = result.conflicted
+		const saved = result.ok == true && result.conflicted == false
 		if (saved == true) { this.flushSpeakIntentSettlementsAfterMessageSave() }
 		return saved
+	}
+
+	synchronizeAfterSaveConflict(operation: string): void {
+		const stream = this.currentStream
+		const captionRequest = this.currentCaptionRequest
+		this.running = false
+		this.stopped = true
+		this.phase = 'conflicted'
+		this.runId = ''
+		this.currentStream = null
+		this.currentCaptionRequest = null
+		try {
+			this.messages = getGroupMessages(this.groupId, this.sessionId)
+			this.lastSaveConflict = false
+			this.phase = 'idle'
+			this.reportError(operation + '时发现会话已在其他页面更新，已同步最新内容，请重试刚才的操作')
+			this.messages = [] as UTSJSONObject[]
+		} catch (_e: any) {
+			this.phase = 'save_failed'
+			this.reportError(operation + '时发现会话并发更新，自动同步失败，请重新进入会话')
+		}
+		if (stream != null) { stream.abort() }
+		if (captionRequest != null) { captionRequest.abort() }
+	}
+
+	haltRunAfterSaveFailure(message: string): void {
+		if (this.lastSaveConflict == true) {
+			this.synchronizeAfterSaveConflict('保存群聊消息')
+			return
+		}
+		const stream = this.currentStream
+		const captionRequest = this.currentCaptionRequest
+		this.running = false
+		this.stopped = true
+		this.phase = 'save_failed'
+		this.runId = ''
+		this.currentStream = null
+		this.currentCaptionRequest = null
+		this.reportError(message)
+		if (stream != null) { stream.abort() }
+		if (captionRequest != null) { captionRequest.abort() }
 	}
 
 	/**
@@ -502,6 +573,10 @@ class GroupChatTurnRuntime {
 	saveMessagesThen(runId: string, failureMessage: string, retryCount: number, continuation: () => void): void {
 		if (this.isRunActive(runId) == false) { return }
 		if (this.saveMessages() == false) {
+			if (this.lastSaveConflict == true) {
+				this.synchronizeAfterSaveConflict('保存群聊消息')
+				return
+			}
 			if (retryCount == 0) { this.reportError(failureMessage) }
 			let nextRetryCount = retryCount
 			if (nextRetryCount < 12) { nextRetryCount++ }
@@ -611,15 +686,22 @@ class GroupChatTurnRuntime {
 			}
 			try {
 				const messages = getGroupMessages(this.groupId, this.sessionId)
-				const targets = collectSessionSpeakIntentTargets(this.groupId, this.sessionId, messages)
-				const sourceUserMessageId = findDueSpeakIntentSourceId(targets)
-				if (sourceUserMessageId != '') {
-					this.activeSpeakIntentSourceUserMessageId = sourceUserMessageId
-					if (this.start('成员延迟发言申请到期', true, sourceUserMessageId) == false) {
-						this.scheduleSpeakIntentRetry()
-					}
+				const collected = collectSessionSpeakIntentTargets(this.groupId, this.sessionId, messages)
+				const targets = collected.targets
+				if (collected.cleanupSaved == false) {
+					this.reportError('成员后续发言清理状态保存失败，将稍后重试')
+					this.scheduleSpeakIntentRetry()
 					return
 				}
+					const sourceUserMessageId = findDueSpeakIntentSourceId(targets)
+					if (sourceUserMessageId != '') {
+						this.activeSpeakIntentSourceUserMessageId = sourceUserMessageId
+						if (this.start('成员延迟发言申请到期', true, sourceUserMessageId) == false) {
+							this.reportError('成员延迟发言启动失败，将稍后重试')
+							this.scheduleSpeakIntentRetry()
+						}
+						return
+					}
 				const nextDelay = getSpeakIntentTargetDelay(targets)
 				if (nextDelay >= 0) { this.scheduleSpeakIntentWake(nextDelay) }
 			} catch (_e: any) {
@@ -643,11 +725,13 @@ class GroupChatTurnRuntime {
 		const shouldRetryClaim = this.speakIntentClaimRetryPending
 		this.speakIntentClaimRetryPending = false
 		try {
-			const targets = collectSessionSpeakIntentTargets(this.groupId, this.sessionId, this.messages)
+			const collected = collectSessionSpeakIntentTargets(this.groupId, this.sessionId, this.messages)
+			const targets = collected.targets
 			const nextDelay = getSpeakIntentTargetDelay(targets)
 			this.finish()
-			if (shouldRetryClaim == true) {
+			if (shouldRetryClaim == true || collected.cleanupSaved == false) {
 				this.activeSpeakIntentSourceUserMessageId = activeSourceUserMessageId
+				if (collected.cleanupSaved == false) { this.reportError('成员后续发言清理状态保存失败，将稍后重试') }
 				this.scheduleSpeakIntentRetry()
 				return
 			}
@@ -668,8 +752,12 @@ class GroupChatTurnRuntime {
 		if (this.running == true) { return false }
 		this.clearSpeakIntentTimer()
 		if (this.phase == 'save_failed' && this.saveMessages() == false) {
-			this.reportError('消息保存仍然失败，内存内容尚未丢失，请稍后重试')
-			this.emitUpdate()
+			if (this.lastSaveConflict == true) {
+				this.synchronizeAfterSaveConflict('重试保存群聊消息')
+			} else {
+				this.reportError('消息保存仍然失败，内存内容尚未丢失，请稍后重试')
+				this.emitUpdate()
+			}
 			return false
 		}
 		const group = getGroupChatById(this.groupId)
@@ -677,24 +765,93 @@ class GroupChatTurnRuntime {
 		if (group == null || session == null) { return false }
 		if (getActiveGroupMembers(this.groupId).length == 0) { return false }
 		this.messages = getGroupMessages(this.groupId, this.sessionId)
+		this.lastSaveConflict = false
 		if (finalizeInterruptedGroupMessages(this.messages) == true && this.saveMessages() == false) {
-			this.phase = 'save_failed'
-			this.reportError('恢复中断的群聊消息失败，请稍后重试')
-			this.emitUpdate()
+			this.haltRunAfterSaveFailure('恢复中断的群聊消息失败，请稍后重试')
 			return false
 		}
-		collectSessionSpeakIntentTargets(this.groupId, this.sessionId, this.messages)
+		this.speakIntentClaimRetryPending = false
+		const collectedSpeakIntents = collectSessionSpeakIntentTargets(this.groupId, this.sessionId, this.messages)
+		if (collectedSpeakIntents.cleanupSaved == false) {
+			this.speakIntentClaimRetryPending = true
+			this.reportError('成员后续发言清理状态保存失败，将稍后重试')
+		}
 		if (resetLoop == true) { this.loopTurns = 0 }
 		this.running = true
 		this.stopped = false
 		this.phase = 'routing'
 		this.runId = createId('grun')
 		this.currentStream = null
+		this.currentCaptionRequest = null
 		this.activeSpeakIntentSourceUserMessageId = speakIntentSourceUserMessageId
 		this.speakIntentWakeRetryCount = 0
-		this.speakIntentClaimRetryPending = false
 		this.emitUpdate()
 		this.runScheduler(group, session, reason, this.runId)
+		return true
+	}
+
+	startImage(imagePath: string, messageId: string, reason: string): boolean {
+		if (this.running == true || imagePath == '' || messageId == '') { return false }
+		this.clearSpeakIntentTimer()
+		if (this.phase == 'save_failed' && this.saveMessages() == false) {
+			if (this.lastSaveConflict == true) {
+				this.synchronizeAfterSaveConflict('重试保存群聊消息')
+			} else {
+				this.reportError('消息保存仍然失败，内存内容尚未丢失，请稍后重试')
+				this.emitUpdate()
+			}
+			return false
+		}
+		const group = getGroupChatById(this.groupId)
+		const session = getGroupSessionById(this.groupId, this.sessionId)
+		if (group == null || session == null) { return false }
+		if (getActiveGroupMembers(this.groupId).length == 0) { return false }
+		this.messages = getGroupMessages(this.groupId, this.sessionId)
+		this.lastSaveConflict = false
+		if (findGroupMessageIndexById(this.messages, messageId) < 0) { return false }
+		if (finalizeInterruptedGroupMessages(this.messages) == true && this.saveMessages() == false) {
+			this.haltRunAfterSaveFailure('恢复中断的群聊消息失败，请稍后重试')
+			return false
+		}
+		this.running = true
+		this.stopped = false
+		this.phase = 'captioning'
+		this.runId = createId('gcaption')
+		this.currentStream = null
+		const runId = this.runId
+		const captionRequest = captionImageCancelable(imagePath)
+		this.currentCaptionRequest = captionRequest
+		this.emitUpdate()
+		captionRequest.promise.then((caption: string | null) => {
+			if (this.currentCaptionRequest == captionRequest) {
+				this.currentCaptionRequest = null
+			}
+			if (this.isRunActive(runId) == false) { return }
+			if (caption != null && caption != '') {
+				const messageIndex = findGroupMessageIndexById(this.messages, messageId)
+				if (messageIndex >= 0) {
+					markGroupMessageDirty(this.messages[messageIndex])
+					setImageMessageCaption(this.messages[messageIndex], caption)
+					if (this.saveMessages() == false) {
+						this.reportError(this.lastSaveConflict == true
+							? '图片转述保存时发现会话已更新，已直接发送图片'
+							: '图片转述保存失败，已直接发送图片')
+					}
+				}
+			} else {
+				this.reportError('图片转述未配置或失败，已直接发送')
+			}
+			this.running = false
+			this.stopped = false
+			this.phase = 'idle'
+			this.runId = ''
+			this.currentStream = null
+			this.emitUpdate()
+			if (this.start(reason, true) == false) {
+				this.phase = 'completed'
+				this.reportError('图片已发送，但讨论启动失败')
+			}
+		})
 		return true
 	}
 
@@ -702,10 +859,11 @@ class GroupChatTurnRuntime {
 	 * 用户在流进行中插话：先使旧 run 失效并持久化取消保护，再原子写入新消息并重新路由。
 	 * 不能由页面先落新消息，否则旧流的内存保存可能覆盖它。
 	 */
-	interruptAndStartWithUserMessage(message: UTSJSONObject, reason: string): GroupChatMessageDispatchResult {
+	interruptAndStartWithUserMessage(message: UTSJSONObject, reason: string, imagePath: string = ''): GroupChatMessageDispatchResult {
 		const hadScheduledSpeakIntent = this.speakIntentTimer != -1 || this.activeSpeakIntentSourceUserMessageId != ''
 		this.clearSpeakIntentTimer()
 		const stream = this.currentStream
+		const captionRequest = this.currentCaptionRequest
 		const wasRunning = this.running == true
 		// 先废弃旧 run，再写取消记录，避免晚到的工具调用在取消窗口重新登记申请。
 		this.stopped = true
@@ -713,6 +871,7 @@ class GroupChatTurnRuntime {
 		this.phase = 'interrupted'
 		this.runId = ''
 		this.currentStream = null
+		this.currentCaptionRequest = null
 		if (wasRunning == true || hadScheduledSpeakIntent == true) {
 			const cancellationCutoff = Date.now()
 			this.cancelSpeakIntentRequests('', true, 'superseded_by_user_message', cancellationCutoff)
@@ -724,14 +883,16 @@ class GroupChatTurnRuntime {
 				this.stopped = true
 				this.running = false
 				this.phase = 'save_failed'
-				this.runId = ''
-				this.currentStream = null
-				this.reportError('插入消息时读取群聊失败，旧流已停止，请重试')
-				if (stream != null) { stream.abort() }
-				return { saved: false, started: false } as GroupChatMessageDispatchResult
+					this.runId = ''
+					this.currentStream = null
+					this.reportError('插入消息时读取群聊失败，旧流已停止，请重试')
+					if (stream != null) { stream.abort() }
+					if (captionRequest != null) { captionRequest.abort() }
+					return { saved: false, started: false } as GroupChatMessageDispatchResult
 			}
 		}
 		this.finalizeStreamingMessagesOnStop()
+		const appendedMessageStart = this.messages.length
 		if (wasRunning == true) {
 			this.messages.push(createGroupHiddenMessage(this.groupId, this.sessionId, 'system', '用户插入新消息，当前队列已取消并重新路由。'))
 		}
@@ -740,19 +901,27 @@ class GroupChatTurnRuntime {
 		this.speakIntentWakeRetryCount = 0
 		this.speakIntentClaimRetryPending = false
 		if (this.saveMessages() == false) {
-			this.phase = 'save_failed'
-			this.reportError('插入消息保存失败，内存内容尚未丢失，请重试')
+			// 本次用户消息尚未落库，回滚本次追加项，让页面保留的输入可以安全重试。
+			if (this.messages.length > appendedMessageStart) {
+				this.messages.splice(appendedMessageStart, this.messages.length - appendedMessageStart)
+			}
+			this.haltRunAfterSaveFailure('插入消息保存失败，内存内容尚未丢失，请重试')
 			if (stream != null) { stream.abort() }
+			if (captionRequest != null) { captionRequest.abort() }
 			return { saved: false, started: false } as GroupChatMessageDispatchResult
 		}
 		this.emitUpdate()
 		if (stream != null) { stream.abort() }
-		const started = this.start(reason, true)
+		if (captionRequest != null) { captionRequest.abort() }
+		const messageIdRaw = message['id'] as string | null
+		const messageId = messageIdRaw != null ? messageIdRaw : ''
+		const started = imagePath != ''
+			? this.startImage(imagePath, messageId, reason)
+			: this.start(reason, true)
 		if (started == false && isPrivateGroupUserMessage(message) == true) {
-			const messageIdRaw = message['id'] as string | null
-			markPendingUserPrivateRequestDeliveryStatus(this.messages, messageIdRaw != null ? messageIdRaw : '', 'failed')
+			markPendingUserPrivateRequestDeliveryStatus(this.messages, messageId, 'failed')
 			if (this.saveMessages() == false) {
-				this.reportError('私聊启动失败状态保存失败，内存内容尚未丢失，请稍后重试')
+				this.haltRunAfterSaveFailure('私聊启动失败状态保存失败，内存内容尚未丢失，请稍后重试')
 			}
 		}
 		return { saved: true, started: started } as GroupChatMessageDispatchResult
@@ -761,12 +930,14 @@ class GroupChatTurnRuntime {
 	stop(): void {
 		this.clearSpeakIntentTimer()
 		const stream = this.currentStream
+		const captionRequest = this.currentCaptionRequest
 		// 停止标记必须先于取消落库，旧流随后即使回调也不能再提交工具请求。
 		this.stopped = true
 		this.running = false
 		this.phase = 'stopped'
 		this.runId = ''
 		this.currentStream = null
+		this.currentCaptionRequest = null
 		// 先落停止保护，再读取消息；恢复出的空 runtime 即使读消息失败也不能让旧申请复活。
 		const cancellationCutoff = Date.now()
 		this.cancelSpeakIntentRequests('', true, 'user_stopped', cancellationCutoff)
@@ -787,12 +958,20 @@ class GroupChatTurnRuntime {
 		this.speakIntentClaimRetryPending = false
 		const saved = messagesLoaded == true ? this.saveMessages() : false
 		if (saved == false) {
-			this.phase = 'save_failed'
-			this.reportError('停止状态保存失败，内存内容尚未丢失，请重试')
+			if (this.lastSaveConflict == true) {
+				this.synchronizeAfterSaveConflict('保存停止状态')
+			} else {
+				this.phase = 'save_failed'
+				this.reportError('停止状态保存失败，内存内容尚未丢失，请重试')
+			}
 		}
+		if (saved == true) { this.messages = [] as UTSJSONObject[] }
 		this.emitUpdate()
 		if (stream != null) {
 			stream.abort()
+		}
+		if (captionRequest != null) {
+			captionRequest.abort()
 		}
 	}
 
@@ -804,21 +983,139 @@ class GroupChatTurnRuntime {
 		this.phase = 'disposed'
 		this.runId = ''
 		const stream = this.currentStream
+		const captionRequest = this.currentCaptionRequest
 		this.currentStream = null
+		this.currentCaptionRequest = null
 		if (stream != null) {
 			stream.abort()
 		}
+		if (captionRequest != null) {
+			captionRequest.abort()
+		}
+	}
+
+	/** 永久删除会话时不允许任何取消/结算 timer 再写回已删除的任务行。 */
+	disposePermanently(): void {
+		this.clearSpeakIntentTimer()
+		this.clearPendingSpeakIntentCancellation()
+		if (this.speakIntentSettlementTimer != -1) {
+			clearTimeout(this.speakIntentSettlementTimer)
+			this.speakIntentSettlementTimer = -1
+		}
+		this.pendingSpeakIntentSettlements = [] as GroupSpeakIntentSettlement[]
+		this.pendingSpeakIntentSettlementsAfterMessageSave = [] as GroupSpeakIntentSettlement[]
+		this.speakIntentSettlementRetryCount = 0
+		this.speakIntentClaimRetryPending = false
+		this.activeSpeakIntentSourceUserMessageId = ''
+		this.stopped = true
+		this.running = false
+		this.phase = 'disposed'
+		this.runId = ''
+		const stream = this.currentStream
+		const captionRequest = this.currentCaptionRequest
+		this.currentStream = null
+		this.currentCaptionRequest = null
+		if (stream != null) { stream.abort() }
+		if (captionRequest != null) { captionRequest.abort() }
+	}
+
+	/** 数据导入会整体替换数据库；先保存当前进度，再彻底静默后台重试。 */
+	quiesceForDataImport(): boolean {
+		this.clearSpeakIntentTimer()
+		if (this.speakIntentSettlementTimer != -1) {
+			clearTimeout(this.speakIntentSettlementTimer)
+			this.speakIntentSettlementTimer = -1
+		}
+		const stream = this.currentStream
+		const captionRequest = this.currentCaptionRequest
+		const wasRunning = this.running == true
+		this.stopped = true
+		this.running = false
+		this.runId = ''
+		this.currentStream = null
+		this.currentCaptionRequest = null
+		if (this.messages.length == 0) {
+			try {
+				this.messages = getGroupMessages(this.groupId, this.sessionId)
+			} catch (_e: any) {
+					this.phase = 'save_failed'
+					if (stream != null) { stream.abort() }
+					if (captionRequest != null) { captionRequest.abort() }
+					return false
+			}
+		}
+		const messagesChanged = finalizeInterruptedGroupMessages(this.messages)
+		let saved = true
+		if (wasRunning == true || messagesChanged == true || this.phase == 'save_failed' || this.pendingSpeakIntentSettlementsAfterMessageSave.length > 0) {
+			saved = this.saveMessages()
+		}
+		let controlStateSaved = saved
+		if (saved == true && (this.pendingSpeakIntentCancellationSourceUserMessageId != '' || this.pendingSpeakIntentCancelAll == true)) {
+			controlStateSaved = this.tryPersistSpeakIntentCancellation(
+				this.pendingSpeakIntentCancellationSourceUserMessageId,
+				this.pendingSpeakIntentCancelAll,
+				this.pendingSpeakIntentCancellationOutcome,
+				this.pendingSpeakIntentCancellationCutoff,
+			)
+			if (controlStateSaved == true) {
+				this.clearPendingSpeakIntentCancellation()
+			} else {
+				this.scheduleSpeakIntentCancellationRetry(
+					this.pendingSpeakIntentCancellationSourceUserMessageId,
+					this.pendingSpeakIntentCancelAll,
+					this.pendingSpeakIntentCancellationOutcome,
+					this.pendingSpeakIntentCancellationCutoff,
+				)
+			}
+		}
+		if (saved == true && controlStateSaved == true && this.pendingSpeakIntentSettlements.length > 0) {
+			const remaining: GroupSpeakIntentSettlement[] = [] as GroupSpeakIntentSettlement[]
+			for (let i = 0; i < this.pendingSpeakIntentSettlements.length; i++) {
+				if (this.tryPersistSpeakIntentSettlement(this.pendingSpeakIntentSettlements[i]) == false) {
+					remaining.push(this.pendingSpeakIntentSettlements[i])
+				}
+			}
+			this.pendingSpeakIntentSettlements = remaining
+			controlStateSaved = remaining.length == 0
+		}
+		if (this.speakIntentSettlementTimer != -1) {
+			clearTimeout(this.speakIntentSettlementTimer)
+			this.speakIntentSettlementTimer = -1
+		}
+		const ok = saved == true && controlStateSaved == true
+		this.phase = ok == true ? 'disposed' : (this.lastSaveConflict == true ? 'conflicted' : 'save_failed')
+		if (ok == true) {
+			this.pendingSpeakIntentSettlements = [] as GroupSpeakIntentSettlement[]
+			this.pendingSpeakIntentSettlementsAfterMessageSave = [] as GroupSpeakIntentSettlement[]
+			this.speakIntentSettlementRetryCount = 0
+			this.speakIntentClaimRetryPending = false
+			this.activeSpeakIntentSourceUserMessageId = ''
+		} else {
+			this.reportError('导入前保存群聊运行状态失败，已取消导入')
+			if (this.pendingSpeakIntentSettlements.length > 0) { this.scheduleSpeakIntentSettlementRetry() }
+		}
+		if (stream != null) { stream.abort() }
+		if (captionRequest != null) { captionRequest.abort() }
+		this.emitUpdate()
+		return ok
 	}
 
 	finish(): void {
 		this.running = false
 		this.stopped = false
 		this.currentStream = null
+		this.currentCaptionRequest = null
 		this.activeSpeakIntentSourceUserMessageId = ''
 		const saved = this.saveMessages()
-		this.phase = saved == true ? 'completed' : 'save_failed'
+		this.phase = saved == true ? 'completed' : (this.lastSaveConflict == true ? 'conflicted' : 'save_failed')
 		if (saved == false) {
+			if (this.lastSaveConflict == true) {
+				this.synchronizeAfterSaveConflict('完成群聊回合')
+				return
+			}
 			this.reportError('群聊消息保存失败，内容仍保留在本次运行中，请重试')
+		} else {
+			this.messages = [] as UTSJSONObject[]
 		}
 		this.emitUpdate()
 	}
@@ -837,6 +1134,10 @@ class GroupChatTurnRuntime {
 				runId,
 			)
 			constrainDecisionToSpeakIntent(decision, claimResult.claimed, deliveryMode, sourceUserMessageId, runId)
+			if (claimResult.cleanupSaved == false) {
+				this.speakIntentClaimRetryPending = true
+				this.reportError('成员发言申请清理状态保存失败，将稍后重试')
+			}
 			if (claimResult.claimFailedAgentIds.length > 0) {
 				this.speakIntentClaimRetryPending = true
 				this.reportError('成员发言申请 claim 保存失败，对应发言未执行，将稍后重试')
@@ -865,20 +1166,24 @@ class GroupChatTurnRuntime {
 			hidden['triggerReason'] = reason
 			hidden['decision'] = directDecision
 			this.messages.push(hidden)
-			this.saveMessages()
-			this.emitUpdate()
-			this.runDecisionActions(group, session, directDecision, runId)
+			this.saveMessagesThen(runId, '群聊调度结果保存失败，正在后台重试', 0, () => {
+				this.runDecisionActions(group, session, directDecision, runId)
+			})
 			return
 		}
 		const schedulerMessages = buildSchedulerRuntimeMessages(group, session, this.messages, reason, this.loopTurns, this.activeSpeakIntentSourceUserMessageId)
 		const requiredDeliveryMode = speakIntentCycle == true
 			? resolvePendingGroupSpeakIntentDeliveryMode(group.id, session.id, this.activeSpeakIntentSourceUserMessageId)
 			: resolveLatestUserRequestedDeliveryMode(this.messages)
-		const hasPrivateContext = hasRecentPrivateSchedulerContext(this.messages, 0)
+			// 调度请求只要携带过私聊正文就按敏感请求处理，避免日志和自由文本侧漏；
+			// 当前公开轮保留经过成员校验的 @ 交接，只有本轮私发才进一步移除目标字段。
+		const requestContainsPrivateContext = hasRecentPrivateSchedulerContext(this.messages, 0)
+		const shouldRedactDecision = requiredDeliveryMode == GROUP_DELIVERY_MODE_USER_PRIVATE
 		const schedulerAgentId = resolveGroupSchedulerAgentId(group)
 		const schedulerState = createGroupTextStreamState()
 		let schedulerFailed = false
-		const schedulerStream = agentChat(schedulerMessages, buildSchedulerSystemPrompt(), '', '', schedulerAgentId, 1, session.id, '', true, true, null, hasPrivateContext)
+		const schedulerTools = [createGroupReadTranscriptTool(this.messages, () => this.isRunActive(runId))]
+		const schedulerStream = agentChat(schedulerMessages, buildSchedulerSystemPrompt(), '', '', schedulerAgentId, 1, session.id, '', true, true, schedulerTools, requestContainsPrivateContext)
 		this.currentStream = schedulerStream
 		schedulerStream.on((event: AgentEvent) => {
 			if (this.isRunActive(runId) == false) { return }
@@ -895,12 +1200,14 @@ class GroupChatTurnRuntime {
 				this.scheduleSpeakIntentWake(15000)
 				return
 			}
-			const decision = schedulerFailed == true
-				? buildFallbackSchedulerDecision(group.id, requiredDeliveryMode)
-				: parseSchedulerDecision(schedulerState.text, group.id, requiredDeliveryMode, speakIntentCycle)
-			if (hasPrivateContext == true) {
-				redactSchedulerDecisionPrivateEgress(decision)
-			}
+				const decision = schedulerFailed == true
+					? buildFallbackSchedulerDecision(group.id, requiredDeliveryMode, this.messages)
+					: parseSchedulerDecision(schedulerState.text, group.id, requiredDeliveryMode, speakIntentCycle, this.messages)
+				if (shouldRedactDecision == true) {
+					redactSchedulerDecisionPrivateEgress(decision)
+				} else if (requestContainsPrivateContext == true) {
+					sanitizeSchedulerDecisionPrivateContextText(decision)
+				}
 			if (speakIntentCycle == true) {
 				try {
 					this.claimSpeakIntentActions(decision, requiredDeliveryMode, runId)
@@ -910,11 +1217,13 @@ class GroupChatTurnRuntime {
 					this.reportError('成员发言申请读取失败，对应发言未执行，将稍后重试')
 				}
 			}
-			const title = decision['titleSuggestion'] as string | null
-			if (title != null && title.trim() != '') {
-				applyGroupSessionTitleSuggestion(group.id, session.id, title)
+				const title = decision['titleSuggestion'] as string | null
+				if (title != null && title.trim() != '') {
+					if (applyGroupSessionTitleSuggestion(group.id, session.id, title) == false) {
+						this.reportError('群聊标题建议保存失败，不影响本轮继续')
+					}
 			}
-			const hidden = hasPrivateContext == true
+			const hidden = requestContainsPrivateContext == true
 				? createGroupHiddenMessage(group.id, session.id, GROUP_MESSAGE_SENDER_SCHEDULER, JSON.stringify(decision))
 				: createGroupHiddenStreamMessage(
 					group.id,
@@ -927,17 +1236,17 @@ class GroupChatTurnRuntime {
 					schedulerMessages,
 					reason
 				)
-			if (hasPrivateContext == true) {
+			if (requestContainsPrivateContext == true) {
 				hidden['triggerReason'] = reason
 				hidden['privacyRedacted'] = true
 			}
 			hidden['decision'] = decision
 			hidden['failed'] = schedulerFailed
 			this.messages.push(hidden)
-			this.saveMessages()
 			this.currentStream = null
-			this.emitUpdate()
-			this.runDecisionActions(group, session, decision, runId)
+			this.saveMessagesThen(runId, '群聊调度结果保存失败，正在后台重试', 0, () => {
+				this.runDecisionActions(group, session, decision, runId)
+			})
 		})
 	}
 
@@ -972,8 +1281,11 @@ class GroupChatTurnRuntime {
 			if (resolveGroupDeliveryMode(action) == GROUP_DELIVERY_MODE_USER_PRIVATE) {
 				const sourceRaw = action['sourceUserMessageId'] as string | null
 				markPendingUserPrivateRequestDeliveryStatus(this.messages, sourceRaw != null ? sourceRaw : '', 'failed')
-				this.saveMessages()
 				this.reportError('私聊目标已不在群内，本次消息未送达')
+				this.saveMessagesThen(runId, '私聊失败状态保存失败，正在后台重试', 0, () => {
+					this.runActionAt(group, session, actions, index + 1, shouldContinue, runId)
+				})
+				return
 			}
 			this.runActionAt(group, session, actions, index + 1, shouldContinue, runId)
 			return
@@ -986,7 +1298,10 @@ class GroupChatTurnRuntime {
 	finishDecisionRound(group: GroupChat, session: GroupChatSession, shouldContinue: boolean, runId: string): void {
 		if (this.isRunActive(runId) == false) { return }
 		this.loopTurns++
-		this.saveMessages()
+		if (this.saveMessages() == false) {
+			this.haltRunAfterSaveFailure('群聊回合状态保存失败，当前讨论已暂停，请重试')
+			return
+		}
 		if (this.speakIntentClaimRetryPending == true) {
 			this.finishWithSpeakIntentWake()
 			return
@@ -1053,8 +1368,11 @@ class GroupChatTurnRuntime {
 					this.reportError('群聊复盘结果保存不完整，请稍后重试')
 				}
 			}
-			this.saveMessages()
 			this.currentStream = null
+			if (this.saveMessages() == false) {
+				this.haltRunAfterSaveFailure('群聊复盘消息保存失败，当前讨论已暂停，请重试')
+				return
+			}
 			this.emitUpdate()
 			if (reviewFailed == true) {
 				this.finishWithSpeakIntentWake()
@@ -1086,22 +1404,27 @@ class GroupChatTurnRuntime {
 
 	runMemberSpeakWithReview(group: GroupChat, session: GroupChatSession, agentId: string, action: UTSJSONObject, isRevision: boolean, runId: string, done: () => void): void {
 		if (this.isRunActive(runId) == false) { return }
+		const deliveryMode = resolveGroupDeliveryMode(action)
+		const isPrivateDelivery = deliveryMode == GROUP_DELIVERY_MODE_USER_PRIVATE
+		const sourceRaw = action['sourceUserMessageId'] as string | null
+		const sourceUserMessageId = sourceRaw != null && sourceRaw != '' ? sourceRaw : findLatestGroupUserMessageId(this.messages)
 		const agent = getAgentById(agentId)
 		if (agent == null) {
 			this.settleSpeakIntentAction(action, 'agent_unavailable')
-			done()
+			if (isPrivateDelivery == true) {
+				markPendingUserPrivateRequestDeliveryStatus(this.messages, sourceUserMessageId, 'failed')
+				this.reportError('私聊目标已不可用，本次消息未送达')
+				this.saveMessagesThen(runId, '私聊失败状态保存失败，正在后台重试', 0, done)
+			} else {
+				done()
+			}
 			return
 		}
 		this.phase = 'speaking'
-		const deliveryMode = resolveGroupDeliveryMode(action)
-		const isPrivateDelivery = deliveryMode == GROUP_DELIVERY_MODE_USER_PRIVATE
 		const streamingMsg = createGroupAgentStreamingMessage(group.id, session.id, agentId, deliveryMode)
 		if (isPrivateDelivery == true) {
-			const sourceRaw = action['sourceUserMessageId'] as string | null
-			const sourceUserMessageId = sourceRaw != null && sourceRaw != '' ? sourceRaw : findLatestGroupUserMessageId(this.messages)
 			streamingMsg['sourceUserMessageId'] = sourceUserMessageId
 			streamingMsg['deliveryStatus'] = 'pending'
-			markUserPrivateRequestDeliveryStatus(this.messages, sourceUserMessageId, 'delivered')
 		}
 		streamingMsg['revisionAttempt'] = isRevision
 		this.messages.push(streamingMsg)
@@ -1110,7 +1433,10 @@ class GroupChatTurnRuntime {
 		const interactionRules = readAgentInteractionRules(agent)
 		const msgSegmentation = readAgentMsgSegmentation(agent)
 		const systemPrompt = buildMemberSystemPrompt(agent, getGroupSharedPrompt(group))
-		const tempMessages = buildMemberRuntimeMessages(group, session, this.messages, action, injectDatetime, buildChatDatetimePrefix(), interactionRules)
+		const runtimeSource = isPrivateDelivery == true
+			? buildPrivateRequestRuntimeSource(this.messages, sourceUserMessageId)
+			: this.messages
+		const tempMessages = buildMemberRuntimeMessages(group, session, runtimeSource, action, injectDatetime, buildChatDatetimePrefix(), interactionRules)
 		const privateDialogueText = isPrivateDelivery == true ? '' : readPrivateDialogueContext(tempMessages)
 		const requiresPrivateBoundaryReview = isPrivateDelivery == false && privateDialogueText != ''
 		const sensitiveMemberMode = isPrivateDelivery == true || requiresPrivateBoundaryReview == true
@@ -1127,8 +1453,6 @@ class GroupChatTurnRuntime {
 		// 含私聊上下文的调用不能通过共享工作区、普通工具、缓存或记忆整理形成侧信道。
 		const workspaceRoot = sensitiveMemberMode == true ? '' : getGroupSessionWorkspaceDir(group.id, session.id)
 		const newMsgStartIndex = tempMessages.length
-		const sourceRaw = action['sourceUserMessageId'] as string | null
-		const sourceUserMessageId = sourceRaw != null && sourceRaw != '' ? sourceRaw : findLatestGroupUserMessageId(this.messages)
 		const requestTurnRaw = streamingMsg['id'] as string | null
 		const requestTurnId = requestTurnRaw != null ? requestTurnRaw : ''
 		let memberToolActive = true
@@ -1169,14 +1493,17 @@ class GroupChatTurnRuntime {
 					streamingMsg['visible'] = false
 					streamingMsg['revoked'] = true
 					streamingMsg['isStreaming'] = false
-						if (isPrivateDelivery == true) { streamingMsg['deliveryStatus'] = 'revoked' }
-						this.currentStream = null
-						this.deferSpeakIntentActionUntilMessageSaved(action, 'agent_unavailable', streamingMsg)
-						this.reportError(agentName + ' 已离开群聊，本次回复已撤回')
-						this.saveMessagesThen(runId, '成员离开后的撤回状态保存失败，正在后台重试', 0, () => {
-							done()
-						})
-						return
+					if (isPrivateDelivery == true) {
+						streamingMsg['deliveryStatus'] = 'revoked'
+						markPendingUserPrivateRequestDeliveryStatus(this.messages, sourceUserMessageId, 'revoked')
+					}
+					this.currentStream = null
+					this.deferSpeakIntentActionUntilMessageSaved(action, 'agent_unavailable', streamingMsg)
+					this.reportError(agentName + ' 已离开群聊，本次回复已撤回')
+					this.saveMessagesThen(runId, '成员离开后的撤回状态保存失败，正在后台重试', 0, () => {
+						done()
+					})
+					return
 				}
 				finalizeAssistantTurn(tempMessages, msgSegmentation)
 				const lastAssistant = findLastGroupAssistantMessageFrom(tempMessages, newMsgStartIndex)
@@ -1229,35 +1556,39 @@ class GroupChatTurnRuntime {
 						streamingMsg['moderationStatus'] = 'revoked'
 					}
 				}
-					if (isPrivateDelivery == true) {
-						if (memberFailed == true || lastAssistant == null || getMessageContent(lastAssistant).trim() == '') {
-							streamingMsg['deliveryStatus'] = 'failed'
-						} else if (reviewHolding == false) {
-							streamingMsg['deliveryStatus'] = 'delivered'
+				const completed = lastAssistant != null && getMessageContent(lastAssistant).trim() != '' && memberFailed == false
+				const requiresFollowupReview = reviewHolding == true && memberFailed == false && (isPrivateDelivery == false || completed == true)
+				if (isPrivateDelivery == true) {
+					if (completed == false) {
+						streamingMsg['deliveryStatus'] = 'failed'
+						markPendingUserPrivateRequestDeliveryStatus(this.messages, sourceUserMessageId, 'failed')
+					} else if (requiresFollowupReview == false) {
+						streamingMsg['deliveryStatus'] = 'delivered'
+						markPendingUserPrivateRequestDeliveryStatus(this.messages, sourceUserMessageId, 'delivered')
+					}
+				}
+				streamingMsg['isStreaming'] = false
+				if (requiresFollowupReview == false) {
+					this.deferSpeakIntentActionUntilMessageSaved(action, completed == true ? 'completed' : 'failed', streamingMsg)
+				}
+				this.currentStream = null
+				this.saveMessagesThen(runId, '成员回复保存失败，正在后台重试', 0, () => {
+					if (requiresFollowupReview == false && completed == true && isPrivateDelivery == false) {
+						if (recordGroupAgentSpeak(group.id, session.id, agentId) == false) {
+							this.reportError('成员发言统计保存失败，不影响本轮继续')
 						}
 					}
-					const requiresFollowupReview = reviewHolding == true && memberFailed == false
-					const completed = lastAssistant != null && getMessageContent(lastAssistant).trim() != '' && memberFailed == false
-					streamingMsg['isStreaming'] = false
-					if (requiresFollowupReview == false) {
-						this.deferSpeakIntentActionUntilMessageSaved(action, completed == true ? 'completed' : 'failed', streamingMsg)
-					}
-					this.currentStream = null
-					this.saveMessagesThen(runId, '成员回复保存失败，正在后台重试', 0, () => {
-						if (requiresFollowupReview == false && completed == true && isPrivateDelivery == false) {
-							recordGroupAgentSpeak(group.id, session.id, agentId)
-						}
-						if (requiresFollowupReview == true) {
-							if (isPrivateDelivery == true) {
-								this.handlePrivateLeakRevision(group, session, agentId, streamingMsg, heldText, action, isRevision, runId, done)
-							} else {
-								this.runSchedulerReview(group, session, agentId, agentName, streamingMsg, heldText, finalThinking, hitKeyword, privateDialogueText, action, contextRecord, runId, done)
-							}
+					if (requiresFollowupReview == true) {
+						if (isPrivateDelivery == true) {
+							this.handlePrivateLeakRevision(group, session, agentId, streamingMsg, heldText, action, isRevision, runId, done)
 						} else {
-							done()
+							this.runSchedulerReview(group, session, agentId, agentName, streamingMsg, heldText, finalThinking, hitKeyword, privateDialogueText, action, contextRecord, runId, done)
 						}
-					})
-					return
+					} else {
+						done()
+					}
+				})
+				return
 			}
 			reduceAgentEvent(tempMessages, event)
 			const lastAssistant = findLastGroupAssistantMessageFrom(tempMessages, newMsgStartIndex)
@@ -1294,11 +1625,15 @@ class GroupChatTurnRuntime {
 	}
 
 	handlePrivateLeakRevision(group: GroupChat, session: GroupChatSession, agentId: string, streamingMsg: UTSJSONObject, candidateText: string, originalAction: UTSJSONObject, isRevision: boolean, runId: string, done: () => void): void {
+		markGroupMessageDirty(streamingMsg)
 		streamingMsg['visible'] = false
 		streamingMsg['isStreaming'] = false
 		streamingMsg['deliveryStatus'] = 'revoked'
 		streamingMsg['moderationStatus'] = 'revoked'
 		if (isRevision == true) {
+			const sourceRaw = streamingMsg['sourceUserMessageId'] as string | null
+			const sourceUserMessageId = sourceRaw != null ? sourceRaw : ''
+			markPendingUserPrivateRequestDeliveryStatus(this.messages, sourceUserMessageId, 'revoked')
 			this.deferSpeakIntentActionUntilMessageSaved(originalAction, 'revoked', streamingMsg)
 		}
 		this.saveMessagesThen(runId, '私聊修订撤回状态保存失败，正在后台重试', 0, () => {
@@ -1366,7 +1701,9 @@ class GroupChatTurnRuntime {
 				this.roundPublicSpeakCount++
 				this.deferSpeakIntentActionUntilMessageSaved(originalAction, 'completed', streamingMsg)
 				this.saveMessagesThen(runId, '审核通过的成员回复保存失败，正在后台重试', 0, () => {
-					recordGroupAgentSpeak(group.id, session.id, agentId)
+						if (recordGroupAgentSpeak(group.id, session.id, agentId) == false) {
+							this.reportError('成员发言统计保存失败，不影响本轮继续')
+						}
 					done()
 				})
 				return
@@ -1395,6 +1732,21 @@ class GroupChatTurnRuntime {
 
 const groupTurnRuntimes: GroupChatTurnRuntime[] = [] as GroupChatTurnRuntime[]
 let hasRecoveredInterruptedSpeakIntentClaims = false
+let lastSpeakIntentRecoveryReportAt = 0
+
+function reportSpeakIntentRecoveryFailure(code: string, operation: string, cause: any | null): void {
+	const now = Date.now()
+	if (now - lastSpeakIntentRecoveryReportAt < 30000) { return }
+	lastSpeakIntentRecoveryReportAt = now
+	reportAppErrorFromCause(
+		code,
+		APP_ERROR_CATEGORY_RUNTIME,
+		operation,
+		'部分群聊后台发言恢复失败，请稍后重试',
+		cause,
+		true,
+	)
+}
 
 function getRuntime(sessionId: string): GroupChatTurnRuntime | null {
 	if (sessionId == '') { return null }
@@ -1423,13 +1775,26 @@ export function isGroupChatTurnRunning(sessionId: string): boolean {
 }
 
 export function getGroupChatTurnMessages(groupId: string, sessionId: string): UTSJSONObject[] {
-	const runtime = getRuntime(sessionId)
+	let runtime = getRuntime(sessionId)
 	if (runtime != null && (runtime.running == true || runtime.phase == 'save_failed')) {
 		return runtime.messages
 	}
 	const messages = getGroupMessages(groupId, sessionId)
 	if (finalizeInterruptedGroupMessages(messages) == true) {
-		saveGroupMessages(groupId, sessionId, messages)
+		const saveResult = saveGroupMessagesDetailed(groupId, sessionId, messages)
+		if (saveResult.ok == false || saveResult.conflicted == true) {
+			if (runtime == null) {
+				runtime = new GroupChatTurnRuntime(groupId, sessionId)
+				groupTurnRuntimes.push(runtime)
+			}
+			runtime.messages = messages
+			runtime.phase = 'save_failed'
+			runtime.lastSaveConflict = saveResult.conflicted
+			runtime.reportError(saveResult.conflicted == true
+				? '恢复中断消息时发现会话已被其他页面更新，请重试'
+				: '恢复中断消息失败，内存内容尚未丢失，请重试')
+			return runtime.messages
+		}
 	}
 	return messages
 }
@@ -1473,44 +1838,77 @@ export function dispatchGroupChatUserMessage(groupId: string, sessionId: string,
 	return runtime.interruptAndStartWithUserMessage(message, reason)
 }
 
-export function resumeGroupSpeakIntentWakes(): void {
-	if (hasRecoveredInterruptedSpeakIntentClaims == false) {
-		let recovered = false
-		try {
-			recovered = recoverInterruptedGroupSpeakIntents(collectRuntimeSessionKeys())
-		} catch (_e: any) {}
-		if (recovered == true) { hasRecoveredInterruptedSpeakIntentClaims = true }
+/** 原子写入群聊图片并把转述阶段交给 session runtime，退出页面不会中断。 */
+export function dispatchGroupChatImageMessage(groupId: string, sessionId: string, message: UTSJSONObject, imagePath: string, reason: string): GroupChatMessageDispatchResult {
+	if (groupId == '' || sessionId == '' || imagePath == '') {
+		return { saved: false, started: false } as GroupChatMessageDispatchResult
 	}
-	const targets = listOpenGroupSpeakIntentTargets()
-	const seenSessions: string[] = []
-	for (let i = 0; i < targets.length; i++) {
-		const groupIdRaw = targets[i]['groupId'] as string | null
-		const sessionIdRaw = targets[i]['sessionId'] as string | null
-		const groupId = groupIdRaw != null ? groupIdRaw : ''
-		const sessionId = sessionIdRaw != null ? sessionIdRaw : ''
-		if (groupId == '' || sessionId == '' || seenSessions.indexOf(sessionId) >= 0) { continue }
-		seenSessions.push(sessionId)
-		let runtime = getRuntime(sessionId)
-		if (runtime == null) {
-			runtime = new GroupChatTurnRuntime(groupId, sessionId)
-			groupTurnRuntimes.push(runtime)
-		}
-		if (runtime.running == true) { continue }
-		const messages = getGroupMessages(groupId, sessionId)
-		const sessionTargets = collectSessionSpeakIntentTargets(groupId, sessionId, messages)
-		const delay = getSpeakIntentTargetDelay(sessionTargets)
-		if (delay < 0) { continue }
-		if (delay == 0) {
-			const sourceUserMessageId = findDueSpeakIntentSourceId(sessionTargets)
-			if (sourceUserMessageId == '') { continue }
-			runtime.activeSpeakIntentSourceUserMessageId = sourceUserMessageId
-			if (runtime.start('成员延迟发言申请到期', true, sourceUserMessageId) == false) {
-				runtime.scheduleSpeakIntentRetry()
+	let runtime = getRuntime(sessionId)
+	if (runtime == null) {
+		runtime = new GroupChatTurnRuntime(groupId, sessionId)
+		groupTurnRuntimes.push(runtime)
+	}
+	return runtime.interruptAndStartWithUserMessage(message, reason, imagePath)
+}
+
+export function tryResumeGroupSpeakIntentWakes(): boolean {
+	let fullyRecovered = true
+	try {
+		if (hasRecoveredInterruptedSpeakIntentClaims == false) {
+			const recovered = recoverInterruptedGroupSpeakIntents(collectRuntimeSessionKeys())
+			if (recovered == true) {
+				hasRecoveredInterruptedSpeakIntentClaims = true
+			} else {
+				fullyRecovered = false
 			}
-		} else {
-			runtime.scheduleSpeakIntentWake(delay)
 		}
+		const listedTargets = listOpenGroupSpeakIntentTargetsDetailed()
+		const targets = listedTargets.targets
+		if (listedTargets.cleanupSaved == false) { fullyRecovered = false }
+		const seenSessions: string[] = []
+		for (let i = 0; i < targets.length; i++) {
+			const groupIdRaw = targets[i]['groupId'] as string | null
+			const sessionIdRaw = targets[i]['sessionId'] as string | null
+			const groupId = groupIdRaw != null ? groupIdRaw : ''
+			const sessionId = sessionIdRaw != null ? sessionIdRaw : ''
+			if (groupId == '' || sessionId == '' || seenSessions.indexOf(sessionId) >= 0) { continue }
+			seenSessions.push(sessionId)
+			let runtime = getRuntime(sessionId)
+			if (runtime == null) {
+				runtime = new GroupChatTurnRuntime(groupId, sessionId)
+				groupTurnRuntimes.push(runtime)
+			}
+			if (runtime.running == true) { continue }
+			const messages = getGroupMessages(groupId, sessionId)
+			const collected = collectSessionSpeakIntentTargets(groupId, sessionId, messages)
+			const sessionTargets = collected.targets
+			if (collected.cleanupSaved == false) { fullyRecovered = false }
+			const delay = getSpeakIntentTargetDelay(sessionTargets)
+			if (delay < 0) { continue }
+			if (delay == 0) {
+				const sourceUserMessageId = findDueSpeakIntentSourceId(sessionTargets)
+				if (sourceUserMessageId == '') { continue }
+				runtime.activeSpeakIntentSourceUserMessageId = sourceUserMessageId
+				if (runtime.start('成员延迟发言申请到期', true, sourceUserMessageId) == false) {
+					fullyRecovered = false
+					runtime.scheduleSpeakIntentRetry()
+				}
+			} else {
+				runtime.scheduleSpeakIntentWake(delay)
+			}
+		}
+	} catch (e: any) {
+		reportSpeakIntentRecoveryFailure('GROUP_SPEAK_INTENT_RESUME_FAILED', '恢复群聊延迟发言', e)
+		return false
 	}
+	if (fullyRecovered == false) {
+		reportSpeakIntentRecoveryFailure('GROUP_SPEAK_INTENT_RECOVERY_INCOMPLETE', '恢复中断的群聊发言申请', '持久化状态未全部恢复')
+	}
+	return fullyRecovered
+}
+
+export function resumeGroupSpeakIntentWakes(): void {
+	tryResumeGroupSpeakIntentWakes()
 }
 
 export function stopGroupChatTurn(sessionId: string): void {
@@ -1526,7 +1924,26 @@ export function disposeGroupChatTurn(sessionId: string): void {
 		const runtime = groupTurnRuntimes[i]
 		if (runtime.sessionId != sessionId) { continue }
 		groupTurnRuntimes.splice(i, 1)
-		runtime.dispose()
+		runtime.disposePermanently()
 		return
 	}
+}
+
+/** 导入前停止全部群聊流、唤醒和落库重试，防止旧内存回写新数据库。 */
+export function quiesceAllGroupChatTurnsForDataImport(): boolean {
+	let ok = true
+	for (let i = groupTurnRuntimes.length - 1; i >= 0; i--) {
+		if (groupTurnRuntimes[i].quiesceForDataImport() == true) {
+			groupTurnRuntimes.splice(i, 1)
+		} else {
+			ok = false
+		}
+	}
+	if (ok == true) { hasRecoveredInterruptedSpeakIntentClaims = false }
+	return ok
+}
+
+/** 保留旧导出名，避免 Android 增量产物引用失效。 */
+export function disposeAllGroupChatTurnsForDataImport(): void {
+	quiesceAllGroupChatTurnsForDataImport()
 }

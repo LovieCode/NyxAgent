@@ -2,6 +2,14 @@ const CHAT_SCROLLBAR_TRACK_PADDING = 4
 const CHAT_SCROLLBAR_MIN_THUMB_HEIGHT = 36
 const CHAT_SCROLL_BOTTOM_THRESHOLD = 48
 
+/** 长会话虚拟滚动条的目标位置。windowStartUnit 是需要渲染的窗口起点，
+ * localScrollRatio 是该窗口内部的像素滚动比例，页面在 DOM 更新后再换算成像素。
+ */
+export type ChatVirtualScrollbarTarget = {
+	windowStartUnit: number
+	localScrollRatio: number
+}
+
 export function getChatScrollMaxOffset(scrollContentHeight: number, scrollViewHeight: number): number {
 	if (scrollContentHeight <= 0 || scrollViewHeight <= 0 || scrollContentHeight <= scrollViewHeight) {
 		return 0
@@ -65,4 +73,140 @@ export function resolveChatScrollbarDragTarget(scrollStartTop: number, dragDelta
 	if (maxTop <= 0) { return 0 }
 	const scale = maxScroll / maxTop
 	return clampChatScrollTarget(scrollStartTop + dragDeltaY * scale, scrollContentHeight, scrollViewHeight)
+}
+
+function clampUnit(value: number, totalUnits: number): number {
+	if (totalUnits <= 0) { return 0 }
+	if (value < 0) { return 0 }
+	if (value > totalUnits) { return totalUnits }
+	return value
+}
+
+function resolveVirtualWindowUnits(windowStartUnit: number, windowEndUnit: number, totalUnits: number): number {
+	let windowUnits = windowEndUnit - windowStartUnit
+	if (windowUnits <= 0) { windowUnits = totalUnits }
+	if (windowUnits <= 0) { return 1 }
+	if (windowUnits > totalUnits && totalUnits > 0) { return totalUnits }
+	return windowUnits
+}
+
+function resolveVirtualVisibleUnits(totalUnits: number, windowStartUnit: number, windowEndUnit: number, scrollContentHeight: number, scrollViewHeight: number): number {
+	const windowUnits = resolveVirtualWindowUnits(windowStartUnit, windowEndUnit, totalUnits)
+	if (totalUnits <= 0) { return 1 }
+	if (scrollContentHeight <= 0 || scrollViewHeight <= 0 || scrollContentHeight <= scrollViewHeight) {
+		return windowUnits < totalUnits ? windowUnits : totalUnits
+	}
+	let visibleUnits = windowUnits * scrollViewHeight / scrollContentHeight
+	if (visibleUnits < 1) { visibleUnits = 1 }
+	if (visibleUnits > windowUnits) { visibleUnits = windowUnits }
+	if (visibleUnits > totalUnits) { visibleUnits = totalUnits }
+	return visibleUnits
+}
+
+function resolveVirtualLocalRatio(scrollOffset: number, scrollContentHeight: number, scrollViewHeight: number): number {
+	const maxScroll = getChatScrollMaxOffset(scrollContentHeight, scrollViewHeight)
+	if (maxScroll <= 0) { return 0 }
+	let ratio = scrollOffset / maxScroll
+	if (ratio < 0) { ratio = 0 }
+	if (ratio > 1) { ratio = 1 }
+	return ratio
+}
+
+function resolveVirtualTrackGeometry(totalUnits: number, windowStartUnit: number, windowEndUnit: number, scrollContentHeight: number, scrollViewHeight: number): number[] {
+	const trackH = scrollViewHeight - CHAT_SCROLLBAR_TRACK_PADDING * 2
+	if (trackH <= 0 || totalUnits <= 0) { return [0, 0, 0] }
+	const visibleUnits = resolveVirtualVisibleUnits(totalUnits, windowStartUnit, windowEndUnit, scrollContentHeight, scrollViewHeight)
+	let thumbH = trackH * visibleUnits / totalUnits
+	if (thumbH < CHAT_SCROLLBAR_MIN_THUMB_HEIGHT) { thumbH = CHAT_SCROLLBAR_MIN_THUMB_HEIGHT }
+	if (thumbH > trackH) { thumbH = trackH }
+	const maxTop = trackH - thumbH
+	const maxGlobalUnit = totalUnits - visibleUnits
+	return [thumbH, maxTop, maxGlobalUnit]
+}
+
+/** 当前长会话滚动位置对应的全局顶部 unit。 */
+export function resolveChatVirtualScrollbarCurrentUnit(totalUnits: number, windowStartUnit: number, windowEndUnit: number, scrollContentHeight: number, scrollViewHeight: number, scrollOffset: number): number {
+	if (totalUnits <= 0) { return 0 }
+	const windowUnits = resolveVirtualWindowUnits(windowStartUnit, windowEndUnit, totalUnits)
+	const visibleUnits = resolveVirtualVisibleUnits(totalUnits, windowStartUnit, windowEndUnit, scrollContentHeight, scrollViewHeight)
+	let scrollableWindowUnits = windowUnits - visibleUnits
+	if (scrollableWindowUnits < 0) { scrollableWindowUnits = 0 }
+	const localRatio = resolveVirtualLocalRatio(scrollOffset, scrollContentHeight, scrollViewHeight)
+	const maxGlobalUnit = totalUnits - visibleUnits
+	let current = windowStartUnit + scrollableWindowUnits * localRatio
+	if (current < 0) { current = 0 }
+	if (current > maxGlobalUnit) { current = maxGlobalUnit }
+	return current
+}
+
+/** 长会话滚动条 thumb：尺寸和位置按全局 units 计算，局部 DOM 只提供可视比例。 */
+export function buildChatVirtualScrollbarThumbStyle(totalUnits: number, windowStartUnit: number, windowEndUnit: number, scrollContentHeight: number, scrollViewHeight: number, scrollOffset: number): string {
+	if (totalUnits <= 0 || scrollViewHeight <= 0 || totalUnits <= 1) {
+		return 'top:0px;height:0px;'
+	}
+	const geometry = resolveVirtualTrackGeometry(totalUnits, windowStartUnit, windowEndUnit, scrollContentHeight, scrollViewHeight)
+	const thumbH = geometry[0]
+	const maxTop = geometry[1]
+	const maxGlobalUnit = geometry[2]
+	if (thumbH <= 0 || maxTop <= 0 || maxGlobalUnit <= 0) {
+		return 'top:' + CHAT_SCROLLBAR_TRACK_PADDING + 'px;height:' + thumbH + 'px;'
+	}
+	const currentUnit = resolveChatVirtualScrollbarCurrentUnit(totalUnits, windowStartUnit, windowEndUnit, scrollContentHeight, scrollViewHeight, scrollOffset)
+	let top = currentUnit / maxGlobalUnit * maxTop
+	if (top < 0) { top = 0 }
+	if (top > maxTop) { top = maxTop }
+	return 'top:' + (top + CHAT_SCROLLBAR_TRACK_PADDING) + 'px;height:' + thumbH + 'px;'
+}
+
+/** 点击 track 时把触点映射为全局顶部 unit，触点按 thumb 中心计算。 */
+export function resolveChatVirtualScrollbarTrackUnit(touchY: number, totalUnits: number, windowStartUnit: number, windowEndUnit: number, scrollContentHeight: number, scrollViewHeight: number): number {
+	if (totalUnits <= 0) { return 0 }
+	const trackH = scrollViewHeight - CHAT_SCROLLBAR_TRACK_PADDING * 2
+	if (trackH <= 0) { return 0 }
+	const geometry = resolveVirtualTrackGeometry(totalUnits, windowStartUnit, windowEndUnit, scrollContentHeight, scrollViewHeight)
+	const thumbH = geometry[0]
+	const maxTop = geometry[1]
+	const maxGlobalUnit = geometry[2]
+	if (maxTop <= 0 || maxGlobalUnit <= 0) { return 0 }
+	let targetTop = touchY - CHAT_SCROLLBAR_TRACK_PADDING - thumbH / 2
+	if (targetTop < 0) { targetTop = 0 }
+	if (targetTop > maxTop) { targetTop = maxTop }
+	return targetTop / maxTop * maxGlobalUnit
+}
+
+/** 拖动 thumb 时按全局 unit 范围计算目标顶部 unit。 */
+export function resolveChatVirtualScrollbarDragUnit(scrollStartUnit: number, dragDeltaY: number, totalUnits: number, windowStartUnit: number, windowEndUnit: number, scrollContentHeight: number, scrollViewHeight: number): number {
+	if (totalUnits <= 0) { return 0 }
+	const geometry = resolveVirtualTrackGeometry(totalUnits, windowStartUnit, windowEndUnit, scrollContentHeight, scrollViewHeight)
+	const maxTop = geometry[1]
+	const maxGlobalUnit = geometry[2]
+	if (maxTop <= 0 || maxGlobalUnit <= 0) { return 0 }
+	return clampUnit(scrollStartUnit + dragDeltaY * maxGlobalUnit / maxTop, maxGlobalUnit)
+}
+
+/** 把全局顶部 unit 转换为窗口起点和窗口内滚动比例。 */
+export function resolveChatVirtualScrollbarTarget(globalUnit: number, totalUnits: number, windowUnits: number, scrollContentHeight: number, scrollViewHeight: number): ChatVirtualScrollbarTarget {
+	if (totalUnits <= 0 || windowUnits <= 0) {
+		return { windowStartUnit: 0, localScrollRatio: 0 } as ChatVirtualScrollbarTarget
+	}
+	let safeWindowUnits = windowUnits
+	if (safeWindowUnits > totalUnits) { safeWindowUnits = totalUnits }
+	const visibleUnits = resolveVirtualVisibleUnits(totalUnits, 0, safeWindowUnits, scrollContentHeight, scrollViewHeight)
+	const maxGlobalUnit = totalUnits - visibleUnits
+	let safeGlobal = globalUnit
+	if (safeGlobal < 0) { safeGlobal = 0 }
+	if (safeGlobal > maxGlobalUnit) { safeGlobal = maxGlobalUnit }
+	let start = Math.floor(safeGlobal - safeWindowUnits * 0.35)
+	const maxStart = totalUnits - safeWindowUnits
+	if (start < 0) { start = 0 }
+	if (start > maxStart) { start = maxStart }
+	let localScrollableUnits = safeWindowUnits - visibleUnits
+	if (localScrollableUnits < 0) { localScrollableUnits = 0 }
+	let ratio = localScrollableUnits > 0 ? (safeGlobal - start) / localScrollableUnits : 0
+	if (ratio < 0) { ratio = 0 }
+	if (ratio > 1) { ratio = 1 }
+	return {
+		windowStartUnit: start,
+		localScrollRatio: ratio,
+	} as ChatVirtualScrollbarTarget
 }

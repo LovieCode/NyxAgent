@@ -14,7 +14,27 @@
 
 <script lang="uts">
 	import { readContent, writeContent, basename } from '@/utils/file-manager.uts'
-	import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+	import {
+		clearEditorDraft,
+		publishFileEditorSavedState,
+		publishTextEditorResult,
+		readEditorDraft,
+		readEditorRuntimeConfig,
+		saveEditorDraft,
+	} from '@/utils/editor-runtime-state.uts'
+	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
+
+	function showEditorFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+		const error = reportAppErrorFromCause(
+			code,
+			APP_ERROR_CATEGORY_RUNTIME,
+			operation,
+			userMessage,
+			cause,
+			true,
+		)
+		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+	}
 
 	/**
 	 * 通用全屏编辑路由适配器。
@@ -29,17 +49,24 @@
 				subTitle: '' as string,
 				placeholder: '输入内容...' as string,
 				mode: 'text' as string,
+				owner: '' as string,
 				target: '' as string,
 				filePath: '' as string,
-				draftKey: 'editor_draft' as string,
+				draftKey: '' as string,
 				readOnly: false as boolean,
-					dirty: false as boolean,
-					draftSaveFailed: false as boolean,
-					allowBackNavigation: false as boolean,
+				dirty: false as boolean,
+				draftTouched: false as boolean,
+				draftSaveFailed: false as boolean,
+				allowBackNavigation: false as boolean,
 			}
 		},
 		onLoad() {
-			this.loadEditorConfig()
+			try {
+				this.loadEditorConfig()
+			} catch (e: any) {
+				this.readOnly = true
+				showEditorFailure('EDITOR_CONFIG_LOAD_FAILED', 'editor_load_config', '编辑器配置读取失败', e)
+			}
 		},
 		onBackPress(): boolean {
 			if (this.allowBackNavigation == true) { return false }
@@ -48,27 +75,27 @@
 		},
 		methods: {
 			loadEditorConfig() {
-				const rawMode = getRuntimeState('editor_mode')
-				this.mode = rawMode == 'file' ? 'file' : 'text'
-				const targetText = getRuntimeState('editor_target')
-				const filePathText = getRuntimeState('editor_file_path')
-				this.target = targetText
-				this.filePath = filePathText
+				const config = readEditorRuntimeConfig()
+				this.mode = config.mode == 'file' ? 'file' : 'text'
+				this.owner = config.owner
+				this.target = config.target
+				this.filePath = config.filePath
 
-				const title = getRuntimeState('editor_title')
-				if (title != '') {
-					this.navTitle = title
+				if (config.title != '') {
+					this.navTitle = config.title
 				} else if (this.mode == 'file' && this.filePath != '') {
 					this.navTitle = basename(this.filePath)
 				}
 
-				const placeholderText = getRuntimeState('editor_placeholder')
-				if (placeholderText != '') {
-					this.placeholder = placeholderText
+				if (config.placeholder != '') {
+					this.placeholder = config.placeholder
 				}
 
-				const readOnlyText = getRuntimeState('editor_readonly')
-				this.readOnly = readOnlyText == 'true'
+				this.readOnly = config.readOnly
+				if (this.owner == '' || this.target == '') {
+					this.readOnly = true
+					showEditorFailure('EDITOR_CONFIG_INVALID', 'editor_validate_config', '编辑器配置已失效，请返回重试', 'owner 或 target 为空')
+				}
 				this.draftKey = this.buildDraftKey()
 				this.subTitle = this.buildSubTitle()
 
@@ -86,7 +113,7 @@
 						}
 					}
 				} else {
-					content = getRuntimeState('editor_content')
+					content = config.content
 				}
 
 				this.editText = content
@@ -96,13 +123,14 @@
 			},
 
 			buildDraftKey(): string {
+				if (this.owner == '') { return '' }
 				if (this.mode == 'file' && this.filePath != '') {
-					return 'editor_draft_file_' + this.safeKey(this.filePath)
+					return 'editor_draft_file_' + this.safeKey(this.owner + '\u0000' + this.filePath)
 				}
 				if (this.target != '') {
-					return 'editor_draft_' + this.safeKey(this.target)
+					return 'editor_draft_text_' + this.safeKey(this.owner + '\u0000' + this.target)
 				}
-				return 'editor_draft'
+				return ''
 			},
 
 			buildSubTitle(): string {
@@ -124,14 +152,11 @@
 						continue
 					}
 					const code = rawCode as number
-					const isLower = code >= 97 && code <= 122
-					const isUpper = code >= 65 && code <= 90
-					const isNumber = code >= 48 && code <= 57
-					if (isLower || isUpper || isNumber) {
-						result = result + ch
-					} else {
-						result = result + '_'
+					let hex = code.toString(16)
+					while (hex.length < 4) {
+						hex = '0' + hex
 					}
+					result = result + hex
 				}
 				return result
 			},
@@ -140,14 +165,9 @@
 				if (this.readOnly == true) {
 					return
 				}
-				const legacyDraft = getRuntimeState('editor_draft')
-				const scopedDraft = getRuntimeState(this.draftKey)
-				let draft = legacyDraft
-				if (scopedDraft != '') {
-					draft = scopedDraft
-				}
-				if (draft != '') {
-					const safeDraft = draft
+				const draft = readEditorDraft(this.draftKey)
+				if (draft != null) {
+					const safeDraft = draft as string
 					if (safeDraft != content) {
 						uni.showModal({
 							title: '恢复草稿',
@@ -158,13 +178,17 @@
 								if (res.confirm == true) {
 									this.editText = safeDraft
 									this.dirty = this.editText != this.initialText
+									this.draftTouched = true
 								} else {
-									this.clearDraft()
+									if (this.clearDraft() == false) { return }
 									this.editText = content
 									this.dirty = false
 								}
 							}
 						})
+					} else {
+						this.draftTouched = true
+						this.clearDraft()
 					}
 				}
 			},
@@ -172,6 +196,7 @@
 			onEditorChange(value: string) {
 				this.editText = value
 				this.dirty = this.editText != this.initialText
+				this.draftTouched = true
 				this.saveDraft()
 			},
 
@@ -179,24 +204,33 @@
 				if (this.readOnly == true) {
 					return true
 				}
-				const scopedSaved = setRuntimeState(this.draftKey, this.editText)
-				const legacySaved = setRuntimeState('editor_draft', this.editText)
-				this.draftSaveFailed = scopedSaved == false || legacySaved == false
+				const scopedSaved = saveEditorDraft(this.draftKey, this.editText)
+				this.draftSaveFailed = scopedSaved == false
 				return this.draftSaveFailed == false
 			},
 
-			clearDraft() {
-				deleteRuntimeState(this.draftKey)
-				deleteRuntimeState('editor_draft')
+			clearDraft(): boolean {
+				const cleared = clearEditorDraft(this.draftKey)
+				if (cleared == false) {
+					showEditorFailure('EDITOR_DRAFT_CLEAR_FAILED', 'editor_clear_draft', '草稿清理失败，请重试', 'clearEditorDraft 返回 false')
+				} else {
+					this.draftTouched = false
+				}
+				return cleared
 			},
 
 			onBack() {
-				if (this.readOnly == true || this.editText == this.initialText) {
+				if (this.readOnly == true) {
+					this.navigateBackSafely()
+					return
+				}
+				if (this.editText == this.initialText) {
+					if (this.draftTouched == true && this.clearDraft() == false) { return }
 					this.navigateBackSafely()
 					return
 				}
 				if (this.saveDraft() == false) {
-					uni.showToast({ position: 'bottom', title: '草稿保存失败，请先复制重要内容', icon: 'none' })
+					showEditorFailure('EDITOR_DRAFT_SAVE_FAILED', 'editor_save_draft', '草稿保存失败，请先复制重要内容', 'saveEditorDraft 返回 false')
 				}
 				uni.showModal({
 					title: '放弃编辑？',
@@ -206,7 +240,7 @@
 					confirmColor: '#EF4444',
 					success: (res) => {
 						if (res.confirm == true) {
-							this.clearDraft()
+							if (this.clearDraft() == false) { return }
 							this.dirty = false
 							this.navigateBackSafely()
 						}
@@ -228,17 +262,13 @@
 			},
 
 			saveTextAndBack() {
-				if (setRuntimeState('editor_result', this.editText) == false) {
-					uni.showToast({ position: 'bottom', title: '保存编辑结果失败，请重试', icon: 'none' })
-					return
-				}
-				if (setRuntimeState('editor_result_ready', 'true') == false) {
-					uni.showToast({ position: 'bottom', title: '编辑结果通知失败，请重试', icon: 'none' })
+				if (publishTextEditorResult(this.owner, this.target, this.editText, this.draftKey) == false) {
+					showEditorFailure('EDITOR_RESULT_PUBLISH_FAILED', 'editor_publish_text_result', '保存编辑结果失败，请重试', '编辑结果状态事务未提交')
 					return
 				}
 				this.initialText = this.editText
 				this.dirty = false
-				this.clearDraft()
+				this.draftTouched = false
 				this.navigateBackSafely()
 			},
 
@@ -249,15 +279,18 @@
 				}
 				const result = writeContent(this.filePath, this.editText)
 				if (result.ok == true) {
-					const savedState = setRuntimeState('editor_saved', 'true')
-					const pathState = setRuntimeState('editor_saved_path', this.filePath)
+					const stateSaved = publishFileEditorSavedState(this.owner, this.target, this.filePath, this.draftKey)
+					if (stateSaved == false) {
+						showEditorFailure('EDITOR_FILE_RESULT_PUBLISH_FAILED', 'editor_publish_file_result', '文件已保存，但页面通知失败，请重试', '文件保存状态事务未提交')
+						return
+					}
 					this.initialText = this.editText
 					this.dirty = false
-					this.clearDraft()
+					this.draftTouched = false
 					uni.showToast({
 						position: 'bottom',
-						title: savedState == true && pathState == true ? '已保存' : '文件已保存，页面状态通知失败',
-						icon: savedState == true && pathState == true ? 'success' : 'none'
+						title: '已保存',
+						icon: 'success'
 					})
 					this.navigateBackSafely()
 				} else {
@@ -268,9 +301,9 @@
 			navigateBackSafely() {
 				this.allowBackNavigation = true
 				uni.navigateBack({
-					fail: () => {
+					fail: (err: any) => {
 						this.allowBackNavigation = false
-						uni.showToast({ position: 'bottom', title: '无法返回上一页', icon: 'none' })
+						showEditorFailure('EDITOR_BACK_FAILED', 'editor_navigate_back', '无法返回上一页', err)
 					}
 				})
 			},

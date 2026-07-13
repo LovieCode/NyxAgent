@@ -4,9 +4,15 @@
  * 相册能力与聊天附件保持一致：系统图片选择失败时依次回退到媒体选择和文件选择。
  */
 
-import { isChooseCancelError, parsePickedImagePath, readPickedImageSelection } from '@/utils/attachment-reader.uts'
-import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
-import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+import { isChooseCancelError, readPickedImageSelection } from '@/utils/attachment-reader.uts'
+import {
+	APP_ERROR_CATEGORY_DATABASE,
+	APP_ERROR_CATEGORY_RUNTIME,
+	APP_ERROR_CATEGORY_STORAGE,
+	formatAppErrorForUser,
+	reportAppErrorFromCause,
+} from '@/utils/app-error.uts'
+import { deleteRuntimeState, getRuntimeState, setRuntimeStatePair } from '@/utils/database.uts'
 import { copyItem, createDir, deleteItem, exists, getInternalFilesDir, joinPath } from '@/utils/file-manager.uts'
 import { handleCameraPickerFailure } from '@/utils/media-permission.uts'
 
@@ -14,45 +20,120 @@ const AVATAR_CROP_RESULT_KEY = 'crop_result'
 const AVATAR_CROP_TARGET_KEY = 'crop_target'
 const AVATAR_CROP_IMAGE_PATH_KEY = 'crop_image_path'
 
-function showAvatarPickerFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+function reportAvatarPickerFailure(
+	code: string,
+	category: string,
+	operation: string,
+	userMessage: string,
+	cause: any | null,
+	notifyUser: boolean,
+): void {
 	const error = reportAppErrorFromCause(
 		code,
-		APP_ERROR_CATEGORY_RUNTIME,
+		category,
 		operation,
 		userMessage,
 		cause,
 		true,
 	)
-	uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+	if (notifyUser == true) {
+		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+	}
 }
 
-function deliverPickedAvatar(path: string, onPicked: (path: string) => void): void {
-	if (path == '') {
-		showAvatarPickerFailure('AVATAR_PICKER_EMPTY_RESULT', 'avatar_picker_result', '没有读取到所选图片', '图片选择成功回调未返回路径')
+function showAvatarPickerFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+	reportAvatarPickerFailure(code, APP_ERROR_CATEGORY_RUNTIME, operation, userMessage, cause, true)
+}
+
+function showAvatarStorageFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+	reportAvatarPickerFailure(code, APP_ERROR_CATEGORY_STORAGE, operation, userMessage, cause, true)
+}
+
+function deliverPickedAvatar(res: any, onPicked: (path: string) => void): void {
+	const picked = readPickedImageSelection(res)
+	if (picked.ok == false) {
+		const emptyResult = picked.error == '未选择图片'
+		showAvatarPickerFailure(
+			emptyResult == true ? 'AVATAR_PICKER_EMPTY_RESULT' : 'AVATAR_PICKER_INVALID_RESULT',
+			'avatar_picker_result',
+			emptyResult == true ? '没有读取到所选图片' : '所选图片读取失败',
+			picked.error,
+		)
 		return
 	}
-	onPicked(path)
+	onPicked(picked.path)
 }
 
-function clearAvatarCropState(): void {
-	deleteRuntimeState(AVATAR_CROP_RESULT_KEY)
-	deleteRuntimeState(AVATAR_CROP_TARGET_KEY)
-	deleteRuntimeState(AVATAR_CROP_IMAGE_PATH_KEY)
+function clearAvatarCropState(operation: string, notifyFailure: boolean): boolean {
+	let pairCleared = false
+	let resultCleared = false
+	let failureCause: any | null = null
+	try {
+		pairCleared = setRuntimeStatePair(AVATAR_CROP_TARGET_KEY, '', AVATAR_CROP_IMAGE_PATH_KEY, '')
+	} catch (e: any) {
+		failureCause = e
+	}
+	try {
+		resultCleared = deleteRuntimeState(AVATAR_CROP_RESULT_KEY)
+	} catch (e: any) {
+		if (failureCause == null) { failureCause = e }
+	}
+	if (pairCleared == true && resultCleared == true) { return true }
+	if (failureCause == null) {
+		failureCause = 'target/path cleared=' + pairCleared + ', result cleared=' + resultCleared
+	}
+	reportAvatarPickerFailure(
+		'AVATAR_CROP_STATE_CLEAR_FAILED',
+		APP_ERROR_CATEGORY_DATABASE,
+		operation,
+		'头像裁剪临时状态清理失败，请重试',
+		failureCause,
+		notifyFailure,
+	)
+	return false
+}
+
+function readAvatarCropState(key: string, operation: string, notifyFailure: boolean): string | null {
+	try {
+		return getRuntimeState(key)
+	} catch (e: any) {
+		reportAvatarPickerFailure(
+			'AVATAR_CROP_STATE_READ_FAILED',
+			APP_ERROR_CATEGORY_DATABASE,
+			operation,
+			'头像裁剪临时状态读取失败，请重试',
+			e,
+			notifyFailure,
+		)
+		return null
+	}
 }
 
 /**
  * 取消当前裁剪请求。target 为空时用于清理无法识别的损坏状态。
  */
 export function cancelAvatarCropRequest(target: string): void {
-	if (target != '' && getRuntimeState(AVATAR_CROP_TARGET_KEY) != target) { return }
-	clearAvatarCropState()
+	if (target != '') {
+		const currentTarget = readAvatarCropState(AVATAR_CROP_TARGET_KEY, 'avatar_crop_cancel_read', true)
+		if (currentTarget == null || currentTarget != target) { return }
+	}
+	clearAvatarCropState('avatar_crop_cancel_clear', true)
 }
 
 function buildPersistedAvatarPath(target: string): string {
 	const filesDir = getInternalFilesDir()
-	if (filesDir == '') { return '' }
+	if (filesDir == '') {
+		showAvatarStorageFailure('AVATAR_STORAGE_PATH_MISSING', 'avatar_crop_storage_path', '头像文件保存失败', '内部文件目录为空')
+		return ''
+	}
 	const avatarDir = joinPath(filesDir, 'avatars')
-	if (exists(avatarDir) == false && createDir(avatarDir, true).ok == false) { return '' }
+	if (exists(avatarDir) == false) {
+		const created = createDir(avatarDir, true)
+		if (created.ok == false) {
+			showAvatarStorageFailure('AVATAR_STORAGE_DIR_FAILED', 'avatar_crop_create_directory', '头像文件保存失败', created.error)
+			return ''
+		}
+	}
 	let prefix = 'avatar'
 	if (target == 'profile_avatar') {
 		prefix = 'profile'
@@ -71,27 +152,32 @@ function persistAvatarCropResult(path: string, target: string): string {
 		return path
 	}
 	const persistedPath = buildPersistedAvatarPath(target)
-	if (persistedPath == '') {
-		showAvatarPickerFailure('AVATAR_CROP_STORAGE_FAILED', 'avatar_crop_persist', '头像文件保存失败', '无法创建头像存储目录')
-		return ''
-	}
+	if (persistedPath == '') { return '' }
 	const copied = copyItem(path, persistedPath)
 	if (copied.ok == false) {
-		showAvatarPickerFailure('AVATAR_CROP_COPY_FAILED', 'avatar_crop_persist', '头像文件保存失败', copied.error)
+		showAvatarStorageFailure('AVATAR_CROP_COPY_FAILED', 'avatar_crop_persist', '头像文件保存失败', copied.error)
 		return ''
 	}
 	return persistedPath
 }
 
-export function discardManagedAvatarFile(path: string): void {
-	if (path == '') { return }
+export function discardManagedAvatarFile(path: string): boolean {
+	if (path == '') { return true }
 	const filesDir = getInternalFilesDir()
-	if (filesDir == '') { return }
-	const avatarPrefix = joinPath(filesDir, 'avatars') + '/'
-	if (path.startsWith(avatarPrefix) == false) { return }
-	if (exists(path) == true) {
-		deleteItem(path, false)
+	if (filesDir == '') {
+		showAvatarStorageFailure('AVATAR_DELETE_PATH_MISSING', 'avatar_managed_file_delete', '旧头像文件清理失败', '内部文件目录为空')
+		return false
 	}
+	const avatarPrefix = joinPath(filesDir, 'avatars') + '/'
+	if (path.startsWith(avatarPrefix) == false) { return true }
+	if (exists(path) == true) {
+		const deleted = deleteItem(path, false)
+		if (deleted.ok == false) {
+			showAvatarStorageFailure('AVATAR_MANAGED_FILE_DELETE_FAILED', 'avatar_managed_file_delete', '旧头像文件清理失败', deleted.error)
+			return false
+		}
+	}
+	return true
 }
 
 /**
@@ -102,36 +188,63 @@ export function openAvatarCrop(path: string, target: string): void {
 		showAvatarPickerFailure('AVATAR_CROP_INVALID_REQUEST', 'avatar_crop_open', '无法打开头像裁剪', '图片路径或裁剪目标为空')
 		return
 	}
-	clearAvatarCropState()
-	const targetSaved = setRuntimeState(AVATAR_CROP_TARGET_KEY, target)
-	const pathSaved = setRuntimeState(AVATAR_CROP_IMAGE_PATH_KEY, path)
-	if (targetSaved == false || pathSaved == false) {
-		clearAvatarCropState()
-		showAvatarPickerFailure('AVATAR_CROP_STATE_FAILED', 'avatar_crop_prepare', '无法准备头像裁剪', '裁剪页临时状态保存失败')
+	if (clearAvatarCropState('avatar_crop_prepare_clear', true) == false) { return }
+	let stateSaved = false
+	let saveFailure: any | null = null
+	try {
+		stateSaved = setRuntimeStatePair(AVATAR_CROP_TARGET_KEY, target, AVATAR_CROP_IMAGE_PATH_KEY, path)
+	} catch (e: any) {
+		saveFailure = e
+	}
+	if (stateSaved == false) {
+		clearAvatarCropState('avatar_crop_prepare_rollback', false)
+		showAvatarPickerFailure(
+			'AVATAR_CROP_STATE_FAILED',
+			'avatar_crop_prepare',
+			'无法准备头像裁剪',
+			saveFailure != null ? saveFailure : '裁剪页临时状态原子保存失败',
+		)
 		return
 	}
 	uni.navigateTo({
 		url: '/pages/common/crop/crop',
 		fail: (err: any) => {
-			if (getRuntimeState(AVATAR_CROP_TARGET_KEY) == target) {
-				clearAvatarCropState()
+			const currentTarget = readAvatarCropState(AVATAR_CROP_TARGET_KEY, 'avatar_crop_navigate_read', false)
+			let cleanupOk = currentTarget != null
+			if (currentTarget != null && currentTarget == target) {
+				cleanupOk = clearAvatarCropState('avatar_crop_navigate_rollback', false)
 			}
-			showAvatarPickerFailure('AVATAR_CROP_ROUTE_FAILED', 'avatar_crop_navigate', '无法打开头像裁剪页', err)
+			showAvatarPickerFailure(
+				'AVATAR_CROP_ROUTE_FAILED',
+				'avatar_crop_navigate',
+				cleanupOk == true ? '无法打开头像裁剪页' : '无法打开头像裁剪页，临时状态清理失败',
+				err,
+			)
 		}
 	})
 }
 
 export function hasAvatarCropRequest(target: string): boolean {
-	return target != '' && getRuntimeState(AVATAR_CROP_TARGET_KEY) == target
+	if (target == '') { return false }
+	const currentTarget = readAvatarCropState(AVATAR_CROP_TARGET_KEY, 'avatar_crop_request_read', true)
+	return currentTarget != null && currentTarget == target
 }
 
 /** 消费指定页面已经生成的裁剪结果。空结果仍是进行中的请求，不做清理。 */
 export function consumeAvatarCropResult(target: string): string {
-	if (target == '' || getRuntimeState(AVATAR_CROP_TARGET_KEY) != target) { return '' }
-	const result = getRuntimeState(AVATAR_CROP_RESULT_KEY)
+	if (target == '') { return '' }
+	const currentTarget = readAvatarCropState(AVATAR_CROP_TARGET_KEY, 'avatar_crop_result_target_read', true)
+	if (currentTarget == null || currentTarget != target) { return '' }
+	const result = readAvatarCropState(AVATAR_CROP_RESULT_KEY, 'avatar_crop_result_read', true)
+	if (result == null) { return '' }
 	if (result == '') { return '' }
 	const persisted = persistAvatarCropResult(result, target)
-	clearAvatarCropState()
+	if (clearAvatarCropState('avatar_crop_result_consume', true) == false) {
+		if (persisted != '' && persisted != result) {
+			discardManagedAvatarFile(persisted)
+		}
+		return ''
+	}
 	return persisted
 }
 
@@ -141,11 +254,13 @@ function chooseAvatarFromFile(onPicked: (path: string) => void): void {
 		success: (res: any) => {
 			const picked = readPickedImageSelection(res)
 			if (picked.ok == false) {
-				if (picked.error == '未选择图片') {
-					showAvatarPickerFailure('AVATAR_FILE_EMPTY_RESULT', 'avatar_picker_file_result', '没有读取到所选图片', picked.error)
-				} else {
-					uni.showToast({ position: 'bottom', title: picked.error, icon: 'none' })
-				}
+				const emptyResult = picked.error == '未选择图片'
+				showAvatarPickerFailure(
+					emptyResult == true ? 'AVATAR_FILE_EMPTY_RESULT' : 'AVATAR_FILE_INVALID_RESULT',
+					'avatar_picker_file_result',
+					emptyResult == true ? '没有读取到所选图片' : '所选文件不是可用图片',
+					picked.error,
+				)
 				return
 			}
 			onPicked(picked.path)
@@ -164,11 +279,13 @@ function chooseAvatarFromMedia(onPicked: (path: string) => void): void {
 		success: (res: any) => {
 			const picked = readPickedImageSelection(res)
 			if (picked.ok == false) {
-				if (picked.error == '未选择图片') {
-					showAvatarPickerFailure('AVATAR_MEDIA_EMPTY_RESULT', 'avatar_picker_media_result', '没有读取到所选图片', picked.error)
-				} else {
-					uni.showToast({ position: 'bottom', title: picked.error, icon: 'none' })
-				}
+				const emptyResult = picked.error == '未选择图片'
+				showAvatarPickerFailure(
+					emptyResult == true ? 'AVATAR_MEDIA_EMPTY_RESULT' : 'AVATAR_MEDIA_INVALID_RESULT',
+					'avatar_picker_media_result',
+					emptyResult == true ? '没有读取到所选图片' : '所选媒体不是可用图片',
+					picked.error,
+				)
 				return
 			}
 			onPicked(picked.path)
@@ -195,7 +312,7 @@ function chooseAvatarFromAlbum(onPicked: (path: string) => void): void {
 		sourceType: ['album'],
 		sizeType: ['compressed'],
 		success: (res: any) => {
-			deliverPickedAvatar(parsePickedImagePath(res), onPicked)
+			deliverPickedAvatar(res, onPicked)
 		},
 		fail: (err: any) => {
 			if (isChooseCancelError(err) == true) { return }
@@ -218,7 +335,7 @@ function chooseAvatarFromCamera(onPicked: (path: string) => void): void {
 		sourceType: ['camera'],
 		sizeType: ['compressed'],
 		success: (res: any) => {
-			deliverPickedAvatar(parsePickedImagePath(res), onPicked)
+			deliverPickedAvatar(res, onPicked)
 		},
 		fail: (err: any) => {
 			if (isChooseCancelError(err) == true) { return }

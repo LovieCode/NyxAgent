@@ -1,36 +1,82 @@
 <script lang="uts">
 	import { initDatabase, initDefaultProviders } from '@/utils/database.uts'
-	import { resumeGroupSpeakIntentWakes } from '@/utils/group-chat-turn-runtime.uts'
+	import { isDataImportRecoveryBlocked, recoverInterruptedDataImport } from '@/utils/data-import.uts'
+	import { tryResumeGroupSpeakIntentWakes } from '@/utils/group-chat-turn-runtime.uts'
+	import { APP_ERROR_CATEGORY_RUNTIME, reportAppErrorFromCause } from '@/utils/app-error.uts'
+	let appDataReady = false
+	let lastWakeRecoveryNoticeAt = 0
 
-  // #ifdef APP-ANDROID || APP-HARMONY
+	function notifyWakeRecoveryFailure(): void {
+		const now = Date.now()
+		if (now - lastWakeRecoveryNoticeAt < 5000) { return }
+		lastWakeRecoveryNoticeAt = now
+		uni.showToast({ title: '后台任务恢复失败，请稍后重试', icon: 'none', duration: 3000 })
+	}
+
+	function reportUnhandledAppError(operation: string, cause: any | null): void {
+		reportAppErrorFromCause(
+			'APP_UNHANDLED_RUNTIME_ERROR',
+			APP_ERROR_CATEGORY_RUNTIME,
+			operation,
+			'应用发生异常，请重试；详情已记录到运行诊断',
+			cause,
+			true,
+		)
+		uni.showToast({ title: '应用发生异常，详情已记录', icon: 'none', duration: 3000 })
+	}
+
+	// #ifdef APP-ANDROID || APP-HARMONY
 	let firstBackTime = 0
-  // #endif
+	// #endif
 	export default {
 		onLaunch: function () {
 			console.log('App Launch')
+			appDataReady = false
 			try {
 				// 初始化失败时停止后续数据库写入，避免在残缺 schema 上继续运行。
 				initDatabase()
+				if (recoverInterruptedDataImport() == false) {
+					throw new Error('上次数据导入恢复失败')
+				}
 				initDefaultProviders()
-				try {
-					resumeGroupSpeakIntentWakes()
-				} catch (_wakeError: any) {}
-			} catch (_e: any) {
-				// onLaunch 时页面可能尚未挂载，延迟到首屏可承载 toast 后再提示。
+				appDataReady = true
+				if (tryResumeGroupSpeakIntentWakes() == false) { notifyWakeRecoveryFailure() }
+			} catch (e: any) {
+				reportAppErrorFromCause(
+					'APP_INITIALIZATION_FAILED',
+					APP_ERROR_CATEGORY_RUNTIME,
+					'app_launch_initialize',
+					'本地数据初始化或恢复失败',
+					e,
+					false,
+				)
+				// 恢复失败后不能继续写混合状态；用不可取消弹窗阻断首屏操作。
 				setTimeout(() => {
-					uni.showToast({
-						title: '本地数据初始化失败，请重启应用',
-						icon: 'none',
-						duration: 4000,
+					uni.showModal({
+						title: '本地数据需要恢复',
+						content: '上次导入或数据库初始化没有完整结束。应用将退出，请重新启动并等待自动恢复。',
+						showCancel: false,
+						success: (_result) => {
+							// #ifdef APP-ANDROID || APP-HARMONY
+							uni.exit()
+							// #endif
+						},
+						fail: (_error: any) => {
+							// #ifdef APP-ANDROID || APP-HARMONY
+							uni.exit()
+							// #endif
+						},
 					})
 				}, 500)
 			}
 		},
 		onShow: function () {
 			console.log('App Show')
-			try {
-				resumeGroupSpeakIntentWakes()
-			} catch (_e: any) {}
+			if (appDataReady == false || isDataImportRecoveryBlocked() == true) { return }
+			if (tryResumeGroupSpeakIntentWakes() == false) { notifyWakeRecoveryFailure() }
+		},
+		onError: function (error: any) {
+			reportUnhandledAppError('App onError', error)
 		},
 		onHide: function () {
 			console.log('App Hide')

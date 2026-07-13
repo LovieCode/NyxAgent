@@ -6,6 +6,7 @@
 
 import {
 	deleteGroupAgentContextRecord,
+	deleteGroupMessage,
 	displaySessionTitle,
 	getGroupAgentContextRecord,
 	getGroupChats,
@@ -14,7 +15,6 @@ import {
 	GROUP_MESSAGE_SENDER_REVIEWER,
 	GROUP_MESSAGE_SENDER_SCHEDULER,
 	listGroupAgentContextRecords,
-	saveGroupMessages,
 } from '@/utils/group-chat-service.uts'
 import { buildLegacyHistoryContextPreview } from '@/utils/history-page-helpers.uts'
 
@@ -315,21 +315,18 @@ function deleteSchedulerHistoryById(id: string): boolean {
 	const messageKey = parts[3]
 	if (groupId == '' || sessionId == '' || messageKey == '') { return false }
 	const messages = getGroupMessages(groupId, sessionId)
-	const next: UTSJSONObject[] = []
-	let removed = false
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i]
 		const senderType = msg['senderType'] as string | null
 		const rawId = msg['id'] as string | null
 		const fallbackId = 'index-' + i.toString()
 		if ((senderType == GROUP_MESSAGE_SENDER_SCHEDULER || senderType == GROUP_MESSAGE_SENDER_REVIEWER) && (rawId == messageKey || fallbackId == messageKey)) {
-			removed = true
-			continue
+			const persistedUpdatedAtRaw = msg['persistedUpdatedAt'] as number | null
+			const persistedUpdatedAt = persistedUpdatedAtRaw != null && persistedUpdatedAtRaw >= 0 ? persistedUpdatedAtRaw : 0
+			return rawId != null && rawId != '' ? deleteGroupMessage(groupId, sessionId, rawId, persistedUpdatedAt) : false
 		}
-		next.push(msg)
 	}
-	if (removed == false) { return false }
-	return saveGroupMessages(groupId, sessionId, next)
+	return false
 }
 
 function deleteLegacyHistoryById(activeAgentId: string, id: string): boolean {
@@ -340,8 +337,6 @@ function deleteLegacyHistoryById(activeAgentId: string, id: string): boolean {
 	const messageKey = parts[3]
 	if (activeAgentId == '' || groupId == '' || sessionId == '' || messageKey == '') { return false }
 	const messages = getGroupMessages(groupId, sessionId)
-	const next: UTSJSONObject[] = []
-	let removed = false
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i]
 		const senderAgentId = msg['senderAgentId'] as string | null
@@ -350,14 +345,13 @@ function deleteLegacyHistoryById(activeAgentId: string, id: string): boolean {
 		const rawId = msg['id'] as string | null
 		const fallbackId = 'legacy-' + i.toString()
 		const isLegacyCandidate = senderAgentId == activeAgentId && role == 'assistant' && (contextRecordId == null || contextRecordId == '')
-		if (removed == false && isLegacyCandidate == true && (rawId == messageKey || fallbackId == messageKey)) {
-			removed = true
-			continue
+		if (isLegacyCandidate == true && (rawId == messageKey || fallbackId == messageKey)) {
+			const persistedUpdatedAtRaw = msg['persistedUpdatedAt'] as number | null
+			const persistedUpdatedAt = persistedUpdatedAtRaw != null && persistedUpdatedAtRaw >= 0 ? persistedUpdatedAtRaw : 0
+			return rawId != null && rawId != '' ? deleteGroupMessage(groupId, sessionId, rawId, persistedUpdatedAt) : false
 		}
-		next.push(msg)
 	}
-	if (removed == false) { return false }
-	return saveGroupMessages(groupId, sessionId, next)
+	return false
 }
 
 export function deleteGroupHistoryContextById(activeAgentId: string, id: string): boolean {

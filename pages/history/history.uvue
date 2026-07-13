@@ -99,7 +99,7 @@
 	/**
 	 * 历史记录页面 - 展示过往对话列表，支持批量管理
 	 */
-	import { deleteRuntimeState, getConversations, getMessages, getRuntimeState, deleteConversation, setRuntimeState } from '@/utils/database.uts'
+	import { getConversations, getMessages, deleteConversation } from '@/utils/database.uts'
 	import { disposeChatTurnByConversationId } from '@/utils/chat-turn-runtime.uts'
 	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 	import {
@@ -107,7 +107,7 @@
 		buildGroupHistoryPreviewPayload,
 		deleteGroupHistoryContextById,
 	} from '@/utils/history-group-context-service.uts'
-	import { RUNTIME_ACTIVE_AGENT_ID_KEY, RUNTIME_ACTIVE_CONVERSATION_ID_KEY, getActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
+	import { getActiveAgentRuntimeId, getActiveConversationRuntimeId, setActiveChatRouteState } from '@/utils/runtime-state.uts'
 	import {
 		buildAllHistoryIds,
 		buildHistoryDialogJson,
@@ -394,41 +394,30 @@
 				}
 				let previousAgentId = ''
 				let previousConversationId = ''
-				let stateSaved = false
 				try {
-					previousAgentId = getRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY)
-					previousConversationId = getRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY)
-					stateSaved = setRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY, agentId) && setRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY, conversationId)
+					previousAgentId = getActiveAgentRuntimeId()
+					previousConversationId = getActiveConversationRuntimeId()
 				} catch (e: any) {
-					this.restoreHistoryRouteState(previousAgentId, previousConversationId)
 					this.showHistoryFailure('HISTORY_ROUTE_STATE_FAILED', 'history_route_prepare', '无法准备历史对话页面', e)
 					return
 				}
-				if (stateSaved == false) {
-					this.restoreHistoryRouteState(previousAgentId, previousConversationId)
+				if (setActiveChatRouteState(agentId, conversationId) == false) {
 					this.showHistoryFailure('HISTORY_ROUTE_STATE_FAILED', 'history_route_prepare', '无法准备历史对话页面', '对话运行状态保存失败')
 					return
 				}
 				uni.redirectTo({
 					url: '/pages/chat/chat',
 					fail: (err: any) => {
-						this.restoreHistoryRouteState(previousAgentId, previousConversationId)
+						if (this.restoreHistoryRouteState(previousAgentId, previousConversationId) == false) {
+							this.showHistoryFailure('HISTORY_ROUTE_ROLLBACK_FAILED', 'history_route_rollback', '历史对话路由状态恢复失败', '组合运行状态回滚失败')
+						}
 						this.showHistoryFailure('HISTORY_ROUTE_FAILED', 'history_redirect_chat', '无法打开历史对话', err)
 					}
 				})
 			},
 
-			restoreHistoryRouteState(previousAgentId: string, previousConversationId: string): void {
-				if (previousAgentId == '') {
-					deleteRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY)
-				} else {
-					setRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY, previousAgentId)
-				}
-				if (previousConversationId == '') {
-					deleteRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY)
-				} else {
-					setRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY, previousConversationId)
-				}
+			restoreHistoryRouteState(previousAgentId: string, previousConversationId: string): boolean {
+				return setActiveChatRouteState(previousAgentId, previousConversationId)
 			},
 
 

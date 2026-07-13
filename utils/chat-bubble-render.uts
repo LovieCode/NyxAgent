@@ -12,6 +12,7 @@ export type ChatContentPartView = {
 	filename: string
 	caption: string
 	isLast: boolean
+	windowUnit: number
 }
 
 export type ChatDisplayBlock = {
@@ -37,6 +38,11 @@ function readStringField(obj: UTSJSONObject, key: string): string {
 function readNumberField(obj: UTSJSONObject, key: string): number {
 	const raw = obj[key] as number | null
 	return raw != null ? raw : 0
+}
+
+function readWindowUnit(obj: UTSJSONObject): number {
+	const raw = obj['windowUnit'] as number | null
+	return raw != null ? raw : -1
 }
 
 function emptyDisplayBlock(type: string): ChatDisplayBlock {
@@ -137,6 +143,7 @@ export function buildChatContentParts(source: UTSJSONObject[]): ChatContentPartV
 			filename: filename,
 			caption: readStringField(part, 'caption'),
 			isLast: false,
+			windowUnit: readWindowUnit(part),
 		} as ChatContentPartView)
 	}
 	return result
@@ -145,7 +152,7 @@ export function buildChatContentParts(source: UTSJSONObject[]): ChatContentPartV
 function splitChatTextSegments(text: string): string[] {
 	const result: string[] = []
 	if (text == '') { return result }
-	const normalized = text.replace(/\r/g, '\n')
+	const normalized = text.replace(/\r/g, '')
 	const lines = normalized.split('\n')
 	let para = ''
 	for (let i = 0; i < lines.length; i++) {
@@ -174,6 +181,7 @@ function copyContentPart(part: ChatContentPartView, text: string): ChatContentPa
 		filename: part.filename,
 		caption: part.caption,
 		isLast: false,
+		windowUnit: part.windowUnit,
 	} as ChatContentPartView
 }
 
@@ -211,6 +219,15 @@ export function buildChatRenderContentParts(source: ChatContentPartView[], role:
 			pushChunkedContentPart(result, part, displayText)
 		} else {
 			result.push(copyContentPart(part, part.text))
+		}
+	}
+	let nextWindowUnit = 0
+	for (let i = 0; i < result.length; i++) {
+		if (result[i].windowUnit >= 0) {
+			nextWindowUnit = result[i].windowUnit + 1
+		} else {
+			result[i].windowUnit = nextWindowUnit
+			nextWindowUnit++
 		}
 	}
 	if (result.length > 0) {

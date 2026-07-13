@@ -11,7 +11,7 @@
 		<view class="summary-band">
 			<view class="summary-main">
 				<text class="summary-title">{{diagnostics.length}} 条记录</text>
-				<text class="summary-desc">仅保留本次运行，应用重启后自动清除</text>
+				<text class="summary-desc">错误记录会跨重启保留，达到上限后自动淘汰</text>
 			</view>
 			<view v-if="diagnostics.length > 0" class="status-dot"></view>
 		</view>
@@ -21,7 +21,7 @@
 				<view class="empty-icon">
 					<oui-icon-unix name="info-circle" size="28px" color="#C8BBC1" />
 				</view>
-				<text class="empty-title">本次运行没有错误记录</text>
+				<text class="empty-title">当前没有错误记录</text>
 				<text class="empty-desc">发生可诊断错误后，会在这里显示错误编号和技术详情。</text>
 			</view>
 
@@ -126,7 +126,7 @@
 				if (this.diagnostics.length == 0) { return }
 				uni.showModal({
 					title: '清空错误记录',
-					content: '只会清空本次运行的诊断记录，不会影响聊天和设置。',
+					content: '会清空已保存的诊断记录，不会影响聊天和设置。',
 					success: (res) => {
 						if (res.confirm == true) {
 							clearAppDiagnostics()

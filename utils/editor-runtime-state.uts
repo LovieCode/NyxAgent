@@ -1,0 +1,219 @@
+import {
+	consumeRuntimeStatesIf,
+	getRuntimeState,
+	getRuntimeStates,
+	setRuntimeStates,
+	setRuntimeStatesIf,
+	type RuntimeStateMutation,
+} from '@/utils/database.uts'
+
+const EDITOR_MODE_KEY = 'editor_mode'
+const EDITOR_TITLE_KEY = 'editor_title'
+const EDITOR_CONTENT_KEY = 'editor_content'
+const EDITOR_RESULT_KEY = 'editor_result'
+const EDITOR_RESULT_READY_KEY = 'editor_result_ready'
+const EDITOR_OWNER_KEY = 'editor_owner'
+const EDITOR_TARGET_KEY = 'editor_target'
+const EDITOR_FILE_PATH_KEY = 'editor_file_path'
+const EDITOR_SAVED_KEY = 'editor_saved'
+const EDITOR_SAVED_PATH_KEY = 'editor_saved_path'
+const EDITOR_READONLY_KEY = 'editor_readonly'
+const EDITOR_PLACEHOLDER_KEY = 'editor_placeholder'
+const EDITOR_DRAFT_PREFIX = 'v1:'
+
+export type EditorRuntimeConfig = {
+	mode: string
+	title: string
+	content: string
+	owner: string
+	target: string
+	filePath: string
+	readOnly: boolean
+	placeholder: string
+}
+
+function editorRuntimeKeys(): string[] {
+	return [
+		EDITOR_MODE_KEY,
+		EDITOR_TITLE_KEY,
+		EDITOR_CONTENT_KEY,
+		EDITOR_RESULT_KEY,
+		EDITOR_RESULT_READY_KEY,
+		EDITOR_OWNER_KEY,
+		EDITOR_TARGET_KEY,
+		EDITOR_FILE_PATH_KEY,
+		EDITOR_SAVED_KEY,
+		EDITOR_SAVED_PATH_KEY,
+		EDITOR_READONLY_KEY,
+		EDITOR_PLACEHOLDER_KEY,
+	]
+}
+
+function editorRuntimeResetMutations(): RuntimeStateMutation[] {
+	const keys = editorRuntimeKeys()
+	const items: RuntimeStateMutation[] = []
+	for (let i = 0; i < keys.length; i++) {
+		items.push({ key: keys[i], value: '' } as RuntimeStateMutation)
+	}
+	return items
+}
+
+function replaceMutationValue(items: RuntimeStateMutation[], key: string, value: string): void {
+	for (let i = 0; i < items.length; i++) {
+		if (items[i].key == key) {
+			items[i].value = value
+			return
+		}
+	}
+}
+
+function readConsumedValue(keys: string[], values: string[], key: string): string {
+	for (let i = 0; i < keys.length; i++) {
+		if (keys[i] == key && i < values.length) { return values[i] }
+	}
+	return ''
+}
+
+export function clearEditorRuntimeState(): boolean {
+	return setRuntimeStates(editorRuntimeResetMutations())
+}
+
+/** 只清理由指定 owner/target 创建的状态；状态已被其他页面替换时视为无需清理。 */
+export function clearEditorRuntimeStateFor(owner: string, target: string): boolean {
+	if (owner == '' || target == '') { return false }
+	const guards: RuntimeStateMutation[] = [
+		{ key: EDITOR_OWNER_KEY, value: owner } as RuntimeStateMutation,
+		{ key: EDITOR_TARGET_KEY, value: target } as RuntimeStateMutation,
+	]
+	try {
+		consumeRuntimeStatesIf(guards, editorRuntimeKeys())
+	} catch (_e: any) {
+		return false
+	}
+	return true
+}
+
+export function readEditorRuntimeConfig(): EditorRuntimeConfig {
+	const keys = editorRuntimeKeys()
+	const values = getRuntimeStates(keys)
+	return {
+		mode: readConsumedValue(keys, values, EDITOR_MODE_KEY),
+		title: readConsumedValue(keys, values, EDITOR_TITLE_KEY),
+		content: readConsumedValue(keys, values, EDITOR_CONTENT_KEY),
+		owner: readConsumedValue(keys, values, EDITOR_OWNER_KEY),
+		target: readConsumedValue(keys, values, EDITOR_TARGET_KEY),
+		filePath: readConsumedValue(keys, values, EDITOR_FILE_PATH_KEY),
+		readOnly: readConsumedValue(keys, values, EDITOR_READONLY_KEY) == 'true',
+		placeholder: readConsumedValue(keys, values, EDITOR_PLACEHOLDER_KEY),
+	} as EditorRuntimeConfig
+}
+
+export function prepareTextEditorRuntimeState(content: string, title: string, owner: string, target: string, placeholder: string): boolean {
+	if (owner == '' || target == '') { return false }
+	const items = editorRuntimeResetMutations()
+	replaceMutationValue(items, EDITOR_MODE_KEY, 'text')
+	replaceMutationValue(items, EDITOR_TITLE_KEY, title)
+	replaceMutationValue(items, EDITOR_CONTENT_KEY, content)
+	replaceMutationValue(items, EDITOR_OWNER_KEY, owner)
+	replaceMutationValue(items, EDITOR_TARGET_KEY, target)
+	replaceMutationValue(items, EDITOR_PLACEHOLDER_KEY, placeholder)
+	return setRuntimeStates(items)
+}
+
+export function prepareFileEditorRuntimeState(path: string, title: string, owner: string, target: string, placeholder: string): boolean {
+	if (path == '' || owner == '' || target == '') { return false }
+	const items = editorRuntimeResetMutations()
+	replaceMutationValue(items, EDITOR_MODE_KEY, 'file')
+	replaceMutationValue(items, EDITOR_TITLE_KEY, title)
+	replaceMutationValue(items, EDITOR_OWNER_KEY, owner)
+	replaceMutationValue(items, EDITOR_TARGET_KEY, target)
+	replaceMutationValue(items, EDITOR_FILE_PATH_KEY, path)
+	replaceMutationValue(items, EDITOR_PLACEHOLDER_KEY, placeholder)
+	return setRuntimeStates(items)
+}
+
+export function consumeTextEditorResult(owner: string, target: string): string | null {
+	if (owner == '' || target == '') { return null }
+	const guards: RuntimeStateMutation[] = [
+		{ key: EDITOR_MODE_KEY, value: 'text' } as RuntimeStateMutation,
+		{ key: EDITOR_OWNER_KEY, value: owner } as RuntimeStateMutation,
+		{ key: EDITOR_TARGET_KEY, value: target } as RuntimeStateMutation,
+		{ key: EDITOR_RESULT_READY_KEY, value: 'true' } as RuntimeStateMutation,
+	]
+	const keys = editorRuntimeKeys()
+	const values = consumeRuntimeStatesIf(guards, keys)
+	if (values == null) { return null }
+	return readConsumedValue(keys, values, EDITOR_RESULT_KEY)
+}
+
+export function consumeFileEditorSavedState(owner: string, target: string): boolean {
+	if (owner == '' || target == '') { return false }
+	const guards: RuntimeStateMutation[] = [
+		{ key: EDITOR_MODE_KEY, value: 'file' } as RuntimeStateMutation,
+		{ key: EDITOR_OWNER_KEY, value: owner } as RuntimeStateMutation,
+		{ key: EDITOR_TARGET_KEY, value: target } as RuntimeStateMutation,
+		{ key: EDITOR_SAVED_KEY, value: 'true' } as RuntimeStateMutation,
+	]
+	return consumeRuntimeStatesIf(guards, editorRuntimeKeys()) != null
+}
+
+export function publishTextEditorResult(owner: string, target: string, content: string, draftKey: string): boolean {
+	if (owner == '' || target == '') { return false }
+	const guards: RuntimeStateMutation[] = [
+		{ key: EDITOR_MODE_KEY, value: 'text' } as RuntimeStateMutation,
+		{ key: EDITOR_OWNER_KEY, value: owner } as RuntimeStateMutation,
+		{ key: EDITOR_TARGET_KEY, value: target } as RuntimeStateMutation,
+	]
+	const items: RuntimeStateMutation[] = [
+		{ key: EDITOR_RESULT_KEY, value: content } as RuntimeStateMutation,
+		{ key: EDITOR_RESULT_READY_KEY, value: 'true' } as RuntimeStateMutation,
+	]
+	if (draftKey != '') {
+		items.push({ key: draftKey, value: '' } as RuntimeStateMutation)
+	}
+	return setRuntimeStatesIf(guards, items)
+}
+
+export function publishFileEditorSavedState(owner: string, target: string, path: string, draftKey: string): boolean {
+	if (owner == '' || target == '' || path == '') { return false }
+	const guards: RuntimeStateMutation[] = [
+		{ key: EDITOR_MODE_KEY, value: 'file' } as RuntimeStateMutation,
+		{ key: EDITOR_OWNER_KEY, value: owner } as RuntimeStateMutation,
+		{ key: EDITOR_TARGET_KEY, value: target } as RuntimeStateMutation,
+		{ key: EDITOR_FILE_PATH_KEY, value: path } as RuntimeStateMutation,
+	]
+	const items: RuntimeStateMutation[] = [
+		{ key: EDITOR_SAVED_KEY, value: 'true' } as RuntimeStateMutation,
+		{ key: EDITOR_SAVED_PATH_KEY, value: path } as RuntimeStateMutation,
+	]
+	if (draftKey != '') {
+		items.push({ key: draftKey, value: '' } as RuntimeStateMutation)
+	}
+	return setRuntimeStatesIf(guards, items)
+}
+
+export function readEditorDraft(draftKey: string): string | null {
+	if (draftKey == '') { return null }
+	const stored = getRuntimeState(draftKey)
+	if (stored == '') { return null }
+	if (stored.startsWith(EDITOR_DRAFT_PREFIX)) {
+		return stored.substring(EDITOR_DRAFT_PREFIX.length)
+	}
+	return stored
+}
+
+export function saveEditorDraft(draftKey: string, content: string): boolean {
+	if (draftKey == '') { return false }
+	const items: RuntimeStateMutation[] = [
+		{ key: draftKey, value: EDITOR_DRAFT_PREFIX + content } as RuntimeStateMutation,
+	]
+	return setRuntimeStates(items)
+}
+
+export function clearEditorDraft(draftKey: string): boolean {
+	if (draftKey == '') { return true }
+	const items: RuntimeStateMutation[] = [
+		{ key: draftKey, value: '' } as RuntimeStateMutation,
+	]
+	return setRuntimeStates(items)
+}

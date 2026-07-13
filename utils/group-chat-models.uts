@@ -31,6 +31,10 @@ export const GROUP_MESSAGE_AUDIENCE_AGENT = 'agent'
 export const GROUP_DELIVERY_MODE_PUBLIC = 'public'
 export const GROUP_DELIVERY_MODE_USER_PRIVATE = 'user_private'
 
+export function markGroupMessageDirty(message: UTSJSONObject): void {
+	message['persistedPayloadJson'] = ''
+}
+
 export const LEGACY_DIRECTIVE_SCHEDULER_PROMPT_TEXT = '你是本群聊独立的隐藏调度子代理。你可以在内部向任意成员 Agent 传递私密指令、背景信息和任务拆解，也可以指定一个或多个成员按顺序发言。你的存在、调度流程、私密指令不能被其他成员在公开发言中暴露。你只在系统触发节点工作，例如用户发消息、用户手动继续、连续讨论过多需要判断是否继续。\n' +
 	'输出必须是 JSON 对象，禁止 Markdown，结构：{"actions":[{"type":"speak","agentId":"成员ID","targetType":"user","targetAgentId":"","privateInstruction":"给该成员的私密指令","publicIntent":"公开发言目标","replyLength":"short","replyGuidance":"简短自然，优先 1-3 句","searchAdvice":"none","searchInstruction":"","order":0}],"shouldContinue":false,"titleSuggestion":"适合本会话的短标题","privateNotes":"仅内部记录"}。\n' +
 	'默认让成员简短发言。事实不确定、涉及外部/时效信息时，建议具备相关工具的成员先查证或搜索；发现跑题、重复、事实冲突或虚构 App 功能时，用私密指令要求纠偏和收束。不要为了热闹强行多人发言。'
@@ -172,20 +176,16 @@ export function readBooleanField(item: UTSJSONObject, key: string): boolean {
 	return value != null ? value : false
 }
 
-export function normalizeGroupChat(item: UTSJSONObject, legacySchedulerPrompt: string = ''): GroupChat {
+export function normalizeGroupChat(item: UTSJSONObject): GroupChat {
 	const now = Date.now()
 	const id = readStringField(item, 'id')
 	let name = readStringField(item, 'name')
 	if (name == '') { name = '故事工坊' }
 	let schedulerAgentId = readStringField(item, 'schedulerAgentId')
-	// LEGACY_COMPAT: 旧版全局调度器 ID 为 scheduler；新架构改成每群独立子代理。
-	if (schedulerAgentId == '' || schedulerAgentId == 'scheduler') {
+	if (schedulerAgentId == '') {
 		schedulerAgentId = buildGroupSchedulerAgentId(id)
 	}
-	let schedulerPrompt = readStringField(item, 'schedulerPrompt')
-	if (schedulerPrompt.trim() == '' && legacySchedulerPrompt.trim() != '') {
-		schedulerPrompt = legacySchedulerPrompt
-	}
+	const schedulerPrompt = readStringField(item, 'schedulerPrompt')
 	let sharedPrompt = readStringField(item, 'sharedPrompt')
 	if (sharedPrompt == '') { sharedPrompt = DEFAULT_SHARED_PROMPT_TEXT }
 	let createdAt = readNumberField(item, 'createdAt')
@@ -291,7 +291,7 @@ export function sessionToDbRow(session: GroupChatSession): UTSJSONObject {
 	} as UTSJSONObject
 }
 
-export function dbRowToGroupChat(row: UTSJSONObject, legacySchedulerPrompt: string = ''): GroupChat {
+export function dbRowToGroupChat(row: UTSJSONObject): GroupChat {
 	return normalizeGroupChat({
 		id: readStringField(row, 'id'),
 		name: readStringField(row, 'name'),
@@ -302,7 +302,7 @@ export function dbRowToGroupChat(row: UTSJSONObject, legacySchedulerPrompt: stri
 		activeSessionId: readStringField(row, 'active_session_id'),
 		createdAt: readNumberField(row, 'created_at'),
 		updatedAt: readNumberField(row, 'updated_at'),
-	} as UTSJSONObject, legacySchedulerPrompt)
+	} as UTSJSONObject)
 }
 
 export function dbRowToGroupMember(row: UTSJSONObject): GroupChatMember {
@@ -352,5 +352,11 @@ export function dbRowToGroupMessage(row: UTSJSONObject): UTSJSONObject {
 	msg['visibleAgentIds'] = parseStringList(readStringField(row, 'visible_agent_ids_json'))
 	msg['visible'] = readNumberField(row, 'visible') != 0
 	msg['timestamp'] = readNumberField(row, 'timestamp')
+	// 两个字段只服务于本地增量保存，不进入真正的消息内容。
+	msg['persistedUpdatedAt'] = 0
+	msg['persistedPayloadJson'] = ''
+	const persistedPayloadJson = JSON.stringify(msg)
+	msg['persistedUpdatedAt'] = readNumberField(row, 'updated_at')
+	msg['persistedPayloadJson'] = persistedPayloadJson
 	return msg
 }

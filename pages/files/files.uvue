@@ -127,12 +127,11 @@
 	import { basename, listDir, listRootContents, createDir, createFile, copyItem, deleteItem, exists, renameItem, parentPath, joinPath, getUserDir, getInternalFilesDir, getExternalFilesDir, getAgentsRoot, formatFileSize, formatTime, isTextFile, isImageFile, type FileItem, type FileOpResult, type PathSegment } from '@/utils/file-manager.uts'
 	import { isChooseCancelError, parsePickedFileInfo, type PickedLocalFile } from '@/utils/attachment-reader.uts'
 	import { APP_ERROR_CATEGORY_STORAGE, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
-	import { getRuntimeState } from '@/utils/database.uts'
 	import { consumeFilesInitialPath } from '@/utils/runtime-state.uts'
 	import {
-			buildManagedFilePathSegments,
-			buildGroupWorkspacesRootPath,
-			clearManagedEditorRuntimeState,
+		buildManagedFilePathSegments,
+		buildGroupWorkspacesRootPath,
+		clearManagedEditorRuntimeState,
 		consumeManagedEditorSavedState,
 		getManagedFileDisplayName,
 		getManagedFileIconColor,
@@ -240,7 +239,11 @@
 		},
 		onShow() {
 			// 编辑器通过 SQLite runtime_state 回传保存结果。
-			consumeManagedEditorSavedState()
+			try {
+				consumeManagedEditorSavedState()
+			} catch (e: any) {
+				this.showFileFailure('FILE_EDITOR_RESULT_FAILED', 'file_editor_consume_result', '文件编辑结果读取失败', e)
+			}
 			if (this.currentPath != '') {
 				this.refreshList()
 			}
@@ -492,15 +495,16 @@
 
 			/** 打开文本编辑器 */
 			openTextEditor(item : FileItem) {
-				prepareManagedTextEditorRuntimeState(item)
-				if (getRuntimeState('editor_target') != 'file-manager' || getRuntimeState('editor_file_path') != item.path) {
+				if (prepareManagedTextEditorRuntimeState(item) == false) {
 					this.showFileFailure('FILE_EDITOR_STATE_FAILED', 'file_editor_prepare', '无法准备文件编辑器', '编辑器临时状态保存失败')
 					return
 				}
 				uni.navigateTo({
 					url: '/pages/common/editor/editor',
 					fail: (err: any) => {
-						clearManagedEditorRuntimeState()
+						if (clearManagedEditorRuntimeState(item) == false) {
+							this.showFileFailure('FILE_EDITOR_CLEANUP_FAILED', 'file_editor_cleanup', '编辑器临时状态清理失败', 'clearEditorRuntimeState 返回 false')
+						}
 						this.showFileFailure('FILE_EDITOR_ROUTE_FAILED', 'file_editor_navigate', '无法打开文件编辑器', err)
 					}
 				})

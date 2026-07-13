@@ -8,6 +8,7 @@ import { getAppSetting, saveConversation, getMessages, getConversationsByAgent }
 import { getAgentById } from '@/utils/agent.uts'
 import { getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
 import { consumeActiveConversationRuntimeId, getActiveAgentRuntimeId } from '@/utils/runtime-state.uts'
+import { rememberAgentConversationWorkspaceName } from '@/utils/workspace-name-snapshot.uts'
 import {
 	type ChatAgentSnapshot,
 	type ChatConversationLoadResult,
@@ -121,10 +122,6 @@ function resolveDefaultChatModel(): string {
 			return rawModel
 		}
 	}
-	const globalModel = getAppSetting('settings_model')
-	if (globalModel != null && globalModel != '') {
-		return globalModel
-	}
 	return ''
 }
 
@@ -159,14 +156,17 @@ export function saveChatConversation(conversationId: string, agentId: string, sy
 	if (messages.length == 0) {
 		return true
 	}
-	return saveConversation(
+	const title = buildConversationTitle(messages)
+	const saved = saveConversation(
 		conversationId,
-		buildConversationTitle(messages),
+		title,
 		resolveConversationModel(agentId),
 		agentId,
 		systemPrompt,
 		messages
 	)
+	if (saved == true) { rememberAgentConversationWorkspaceName(agentId, conversationId, title) }
+	return saved
 }
 
 /** 冷启动时把旧进程遗留的流式消息收束为明确的中断状态，不伪装成仍在生成。 */

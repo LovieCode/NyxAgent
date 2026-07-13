@@ -9,7 +9,7 @@ export type ProviderEditPreset = {
 	model: string
 }
 
-export function createProviderEditModelInfo(modelId: string, expanded: boolean): ModelInfo {
+export function createProviderEditModelInfo(modelId: string, expanded: boolean, providerId: string = ''): ModelInfo {
 	if (modelId == '') {
 		return {
 			id: '',
@@ -19,9 +19,10 @@ export function createProviderEditModelInfo(modelId: string, expanded: boolean):
 			supportsVision: false,
 			supportsToolCall: false,
 			supportsReasoning: false,
+			capabilitiesKnown: false,
 		} as ModelInfo
 	}
-	const caps = getModelCapabilities(modelId)
+	const caps = getModelCapabilities(modelId, providerId)
 	return {
 		id: modelId,
 		ctxStr: '',
@@ -30,6 +31,7 @@ export function createProviderEditModelInfo(modelId: string, expanded: boolean):
 		supportsVision: caps.supportsVision,
 		supportsToolCall: caps.supportsToolCall,
 		supportsReasoning: caps.supportsReasoning,
+		capabilitiesKnown: caps.found,
 	} as ModelInfo
 }
 
@@ -111,11 +113,11 @@ export function buildProviderModelSelectionFlags(count: number, selected: boolea
 	return flags
 }
 
-export function appendSelectedProviderModels(editModels: ModelInfo[], fetchedModelIds: string[], selectedModelIndexes: boolean[]): number {
+export function appendSelectedProviderModels(editModels: ModelInfo[], fetchedModelIds: string[], selectedModelIndexes: boolean[], providerId: string = ''): number {
 	let addedCount = 0
 	for (let i = 0; i < fetchedModelIds.length; i++) {
 		if (selectedModelIndexes[i] == true) {
-			editModels.push(createProviderEditModelInfo(fetchedModelIds[i], false))
+			editModels.push(createProviderEditModelInfo(fetchedModelIds[i], false, providerId))
 			addedCount++
 		}
 	}

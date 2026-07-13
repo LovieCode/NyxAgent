@@ -1,6 +1,6 @@
 # NyxAgent CLI / ADB 全功能测试台账
 
-更新日期：2026-07-12
+更新日期：2026-07-14
 
 ## 目标与环境
 
@@ -25,14 +25,14 @@
 
 | 区域 | 页面 / 功能 | 核心检查 | 状态 | 证据 / 备注 |
 | --- | --- | --- | --- | --- |
-| 主导航 | `pages/agents/agents` | 筛选、私聊/群聊入口、新建 Agent、新建群聊、头像选择、首次引导 | 测试中 | ADB 已通过私聊/群聊筛选与会话入口、Agent 新建/删除；首次引导待测 |
-| 主导航 | `pages/todo/todo` | 待办新增/完成/筛选/删除、笔记搜索/新增/编辑 | 测试中 | 2026-07-12 ADB 实测待办新增、整行完成、已完成筛选、重启后持久化、删除；笔记新增、编辑、保存、删除均通过且测试数据已清理。发现直接点复选框只变内部视觉状态、重启回退，源码已改为受页面状态控制的静态勾选视图，待重新编译部署回归。 |
-| 主导航 | `pages/files/files` | 根目录、面包屑、搜索、排序、导入、新建文件/目录、打开、重命名、删除 | 测试中 | ADB 已通过根目录、名称回退、新建空名称校验、弹窗返回和遮罩行为；2026-07-12 新建临时文件夹、重命名为 `CodexADB_Renamed_0712`、通过 UI 删除，并以 `run-as` 的 `find` 确认无残留；导入、搜索、排序和文件读写继续覆盖 |
-| 主导航 | `pages/settings/settings` | 所有设置入口、资料摘要、状态展示 | 测试中 | ADB 已通过设置列表与运行诊断入口；各设置写操作继续回归 |
-| 设置 | `pages/settings/diagnostics/diagnostics` | 错误记录、诊断编号、技术详情、清空、空状态 | 测试中 | ADB 已通过入口与空状态；错误注入、详情和清空待测 |
-| 私聊 | `pages/chat/chat` | 文本发送、流式状态、停止/续跑、工具栏、图片/拍照/文件、滚动、重进恢复 | 测试中 | ADB 已通过文本发送、退出页面后台续流、重进恢复和防重复；图片 runtime、删除失效、长历史滚动与键盘继续回归 |
+| 主导航 | `pages/agents/agents` | 筛选、私聊/群聊入口、新建 Agent、新建群聊、头像选择、首次引导 | 测试中 | 2026-07-14 ADB 再次通过首页渲染、筛选与私聊/群聊入口；此前 Agent 新建/删除已通过，首次引导仍待隔离数据回归 |
+| 主导航 | `pages/todo/todo` | 待办新增/完成/筛选/删除、笔记搜索/新增/编辑 | 测试中 | 2026-07-14 ADB 基础入口与列表渲染通过；2026-07-12 已覆盖 CRUD、筛选和重启持久化。复选框状态脱节修复已进入当前源码并编译通过，最新 DEX 待回归 |
+| 主导航 | `pages/files/files` | 根目录、面包屑、搜索、排序、导入、新建文件/目录、打开、重命名、删除 | 测试中 | 2026-07-14 ADB 再次通过根目录、搜索和排序控件渲染；此前已覆盖名称回退、空名称校验、目录新建/重命名/删除及磁盘无残留，导入和原子写故障注入仍待测 |
+| 主导航 | `pages/settings/settings` | 所有设置入口、资料摘要、状态展示 | 测试中 | 2026-07-14 ADB 再次通过设置列表、资料摘要及主要子页入口；各设置写失败回滚继续隔离回归 |
+| 设置 | `pages/settings/diagnostics/diagnostics` | 错误记录、诊断编号、技术详情、清空、空状态 | 测试中 | ADB 已通过入口与空状态；持久化说明已与实际跨重启存储一致并通过当前源码编译，错误注入、详情和清空待测 |
+| 私聊 | `pages/chat/chat` | 文本发送、流式状态、停止/续跑、工具栏、图片/拍照/文件、滚动、重进恢复 | 测试中 | 2026-07-14 ADB 通过会话打开、历史渲染、工具栏、系统图片选择器和可见 API 错误气泡；此前已通过离页续流、重进防重复和 380 条历史批量换窗。当前源码的资料注入与 render-unit 窗口仍待最新 DEX 回归，键盘待真机 |
 | 私聊 | `pages/agent-settings/agent-settings` | 名称/备注/头像/Prompt/规则/模型/语音/生成参数/Skills/工具/截断/删除 | 测试中 | ADB 已通过临时改名、全屏编辑往返保留未保存状态、不保存退出、Agent 删除；其余设置继续覆盖 |
-| 群聊 | `pages/group-chat/group-chat` | 文本/媒体、调度、暂停、后台续流、成员消息、上下文/文件/记忆入口 | 测试中 | ADB 已通过历史渲染、私聊目标选择与草稿隔离、私发后公开续接、调度控制面隔离、拍照入口及权限拒绝恢复；真实用户→成员私发、延迟唤醒、无限续谈、公开交接、流中插话、相册/文件和键盘继续覆盖 |
+| 群聊 | `pages/group-chat/group-chat` | 文本/媒体、调度、暂停、后台续流、成员消息、上下文/文件/记忆入口 | 测试中 | 2026-07-14 ADB 通过会话打开、历史/工具栏、第二页控制项、真实成员私聊选择及私聊输入态；图片保存、转述、停止和后续调度已迁入 session runtime 并通过当前源码编译。最终送达状态、无限续谈、公开交接、流中插话、图片离页续跑和键盘仍待最新 DEX/真机回归 |
 | 群聊 | `pages/group-chat-settings/group-chat-settings` | 群名、成员、调度 Prompt、共享 Prompt、未保存退出 | 测试中 | ADB 已通过页面进入和成员列表；编辑、保存与退出保护待测 |
 | 群聊 | `pages/group-chat-sessions/group-chat-sessions` | 会话新增、切换、重命名、删除 | 测试中 | ADB 已通过新增、切换、删除并清空文件；SQLite 验证消息、复盘、上下文、指标、任务、记忆和工作区均级联清理。此前无重命名入口，已补页面 UI，待重新编译部署后回归。 |
 | 历史 | `pages/history/history` | 私聊/群上下文切换、预览、恢复、批量删除、清空 | 测试中 | ADB 已通过历史预览、切换到对话和管理模式选择；未对用户数据执行批量删除 |
@@ -41,10 +41,10 @@
 | 媒体 | `pages/common/crop/crop` | 图片加载、缩放/移动、裁剪、取消 | ADB 通过 | 系统 Picker -> 裁剪页、返回取消、完成裁剪均通过；无 `CROP_SOURCE_MISSING` |
 | 上下文 | `pages/context-preview/context-preview` | 请求快照、标签顺序、空状态、长内容滚动 | 测试中 | ADB 已通过原始上下文展示、长内容滚动与复制入口 |
 | 记忆 | `pages/memory/memory` | 分类/目标切换、新增/编辑/删除、搜索、记忆整理状态 | 测试中 | 短期缓存保存、清空确认和重进持久化已通过；重要信息 CRUD 继续覆盖 |
-| 设置 | `pages/settings/profile/profile` | 用户名、简介、详细介绍、头像、保存与私聊注入 | 测试中 | 相册选择、裁剪、内部文件落盘和“不保存”临时文件回收已通过；相机永久拒绝后的设置恢复入口 ADB 通过，资料保存继续覆盖 |
+| 设置 | `pages/settings/profile/profile` | 用户名、简介、详细介绍、头像、保存与私聊注入 | 测试中 | 2026-07-14 ADB 再次通过头像来源操作表与系统相册；此前已通过裁剪、内部落盘、临时文件回收和相机权限恢复。资料注入已与记忆写权限解耦并通过当前源码编译，保存后真实请求待回归 |
 | 设置 | `pages/settings/basic/basic` | 提供商列表、启停、默认配置入口 | 测试中 | ADB 已通过提供商管理入口、列表渲染与返回；启停、删除引用清理和失败回滚待隔离数据回归 |
 | 设置 | `pages/settings/basic/provider-edit` | 新增/编辑提供商、URL/API Key/模型、校验、删除 | 测试中 | Android class 编译与常规编辑页 ADB 通过；首启不再预置过时模型，多模型必须显式选择默认项；全新安装流程待隔离数据回归 |
-| 设置 | `pages/settings/model/model` | 旧模型设置兼容与跳转 | 静态确认 | 页面仍注册，但项目内没有跳转方，也没有代码写入 `pending_agent_model_id`；保留/重定向/下线需要兼容策略确认 |
+| 设置 | `pages/settings/model/model` | 旧模型设置兼容与跳转 | 编译通过，运行待回归 | 页面保留深链兼容：存在 Agent 路由状态时跳转 Agent 设置，否则重定向默认模型页；运行状态清理失败会进入 diagnostics |
 | 设置 | `pages/settings/default-models/default-models` | chat/TTS/STT/vision/organize 默认模型与图片描述 Prompt | 测试中 | ADB 已通过 Chat/Memory/Vision 区域、页面返回；TTS dirty 保护已编译，五类任务选择和非法参数待写操作回归 |
 | 设置 | `pages/settings/generation/generation` | 温度、Token、迭代、流式配置与边界值 | ADB 通过 | 上下界裁剪、流式开关、退出重进与 force-stop 持久化通过；数值改为 blur/confirm 提交，编辑中间态不再写库 |
 | 设置 | `pages/settings/plugin/plugin` | 插件配置、启停、输入校验、错误态 | 测试中 | ADB 已通过页面入口、搜索与 AstrBot 配置渲染；401/500/超时/断网及 diagnostics 待测 |
@@ -54,17 +54,64 @@
 | 通用组件 | `rice-ui/action-sheet` | 展示、选择、取消、遮罩关闭 | ADB 通过 | 头像来源与文件新建操作表展示、选择、取消和点击遮罩关闭均通过；MP API 字段类型错误已静态修复 |
 | 通用组件 | `rice-ui/dialog` | 确认、取消、输入校验、遮罩行为 | ADB 通过 | Todo/文件空输入确认后保持弹窗；物理返回只关弹窗；遮罩按 `closeOnClickOverlay=false` 不误关；权限提示确认/取消通过 |
 
+## 2026-07-14 本轮基础功能验收矩阵
+
+本表是当前回归轮的简化入口，状态只使用 `待测` / `通过` / `失败`。`通过` 表示已有 CLI/ADB 或静态证据覆盖基础操作和无阻断渲染，不代表异常注入、真机软键盘和跨平台编译均已完成；每次回归后同步更新状态，并在下方执行日志补充证据。涉及文件用于追踪测试与修改边界。
+
+| 页面 / 功能 | 基础操作 | 预期 | 状态 | 测试 / 修改文件 |
+| --- | --- | --- | --- | --- |
+| `pages/agents/agents` | 进入、筛选、打开私聊/群聊、新建/删除 Agent、头像来源 | 列表名称稳定，操作成功后可重启恢复，不显示孤立 ID | 通过 | `pages/agents/agents.uvue`、`utils/agent.uts`、`utils/avatar-image-picker.uts` |
+| `pages/chat/chat` | 文本发送、停止/续跑、离页回流、图片/文件、长历史、键盘 | 每回合只落盘一份；失败可见；窗口批量换窗，输入栏位于键盘上方 | 待测 | `pages/chat/chat.uvue`、`utils/chat-turn-runtime.uts`、`utils/chat-message-window.uts` |
+| `pages/group-chat/group-chat` | 公开消息、成员私发、调度/暂停、续谈、插话、媒体、长历史 | 可见性隔离正确，调度不中断，用户插话后重新路由，滚动不卡顿 | 待测 | `pages/group-chat/group-chat.uvue`、`utils/group-chat-turn-runtime.uts`、`utils/group-chat-scheduler.uts` |
+| `pages/group-chat-settings/group-chat-settings` | 编辑群名、成员、调度规则/共享规则、返回 | 保存成功刷新；失败回滚；未保存返回有保护 | 待测 | `pages/group-chat-settings/group-chat-settings.uvue`、`utils/group-chat-service.uts` |
+| `pages/group-chat-sessions/group-chat-sessions` | 新建、切换、重命名、删除会话 | 会话名持久化；删除级联清理消息、任务、记忆和工作区 | 待测 | `pages/group-chat-sessions/group-chat-sessions.uvue`、`utils/database-group-chat.uts` |
+| `pages/todo/todo` | 新增、勾选、筛选、删除待办，空值确认 | 页面状态与文件/数据库一致，重启后勾选不回退 | 待测 | `pages/todo/todo.uvue`、`utils/file-manager.uts` |
+| `pages/note-editor/note-editor` | 新建、编辑、保存、取消、物理返回 | 保存后可重进；脏数据返回先确认，取消不产生残留 | 通过 | `pages/note-editor/note-editor.uvue`、`utils/editor-runtime-state.uts` |
+| `pages/files/files` | 浏览、面包屑、搜索、排序、新建、打开、重命名、删除、导入 | 路径受限，空值/失败保留弹窗，操作后列表和磁盘一致 | 待测 | `pages/files/files.uvue`、`utils/file-manager.uts`、`utils/file-manager-io.uts` |
+| `pages/history/history` | 私聊/群聊切换、预览、恢复、批量删除、清空 | 预览与原文一致；恢复目标正确；删除不留孤儿数据 | 待测 | `pages/history/history.uvue`、`utils/history-group-context-service.uts` |
+| `pages/settings/settings` | 进入设置、打开各子页、查看资料和状态 | 所有入口可达，返回不丢当前路由状态 | 通过 | `pages/settings/settings.uvue`、`utils/runtime-state.uts` |
+| `pages/settings/diagnostics/diagnostics` | 查看错误、打开详情、复制/清空、空状态 | 错误有编号和可读提示，清空后空状态稳定 | 待测 | `pages/settings/diagnostics/diagnostics.uvue`、`utils/app-error.uts` |
+| `pages/settings/basic/basic` | 查看 Provider、启停、删除、打开默认配置 | 引用受保护；失败不改变启停状态 | 待测 | `pages/settings/basic/basic.uvue`、`uni_modules/agent-core/utssdk/provider.uts` |
+| `pages/settings/basic/provider-edit` | 新增/编辑 URL、API Key、模型，校验、删除 | API Key 默认掩码；模型列表错误可重试；保存失败回滚 | 待测 | `pages/settings/basic/provider-edit.uvue`、`uni_modules/agent-core/utssdk/provider.uts` |
+| `pages/settings/model/model` | 通过旧入口进入并返回 | 兼容入口不白屏，能明确跳转到当前默认模型设置 | 待测 | `pages/settings/model/model.uvue`、`pages/settings/default-models/default-models.uvue` |
+| `pages/settings/plugin/plugin` | 搜索、配置、启停、连接测试、错误态 | 校验失败不误报成功，连接错误进入 diagnostics | 待测 | `pages/settings/plugin/plugin.uvue`、`utils/app-error.uts` |
+| `pages/settings/skills/skills` | Skill 新增/编辑/删除、绑定 Agent、长文本 | 损坏 JSON 不被覆盖为空，写入失败可重试 | 待测 | `pages/settings/skills/skills.uvue`、`utils/skills.uts` |
+| `pages/settings/default-models/default-models` | Chat/TTS/STT/Vision/整理模型选择，编辑 Prompt | 五类任务独立保存；未保存 TTS 修改返回有确认 | 待测 | `pages/settings/default-models/default-models.uvue`、`utils/database-settings.uts` |
+| `pages/settings/generation/generation` | 温度/Token/迭代边界、流式开关、重启 | 非法值不入库；失焦/确认后持久化，重启值一致 | 通过 | `pages/settings/generation/generation.uvue`、`utils/database-settings.uts` |
+| `pages/settings/data/data` | 导出、导入、取消、无效包、覆盖确认 | 缺字段/资源拒绝；失败不半提交；成功可恢复文件与设置 | 待测 | `pages/settings/data/data.uvue`、`utils/data-export.uts`、`utils/data-import.uts` |
+| `pages/settings/about/about` | 查看版本、打开外链 | 版本/构建号正确，外链可打开且返回正常 | 通过 | `pages/settings/about/about.uvue` |
+| `pages/settings/profile/profile` | 修改用户名/简介/详细介绍、头像、保存/取消 | 相册/相机失败可恢复；保存后私聊能看到资料 | 待测 | `pages/settings/profile/profile.uvue`、`utils/avatar-image-picker.uts` |
+| `pages/agent-settings/agent-settings` | 编辑名称/备注/头像/Prompt/规则/模型/Skills/工具，删除 | 未保存退出可恢复；保存失败回滚；删除不留工作区孤儿 | 待测 | `pages/agent-settings/agent-settings.uvue`、`utils/agent-settings-page-helpers.uts` |
+| `pages/memory/memory` | 分类/目标切换、短期/重要记忆 CRUD、搜索、清空 | 内容和目标隔离；删除/清空后重进一致 | 待测 | `pages/memory/memory.uvue`、`utils/database.uts` |
+| `pages/common/crop/crop` | 载入、缩放/移动、裁剪、取消 | 来源缺失有提示；取消不留临时文件；完成生成可用头像 | 通过 | `pages/common/crop/crop.uvue`、`utils/avatar-image-picker.uts` |
+| `pages/common/editor/editor` | 全屏编辑、保存/取消、空内容、长文本、物理返回 | 光标/布局不偏移；脏数据返回有确认，保存失败可重试 | 待测 | `pages/common/editor/editor.uvue`、`utils/editor-runtime-state.uts` |
+| `uni_modules/rice-ui/pages/action-sheet/action-sheet` | 展示、选择、取消、遮罩关闭 | 选项回调一次，遮罩行为符合配置 | 通过 | `uni_modules/rice-ui/pages/action-sheet/action-sheet.uvue`、`uni_modules/rice-ui/components/rice-action-sheet/rice-action-sheet.uvue` |
+| `uni_modules/rice-ui/pages/dialog/dialog` | 确认、取消、空值校验、物理返回、遮罩 | 业务失败不自动关窗，输入可修正重试 | 通过 | `uni_modules/rice-ui/pages/dialog/dialog.uvue`、`uni_modules/rice-ui/components/rice-dialog/rice-dialog.uvue` |
+| `pages/context-preview/context-preview` | 查看请求快照、标签顺序、空/长内容、复制 | 静态内容在前、动态内容在后；长内容可滚动且不泄露私发 | 待测 | `pages/context-preview/context-preview.uvue`、`utils/message-context.uts` |
+
+### 跨功能基础验收
+
+| 检查项 | 基础操作 | 预期 | 状态 | 涉及文件 |
+| --- | --- | --- | --- | --- |
+| 冷启动与进程重启 | force-stop、重新打开、检查首页/会话 | 页面可用，数据和路由恢复，无 fatal/UTS 异常 | 通过 | `App.uvue`、`utils/database-core.uts` |
+| 前后台切换与离页续流 | 发送后退到首页，再回到会话 | 流不重复、不丢最终回复；停止按钮状态正确 | 待测 | `App.uvue`、`utils/chat-turn-runtime.uts`、`utils/group-chat-turn-runtime.uts` |
+| 软键盘与输入布局 | 打开/关闭键盘，输入一行和多行，进入全屏编辑 | 顶部不被推出，输入栏贴键盘上方，文字留白正常 | 待测 | `utils/keyboard-inset.uts`、聊天/编辑器页面 |
+| 媒体权限与取消 | 相册/相机/文件分别允许、拒绝、取消、成功 | 失败有恢复提示，取消不清错请求，成功文件可读 | 待测 | `utils/attachment-reader.uts`、`utils/avatar-image-picker.uts` |
+| 长历史双向窗口 | 上下跨窗滚动并点击“到底部” | 批量加载/卸载，内容连续，底部定位正确，节点量稳定 | 待测 | `utils/chat-message-window.uts`、聊天页面 |
+| 网络/模型错误链 | 无凭据、断网、超时、HTTP 错误后重试 | 失败气泡、Toast、诊断记录三者一致，不伪装成功 | 待测 | `uni_modules/agent-core/utssdk/llm-api-client.uts`、`utils/app-error.uts` |
+| 深浅色与高 density | 切换主题/系统字体或在 density 640 设备浏览各页面 | 文本不截断、不重叠，控件点击区域稳定 | 待测 | `App.uvue`、各页面样式 |
+
 ## 跨功能检查
 
 | 检查项 | 状态 | 证据 / 备注 |
 | --- | --- | --- |
 | 首次安装与冷启动 | 测试中 | 冷启动已通过；首次安装需要隔离用户数据的测试用户/模拟器快照，尚未执行 |
-| 前后台切换与页面退出时流继续 | 测试中 | 私聊已实测发送后 50ms 退出、回复在退出后约 1 秒完成，重进后仅 `1 user + 1 assistant`；群聊真实流继续回归 |
+| 前后台切换与页面退出时流继续 | 测试中 | 私聊已实测发送后 50ms 退出、回复在退出后约 1 秒完成，重进后仅 `1 user + 1 assistant`；群聊图片转述已由页面实例迁入 session runtime，源码编译通过，真实流继续待最新 DEX 回归 |
 | App 进程重启后的数据恢复 | ADB 通过 | force-stop 后 PID `14222 -> 15042`，重新触发 `App Launch/Show`；首页联系人和群聊可见项计数前后一致 |
 | 软键盘与输入框可见性 | 测试中 | 真机确认页面顶部不再被推出屏幕，但输入栏未抬到键盘上方；已增加 resize 差额补偿并通过 Android 编译，待二次真机回归 |
 | 长消息滚动与底部定位 | 测试中 | 私聊固定 80 条消息、每次 40 条的双向批量滑动窗口已通过 380 条历史 ADB 回归；跨窗内容连续、节点量稳定、到底部定位正确。群聊与渲染单元级限流仍待继续 |
 | 相册、相机、文件权限 | 测试中 | 相册选择、文件选择和头像裁剪已通过；头像、私聊、群聊相机普通/永久拒绝均显示恢复弹窗并可打开设置；实体相机成像成功链路待真机 |
-| 断网、超时、无模型配置错误态 | 测试中 | LLM transport error 已与正常回复分离；私聊/群聊显示失败消息和 toast，运行诊断保留结构化记录；待 ADB 断网注入回归 |
+| 断网、超时、无模型配置错误态 | 测试中 | LLM transport error 已与正常回复分离；私聊/群聊显示失败消息和 toast，运行诊断保留结构化记录；用户主动停止不再误记为网络失败，待 ADB 断网/取消注入回归 |
 | 深浅色、系统字体和高 density 布局 | 待测 | 当前设备 density 640 |
 | 日志中的 crash / ANR / UTS 异常 | 测试中 | 2026-07-11 干净编译后完成主要页面冒烟，未发现 `FATAL EXCEPTION`、`NoSuchMethodError` 或未捕获 UTS 异常 |
 | 未注册或不可达页面检查 | 已确认 | `pages/group-chats/group-chats.uvue` 未注册且全项目无调用方，是旧群聊列表遗留页；当前入口由 `pages/agents/agents.uvue` 承担，文件暂保留 |
@@ -73,7 +120,7 @@
 
 | ID | 严重度 | 问题 | 状态 | 证据 | 修改文件 / commit |
 | --- | --- | --- | --- | --- | --- |
-| ENV-001 | P1 | HBuilderX CLI 检测到雷电 ADB server，最新包编译成功但调试基座连接超时 | 已解决 | 改由 HBuilderX 内置 ADB 独占 server，最新包同步与启动成功 | 无项目改动 |
+| ENV-001 | P1 | HBuilderX CLI 检测到雷电 ADB server，调试基座连接超时 | 历史问题已解决 | 改由 HBuilderX 内置 ADB 独占 server 后曾完成同步与启动；本轮当前源码构建限制另见 `ENV-002` | 无项目改动 |
 | UI-001 | P1 | 手机弹出软键盘后页面顶端被推出屏幕；关闭控件上推后输入栏又停在键盘下方 | 差额补偿完成，真机待复验 | 真机确认顶部位移已消失；现按 `keyboardHeight - window resize` 只抬升系统未处理的高度，避免页面上推和双重补偿 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue`、`components/FullscreenTextEditor/FullscreenTextEditor.uvue`、`utils/keyboard-inset.uts` |
 | UI-002 | P2 | 聊天输入框文字底部留白不足，视觉上顶头 | ADB 通过 | 私聊实机渲染截图确认单行文字上下居中；群聊复用相同参数，待群聊流程回归 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` / `fix: stabilize keyboard layouts` |
 | STRUCT-001 | P3 | `pages/group-chats/group-chats.uvue` 存在但未注册到 `pages.json` | 已确认遗留 | 全项目仅文件自身引用其 TabBar current，当前群聊列表由 Agent 页承载 | 暂不删除，后续清理需单独确认 |
@@ -84,39 +131,39 @@
 | DATA-005 | P2 | 待办/笔记写入失败仍提示成功，并可能先删旧文件 | 已修复，ADB 待回归 | 检查 FileOpResult，失败重载；全部新文件写成功后才清理旧文件 | `pages/todo/todo.uvue` / `8e8bed1` |
 | DATA-006 | P1 | 私聊、群聊多表删除与集合保存可能留下部分状态 | 已修复 | 私聊历史删除、群会话 7 表删除及集合重写均事务化 | `utils/database.uts`、`utils/group-chat-service.uts` 等 / `4368d55`、`ede3edc` |
 | DATA-007 | P2 | Agent/群聊实体删除但工作区保留时，文件页把内部 ID 当名称显示 | 已修复，ADB 待回归 | 当前名称、中央元数据、SQLite 快照、内置名称依次回退；无历史名称时显示删除占位 | `utils/workspace-name-snapshot.uts`、`utils/file-manager.uts` 等 |
-| PERF-001 | P1 | 对话消息过多时渲染节点持续增长，流式更新导致列表性能快速下降 | 部分修复，继续优化 | 私聊 380 条历史上下边缘按 40 条批量换窗，跨窗后 UI hierarchy 约 59 个 ViewGroup；流式高度测量增加 260ms max-wait，图片/展开内容贴底补偿。当前窗口仍按消息条数而非真实渲染单元限制 | `utils/chat-message-window.uts`、`pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` |
+| PERF-001 | P1 | 对话消息过多时渲染节点持续增长，流式更新导致列表性能快速下降 | UI 窗口已修复，最新 DEX 待压测 | 私聊/群聊按 80 个 render unit 建窗、每次 40 unit 批量换窗，长文本按 1600 字符切片且流式正文只渲染尾部；此前 380 条历史下节点量已稳定。完整消息数组仍驻留内存，见 `PERF-004` | `utils/chat-message-window.uts`、`pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` |
 | RUNTIME-001 | P0 | Android 消息 key 读取时间戳时触发 `Long cannot be cast to String`，历史私聊白屏 | 已修复，ADB 通过 | 私聊和群聊列表 key 改为窗口 source index；历史页可正常渲染 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` |
-| GROUP-001 | P1 | 群聊缺少只对用户可见的成员私发；其他成员或复盘可能读取私密正文 | 已修复，ADB 通过 | 私发只对用户和原 Agent 展示；其他成员既看不到正文也看不到送达回执；普通复盘仅读公开消息，不读隐藏调度记录或可推断私发的指标。调度器作为受信任控制面，按完整消息边界分段聚合会话内全部公开/私发正文，不再按最近条数或单条字数静默截断；敏感请求、原始输出和思考不落盘 | `utils/group-chat-*`、`components/ChatBubble/ChatBubble.uvue` |
-| GROUP-002 | P1 | 私发没有请求关联和真实送达状态，失效目标可能显示假成功 | 已修复，ADB 通过 | 用户私发初始为 `pending`，服务层校验群、会话和真实 active member；Agent 开始处理后改为 `delivered`，启动/路由失败改为 `failed`；选择器不再包含 scheduler/reviewer | `utils/group-chat-scheduler.uts`、`utils/group-chat-turn-runtime.uts`、`utils/group-chat-service.uts`、`utils/group-chat-page-helpers.uts` |
+| GROUP-001 | P1 | 群聊缺少只对用户可见的成员私发；其他成员或复盘可能读取私密正文 | 已修复，ADB 入口通过 | 私发只对用户和原 Agent 展示；其他成员既看不到正文也看不到送达回执；普通复盘仅读公开消息。调度器作为受信任控制面读取 `<group_transcript_all>` 中的完整公开/私发正文，敏感请求、原始输出和思考不落盘 | `utils/group-chat-*`、`components/ChatBubble/ChatBubble.uvue` |
+| GROUP-002 | P1 | 私发没有请求关联和真实送达状态，失效目标可能显示假成功 | 已修复，最终投递待回归 | 用户私发初始为 `pending`；仅 Agent 成功生成非空最终回复后置为 `delivered`，错误、空回复、停止和插话中断置为 `failed`，成员离群或审核撤销置为 `revoked`；选择器不含 scheduler/reviewer | `utils/group-chat-scheduler.uts`、`utils/group-chat-turn-runtime.uts`、`utils/group-chat-service.uts`、`utils/group-chat-page-helpers.uts` |
 | GROUP-003 | P0 | 原 Agent 的私发历史作为 assistant XML 注入后，模型可能把内部标签和私发正文原样公开 | 已修复，ADB 通过 | 私发历史改为当前请求的临时 `<private_group_dialogue_history>` 上下文，不进入长期记忆或历史 reasoning；公开输出只含目标正文；内部标签与私发引用加入流式审核窄触发 | `utils/message-context.uts`、`llm-client.uts`、`group-chat-scheduler.uts`、`group-chat-moderation.uts` |
 | GROUP-004 | P1 | Agent 说“稍后回复”后没有运行实体，群聊又会被固定轮数截断，用户只能停止不能插话 | 已修复，真机待回归 | 移除固定自动轮数和申请过期上限；`group_request_speak` 支持立即调度、`after_delay` 与公开 `next_agent_id` 交接，均由 scheduler 决定；申请持久化并保持原 `public/user_private` 通道，冷启动恢复中断 claim，已落库回复带终态标记避免重复发言，审核中断的占位会撤回；终态写失败后台重试。停止或新用户消息会取消旧申请；运行中发送文字原子失效旧流、写入新消息并重新路由 | `utils/group-chat-speak-intent.uts`、`utils/group-chat-turn-runtime.uts`、`pages/group-chat/group-chat.uvue`、`App.uvue` |
 | GROUP-005 | P1 | 私聊草稿退出模式后可能被当成公开消息发送，私聊目标还可能包含内部控制 Agent | 已修复，ADB 通过 | 公开/私聊草稿分离；退出私聊恢复公开草稿，再选原成员恢复私聊草稿；目标列表仅真实 active member，同名成员追加短 ID | `pages/group-chat/group-chat.uvue`、`utils/group-chat-page-helpers.uts` |
-| ERROR-001 | P1 | LLM 网络/API/SSE 失败被当作正常 assistant 正文，或流结束后无提示 | 已修复，ADB 待回归 | transport error 独立传递；失败气泡、toast、诊断记录；失败不写成功快照、不触发 TTS | `llm-api-client.uts`、`llm-client.uts`、`utils/event.uts`、聊天页面 |
-| ERROR-002 | P1 | Provider、模型、资料、生成参数、插件、Skill 等保存失败仍更新 UI 或提示成功 | 部分修复，ADB 待回归 | DAO 与主要页面已补回滚/dirty 状态；Provider 拉取、AstrBot diagnostics 和跨引用事务仍有缺口 | 设置页面、`database-settings.uts`、`provider.uts` 等 |
+| ERROR-001 | P1 | LLM 网络/API/SSE 失败被当作正常 assistant 正文，或流结束后无提示 | 已修复，ADB 基础通过 | transport error 独立传递；失败气泡、toast、诊断记录；失败不写成功快照、不触发 TTS。2026-07-14 旧基座已确认 API 400 错误正文可见，断网/超时/SSE 故障注入仍待最新 DEX | `llm-api-client.uts`、`llm-client.uts`、`utils/event.uts`、聊天页面 |
+| ERROR-002 | P1 | Provider、模型、资料、生成参数、插件、Skill 等保存失败仍更新 UI 或提示成功 | 已修复，故障注入待回归 | DAO 和主要页面统一检查结果并回滚 UI/dirty 状态；Provider 拉取、AstrBot、跨引用事务、导入和文件写入失败均进入 diagnostics 或明确提示 | 设置页面、`database-settings.uts`、`provider.uts`、`utils/app-error.uts` 等 |
 | ERROR-003 | P2 | App 每次启动尝试重复 `ALTER TABLE`，logcat 持续输出 `duplicate column` | 已修复，ADB 通过 | 迁移前使用 `PRAGMA table_info` 检查字段；冷启动清空 logcat 后无重复字段错误 | `utils/database-core.uts`、`utils/database.uts` |
 | RUNTIME-002 | P0 | 修改导出 UTS 函数返回值后，Android 增量缓存混用旧调用方与新实现，进入群聊触发 `NoSuchMethodError` | 已修复，ADB 通过 | 恢复既有公共函数 JVM 签名；需要结果的页面改用已有底层状态写入；`--cleanCache true` 重编 28 页面后群聊入口正常 | Agent/历史/文件/群聊页面与 runtime state helpers |
 | DATA-008 | P1 | 默认群聊创建或调度持久化中途失败时可能残留数据库行、目录，部分失败只写日志 | 已修复，ADB 入口通过 | 创建失败事务清理 9 张关联表并回收工作区；复盘、任务、记忆、指标、上下文和快照写入失败进入统一诊断 | `utils/database-group-chat.uts`、`utils/group-chat-service.uts`、`utils/group-chat-scheduler.uts` 等 |
 | DATA-009 | P0 | 同 Schema 的不完整备份缺少数组/资源条目时仍可预览并把现有数据覆盖为空，ZIP 漏文件也会假成功 | 已修复，编译通过 | 导入前强制校验全部消费字段和资源映射；ZIP 任一清单条目写失败即删除失败包；0 Agent 备份也包含空工作区根目录 | `utils/data-import.uts`、`utils/data-export.uts`、`utssdk/app-data-export/index.uts` |
-| DATA-010 | P1 | 全量/设置导入跨 SQLite、storage、Agent/Skill 文件和工作区，后半段失败无法统一回滚 | 待重构 | 当前已阻止不完整包和资源缺失进入写阶段，但跨介质提交仍不是单一原子事务 | 后续需要 staged import + 快照回滚协议 |
-| DATA-011 | P1 | Todo/Note/文件编辑使用覆盖写，进程中断或磁盘异常可能留下空文件或半文件 | 待重构 | 页面已检查写入结果并显示失败，但底层 `File.writeText` 不具备崩溃原子性 | 后续需要同目录临时文件、落盘同步和原子替换 |
-| DATA-012 | P1 | 安全备份仅恢复设置时会把现有 AstrBot API Key 用空值覆盖 | 已修复，编译通过 | 空的 `settings_api_key` 与 `settings_astrbot_api_key` 均保留本机旧值 | `utils/database-settings.uts` |
+| DATA-010 | P1 | 全量/设置导入跨 SQLite、storage、Agent/Skill 文件和工作区，后半段失败无法统一回滚 | 已修复，故障注入待回归 | 文件先进入 staging；提交前持久化数据库/运行状态快照 journal；失败或进程中断时按 phase 恢复 SQLite、Agent/Skill、runtime state 和工作区，成功清理 journal 后才结束 | `utils/data-import.uts`、`utils/database-settings.uts`、`utils/file-manager-io.uts` |
+| DATA-011 | P1 | Todo/Note/文件编辑使用覆盖写，进程中断或磁盘异常可能留下空文件或半文件 | 已修复，崩溃注入待回归 | `writeContent` 在同目录写临时文件，执行 `flush + fd.sync()` 后用 `Os.rename` 原子替换；不支持覆盖 rename 时明确失败，页面保留旧内容并提示 | `utils/file-manager-io.uts`、Todo/编辑器/文件页面 |
+| DATA-012 | P1 | 安全备份仅恢复设置时会把现有 AstrBot API Key 用空值覆盖 | 已修复，编译通过 | 导入包中的空 AstrBot API Key 会保留本机旧值；当前协议只使用专用 AstrBot 设置键 | `utils/database-settings.uts`、`utils/data-import.uts` |
 | MEDIA-001 | P1 | 系统相册返回会先触发来源页 `onShow`，空裁剪结果被误消费，裁剪页随后报 `CROP_SOURCE_MISSING` | 已修复，ADB 通过 | 空结果保留请求；裁剪取消显式清理；完成结果持久化到内部 avatars，放弃保存会回收临时文件 | `utils/avatar-image-picker.uts`、裁剪/资料/Agent 页面 |
 | UI-003 | P1 | 笔记和通用全屏编辑器的 Android 物理返回绕过放弃确认 | 已修复，ADB 通过 | `onBackPress` 统一进入确认逻辑，放弃前清 dirty 防止重复确认循环 | `pages/note-editor/note-editor.uvue`、`pages/common/editor/editor.uvue` |
 | PERF-002 | P1 | 长消息滚到底部先写 `scrollTop=0`，误触双向滑窗向旧消息换窗，造成底部位置错误 | 已修复，私聊 ADB 通过 | 380 条历史跨窗后点击“到底部”准确恢复最后一批消息，按钮消失；程序化滚底和会话重置均取消旧换窗回调 | 私聊/群聊页面 |
-| PERF-003 | P1 | 滑动窗口按消息条数而非真实渲染单元限制，单条超长分段消息或 80 条复杂消息仍可能卡顿 | 待重构 | Android 开发基座对 380 条历史执行 8 次强制跨窗滑动，节点量稳定但 `gfxinfo` jank 为 `50.57%`；需把窗口边界升级为 render-unit 索引并保留稳定消息身份 | `utils/chat-message-window.uts`、私聊/群聊页面 |
-| PERF-004 | P1 | 群聊每次流式保存仍整会话删除重插，scheduler 每轮仍拼接完整公开/私聊正文；无限续谈时会触发 DB 与上下文的线性增长 | 待重构 | 不可用静默截断解决，调度器必须保留完整正文可见性；后续改为消息增量持久化、稳定上下文前缀缓存和显式长会话上下文策略，同时保留原文可审计 | `utils/database-group-chat.uts`、`utils/group-chat-service.uts`、`utils/group-chat-scheduler.uts` |
+| PERF-003 | P1 | 滑动窗口按消息条数而非真实渲染单元限制，单条超长分段消息或复杂消息仍可能卡顿 | 已修复，最新 DEX 待压测 | 窗口边界已升级为 render-unit 索引，长消息分段和流式尾部裁剪进入同一稳定身份映射；此前 380 条消息基线 jank 为 `50.57%`，需用当前 DEX 复测收益 | `utils/chat-message-window.uts`、私聊/群聊页面 |
+| PERF-004 | P1 | 长会话仍把完整消息集合常驻内存，scheduler 每轮仍拼接完整公开/私聊正文；无限续谈时会触发上下文线性增长 | 部分修复 | 群聊消息持久化已由整会话删除重插改为 dirty 增量 CAS upsert；UI 已双向卸载渲染单元。数据库 cursor 分页、内存数组卸载和 scheduler 长会话上下文策略仍未实现 | `utils/database-group-chat.uts`、`utils/group-chat-service.uts`、`utils/group-chat-scheduler.uts`、聊天页面 |
 | RUNTIME-003 | P1 | 兼容旧页面保留的 void 包装器因无可达调用被 DCE 删除，热更新仍可能 `NoSuchMethodError` | 已修复，字节码验证通过 | 新 boolean 入口真实调用旧 void ABI；`javap` 确认两个 JVM 签名同时存在 | `utils/agent-settings-page-helpers.uts` |
 | SECURITY-001 | P0 | 导入备份可携带伪造的群会话 `workspace_path`，后续复制/删除可能越出群聊工作区；系统文件选择器返回的文件名也可包含路径片段 | 已修复，ADB 入口通过 | 导入时只按受限 group/session ID 重建应用私有路径；Android 使用 canonical path 校验目录包含关系；递归复制拒绝 symlink，递归删除只移除链接本身；文件导入只接受 basename | `utils/data-import.uts`、`utils/file-manager-io.uts`、`utils/group-chat-service.uts`、`pages/files/files.uvue` |
-| MEDIA-002 | P1 | 私聊生成过程中仍可追加图片/文件/位置，新增消息不会进入当前请求；群聊图片转述异步完成后可能写入已切换的会话，停止讨论也未失效 caption | 已修复，ADB 入口通过 | 媒体入口统一阻止并发追加；位置失败进入诊断；群聊 caption 绑定 group/session/message ID，切换与停止时失效；文件保存失败回滚消息 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue` |
+| MEDIA-002 | P1 | 私聊生成过程中仍可追加图片/文件/位置，新增消息不会进入当前请求；群聊图片转述异步完成后可能写入已切换的会话，停止讨论也未失效 caption | 已修复，最新 DEX 待回归 | 媒体入口统一阻止并发追加；位置失败进入诊断；群聊图片由 runtime 原子写入，caption 按 session/message ID 持有，页面退出继续、停止/插话取消，完成后由同一 runtime 启动调度；文件保存失败回滚消息 | `pages/chat/chat.uvue`、`pages/group-chat/group-chat.uvue`、`utils/group-chat-turn-runtime.uts` |
 | RUNTIME-004 | P0 | 私聊流由页面实例持有，退出重进可启动第二条流并互相覆盖 | 已修复，ADB 通过 | 按 Agent + conversation 唯一注册 `ChatTurnRuntime`；页面只订阅；图片 caption、批量 reducer、停止、保存和错误均由 runtime 持有；删除/导入会失效旧 runtime；退出重进后 SQLite 为 `1 user + 1 assistant` | `utils/chat-turn-runtime.uts`、`pages/chat/chat.uvue`、历史/Agent 删除与数据导入链路 |
 | SECURITY-002 | P2 | 非 Android 平台的目录包含检查仍是词法前缀判断，无法识别工作区内部 symlink | 待跨端验证 | Android 已封堵 canonical path 和递归 symlink；iOS/WEB 缺少当前可验证的 lstat/realpath 实现，涉及复制/删除前仍需平台实现后再开放同等级保证 | `utils/file-manager-io.uts` |
 | SET-001 | P1 | 编辑已停用 Provider 后自动保存会固定写成启用 | 已修复，写操作待回归 | 编辑时保留原 `enabled == 1` 状态，新建项才默认启用；异常非 1 值不会被提升为启用 | `pages/settings/basic/provider-edit.uvue` |
-| SET-002 | P1 | 模型级 `maxTokens`、`params`、`supportsToolCall` 可保存但聊天运行请求不读取 | 待重构 | 需要统一解析模型运行配置并定义旧数据兼容语义，不能只在页面层补字段 | 待用户确认运行时配置重构 |
+| SET-002 | P1 | 模型级 `maxTokens`、`params`、`supportsToolCall` 可保存但聊天运行请求不读取 | 已修复，Provider 矩阵待回归 | `resolveModelRuntime(providerId, modelId)` 统一解析 maxTokens、params、vision/tool/reasoning 能力，普通/流式/图片描述请求均携带运行配置；旧模型保留兼容语义 | `uni_modules/agent-core/utssdk/provider.uts`、`llm-client.uts`、`llm-api-client.uts` |
 | SET-003 | P1 | `skills_list` JSON 损坏后被当成空列表，后续保存 Agent 或导出备份会覆盖/固化为空 | 已修复，故障注入待回归 | 解析失败进入 diagnostics；Skill 公共保存、Agent 设置和数据导出统一停止；绑定 ID 保留，页面显示保护状态 | `utils/skills.uts`、`utils/agent-settings-save-service.uts`、`utils/data-export.uts`、Skill/Agent 设置页 |
-| SET-004 | P1 | 停用/删除 Provider 或模型时，默认任务、联网搜索及 Agent 引用可能悬空 | 待重构 | 需要统一引用统计、阻止或事务清理策略，并纳入 Agent 引用 | 待用户确认 Provider 引用重构 |
+| SET-004 | P1 | 停用/删除 Provider 或模型时，默认任务、联网搜索及 Agent 引用可能悬空 | 已修复，故障注入待回归 | Provider 停用/删除、模型移除与引用清理在同一事务中完成；清理默认任务、联网搜索、Agent 及相关运行配置，失败整体 rollback | `utils/database-settings.uts`、`uni_modules/agent-core/utssdk/provider.uts` |
 | SET-005 | P1 | 获取模型列表无明确超时和结构化错误，HTTP/解析/空列表/断网统一折叠为失败 | 已修复，异常注入待回归 | 15 秒超时；区分鉴权、404、服务端、网络、非法响应和合法空列表；错误写入 diagnostics | `provider.uts`、`provider-edit.uvue` |
-| SET-006 | P1 | 首次引导分步保存 Provider、active、默认模型和完成标记，失败会留下半配置 | 待重构 | 需要 DAO 事务或完整补偿回滚协议 | 待用户确认首次引导事务重构 |
-| SET-007 | P1 | vision/reasoning 能力只按 model ID 全局匹配，同名模型可能串 Provider | 待重构 | 能力查询和调用链需要同时携带 `providerId + modelId` | 待用户确认模型能力解析重构 |
+| SET-006 | P1 | 首次引导分步保存 Provider、active、默认模型和完成标记，失败会留下半配置 | 已修复，首装故障注入待回归 | `saveFirstRunProviderConfiguration` 在单一事务内保存 Provider、唯一启用态、默认 Chat 模型和引导完成标记，任一步失败整体 rollback | `utils/database-settings.uts`、`uni_modules/agent-core/utssdk/provider.uts`、`pages/settings/basic/provider-edit.uvue` |
+| SET-007 | P1 | vision/reasoning 能力只按 model ID 全局匹配，同名模型可能串 Provider | 已修复，Provider 矩阵待回归 | 模型能力和运行请求统一使用 `providerId + modelId` 精确解析；仅旧裸 ID 在明确兼容路径中回退，不跨 Provider 猜测 | `provider.uts`、`llm-metadata.uts`、`llm-client.uts` |
 | SET-008 | P2 | AstrBot 测试失败只显示 toast，不进入统一 diagnostics | 已修复，异常注入待回归 | 连接失败统一记录 `ASTRBOT_CONNECTION_TEST_FAILED` 并显示诊断编号 | `pages/settings/plugin/plugin.uvue` |
 | SET-009 | P2 | 相机权限永久拒绝后没有跳转系统授权设置的恢复入口 | 已修复，ADB 通过 | 头像和私聊在 `cameraAuthorized == denied` 时显示恢复弹窗；确认进入应用授权设置，取消留在原页面；群聊复用同一处理器 | `utils/media-permission.uts`、头像/私聊/群聊媒体入口，`81976fa` |
 | SET-010 | P2 | 默认模型页 TTS 参数修改后直接返回会静默丢失 | 已修复，交互待回归 | TTS 全字段加入快照、统一未保存确认、保存成功刷新快照、不保存恢复快照 | `pages/settings/default-models/default-models.uvue` |
@@ -124,22 +171,31 @@
 | UI-004 | P1 | Rice 输入组件把 `30rpx` 截成 `30r` 交给 Android 原生字号解析，新建文件对话框触发 `NumberFormatException` | 已修复，ADB 通过 | placeholder 字号统一经 `getPxNum` 转为真实 px；新建文件对话框打开、取消且日志无同类异常 | `rice-input.uvue`、`rice-textarea.uvue`、`rice-search.uvue` |
 | SECURITY-003 | P1 | Provider 编辑页默认以明文输入展示 API Key，Android UI hierarchy 可读取完整内容 | 已修复，交互待回归 | API Key 默认使用密码态，提供显式可见性切换 | `pages/settings/basic/provider-edit.uvue` |
 | SET-012 | P0 | 首次启动和内置 Agent 硬编码 `deepseek-v4-flash`，选择其他 Provider 时仍可能调用 DeepSeek 模型；首启多模型又静默保存列表第一项 | 已修复，首装待回归 | Provider 初始模型列表为空；内置 Agent 默认跟随任务模型；只迁移仍使用旧裸 ID 的内置 Agent；首启从真实拉取结果中显式选择默认模型 | Provider/Agent/首启相关页面与 helpers |
-| SET-013 | P1 | 通用 `/models` 拉取只适合 OpenAI-compatible Provider，Anthropic 等协议无法通过同一端点可靠发现模型 | 待重构 | 对照 AstrBot 后确认模型可用性应由 Provider adapter 获取；models.dev 只用于能力元数据，不能替代账号实际模型列表 | 后续需要 Provider Source / Model adapter 层，属于架构调整 |
+| SET-013 | P1 | 通用 `/models` 拉取只适合 OpenAI-compatible Provider，非兼容协议无法通过同一端点可靠发现和调用模型 | 部分修复 | 已实现 `openai_compatible` 与 `anthropic` adapter，覆盖模型发现、鉴权头、Messages 请求、工具/图片/思考和 SSE；其他专有协议仍需按 Provider 增加 adapter，models.dev 仅用于能力元数据 | `provider.uts`、`llm-api-client.uts` |
 | UI-005 | P2 | Agent 设置页把 CSS 变量交给 Android 原生 placeholder 颜色解析器，持续输出 `Color_Parser` 越界异常 | 已修复，ADB 通过 | placeholder 改用等价静态色；最新包进入聊天设置并渲染输入框后日志无 `Color_Parser` | `pages/agent-settings/agent-settings.uvue` |
 | UI-006 | P1 | Rice Dialog 点击确认后无条件关闭，业务空值校验或写入失败无法保留输入重试 | 已修复，ADB 通过 | 新增兼容默认开启的 `closeOnClickConfirm`；Todo/文件弹窗由成功分支关窗；空标题/名称确认、物理返回和遮罩行为均通过 | Rice Dialog、Todo、Files，`815ecf6` |
 | SET-014 | P1 | Agent 旧裸 `modelId` 在标签、选择面板和运行时分别猜测不同 Provider | 已修复，Android 编译通过 | 标签和面板统一按运行时默认 Chat Provider 解释；不迁移用户数据，未配置模型明确标注 | `utils/agent-settings-models.uts`，`815ecf6` |
 | UI-007 | P1 | Rice Dialog/ActionSheet 小程序 API 分支引用错误字段、未声明变量及错误的 fail 参数类型 | 已修复，待 MP 编译 | `cancelText` 改为 `cancelButtonText`，失败信息统一传字符串 `err.errMsg` | Rice Dialog/ActionSheet API，`815ecf6` |
 | UI-008 | P1 | 待办直接点击 `rice-checkbox` 时组件只更新内部 model，页面未收到持久化写入；界面显示已完成但重启后回退 | 已修复，待重新编译 ADB 回归 | 2026-07-12 在模拟器创建测试待办后复现：点复选框后 `todo.md` 仍为 `- [ ]`，点整行才写为 `- [x]`。已换为页面状态驱动的静态勾选视图，避免内部状态脱节 | `pages/todo/todo.uvue` |
 | UI-009 | P1 | 群聊会话数据层支持重命名，但会话页没有入口，台账误写为“待测” | 已修复，待重新编译 ADB 回归 | `updateGroupSessionTitle` 已存在；会话页补充预填名称、空值/失败提示、刷新和返回关闭逻辑 | `pages/group-chat-sessions/group-chat-sessions.uvue` |
-| PERF-005 | P1 | 无限续谈后 scheduler 每轮拼接全量消息，恢复/唤醒又全表读取并 JSON 解析所有已完成发言申请 | 待重构 | 静态审计确认不能用硬轮数回避：需做保留原文审计能力的 token 预算/摘要策略，并按任务状态查询或归档已终态申请 | `utils/group-chat-scheduler.uts`、`utils/group-chat-speak-intent.uts`、`utils/database-group-chat.uts` |
+| PERF-005 | P1 | 无限续谈后 scheduler 每轮拼接全量消息，恢复/唤醒曾全表读取并解析所有已完成发言申请 | 部分修复 | speak-intent 热路径只查询 `open/claimed` 与 tombstone，终态按状态落库并恢复中断 claim；scheduler 为保证可审计仍读取完整正文，长会话 token/摘要策略尚未实现 | `utils/group-chat-scheduler.uts`、`utils/group-chat-speak-intent.uts`、`utils/database-group-chat.uts` |
 | SET-015 | P2 | 生成参数保存失败后页面继续展示未持久化值，重进时才突然回退 | 已修复，故障注入待回归 | 两条保存路径失败时立即重新读取最后成功配置 | `pages/settings/generation/generation.uvue`，`815ecf6` |
-| SET-016 | P2 | 旧模型设置页仍注册并参与备份白名单，但已无入口和运行态写入方 | 待兼容决策 | 直接删除可能影响外部深链或旧备份语义；可选重定向到默认模型页或正式下线 | 待用户确认兼容清理策略 |
+| SET-016 | P2 | 旧模型设置页仍注册但入口语义不明确，外部深链可能进入孤立页面 | 已修复，运行待回归 | 保留页面兼容旧深链：有 Agent 路由状态时进入对应 Agent 设置，否则重定向默认模型页；运行状态清理失败进入 diagnostics | `pages/settings/model/model.uvue` |
+| CONTEXT-001 | P1 | 私聊 Agent 的用户资料注入被错误绑定到核心记忆写权限，导致部分场景看不到用户名和介绍 | 已修复，真实请求待回归 | `includeUserProfile` 独立控制用户资料；普通私聊和群成员调用显式开启，记忆整理、scheduler/reviewer 控制面继续关闭，避免资料与控制面混入 | `uni_modules/agent-core/utssdk/llm-client.uts` |
+| GROUP-006 | P1 | 会话历史中出现过私聊后，公开调度可能在“抹掉交接目标”和“自由文本泄露私聊”之间二选一 | 已修复，当前源码编译通过 | 请求敏感性与本轮送达模式分离：历史含私聊时禁止请求/原始输出落盘并清洗 `routeReason/environmentFeedback/title/privateNotes`，但保留已校验的公开 `targetType/targetAgentId`；当前 `user_private` 才进一步移除目标字段 | `utils/group-chat-scheduler.uts`、`utils/group-chat-turn-runtime.uts` |
+| GROUP-007 | P1 | 调度器显式返回 `actions: []` 时忽略调用方是否允许空动作，首次普通用户消息可能无人回复并静默结束 | 已修复，当前源码编译通过 | 仅成员后续发言申请允许用空数组表示拒绝；普通用户消息和其他调度场景遇到空动作时使用成员兜底策略 | `utils/group-chat-scheduler.uts` |
+| ERROR-004 | P2 | diagnostics 文案称错误只在当前运行期保存，但实现会跨重启持久化，清空提示也容易误解为影响业务数据 | 已修复，当前源码编译通过 | 文案改为“跨重启保留、达到上限自动淘汰”，清空说明明确只删除诊断记录，不影响聊天和设置 | `pages/settings/diagnostics/diagnostics.uvue` |
+| RUNTIME-005 | P1 | tools 不支持时自动降级会换成第二个真实请求，旧停止句柄只能取消首请求；图片转述也只失效回调但继续耗流量，主动 abort 还会污染网络失败诊断 | 已修复，原生编译通过 | `LLMRequestController` 始终跟随当前真实请求；主调用链可取消 tools fallback 与图片转述；取消回调不写失败诊断。旧 `RequestTask` ABI 禁止自动 fallback，避免返回句柄与真实请求失配 | `uni_modules/agent-core/utssdk/llm-api-client.uts`、`llm-client.uts`、聊天 runtime |
+| RUNTIME-006 | P0 | `LLMRequestController.activeTask` 的 Kotlin 属性 setter 与显式 `setActiveTask(RequestTask)` 生成相同 JVM 签名，Android 原生编译会报 accidental override | 已修复，原生编译通过 | 显式方法改名为 `attachTask`；最新生成 Kotlin 无 `setActiveTask()`/`notify()` 残留，`javap` 确认控制器 ABI 无冲突 | `uni_modules/agent-core/utssdk/llm-api-client.uts` |
+| GROUP-008 | P2 | 群成员私聊历史在公开发言路径无限拼接，私发轮虽限制 16 条但正文总长度仍无上限 | 已修复，原生编译通过 | 公开与私发轮统一从最新消息向前保留最多 16 条、语义正文总计不超过 12000 字；省略标记计入硬预算。私发历史使用 text-only runtime clone，移除 reasoning、tool parts、`tool_calls` 与 signature，不改数据库原文 | `utils/group-chat-scheduler.uts` |
+| ENV-002 | P1 | 当前源码尚未通过公开 CLI 产出可部署到调试基座的最新差量 DEX | 部署受阻，原生编译通过 | HBuilderX bundled uni-app x 已连续生成当前 Android Kotlin；直接使用其 `kotlinc 2.2.0 + D8 8.10.21` 编译 47 个 Kotlin 源文件成功，`app.jar` 与 `classes.dex` 均已产出且日志为空。公开 CLI 仍因 HBuilderX NamedPipe 无法连接，沙箱外启动的自动授权审核服务返回 503，因此不能替代 HBuilderX v2 差量同步；当前端侧证据仍来自 2026-07-13 DEX | 环境限制，无项目源码改动 |
 | SET-017 | P2 | 生成参数数值框在 `@input` 每字符保存，清空旧值时会把中间态裁剪后写库并污染非法输入回退 | 已修复，ADB 通过 | 数值仅在 blur/confirm 提交；流式开关只更新已持久化快照。编辑 `4096 -> 65` 时 DB 保持 `4096`，`abc` 失焦与 force-stop 后仍恢复 `4096` | `pages/settings/generation/generation.uvue` |
 
 ## 修改记录
 
 | 日期 | 文件 | 修改 | 验证 | commit |
 | --- | --- | --- | --- | --- |
+| 2026-07-14 | 群聊 scheduler/runtime、LLM 用户资料与可取消请求、长消息窗口、导入/文件原子性、设置事务、diagnostics 与测试台账 | 修正私聊最终送达状态和历史私聊对公开调度的误脱敏；资料注入不再依赖记忆写权限；tools fallback/图片转述改用稳定取消控制器；群聊图片转述迁入 session runtime；成员私聊历史统一限制 16 条/12000 字并清除历史 reasoning/tools；窗口升级为 render-unit；导入增加跨介质 journal 恢复；文件改为同步后原子 rename；模型运行配置和 Provider 引用事务接入请求链 | HBuilderX bundled uni-app x 当前源码连续编译成功；bundled `kotlinc + D8` 对 47 个最新 Kotlin 源文件原生编译成功，生成 `app.jar/classes.dex` 且日志为空；ADB 基础覆盖首页、Todo、Files、Settings、头像相册、私聊、群聊和群内私聊输入态。最新可部署差量 DEX 因 HBuilderX CLI IPC 权限仍受阻待回归 | 待提交 |
 | 2026-07-12 | 群聊 scheduler/runtime、消息语义上下文与流式审核 | 私发增加请求关联和送达状态；调度器读取全量公开/私聊正文但禁止任何字段外传，普通 Agent 与复盘既不读其他私聊正文也不接收回执；原 Agent 通过临时语义上下文延续，私发不进入长期记忆；修复继续讨论重复私发和 XML 公开回显 | HBuilderX 5.15 多轮 Android class 差量编译并同步成功；ADB 覆盖私发、冲突意图、公开续接、上下文/思考隔离、调度脱敏、指标/复盘隔离和临时会话级联清理 | 本轮提交 |
 | 2026-07-12 | `pages/todo/todo.uvue`、`pages/group-chat-sessions/group-chat-sessions.uvue` | 待办勾选改为页面状态驱动，避免视觉勾选未落盘；群聊会话补重命名入口与失败处理 | ADB 已复现待办复选框未落盘、整行写入与笔记 CRUD 均通过；源代码 `git diff --check` 通过。HBuilderX CLI 主进程 IPC 断连，最新改动待重新部署 ADB 回归 | 待提交 |
 | 2026-07-12 | 数据管理页、群聊模型/服务、App Guide、Skill 功能地图 | 按需求下线旧 `uni.storage` 手动迁移：移除设置入口、Storage/DCStorage 读取清理器、群聊旧 Storage 解析和死代码；保留备份/导入及仍在用的旧用户目录兼容 | HBuilderX 5.15 Android class 28 页面编译通过；CLI 同步模拟器后 ADB UI hierarchy 仅保留备份/导入入口；测试探针、触发器、临时备份均已清理 | 本轮提交 |
@@ -186,6 +242,8 @@
 | 24 | 设置状态与损坏数据复审 | 修复停用 Provider 被重新启用、TTS 未保存丢失；Skill 损坏保护扩展到 Agent 保存和数据导出；记录模型运行配置和引用事务重构项 | 三个并行审查/ADB 代理、`git diff --check`、28 页面 Android class 差量编译、设置入口 ADB 回归 | `bcfb782` |
 | 25 | 首启模型与 AstrBot 对照审查 | 清理 Provider/内置 Agent/联网搜索的过时模型默认值；首启改为真实发现并显式选择；models.dev 仅保留能力元数据职责；记录非 OpenAI-compatible adapter 缺口 | 三个并行代码/ADB 审查、AstrBot Provider 架构对照、UTS 静态扫描、多轮 28 页面 Android class 编译和设置页日志回归 | `d20fc32` |
 | 26 | 私聊后台回合架构 | 新建唯一 `ChatTurnRuntime`，承接文本/图片流、批量 reducer、保存、停止、错误和生命周期；删除与导入覆盖后失效旧页面；无引用终态主动清理 registry | 三个并行审查/ADB 代理、`git diff --check`、HBuilderX 28 页面 clean/差量编译、ADB 退出续流与 SQLite 防重复验证 | 本轮提交 |
+| 27 | 群聊图片生命周期与请求取消复审 | 群聊图片保存/caption/后续调度迁入 session runtime；tools fallback 与图片请求可取消；abort 不污染诊断；公开/私发历史统一字符预算 | 两轮独立代码审查、UTS 红线扫描、`git diff --check`、HBuilderX 5.15 bundled Android 当前源码连续编译、生成 Kotlin 符号核验 | 本轮提交 |
+| 28 | Android JVM ABI 与私聊上下文终审 | 修复请求控制器属性 setter 的 JVM 签名冲突；私发历史改为 text-only runtime clone；省略标记计入 12000 字硬预算 | 独立 Kotlin 审计、HBuilderX bundled 源码编译、`kotlinc 2.2.0`、D8 8.10.21、`javap`、UTS 红线扫描、`git diff --check` | 本轮提交 |
 
 ## 执行日志
 
@@ -254,6 +312,16 @@
 | 2026-07-12 16:37 | 群内私聊目标与草稿 ADB 回归 | 选择器仅显示真实 active member“千夏”，无 scheduler/reviewer；`PRIVATE_DRAFT` 退出私聊后未进入公开输入框，再次选择原成员可恢复；未发送测试消息、未修改用户会话 |
 | 2026-07-12 17:06 | 调度器全量上下文、分线程唤醒与私聊状态回归 | HBuilderX 5.15 完成 28 页面 Android class 编译并启动 `emulator-5554`；私聊草稿按 Agent 隔离，失败/中止状态持久显示；启动日志无 fatal、ABI、UTS 或 SQLite 异常 |
 | 2026-07-12 | ADB 文件页临时目录 CRUD | 新建临时文件夹后重命名为 `CodexADB_Renamed_0712`，通过 UI 删除；`run-as io.dcloud.uniappx find` 未发现同名路径残留 |
+| 2026-07-14 | 更新基础功能验收矩阵 | 按 `pages.json` 核对 28 个注册页面，补充基础操作、预期、状态和涉及文件；历史记录保留，后续 CLI/ADB 回归逐行更新 | `git diff --check -- APP_TEST_PLAN.md` 通过；本轮设备功能状态仍以矩阵为准 |
+| 2026-07-14 02:18 | 当前源码 bundled uni-app x 编译 | 使用 HBuilderX 5.15 内置 Node 和 `@dcloudio/vite-plugin-uni` 对 `app-android` 构建成功；当前生成 `index.kt` 可检出 `includeUserProfile`、`buildPrivateRequestRuntimeSource`、`requestContainsPrivateContext`，且不存在旧的提前送达调用 |
+| 2026-07-14 02:24 | ADB 基础功能回归 | 2026-07-13 DEX 基座中首页、Todo、Files、Settings、头像相册、私聊工具栏/图片选择、群聊工具栏/群内私聊目标与输入态均可用；API 400 错误气泡可见 |
+| 2026-07-14 02:27 | 模拟器软键盘窗口检查 | 输入法被系统标记为 shown，但 WindowManager 中 InputMethod 高度为 0 且无 Surface，无法验证输入栏贴键盘与全屏编辑光标位置；保留手动真机回归 |
+| 2026-07-14 02:32 | 公开 HBuilderX CLI 与 ADB 状态复核 | `cli launch app-android --compile true` 返回“未检测到已打开的 HBuilderX”，不再出现目录权限拒绝；`emulator-5554` 在线，`io.dcloud.uniappx` PID `4759`，定向 logcat 无 fatal/ABI/UTS 未捕获异常 |
+| 2026-07-14 02:40 | 最终群聊隐私与空调度审查 | 独立审查发现历史私聊场景仍可能把 scheduler 自由文本注入公开成员，以及普通用户首轮可被 `actions: []` 静默结束；已分别改为“清洗自由文本但保留已校验交接目标”和“仅 speak-intent 允许空动作”，HBuilderX bundled 当前源码完整重编通过 |
+| 2026-07-14 02:55 | 可取消请求与私聊历史复审 | 独立审查发现 tools fallback 第二请求、图片转述底层请求无法取消，以及群成员私聊历史仍可无界增长；增加稳定请求控制器和 16 条/12000 字统一预算，当前源码首次重编通过 |
+| 2026-07-14 03:04 | 群聊图片生命周期第二轮修复 | 发现 caption 仍由页面实例持有、主动 abort 会误记网络失败；图片消息改由 session runtime 原子保存/转述/继续调度，停止和插话统一取消；legacy `RequestTask` 禁止不可追踪 fallback。HBuilderX bundled 当前源码再次编译成功，生成 Kotlin 可检出全部关键实现 |
+| 2026-07-14 03:16 | JVM ABI 与私聊预算终审 | 生成 Kotlin 审计发现 `activeTask` setter 与显式方法撞 JVM 签名，改为 `attachTask`；私发历史改为 text-only clone，省略标记纳入 12000 字硬预算；当前源码重新编译成功 |
+| 2026-07-14 03:20 | bundled Kotlin/D8 原生校验 | 快照当前 47 个 Kotlin 源文件，使用 HBuilderX 自带 27 个 classpath jar、UTS Kotlin compiler plugin、`kotlinc 2.2.0` 与 D8 8.10.21 编译；两阶段 exit 0、stdout/stderr 均为空，产出 `app.jar` 2,493,929 bytes 与 `classes.dex` 4,129,144 bytes；`javap` 无控制器 JVM 签名冲突 |
 
 ## 手动真机回归
 

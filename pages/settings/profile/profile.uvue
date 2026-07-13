@@ -51,9 +51,13 @@
 </template>
 
 <script lang="uts">
-	import { deleteRuntimeState, getAppSetting, getRuntimeState, setAppSettings, setRuntimeState } from '@/utils/database.uts'
+	import { getAppSetting, setAppSettings } from '@/utils/database.uts'
 	import { chooseAvatarImage, consumeAvatarCropResult, discardManagedAvatarFile, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
 	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
+	import { clearEditorRuntimeStateFor, consumeTextEditorResult, prepareTextEditorRuntimeState } from '@/utils/editor-runtime-state.uts'
+
+	const PROFILE_EDITOR_OWNER = 'profile'
+	const PROFILE_DESCRIPTION_EDITOR_TARGET = 'profile-description'
 
 	function showProfileFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
 		const error = reportAppErrorFromCause(
@@ -67,19 +71,8 @@
 		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
 	}
 
-	function clearProfileEditorRuntimeState(): void {
-		deleteRuntimeState('editor_draft')
-		deleteRuntimeState('editor_result')
-		deleteRuntimeState('editor_result_ready')
-		deleteRuntimeState('editor_file_path')
-		deleteRuntimeState('editor_saved')
-		deleteRuntimeState('editor_saved_path')
-		deleteRuntimeState('editor_mode')
-		deleteRuntimeState('editor_content')
-		deleteRuntimeState('editor_title')
-		deleteRuntimeState('editor_target')
-		deleteRuntimeState('editor_placeholder')
-		deleteRuntimeState('editor_readonly')
+	function clearProfileEditorRuntimeState(): boolean {
+		return clearEditorRuntimeStateFor(PROFILE_EDITOR_OWNER, PROFILE_DESCRIPTION_EDITOR_TARGET)
 	}
 
 	function navigateProfileBack(): void {
@@ -127,31 +120,26 @@
 			this.confirmLeave()
 			return true
 		},
-			onShow() {
-				try {
-					// 检查全屏编辑器是否有返回结果
-					const ready = getRuntimeState('editor_result_ready')
-					const result = getRuntimeState('editor_result')
-					if (ready == 'true' || result != '') {
-						const target = getRuntimeState('editor_target')
-						if (target == 'profile-description') {
-							this.description = result
-							clearProfileEditorRuntimeState()
-							this.hasUnsaved = true
-						}
-					}
-					// 检查裁剪页面是否有返回结果
-					const cropResult = consumeAvatarCropResult('profile_avatar')
-					if (cropResult != '') {
-						if (this.avatarPath != this.savedAvatarPath) {
-							discardManagedAvatarFile(this.avatarPath)
-						}
-						this.avatarPath = cropResult
-						this.hasUnsaved = true
-					}
-				} catch (e: any) {
-					showProfileFailure('PROFILE_RETURN_STATE_FAILED', 'profile_consume_page_result', '页面返回结果读取失败', e)
+		onShow() {
+			try {
+				// 检查全屏编辑器是否有返回结果
+				const result = consumeTextEditorResult(PROFILE_EDITOR_OWNER, PROFILE_DESCRIPTION_EDITOR_TARGET)
+				if (result != null) {
+					this.description = result as string
+					this.hasUnsaved = true
 				}
+				// 检查裁剪页面是否有返回结果
+				const cropResult = consumeAvatarCropResult('profile_avatar')
+				if (cropResult != '') {
+					if (this.avatarPath != this.savedAvatarPath) {
+						discardManagedAvatarFile(this.avatarPath)
+					}
+					this.avatarPath = cropResult
+					this.hasUnsaved = true
+				}
+			} catch (e: any) {
+				showProfileFailure('PROFILE_RETURN_STATE_FAILED', 'profile_consume_page_result', '页面返回结果读取失败', e)
+			}
 		},
 		methods: {
 			loadProfile() {
@@ -242,21 +230,23 @@
 			},
 			/** 打开全屏编辑器 */
 			openFullEditor() {
-				clearProfileEditorRuntimeState()
-				const modeSaved = setRuntimeState('editor_mode', 'text')
-				const contentSaved = setRuntimeState('editor_content', this.description)
-				const titleSaved = setRuntimeState('editor_title', '编辑个人简介')
-				const targetSaved = setRuntimeState('editor_target', 'profile-description')
-				const placeholderSaved = setRuntimeState('editor_placeholder', '详细介绍一下自己…')
-				if (modeSaved == false || contentSaved == false || titleSaved == false || targetSaved == false || placeholderSaved == false) {
-					clearProfileEditorRuntimeState()
+				const prepared = prepareTextEditorRuntimeState(
+					this.description,
+					'编辑个人简介',
+					PROFILE_EDITOR_OWNER,
+					PROFILE_DESCRIPTION_EDITOR_TARGET,
+					'详细介绍一下自己…',
+				)
+				if (prepared == false) {
 					showProfileFailure('PROFILE_EDITOR_STATE_FAILED', 'profile_editor_prepare', '无法准备全屏编辑器', '编辑器临时状态保存失败')
 					return
 				}
 				uni.navigateTo({
 					url: '/pages/common/editor/editor',
 					fail: (err: any) => {
-						clearProfileEditorRuntimeState()
+						if (clearProfileEditorRuntimeState() == false) {
+							showProfileFailure('PROFILE_EDITOR_CLEANUP_FAILED', 'profile_editor_cleanup', '编辑器临时状态清理失败', 'clearEditorRuntimeState 返回 false')
+						}
 						showProfileFailure('PROFILE_EDITOR_ROUTE_FAILED', 'profile_editor_navigate', '无法打开全屏编辑器', err)
 					}
 				})

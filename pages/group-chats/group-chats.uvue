@@ -52,8 +52,11 @@
 		createDefaultWritingGroupChat,
 		displaySessionTitle,
 		ensureGroupActiveSession,
+		getActiveGroupChatId,
+		getActiveGroupSessionId,
 		getActiveGroupMembers,
 		getGroupChats,
+		restoreActiveGroupRouteState,
 		setActiveGroupSession,
 	} from '@/utils/group-chat-service.uts'
 
@@ -79,13 +82,26 @@
 				this.openGroup(group)
 			},
 			openGroup(group: GroupChat): void {
+				let previousGroupId = ''
+				let previousSessionId = ''
 				try {
+					previousGroupId = getActiveGroupChatId()
+					previousSessionId = getActiveGroupSessionId()
 					const session = ensureGroupActiveSession(group)
 					if (setActiveGroupSession(group.id, session.id) == false) {
 						uni.showToast({ position: 'bottom', title: '群聊状态保存失败，请重试', icon: 'none' })
 						return
 					}
-					uni.navigateTo({ url: '/pages/group-chat/group-chat' })
+					uni.navigateTo({
+						url: '/pages/group-chat/group-chat',
+						fail: (_err: any) => {
+							if (restoreActiveGroupRouteState(previousGroupId, previousSessionId) == false) {
+								uni.showToast({ position: 'bottom', title: '群聊状态恢复失败，请重试', icon: 'none' })
+								return
+							}
+							uni.showToast({ position: 'bottom', title: '无法打开群聊，请重试', icon: 'none' })
+						}
+					})
 				} catch (e: any) {
 					uni.showToast({ position: 'bottom', title: '群聊准备失败，请重试', icon: 'none' })
 				}

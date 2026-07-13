@@ -5,7 +5,7 @@
 				<text v-if="readOnly == false" class="done-btn" @click="handleSave">{{ saveText }}</text>
 			</template>
 		</NavBar>
-		<view class="editor-wrap" :style="{ marginBottom: keyboardInset + 'px' }">
+		<view id="fullscreen-editor-wrap" class="editor-wrap" :style="{ marginBottom: keyboardInset + 'px' }">
 			<slot name="header"></slot>
 			<view class="editor-meta" v-if="subtitle != ''">
 				<text class="editor-meta-text">{{ subtitle }}</text>
@@ -29,7 +29,7 @@
 </template>
 
 <script lang="uts">
-	import { resolveKeyboardInset } from '@/utils/keyboard-inset.uts'
+	import { resolveKeyboardInsetFromLayout } from '@/utils/keyboard-inset.uts'
 
 	/**
 	 * 通用全屏文本编辑组件。
@@ -71,6 +71,7 @@
 		data() {
 			return {
 				localText: '' as string,
+				keyboardHeight: 0 as number,
 				keyboardInset: 0 as number,
 				keyboardBaseWindowHeight: 0 as number,
 				keyboardHeightListenerId: -1 as number,
@@ -94,17 +95,19 @@
 				this.keyboardBaseWindowHeight = 0
 			}
 			this.keyboardHeightListenerId = uni.onKeyboardHeightChange((res: OnKeyboardHeightChangeCallbackResult) => {
-				let currentWindowHeight = this.keyboardBaseWindowHeight
-				try {
-					const windowInfo = uni.getWindowInfo()
-					currentWindowHeight = windowInfo.windowHeight
-				} catch (error) {
-					currentWindowHeight = this.keyboardBaseWindowHeight
+				this.keyboardHeight = res.height
+				if (res.height == 0) {
+					this.keyboardInset = 0
+					try {
+						const windowInfo = uni.getWindowInfo()
+						if (windowInfo.windowHeight > 0) { this.keyboardBaseWindowHeight = windowInfo.windowHeight }
+					} catch (_error: any) {}
+				} else {
+					this.measureKeyboardInset(res.height)
+					setTimeout(() => {
+						if (this.keyboardHeight == res.height) { this.measureKeyboardInset(res.height) }
+					}, 120)
 				}
-				if (res.height == 0 && currentWindowHeight > 0) {
-					this.keyboardBaseWindowHeight = currentWindowHeight
-				}
-				this.keyboardInset = resolveKeyboardInset(res.height, this.keyboardBaseWindowHeight, currentWindowHeight)
 			})
 		},
 		unmounted() {
@@ -114,6 +117,21 @@
 			}
 		},
 		methods: {
+			measureKeyboardInset(keyboardHeight: number): void {
+				if (keyboardHeight <= 0) { this.keyboardInset = 0; return }
+				const appliedInset = this.keyboardInset
+				const query = uni.createSelectorQuery().in(this)
+				query.select('#fullscreen-editor-wrap').boundingClientRect()
+				query.exec((res: any) => {
+					if (this.keyboardHeight != keyboardHeight) { return }
+					const rows = res as UTSArray<any> | null
+					if (rows == null || rows.length == 0) { this.keyboardInset = keyboardHeight; return }
+					const rect = rows[0] as NodeInfo | null
+					const bottom = rect != null ? (rect.bottom as number | null) : null
+					if (bottom == null || bottom <= 0) { this.keyboardInset = keyboardHeight; return }
+					this.keyboardInset = resolveKeyboardInsetFromLayout(keyboardHeight, this.keyboardBaseWindowHeight, bottom + appliedInset)
+				})
+			},
 			handleInput() {
 				this.$emit('change', this.localText)
 			},

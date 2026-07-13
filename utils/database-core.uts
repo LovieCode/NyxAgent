@@ -163,6 +163,9 @@ export function ensureGroupChatTables(db: xSqlite): void {
 		)
 	}
 	db.run(
+		'CREATE INDEX IF NOT EXISTS idx_group_chat_messages_session_order ON group_chat_messages (group_id, session_id, timestamp, updated_at)'
+	)
+	db.run(
 		'CREATE TABLE IF NOT EXISTS group_agent_context_records (' +
 		'id TEXT PRIMARY KEY,' +
 		'agent_id TEXT NOT NULL DEFAULT \'\',' +
@@ -195,6 +198,9 @@ export function ensureGroupChatTables(db: xSqlite): void {
 		'payload_json TEXT NOT NULL DEFAULT \'{}\',' +
 		'created_at INTEGER NOT NULL DEFAULT 0,' +
 		'updated_at INTEGER NOT NULL DEFAULT 0)'
+	)
+	db.run(
+		'CREATE INDEX IF NOT EXISTS idx_group_chat_tasks_session_status ON group_chat_tasks (group_id, session_id, status, updated_at)'
 	)
 	db.run(
 		'CREATE TABLE IF NOT EXISTS group_agent_memories (' +
@@ -279,15 +285,15 @@ export function ensureAppSettingsTable(db: xSqlite): void {
 export function safeJsonForDb(value: UTSJSONObject): string {
 	try {
 		return JSON.stringify(value)
-	} catch (_e: any) {
+	} catch (e: any) {
+		throw e
 	}
-	return '{}'
 }
 
 export function safeJsonArrayForDb(value: string[]): string {
 	try {
 		return JSON.stringify(value)
-	} catch (_e: any) {
+	} catch (e: any) {
+		throw e
 	}
-	return '[]'
 }

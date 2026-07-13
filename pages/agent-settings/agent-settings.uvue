@@ -335,6 +335,7 @@
 	} from '@/utils/agent-settings-models.uts'
 	import { saveAgentSettings, type AgentSettingsSaveInput, type AgentSettingsSaveResult } from '@/utils/agent-settings-save-service.uts'
 	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
+	import { consumeTextEditorResult } from '@/utils/editor-runtime-state.uts'
 	import {
 		buildAgentSettingsToolOptions,
 		getAgentSettingsToolCardClass,
@@ -347,6 +348,7 @@
 		toggleAgentSettingsToolSelection,
 	} from '@/utils/agent-settings-tools.uts'
 	import {
+		buildAgentSettingsEditorOwner,
 		clearAgentSettingsEditorRuntime,
 		readAgentSettingsProfileForm,
 		readAgentSettingsSkillDesc,
@@ -447,20 +449,22 @@
 					this.loadedOnce = true
 				}
 				// 检查全屏编辑器是否有返回结果
-				const ready = getRuntimeState('editor_result_ready')
-				const result = getRuntimeState('editor_result')
-				if (ready == 'true' || result != '') {
-					const target = getRuntimeState('editor_target')
-					if (target == 'systemPrompt' || target == 'interactionRules' || target == 'desc') {
-						if (target == 'systemPrompt') {
-							this.agentSystemPrompt = result
-						} else if (target == 'interactionRules') {
-							this.agentInteractionRules = result
-						} else {
-							this.agentDesc = result
-						}
-						clearAgentSettingsEditorRuntime()
+				const editorOwner = buildAgentSettingsEditorOwner(this.agentId)
+				const promptResult = consumeTextEditorResult(editorOwner, 'systemPrompt')
+				if (promptResult != null) {
+					this.agentSystemPrompt = promptResult as string
+					this.hasUnsaved = true
+				} else {
+					const rulesResult = consumeTextEditorResult(editorOwner, 'interactionRules')
+					if (rulesResult != null) {
+						this.agentInteractionRules = rulesResult as string
 						this.hasUnsaved = true
+					} else {
+						const descResult = consumeTextEditorResult(editorOwner, 'desc')
+						if (descResult != null) {
+							this.agentDesc = descResult as string
+							this.hasUnsaved = true
+						}
 					}
 				}
 				// 检查裁剪页面是否有返回结果
@@ -661,14 +665,16 @@
 			},
 
 			openTextEditor(content: string, title: string, target: string, placeholder: string): void {
-				if (tryPrepareAgentSettingsTextEditor(content, title, target, placeholder) == false) {
+				if (tryPrepareAgentSettingsTextEditor(content, title, this.agentId, target, placeholder) == false) {
 					showAgentSettingsFailure('AGENT_SETTINGS_EDITOR_STATE_FAILED', 'agent_settings_editor_prepare', '无法准备全屏编辑器', '编辑器临时状态保存失败')
 					return
 				}
 				uni.navigateTo({
 					url: '/pages/common/editor/editor',
 					fail: (err: any) => {
-						clearAgentSettingsEditorRuntime()
+						if (clearAgentSettingsEditorRuntime(this.agentId, target) == false) {
+							showAgentSettingsFailure('AGENT_SETTINGS_EDITOR_CLEANUP_FAILED', 'agent_settings_editor_cleanup', '编辑器临时状态清理失败', 'clearEditorRuntimeState 返回 false')
+						}
 						showAgentSettingsFailure('AGENT_SETTINGS_EDITOR_ROUTE_FAILED', 'agent_settings_editor_navigate', '无法打开全屏编辑器', err)
 					}
 				})

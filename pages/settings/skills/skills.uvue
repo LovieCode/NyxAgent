@@ -115,7 +115,8 @@
 
 <script lang="uts">
 	import { getSkills, hasSkillsStorageReadError, upsertSkill, deleteSkill, createSkillDocument, createSkillFromMarkdown, normalizeSkillName, readSkillId, readSkillName, readSkillDescription, readSkillEnabled, readSkillDocuments, readSkillDocumentTitle, getSkillDocumentCount } from '@/utils/skills.uts'
-	import { deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
+	import { clearEditorRuntimeStateFor, consumeTextEditorResult, prepareTextEditorRuntimeState } from '@/utils/editor-runtime-state.uts'
 	import {
 		buildCurrentSkillRecord,
 		buildSkillTextPreview,
@@ -129,6 +130,21 @@
 		removeSkillDocumentAt,
 		writeSkillDocumentFields,
 	} from '@/utils/skills-page-helpers.uts'
+
+	const SKILL_DOC_EDITOR_TARGET = 'skill-doc-content'
+	const SKILL_IMPORT_EDITOR_TARGET = 'skill-import-markdown'
+
+	function showSkillsEditorFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+		const error = reportAppErrorFromCause(
+			code,
+			APP_ERROR_CATEGORY_RUNTIME,
+			operation,
+			userMessage,
+			cause,
+			true,
+		)
+		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+	}
 
 	export default {
 		data() {
@@ -195,50 +211,43 @@
 			},
 
 			consumeEditorResult() {
-				const ready = getRuntimeState('editor_result_ready')
-				if (ready != 'true') {
-					return
+				try {
+					const docResult = consumeTextEditorResult(this.buildEditorOwner(SKILL_DOC_EDITOR_TARGET), SKILL_DOC_EDITOR_TARGET)
+					if (docResult != null) {
+						this.docContent = docResult as string
+						this.hasUnsaved = true
+						return
+					}
+					const importResult = consumeTextEditorResult(this.buildEditorOwner(SKILL_IMPORT_EDITOR_TARGET), SKILL_IMPORT_EDITOR_TARGET)
+					if (importResult != null) {
+						this.importMarkdown = importResult as string
+					}
+				} catch (e: any) {
+					showSkillsEditorFailure('SKILLS_EDITOR_RESULT_FAILED', 'skills_consume_editor_result', '编辑结果读取失败，请重试', e)
 				}
-				const target = getRuntimeState('editor_target')
-				const result = getRuntimeState('editor_result')
-				if (target == 'skill-doc-content') {
-					this.docContent = result != null ? result : ''
-					this.hasUnsaved = true
-				} else if (target == 'skill-import-markdown') {
-					this.importMarkdown = result != null ? result : ''
-				} else {
-					return
-				}
-				this.clearEditorStorage()
 			},
 
-			clearEditorStorage() {
-				deleteRuntimeState('editor_mode')
-				deleteRuntimeState('editor_title')
-				deleteRuntimeState('editor_content')
-				deleteRuntimeState('editor_result')
-				deleteRuntimeState('editor_result_ready')
-				deleteRuntimeState('editor_target')
-				deleteRuntimeState('editor_file_path')
-				deleteRuntimeState('editor_saved')
-				deleteRuntimeState('editor_saved_path')
-				deleteRuntimeState('editor_readonly')
-				deleteRuntimeState('editor_placeholder')
-				deleteRuntimeState('editor_draft')
+			clearEditorStorage(target: string): boolean {
+				return clearEditorRuntimeStateFor(this.buildEditorOwner(target), target)
+			},
+
+			buildEditorOwner(target: string): string {
+				if (target == SKILL_IMPORT_EDITOR_TARGET) {
+					return 'skills:import'
+				}
+				let skillKey = this.selectedSkillId
+				if (skillKey == '') {
+					skillKey = 'new-' + this.skillCreatedAt
+				}
+				return 'skills:' + skillKey + ':document-' + this.selectedDocIndex
 			},
 
 			prepareTextEditorState(content: string, title: string, target: string, placeholder: string): boolean {
-				this.clearEditorStorage()
-				const modeSaved = setRuntimeState('editor_mode', 'text')
-				const contentSaved = setRuntimeState('editor_content', content)
-				const titleSaved = setRuntimeState('editor_title', title)
-				const targetSaved = setRuntimeState('editor_target', target)
-				const placeholderSaved = setRuntimeState('editor_placeholder', placeholder)
-				if (modeSaved == true && contentSaved == true && titleSaved == true && targetSaved == true && placeholderSaved == true) {
+				const prepared = prepareTextEditorRuntimeState(content, title, this.buildEditorOwner(target), target, placeholder)
+				if (prepared == true) {
 					return true
 				}
-				this.clearEditorStorage()
-				uni.showToast({ position: 'bottom', title: '打开编辑器失败，请重试', icon: 'none' })
+				showSkillsEditorFailure('SKILLS_EDITOR_STATE_FAILED', 'skills_prepare_editor', '打开编辑器失败，请重试', '编辑器临时状态事务未提交')
 				return false
 			},
 
@@ -252,27 +261,31 @@
 
 			openDocContentEditor() {
 				this.syncDocumentFields()
-				if (this.prepareTextEditorState(this.docContent, '编辑 Skill 文档', 'skill-doc-content', '写入纯文本指令...') == false) {
+				if (this.prepareTextEditorState(this.docContent, '编辑 Skill 文档', SKILL_DOC_EDITOR_TARGET, '写入纯文本指令...') == false) {
 					return
 				}
 				uni.navigateTo({
 					url: '/pages/common/editor/editor',
-					fail: () => {
-						this.clearEditorStorage()
-						uni.showToast({ position: 'bottom', title: '打开编辑器失败，请重试', icon: 'none' })
+					fail: (err: any) => {
+						if (this.clearEditorStorage(SKILL_DOC_EDITOR_TARGET) == false) {
+							showSkillsEditorFailure('SKILLS_EDITOR_CLEANUP_FAILED', 'skills_editor_cleanup', '编辑器临时状态清理失败', 'clearEditorRuntimeState 返回 false')
+						}
+						showSkillsEditorFailure('SKILLS_EDITOR_ROUTE_FAILED', 'skills_editor_navigate', '打开编辑器失败，请重试', err)
 					}
 				})
 			},
 
 			openImportMarkdownEditor() {
-				if (this.prepareTextEditorState(this.importMarkdown, '导入 SKILL.md', 'skill-import-markdown', '粘贴 SKILL.md 内容...') == false) {
+				if (this.prepareTextEditorState(this.importMarkdown, '导入 SKILL.md', SKILL_IMPORT_EDITOR_TARGET, '粘贴 SKILL.md 内容...') == false) {
 					return
 				}
 				uni.navigateTo({
 					url: '/pages/common/editor/editor',
-					fail: () => {
-						this.clearEditorStorage()
-						uni.showToast({ position: 'bottom', title: '打开编辑器失败，请重试', icon: 'none' })
+					fail: (err: any) => {
+						if (this.clearEditorStorage(SKILL_IMPORT_EDITOR_TARGET) == false) {
+							showSkillsEditorFailure('SKILLS_EDITOR_CLEANUP_FAILED', 'skills_editor_cleanup', '编辑器临时状态清理失败', 'clearEditorRuntimeState 返回 false')
+						}
+						showSkillsEditorFailure('SKILLS_EDITOR_ROUTE_FAILED', 'skills_editor_navigate', '打开编辑器失败，请重试', err)
 					}
 				})
 			},

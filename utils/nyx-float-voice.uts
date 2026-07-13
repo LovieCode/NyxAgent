@@ -10,25 +10,26 @@ export const NYX_FLOAT_VOICE_EVENT = 'nyx_float_voice_ready'
 export const NYX_FLOAT_CONTEXT_CHAT = 'chat'
 export const NYX_FLOAT_CONTEXT_GROUP = 'group'
 
-export function publishNyxFloatVoiceText(text: string): void {
+export function publishNyxFloatVoiceText(text: string): boolean {
 	const content = text.trim()
-	if (content == '') { return }
-	setNyxFloatVoiceText(content)
+	if (content == '') { return false }
+	if (setNyxFloatVoiceText(content) == false) { return false }
 	eventBus.emit(NYX_FLOAT_VOICE_EVENT)
+	return true
 }
 
 export function consumePendingNyxFloatVoiceText(): string {
 	return consumeNyxFloatVoiceText()
 }
 
-export function activateNyxFloatVoiceContext(context: string): void {
-	setNyxFloatVoiceContext(context)
+export function activateNyxFloatVoiceContext(context: string): boolean {
+	return setNyxFloatVoiceContext(context)
 }
 
 export function readNyxFloatVoiceContext(): string {
 	return getNyxFloatVoiceContext()
 }
 
-export function deactivateNyxFloatVoiceContext(context: string): void {
-	clearNyxFloatVoiceContext(context)
+export function deactivateNyxFloatVoiceContext(context: string): boolean {
+	return clearNyxFloatVoiceContext(context)
 }

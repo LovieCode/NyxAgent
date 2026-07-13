@@ -183,7 +183,7 @@
 </template>
 
 <script lang="uts">
-	import { getAgentDir, getUserDir, migrateLegacyUserDir, readContent, writeContent, listDir, deleteItem, joinPath, type FileItem } from '@/utils/file-manager.uts'
+	import { getAgentDir, getUserDir, readContent, writeContent, listDir, deleteItem, joinPath, type FileItem } from '@/utils/file-manager.uts'
 	import { parseTodoMarkdown, parseNoteMarkdown, buildTodoMarkdown, buildNoteMarkdown, type KnowledgeRenderBlock } from '@/utils/markdown.uts'
 	import { getAgents } from '@/utils/agent.uts'
 	import { getAppSetting } from '@/utils/database.uts'
@@ -268,7 +268,6 @@
 
 			/** 加载 agent 列表（预置用户条目在最前） */
 			loadAgents() {
-				migrateLegacyUserDir()
 				const list = getAgents()
 				const userEntry = {
 					id: '__user__',

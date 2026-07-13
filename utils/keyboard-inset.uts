@@ -19,3 +19,19 @@ export function resolveKeyboardInset(keyboardHeight: number, baselineWindowHeigh
 	}
 	return safeKeyboardHeight - resizedHeight
 }
+
+/**
+ * 根据底部控件的真实布局位置计算遮挡量。
+ * layoutBottomWithoutInset 需要把当前已应用的 inset 加回去，避免重复测量时振荡。
+ */
+export function resolveKeyboardInsetFromLayout(keyboardHeight: number, baselineWindowHeight: number, layoutBottomWithoutInset: number): number {
+	let safeKeyboardHeight = keyboardHeight
+	if (safeKeyboardHeight < 0) { safeKeyboardHeight = 0 }
+	if (safeKeyboardHeight == 0) { return 0 }
+	if (baselineWindowHeight <= 0 || layoutBottomWithoutInset <= 0) { return safeKeyboardHeight }
+	const keyboardTop = baselineWindowHeight - safeKeyboardHeight
+	let occludedHeight = layoutBottomWithoutInset - keyboardTop
+	if (occludedHeight <= 0) { return 0 }
+	if (occludedHeight > safeKeyboardHeight) { occludedHeight = safeKeyboardHeight }
+	return occludedHeight
+}

@@ -14,7 +14,7 @@ import {
 	activateProvider as dbActivateProvider,
 	getAppSetting,
 	setAppSetting,
-	setAppSettings,
+	saveFirstRunProviderConfiguration as dbSaveFirstRunProviderConfiguration,
 } from '@/utils/database.uts'
 
 // ==================== 模型数据结构 ====================
@@ -37,11 +37,16 @@ export type ModelInfo = {
 	supportsToolCall: boolean
 	/** 是否支持思维链/推理 (reasoning) */
 	supportsReasoning: boolean
+	/** 能力字段是否由 Provider 明确提供；旧版仅有模型 ID 的记录保持未知。 */
+	capabilitiesKnown?: boolean
 	// === UI state (不序列化) ===
 	ctxStr?: string
 	maxTokensStr?: string
 	expanded?: boolean
 }
+
+/** Provider 请求协议。 */
+export type ProviderModelAdapter = 'openai_compatible' | 'anthropic'
 
 /** LLM 调用配置 */
 export type LLMConfig = {
@@ -49,6 +54,21 @@ export type LLMConfig = {
 	apiKey: string
 	baseUrl: string
 	model: string
+	adapter: ProviderModelAdapter
+	modelRuntime: ModelRuntimeOptions
+}
+
+/** 解析后的模型运行能力。所有发请求的入口都使用同一份结果。 */
+export type ModelRuntimeOptions = {
+	modelId: string
+	context: number
+	maxTokens: number
+	params: string
+	supportsVision: boolean
+	supportsToolCall: boolean
+	supportsReasoning: boolean
+	found: boolean
+	capabilitiesKnown: boolean
 }
 
 /**
@@ -156,14 +176,15 @@ export function serializeModels(models: ModelInfo[]): string {
 		if (m.params != null && m.params != '') {
 			obj['params'] = m.params
 		}
-		if (m.supportsVision == true) {
-			obj['vision'] = true
-		}
-		if (m.supportsToolCall == true) {
-			obj['toolCall'] = true
-		}
-		if (m.supportsReasoning == true) {
-			obj['reasoning'] = true
+		// 新记录写入完整能力字段，旧的裸 ID 记录仍保持兼容：未知能力不强行写成 false。
+		if (m.capabilitiesKnown == true) {
+			obj['vision'] = m.supportsVision
+			obj['toolCall'] = m.supportsToolCall
+			obj['reasoning'] = m.supportsReasoning
+		} else {
+			if (m.supportsVision == true) { obj['vision'] = true }
+			if (m.supportsToolCall == true) { obj['toolCall'] = true }
+			if (m.supportsReasoning == true) { obj['reasoning'] = true }
 		}
 		// UI state 不存
 		list.push(obj)
@@ -185,13 +206,13 @@ export function parseModels(modelsStr: string): ModelInfo[] {
 			const item = raw[i]
 			if (typeof item == 'string') {
 				// 旧格式 ["model-id"]
-				result.push({ id: item, supportsVision: false, supportsToolCall: false, supportsReasoning: false } as ModelInfo)
+				result.push({ id: item, supportsVision: false, supportsToolCall: false, supportsReasoning: false, capabilitiesKnown: false } as ModelInfo)
 			} else if (typeof item == 'object' && item != null) {
 				// 新格式 [{"id":"...","context":...}]
 				const obj = item as UTSJSONObject
 				const mid = obj['id'] as string | null
 				if (mid != null && mid != '') {
-					const mi: ModelInfo = { id: mid, ctxStr: '', maxTokensStr: '', expanded: false, supportsVision: false, supportsToolCall: false, supportsReasoning: false } as ModelInfo
+					const mi: ModelInfo = { id: mid, ctxStr: '', maxTokensStr: '', expanded: false, supportsVision: false, supportsToolCall: false, supportsReasoning: false, capabilitiesKnown: false } as ModelInfo
 					// name
 					const nm = obj['name'] as string | null
 					if (nm != null && nm != '') {
@@ -214,16 +235,18 @@ export function parseModels(modelsStr: string): ModelInfo[] {
 					if (pms != null && pms != '') {
 						mi.params = pms
 					}
-				// vision capability
-				const vision = obj['vision'] as boolean | null
-				mi.supportsVision = vision == true
-				// tool call capability
-				const toolCall = obj['toolCall'] as boolean | null
-				mi.supportsToolCall = toolCall == true
-				// reasoning capability
-				const reasoning = obj['reasoning'] as boolean | null
-				mi.supportsReasoning = reasoning == true
-				result.push(mi)
+					// vision capability
+					const vision = obj['vision'] as boolean | null
+					mi.supportsVision = vision == true
+					// tool call capability
+					const toolCall = obj['toolCall'] as boolean | null
+					mi.supportsToolCall = toolCall == true
+					// reasoning capability
+					const reasoning = obj['reasoning'] as boolean | null
+					mi.supportsReasoning = reasoning == true
+					// 旧对象常只保存 true 字段；三项齐全才代表 false 也是显式配置。
+					mi.capabilitiesKnown = vision != null && toolCall != null && reasoning != null
+					result.push(mi)
 				}
 			}
 		}
@@ -260,6 +283,45 @@ export function getProviderModelIds(id: string): string[] {
 	return ids
 }
 
+function createUnknownModelRuntime(model: string): ModelRuntimeOptions {
+	return {
+		modelId: model,
+		context: 0,
+		maxTokens: 0,
+		params: '',
+		supportsVision: false,
+		// 旧版模型只有裸 ID 时曾经默认发送工具定义；继续保持这个兼容语义。
+		supportsToolCall: true,
+		supportsReasoning: false,
+		found: false,
+		capabilitiesKnown: false,
+	} as ModelRuntimeOptions
+}
+
+/** 按 provider + model 精确读取模型能力，禁止跨 Provider 同名模型串线。 */
+export function resolveModelRuntime(providerId: string, model: string): ModelRuntimeOptions {
+	const unknown = createUnknownModelRuntime(model)
+	if (providerId == '' || model == '') { return unknown }
+	const models = getProviderModels(providerId)
+	for (let i = 0; i < models.length; i++) {
+		const item = models[i]
+		if (item.id != model) { continue }
+		return {
+			modelId: item.id,
+			context: item.context != null ? item.context : 0,
+			maxTokens: item.maxTokens != null ? item.maxTokens : 0,
+			params: item.params != null ? item.params : '',
+			supportsVision: item.supportsVision == true,
+			// 未声明能力的旧对象仍按兼容语义允许工具调用；明确 false 才禁用。
+			supportsToolCall: item.capabilitiesKnown == true ? item.supportsToolCall == true : true,
+			supportsReasoning: item.supportsReasoning == true,
+			found: true,
+			capabilitiesKnown: item.capabilitiesKnown == true,
+		} as ModelRuntimeOptions
+	}
+	return unknown
+}
+
 /**
  * 保存提供商（models 传 ModelInfo[]）
  */
@@ -276,6 +338,13 @@ export function saveProvider(
 		finalApiBase = getDefaultUrl(id)
 	}
 	return dbSaveProvider(id, name, finalApiBase, apiKey, serializeModels(models), enabled)
+}
+
+/** 首次引导一次性提交 Provider、启用态、默认聊天模型和完成标记。 */
+export function saveFirstRunProviderConfiguration(id: string, name: string, apiBase: string, apiKey: string, models: ModelInfo[], defaultModel: string): boolean {
+	let finalApiBase = apiBase
+	if (finalApiBase == '') { finalApiBase = getDefaultUrl(id) }
+	return dbSaveFirstRunProviderConfiguration(id, name, finalApiBase, apiKey, serializeModels(models), defaultModel)
 }
 
 /**
@@ -347,6 +416,15 @@ export type ProviderModelsFetchResult = {
 	statusCode: number
 }
 
+export function resolveProviderModelAdapter(providerId: string, apiBase: string): ProviderModelAdapter {
+	const lowerId = providerId.toLowerCase()
+	const lowerBase = apiBase.toLowerCase()
+	if (lowerId == 'anthropic' || lowerBase.indexOf('anthropic.com') >= 0 || lowerBase.indexOf('/anthropic') >= 0) {
+		return 'anthropic'
+	}
+	return 'openai_compatible'
+}
+
 function buildProviderModelsFetchResult(ok: boolean, ids: string[], errorCode: string, errorMessage: string, detail: string, statusCode: number): ProviderModelsFetchResult {
 	return {
 		ok: ok,
@@ -366,7 +444,7 @@ function buildProviderModelsHttpMessage(statusCode: number): string {
 	return '模型列表请求失败，HTTP ' + statusCode
 }
 
-export function fetchProviderModelsDetailed(apiBase: string, apiKey: string): Promise<ProviderModelsFetchResult> {
+export function fetchProviderModelsDetailedForProvider(apiBase: string, apiKey: string, providerId: string): Promise<ProviderModelsFetchResult> {
 	return new Promise<ProviderModelsFetchResult>((resolve) => {
 		let baseUrl = apiBase
 		if (baseUrl == '') {
@@ -380,17 +458,26 @@ export function fetchProviderModelsDetailed(apiBase: string, apiKey: string): Pr
 		}
 		// 检测 baseUrl 是否已包含 API 版本路径
 		const hasApiVersion = baseUrl.indexOf('/v1') >= 0 || baseUrl.indexOf('/api/v') >= 0
+		const adapter = resolveProviderModelAdapter(providerId, baseUrl)
 		const fetchUrl = hasApiVersion ? baseUrl + '/models' : baseUrl + '/v1/models'
 		const hasKey = apiKey != null && apiKey != ''
-		console.log('[Provider] 获取模型列表 → ' + baseUrl + ' | hasApiKey=' + hasKey)
+		console.log('[Provider] 获取模型列表 → ' + baseUrl + ' | adapter=' + adapter + ' | hasApiKey=' + hasKey)
+		const requestHeader: UTSJSONObject = {
+			'Content-Type': 'application/json',
+		} as UTSJSONObject
+		if (adapter == 'anthropic') {
+			// Anthropic 使用 x-api-key + anthropic-version，不能复用 Bearer 头。
+			requestHeader['x-api-key'] = apiKey
+			requestHeader['anthropic-version'] = '2023-06-01'
+		} else {
+			requestHeader['Authorization'] = 'Bearer ' + apiKey
+		}
 
 		uni.request({
 			url: fetchUrl,
 			method: 'GET',
 			timeout: 15000,
-			header: {
-				'Authorization': 'Bearer ' + apiKey,
-			} as UTSJSONObject,
+			header: requestHeader,
 			success: (res) => {
 				const statusCode = res.statusCode as number
 				if (statusCode == 200) {
@@ -459,13 +546,22 @@ export function fetchProviderModelsDetailed(apiBase: string, apiKey: string): Pr
 	})
 }
 
-/** 保留旧 API 与 JVM 签名，旧调用方仍只接收模型 ID。 */
-export function fetchProviderModels(apiBase: string, apiKey: string): Promise<string[]> {
+/** 保留旧 API 与 JVM 签名；未提供 Provider 时按 OpenAI-compatible 处理。 */
+export function fetchProviderModelsDetailed(apiBase: string, apiKey: string): Promise<ProviderModelsFetchResult> {
+	return fetchProviderModelsDetailedForProvider(apiBase, apiKey, '')
+}
+
+export function fetchProviderModelsForProvider(apiBase: string, apiKey: string, providerId: string): Promise<string[]> {
 	return new Promise<string[]>((resolve) => {
-		fetchProviderModelsDetailed(apiBase, apiKey).then((result) => {
+		fetchProviderModelsDetailedForProvider(apiBase, apiKey, providerId).then((result) => {
 			resolve(result.ids)
 		})
 	})
+}
+
+/** 保留旧 API 与 JVM 签名，旧调用方仍只接收模型 ID。 */
+export function fetchProviderModels(apiBase: string, apiKey: string): Promise<string[]> {
+	return fetchProviderModelsForProvider(apiBase, apiKey, '')
 }
 
 // ==================== 默认模型分配 ====================
@@ -527,17 +623,6 @@ export function getDefaultTaskModel(type: string): UTSJSONObject | null {
 	const key = TASK_KEY_PREFIX + type
 	const val = getAppSetting(key)
 	if (val == null || val == '') {
-		// LEGACY_MODEL_SETTINGS: 旧版本默认对话模型可能只配置了 settings_model/settings_provider_id。
-		if (type == 'chat') {
-			const oldModel = getAppSetting('settings_model')
-			const oldProvider = getAppSetting('settings_provider_id')
-			if (oldModel != null && oldModel != '' && oldProvider != null && oldProvider != '') {
-				return {
-					providerId: oldProvider,
-					model: oldModel,
-				} as UTSJSONObject
-			}
-		}
 		return null
 	}
 	try {
@@ -627,13 +712,10 @@ export function setDefaultTaskModel(type: string, providerId: string, model: str
 	return setAppSetting(key, JSON.stringify(next))
 }
 
-/** 原子保存默认对话模型及旧版兼容字段，避免任一写入失败后配置互相矛盾。 */
+/** 保存默认对话模型。 */
 export function setDefaultChatTaskModel(providerId: string, model: string): boolean {
 	if (providerId == '' || model == '') { return false }
-	return setAppSettings(
-		['default_task_chat', 'settings_provider_id', 'settings_model'],
-		[JSON.stringify({ providerId: providerId, model: model }), providerId, model],
-	)
+	return setAppSetting('default_task_chat', JSON.stringify({ providerId: providerId, model: model }))
 }
 
 export function getMemoryOrganizeTaskModel(): UTSJSONObject | null {
@@ -678,7 +760,6 @@ export function setImageCaptionPrompt(prompt: string): boolean {
  * 解析 LLM 配置（按优先级）
  * 1. 显式 providerId + model
  * 2. chat 默认模型配置
- * 3. 旧版 storage 配置
  */
 export function resolveLLMConfig(providerId: string, model: string): LLMConfig | null {
 	let pid = providerId
@@ -712,16 +793,6 @@ export function resolveLLMConfig(providerId: string, model: string): LLMConfig |
 		}
 	}
 
-	// LEGACY_MODEL_SETTINGS: 旧 provider/model 必须成对存在，禁止把裸模型串到其他 Provider。
-	if (pid == '' && mdl == '') {
-		const storageProvider = getAppSetting('settings_provider_id')
-		const storageModel = getAppSetting('settings_model')
-		if (storageProvider != null && storageProvider != '' && storageModel != null && storageModel != '') {
-			pid = storageProvider
-			mdl = storageModel
-		}
-	}
-
 	if (pid == '' || mdl == '') {
 		return null
 	}
@@ -747,32 +818,11 @@ export function resolveLLMConfig(providerId: string, model: string): LLMConfig |
 			apiKey: apiKey,
 			baseUrl: baseUrl,
 			model: mdl,
+			adapter: resolveProviderModelAdapter(pid, baseUrl),
+			modelRuntime: resolveModelRuntime(pid, mdl),
 		} as LLMConfig
 	}
-	// 已有结构化 Provider 时，缺失 ID 代表引用已失效，不能串用旧版全局 API Key。
-	if (getAllProviders().length > 0) {
-		return null
-	}
-
-	const storageApiKey = getAppSetting('settings_api_key')
-	const apiKey = storageApiKey != null ? storageApiKey : ''
-	if (apiKey == '') {
-		return null
-	}
-	const storageBaseUrl = getAppSetting('settings_base_url')
-	let baseUrl = storageBaseUrl != null ? storageBaseUrl : ''
-	if (baseUrl == '') {
-		baseUrl = getDefaultUrl(pid)
-		if (baseUrl == '') {
-			return null
-		}
-	}
-	return {
-		providerId: pid,
-		apiKey: apiKey,
-		baseUrl: baseUrl,
-		model: mdl,
-	} as LLMConfig
+	return null
 }
 
 

@@ -306,7 +306,10 @@
 		type GroupChat,
 		createDefaultWritingGroupChat,
 		ensureGroupActiveSession,
+		getActiveGroupChatId,
+		getActiveGroupSessionId,
 		getGroupChats,
+		restoreActiveGroupRouteState,
 		setActiveGroupSession,
 	} from '@/utils/group-chat-service.uts'
 	import {
@@ -358,7 +361,7 @@
 		readAgentChatName,
 	} from '@/utils/agent-chat-list.uts'
 	import { chooseAvatarImage, consumeAvatarCropResult, discardManagedAvatarFile, openAvatarCrop } from '@/utils/avatar-image-picker.uts'
-	import { RUNTIME_ACTIVE_AGENT_ID_KEY } from '@/utils/runtime-state.uts'
+	import { getActiveAgentRuntimeId, getActiveConversationRuntimeId, setActiveChatRouteState } from '@/utils/runtime-state.uts'
 
 	export default {
 		data() {
@@ -739,20 +742,36 @@
 					this.showAgentPageFailure('AGENT_CHAT_ID_MISSING', 'agent_chat_open', '无法打开私聊', '智能体 ID 为空')
 					return
 				}
-				if (setRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY, agentId) == false) {
+				let previousAgentId = ''
+				let previousConversationId = ''
+				try {
+					previousAgentId = getActiveAgentRuntimeId()
+					previousConversationId = getActiveConversationRuntimeId()
+				} catch (e: any) {
+					this.showAgentPageFailure('AGENT_CHAT_STATE_READ_FAILED', 'agent_chat_prepare', '无法准备私聊页面', e)
+					return
+				}
+				if (setActiveChatRouteState(agentId, '') == false) {
 					this.showAgentPageFailure('AGENT_CHAT_STATE_FAILED', 'agent_chat_prepare', '无法准备私聊页面', 'active_agent_id 保存失败')
 					return
 				}
 				uni.navigateTo({
 					url: '/pages/chat/chat',
 					fail: (err: any) => {
+						if (setActiveChatRouteState(previousAgentId, previousConversationId) == false) {
+							this.showAgentPageFailure('AGENT_CHAT_STATE_ROLLBACK_FAILED', 'agent_chat_route_rollback', '私聊页面状态恢复失败', '组合运行状态回滚失败')
+						}
 						this.showAgentPageFailure('AGENT_CHAT_ROUTE_FAILED', 'agent_chat_navigate', '无法打开私聊页面', err)
 					}
 				})
 			},
 
 			openGroup(group: GroupChat): void {
+				let previousGroupId = ''
+				let previousSessionId = ''
 				try {
+					previousGroupId = getActiveGroupChatId()
+					previousSessionId = getActiveGroupSessionId()
 					const session = ensureGroupActiveSession(group)
 					if (setActiveGroupSession(group.id, session.id) == false) {
 						this.showAgentPageFailure('GROUP_CHAT_STATE_FAILED', 'group_chat_prepare', '无法准备群聊页面', '群聊状态保存失败')
@@ -761,6 +780,9 @@
 					uni.navigateTo({
 						url: '/pages/group-chat/group-chat',
 						fail: (err: any) => {
+							if (restoreActiveGroupRouteState(previousGroupId, previousSessionId) == false) {
+								this.showAgentPageFailure('GROUP_CHAT_STATE_ROLLBACK_FAILED', 'group_chat_route_rollback', '群聊页面状态恢复失败', '群聊路由状态回滚失败')
+							}
 							this.showAgentPageFailure('GROUP_CHAT_ROUTE_FAILED', 'group_chat_navigate', '无法打开群聊页面', err)
 						}
 					})
@@ -786,13 +808,25 @@
 					this.openAgent(agent)
 					return
 				}
-				if (setRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY, chatId) == false) {
+				let previousAgentId = ''
+				let previousConversationId = ''
+				try {
+					previousAgentId = getActiveAgentRuntimeId()
+					previousConversationId = getActiveConversationRuntimeId()
+				} catch (e: any) {
+					this.showAgentPageFailure('AGENT_CHAT_STATE_READ_FAILED', 'agent_chat_prepare', '无法准备私聊页面', e)
+					return
+				}
+				if (setActiveChatRouteState(chatId, '') == false) {
 					this.showAgentPageFailure('AGENT_CHAT_STATE_FAILED', 'agent_chat_prepare', '无法准备私聊页面', 'active_agent_id 保存失败')
 					return
 				}
 				uni.navigateTo({
 					url: '/pages/chat/chat',
 					fail: (err: any) => {
+						if (setActiveChatRouteState(previousAgentId, previousConversationId) == false) {
+							this.showAgentPageFailure('AGENT_CHAT_STATE_ROLLBACK_FAILED', 'agent_chat_item_route_rollback', '私聊页面状态恢复失败', '组合运行状态回滚失败')
+						}
 						this.showAgentPageFailure('AGENT_CHAT_ROUTE_FAILED', 'agent_chat_navigate', '无法打开私聊页面', err)
 					}
 				})
@@ -881,13 +915,25 @@
 					title: '创建成功',
 					icon: 'success'
 				})
-				if (setRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY, id) == false) {
+				let previousAgentId = ''
+				let previousConversationId = ''
+				try {
+					previousAgentId = getActiveAgentRuntimeId()
+					previousConversationId = getActiveConversationRuntimeId()
+				} catch (e: any) {
+					this.showAgentPageFailure('AGENT_CHAT_STATE_READ_FAILED', 'agent_chat_prepare_after_create', '私聊已创建，但无法打开', e)
+					return
+				}
+				if (setActiveChatRouteState(id, '') == false) {
 					this.showAgentPageFailure('AGENT_CHAT_STATE_FAILED', 'agent_chat_prepare_after_create', '私聊已创建，但无法打开', 'active_agent_id 保存失败')
 					return
 				}
 				uni.navigateTo({
 					url: '/pages/chat/chat',
 					fail: (err: any) => {
+						if (setActiveChatRouteState(previousAgentId, previousConversationId) == false) {
+							this.showAgentPageFailure('AGENT_CHAT_STATE_ROLLBACK_FAILED', 'agent_chat_create_route_rollback', '私聊页面状态恢复失败', '组合运行状态回滚失败')
+						}
 						this.showAgentPageFailure('AGENT_CHAT_ROUTE_FAILED', 'agent_chat_navigate_after_create', '私聊已创建，但页面打开失败', err)
 					}
 				})

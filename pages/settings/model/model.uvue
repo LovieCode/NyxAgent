@@ -56,7 +56,42 @@
 <script lang="uts">
 	import { getAgentById, updateAgentModel } from '@/utils/agent.uts'
 	import { getAllProviders, getProviderModels, setDefaultChatTaskModel, getDefaultTaskModel, type ModelInfo } from '@/uni_modules/agent-core/utssdk/provider.uts'
-	import { consumeRuntimeState, getAppSetting } from '@/utils/database.uts'
+	import { deleteRuntimeState, getRuntimeState } from '@/utils/database.uts'
+	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
+	import { getActiveAgentRuntimeId, getActiveConversationRuntimeId, setActiveChatRouteState } from '@/utils/runtime-state.uts'
+
+	const PENDING_AGENT_MODEL_ID_KEY = 'pending_agent_model_id'
+
+	function showModelRouteFailure(code: string, operation: string, userMessage: string, cause: any | null): void {
+		const error = reportAppErrorFromCause(
+			code,
+			APP_ERROR_CATEGORY_RUNTIME,
+			operation,
+			userMessage,
+			cause,
+			true,
+		)
+		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+	}
+
+	function clearPendingAgentModelId(): boolean {
+		let cleared = false
+		try {
+			cleared = deleteRuntimeState(PENDING_AGENT_MODEL_ID_KEY)
+		} catch (e: any) {
+			showModelRouteFailure('MODEL_PENDING_STATE_CLEAR_FAILED', 'model_route_pending_clear', '模型设置跳转状态清理失败', e)
+			return false
+		}
+		if (cleared == false) {
+			showModelRouteFailure(
+				'MODEL_PENDING_STATE_CLEAR_FAILED',
+				'model_route_pending_clear',
+				'模型设置跳转状态清理失败',
+				'pending_agent_model_id 未能从运行状态数据库删除',
+			)
+		}
+		return cleared
+	}
 
 	export default {
 		data() {
@@ -86,11 +121,72 @@
 			}
 		},
 		onLoad() {
-			const pid = consumeRuntimeState('pending_agent_model_id')
-			if (pid != null && pid != '') {
-				this.pendingAgentId = pid
+			let pid = ''
+			try {
+				pid = getRuntimeState(PENDING_AGENT_MODEL_ID_KEY)
+			} catch (e: any) {
+				showModelRouteFailure('MODEL_PENDING_STATE_READ_FAILED', 'model_route_pending_read', '模型设置跳转状态读取失败', e)
+				return
 			}
-			this.loadData()
+			// 旧入口只保留兼容跳转，实际配置统一由新的默认模型/智能体设置页处理。
+			if (pid != '') {
+				let agent: UTSJSONObject | null = null
+				try {
+					agent = getAgentById(pid)
+				} catch (e: any) {
+					showModelRouteFailure('MODEL_AGENT_READ_FAILED', 'model_route_agent_read', '智能体设置目标读取失败', e)
+					return
+				}
+				if (agent != null) {
+					let previousAgentId = ''
+					let previousConversationId = ''
+					try {
+						previousAgentId = getActiveAgentRuntimeId()
+						previousConversationId = getActiveConversationRuntimeId()
+					} catch (e: any) {
+						showModelRouteFailure('MODEL_ACTIVE_ROUTE_READ_FAILED', 'model_route_previous_state_read', '当前聊天状态读取失败', e)
+						return
+					}
+					if (setActiveChatRouteState(pid, '') == false) {
+						showModelRouteFailure(
+							'MODEL_ACTIVE_ROUTE_SAVE_FAILED',
+							'model_route_target_state_save',
+							'无法准备智能体设置',
+							'active_agent_id 与 active_conversation_id 原子写入失败',
+						)
+						return
+					}
+					uni.redirectTo({
+						url: '/pages/agent-settings/agent-settings',
+						success: () => {
+							clearPendingAgentModelId()
+						},
+						fail: (err: any) => {
+							if (setActiveChatRouteState(previousAgentId, previousConversationId) == false) {
+								showModelRouteFailure(
+									'MODEL_ACTIVE_ROUTE_ROLLBACK_FAILED',
+									'model_route_target_state_rollback',
+									'当前聊天状态恢复失败',
+									'智能体设置导航失败后，原聊天路由未能原子恢复',
+								)
+							}
+							showModelRouteFailure('MODEL_AGENT_SETTINGS_REDIRECT_FAILED', 'model_route_agent_settings_redirect', '无法打开智能体设置', err)
+						}
+					})
+					return
+				}
+			}
+			uni.redirectTo({
+				url: '/pages/settings/default-models/default-models',
+				success: () => {
+					if (pid != '') {
+						clearPendingAgentModelId()
+					}
+				},
+				fail: (err: any) => {
+					showModelRouteFailure('MODEL_DEFAULT_SETTINGS_REDIRECT_FAILED', 'model_route_default_settings_redirect', '无法打开默认模型设置', err)
+				}
+			})
 		},
 		methods: {
 			loadData() {
@@ -122,16 +218,6 @@
 						providerId = defaultConfig['providerId'] as string
 						modelId = defaultConfig['model'] as string
 					}
-				}
-
-				// 3. 兼容旧版扁平 settings key（读取已统一落到 app_settings/legacy fallback）
-				if (providerId == '') {
-					const legacyProviderId = getAppSetting('settings_provider_id')
-					providerId = legacyProviderId != null ? legacyProviderId : ''
-				}
-				if (modelId == '') {
-					const legacyModelId = getAppSetting('settings_model')
-					modelId = legacyModelId != null ? legacyModelId : ''
 				}
 
 				// 检查选中的提供商是否已启用，否则用第一个启用的

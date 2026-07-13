@@ -37,8 +37,9 @@ function readImageAsBase64(imagePath: string): ImageBase64Result | null {
 }
 
 /**
- * 根据模型 ID 查找其 vision 能力标记
- * 遍历所有启用的提供商，匹配模型 ID 返回 supportsVision
+ * 根据模型 ID 查找其 vision 能力标记。
+ * 运行时主链路使用 provider.resolveModelRuntime 携带 Provider 精确解析；此旧
+ * helper 保持一参签名，避免外部插件和 Android 增量产物 ABI 漂移。
  */
 export function getModelVisionSupport(modelId: string): boolean {
 	const allProviders = getAllProviders()
@@ -55,10 +56,7 @@ export function getModelVisionSupport(modelId: string): boolean {
 	return false
 }
 
-/**
- * 根据模型 ID 查找其 reasoning 开关
- * 遍历所有启用的提供商，匹配模型 ID 返回 supportsReasoning
- */
+/** 保持旧一参 ABI；新的运行时能力解析不再依赖全局 model ID。 */
 export function getModelReasoningEnabled(modelId: string): boolean {
 	const allProviders = getAllProviders()
 	for (let i = 0; i < allProviders.length; i++) {

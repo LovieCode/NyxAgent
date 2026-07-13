@@ -19,8 +19,33 @@
 	import { getDefaultTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { transcribeAudio } from '@/utils/speech-service.uts'
 	import { ensureNyxAdminAgent, NYX_ADMIN_AGENT_ID } from '@/utils/agent.uts'
-	import { clearActiveConversationRuntimeId, getActiveAgentRuntimeId, getNyxFloatPosition, setActiveAgentRuntimeId, setNyxFloatPosition } from '@/utils/runtime-state.uts'
+	import { getActiveAgentRuntimeId, getActiveConversationRuntimeId, getNyxFloatPosition, setActiveChatRouteState, setNyxFloatPosition } from '@/utils/runtime-state.uts'
 	import { publishNyxFloatVoiceText, readNyxFloatVoiceContext } from '@/utils/nyx-float-voice.uts'
+	import { APP_ERROR_CATEGORY_RUNTIME, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
+
+	function showNyxRuntimeStateFailure(operation: string, userMessage: string): void {
+		const error = reportAppErrorFromCause(
+			'NYX_FLOAT_RUNTIME_STATE_SAVE_FAILED',
+			APP_ERROR_CATEGORY_RUNTIME,
+			operation,
+			userMessage,
+			'跨页运行状态写入 SQLite 失败',
+			true,
+		)
+		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+	}
+
+	function showNyxNavigationFailure(operation: string, userMessage: string, cause: any | null): void {
+		const error = reportAppErrorFromCause(
+			'NYX_FLOAT_NAVIGATION_FAILED',
+			APP_ERROR_CATEGORY_RUNTIME,
+			operation,
+			userMessage,
+			cause,
+			true,
+		)
+		uni.showToast({ position: 'bottom', title: formatAppErrorForUser(error), icon: 'none' })
+	}
 
 	export default {
 		name: 'NyxFloatingVoice',
@@ -62,19 +87,27 @@
 			this.clearPendingVoiceStart()
 		},
 		methods: {
-			navigateToChatOnce(): void {
+			navigateToChatOnce(previousAgentId: string, previousConversationId: string, rollbackRouteState: boolean): boolean {
 				const now = Date.now()
 				if (this.isOpeningChat == true || now - this.lastOpenChatAt < 1200) {
-					return
+					return false
 				}
 				this.isOpeningChat = true
 				this.lastOpenChatAt = now
 				uni.navigateTo({
-					url: '/pages/chat/chat'
+					url: '/pages/chat/chat',
+					fail: (err: any) => {
+						this.isOpeningChat = false
+						if (rollbackRouteState == true && setActiveChatRouteState(previousAgentId, previousConversationId) == false) {
+							reportAppErrorFromCause('NYX_FLOAT_RUNTIME_STATE_ROLLBACK_FAILED', APP_ERROR_CATEGORY_RUNTIME, 'nyx_float_navigation_rollback', '眠汐私聊状态恢复失败', '跨页运行状态回滚 SQLite 失败', true)
+						}
+						showNyxNavigationFailure('nyx_float_navigate_chat', '无法打开眠汐私聊', err)
+					}
 				})
 				setTimeout(() => {
 					this.isOpeningChat = false
 				}, 1200)
+				return true
 			},
 
 			handleFloatTap(): void {
@@ -82,10 +115,28 @@
 					uni.showToast({ position: 'bottom', title: '正在识别，稍等', icon: 'none' })
 					return
 				}
-				ensureNyxAdminAgent()
-				setActiveAgentRuntimeId(NYX_ADMIN_AGENT_ID)
-				clearActiveConversationRuntimeId()
-				this.navigateToChatOnce()
+				if (ensureNyxAdminAgent() == false) {
+					showNyxRuntimeStateFailure('nyx_float_ensure_agent', '眠汐初始化失败')
+					return
+				}
+				let previousAgentId = ''
+				let previousConversationId = ''
+				try {
+					previousAgentId = getActiveAgentRuntimeId()
+					previousConversationId = getActiveConversationRuntimeId()
+				} catch (_e: any) {
+					showNyxRuntimeStateFailure('nyx_float_open_chat', '无法打开眠汐私聊')
+					return
+				}
+				if (setActiveChatRouteState(NYX_ADMIN_AGENT_ID, '') == false) {
+					showNyxRuntimeStateFailure('nyx_float_open_chat', '无法打开眠汐私聊')
+					return
+				}
+				if (this.navigateToChatOnce(previousAgentId, previousConversationId, true) == false) {
+					if (setActiveChatRouteState(previousAgentId, previousConversationId) == false) {
+						reportAppErrorFromCause('NYX_FLOAT_RUNTIME_STATE_ROLLBACK_FAILED', APP_ERROR_CATEGORY_RUNTIME, 'nyx_float_navigation_throttled_rollback', '眠汐私聊状态恢复失败', '跨页运行状态回滚 SQLite 失败', true)
+					}
+				}
 			},
 
 			clearPendingVoiceStart(): void {
@@ -156,7 +207,9 @@
 			},
 
 			saveFloatPosition(): void {
-				setNyxFloatPosition('{"x":' + Math.floor(this.floatX).toString() + ',"y":' + Math.floor(this.floatY).toString() + '}')
+				if (setNyxFloatPosition('{"x":' + Math.floor(this.floatX).toString() + ',"y":' + Math.floor(this.floatY).toString() + '}') == false) {
+					showNyxRuntimeStateFailure('nyx_float_save_position', '悬浮球位置保存失败')
+				}
 			},
 
 			onFloatTouchStart(e: UniTouchEvent): void {
@@ -279,18 +332,30 @@
 				}
 				const context = readNyxFloatVoiceContext()
 				if (context != '') {
-					publishNyxFloatVoiceText(content)
+					if (publishNyxFloatVoiceText(content) == false) {
+						showNyxRuntimeStateFailure('nyx_float_publish_voice', '语音消息保存失败')
+						return
+					}
 					uni.showToast({ position: 'bottom', title: '已发送', icon: 'success' })
 					return
 				}
-				const activeAgentId = getActiveAgentRuntimeId()
+				let activeAgentId = ''
+				try {
+					activeAgentId = getActiveAgentRuntimeId()
+				} catch (_e: any) {
+					showNyxRuntimeStateFailure('nyx_float_read_active_agent', '无法读取当前联系人')
+					return
+				}
 				if (activeAgentId == '') {
 					uni.showToast({ position: 'bottom', title: '先选择一个联系人', icon: 'none' })
 					return
 				}
-				publishNyxFloatVoiceText(content)
+				if (publishNyxFloatVoiceText(content) == false) {
+					showNyxRuntimeStateFailure('nyx_float_publish_voice', '语音消息保存失败')
+					return
+				}
 				uni.showToast({ position: 'bottom', title: '已发给当前私聊', icon: 'success' })
-				this.navigateToChatOnce()
+				this.navigateToChatOnce('', '', false)
 			}
 		}
 	}

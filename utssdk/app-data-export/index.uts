@@ -26,6 +26,7 @@ const UTF8_CHARSET = Charset.forName('UTF-8')
 const MAX_ZIP_SOURCE_BYTES: number = 50 * 1024 * 1024
 const MAX_ZIP_TEXT_CHARS: number = 512 * 1024
 let lastShareExportError = ''
+let lastDataArchiveError = ''
 
 function setShareExportError(message: string): void {
 	lastShareExportError = message
@@ -34,6 +35,30 @@ function setShareExportError(message: string): void {
 
 function clearShareExportError(): void {
 	lastShareExportError = ''
+}
+
+function nativeErrorToText(error: any | null): string {
+	if (error == null) { return '' }
+	try {
+		const text = '' + error
+		if (text != '' && text != '[object Object]') { return text }
+	} catch (_textError: any) {
+	}
+	try {
+		return JSON.stringify(error)
+	} catch (_jsonError: any) {
+	}
+	return '未知原生错误'
+}
+
+function setDataArchiveError(message: string, cause: any | null): void {
+	const detail = nativeErrorToText(cause)
+	lastDataArchiveError = detail != '' ? message + ': ' + detail : message
+	console.log('[data-archive] failed: ' + lastDataArchiveError)
+}
+
+function clearDataArchiveError(): void {
+	lastDataArchiveError = ''
 }
 
 function normalizeSourcePath(sourcePath: string): string {
@@ -164,70 +189,77 @@ function addFileEntry(zip: ZipOutputStream, zipPath: string, source: File): bool
  * ZIP 内固定包含 export.json，并按 fileSpecsJson 追加本地文件条目。
  */
 export function writeExportZipFile(fileName: string, manifestJson: string, fileSpecsJson: string): string {
+	clearDataArchiveError()
 	// #ifdef APP-ANDROID
 	try {
 		const root = getExportRoot()
 		if (root == null) {
+			setDataArchiveError('无法创建导出目录', null)
 			return ''
 		}
 		const zipFile = new File(root.absolutePath + '/' + fileName)
-			const tempManifest = new File(root.absolutePath + '/.export-manifest.tmp')
-			tempManifest.writeText(manifestJson, UTF8_CHARSET)
+		const tempManifest = new File(root.absolutePath + '/.export-manifest.tmp')
+		tempManifest.writeText(manifestJson, UTF8_CHARSET)
 
-			const zip = new ZipOutputStream(new FileOutputStream(zipFile))
-			if (addFileEntry(zip, 'export.json', tempManifest) == false) {
-				zip.close()
-				tempManifest.delete()
-				zipFile.delete()
-				return ''
-			}
+		const zip = new ZipOutputStream(new FileOutputStream(zipFile))
+		if (addFileEntry(zip, 'export.json', tempManifest) == false) {
+			zip.close()
+			tempManifest.delete()
+			zipFile.delete()
+			setDataArchiveError('写入导出清单失败', null)
+			return ''
+		}
 
-			let allEntriesAdded = true
-			try {
-				const specs = JSON.parse(fileSpecsJson) as UTSJSONObject[]
-				for (let i = 0; i < specs.length; i++) {
+		let allEntriesAdded = true
+		try {
+			const specs = JSON.parse(fileSpecsJson) as UTSJSONObject[]
+			for (let i = 0; i < specs.length; i++) {
 				const spec = specs[i]
 				const rawKind = spec['kind'] as string | null
 				const rawSourcePath = spec['sourcePath'] as string | null
 				const rawZipPath = spec['zipPath'] as string | null
-					let added = false
-					if (rawZipPath != null && rawZipPath != '') {
-						const kind = rawKind != null ? rawKind : 'file'
-						if (kind == 'directory') {
-							added = addDirectoryEntry(zip, rawZipPath)
-						} else if (kind == 'text') {
-							const rawContent = spec['content'] as string | null
-							if (rawContent != null && rawContent.length <= MAX_ZIP_TEXT_CHARS) {
-								const tempText = new File(root.absolutePath + '/.export-text-' + i + '.tmp')
-								tempText.writeText(rawContent, UTF8_CHARSET)
-								added = addFileEntry(zip, rawZipPath, tempText)
-								tempText.delete()
-							}
-						} else if (rawSourcePath != null && rawSourcePath != '') {
-							const source = new File(normalizeSourcePath(rawSourcePath))
-							added = addFileEntry(zip, rawZipPath, source)
+				let added = false
+				if (rawZipPath != null && rawZipPath != '') {
+					const kind = rawKind != null ? rawKind : 'file'
+					if (kind == 'directory') {
+						added = addDirectoryEntry(zip, rawZipPath)
+					} else if (kind == 'text') {
+						const rawContent = spec['content'] as string | null
+						if (rawContent != null && rawContent.length <= MAX_ZIP_TEXT_CHARS) {
+							const tempText = new File(root.absolutePath + '/.export-text-' + i + '.tmp')
+							tempText.writeText(rawContent, UTF8_CHARSET)
+							added = addFileEntry(zip, rawZipPath, tempText)
+							tempText.delete()
 						}
-					}
-					if (added == false) {
-						allEntriesAdded = false
-						break
+					} else if (rawSourcePath != null && rawSourcePath != '') {
+						const source = new File(normalizeSourcePath(rawSourcePath))
+						added = addFileEntry(zip, rawZipPath, source)
 					}
 				}
-			} catch (_jsonErr: any) {
-				allEntriesAdded = false
+				if (added == false) {
+					allEntriesAdded = false
+					break
+				}
 			}
+		} catch (jsonError: any) {
+			allEntriesAdded = false
+			setDataArchiveError('解析导出文件列表失败', jsonError)
+		}
 
-			zip.close()
-			tempManifest.delete()
-			if (allEntriesAdded == false) {
-				zipFile.delete()
-				return ''
-			}
-			return zipFile.absolutePath as string
-	} catch (_e: any) {
+		zip.close()
+		tempManifest.delete()
+		if (allEntriesAdded == false) {
+			zipFile.delete()
+			if (lastDataArchiveError == '') { setDataArchiveError('写入导出文件条目失败', null) }
+			return ''
+		}
+		return zipFile.absolutePath as string
+	} catch (e: any) {
+		setDataArchiveError('创建导出 ZIP 失败', e)
 		return ''
 	}
 	// #endif
+	setDataArchiveError('当前平台不支持原生 ZIP 导出', null)
 	return ''
 }
 
@@ -286,7 +318,12 @@ function createModernShareUri(source: File): Uri | null {
 		if (Build.VERSION.SDK_INT >= 29) {
 			const doneValues = new ContentValues()
 			doneValues.put(MediaStore.MediaColumns.IS_PENDING, 0 as Int)
-			resolver.update(uri, doneValues, null, null)
+			const updated = resolver.update(uri, doneValues, null, null)
+			if (updated <= 0) {
+				resolver.delete(uri, null, null)
+				setShareExportError('MediaStore 发布分享文件失败')
+				return null
+			}
 		}
 		return uri
 	} catch (_e: any) {
@@ -517,6 +554,160 @@ function zipContainsPrefix(zip: ZipFile, prefix: string): boolean {
 	return false
 }
 
+/**
+ * 读取 ZIP 内的导出清单。不能直接依赖调用层已经解析过的 JSON：
+ * prepare 阶段必须以 ZIP 自身的清单作为完整性校验依据。
+ */
+function readZipManifestJson(zip: ZipFile): string {
+	const entry = zip.getEntry('export.json')
+	if (entry == null || entry.isDirectory()) {
+		return ''
+	}
+	const root = getImportRoot()
+	if (root == null) {
+		return ''
+	}
+	const tempManifest = new File(root.absolutePath + '/.prepare-import-manifest.tmp')
+	try {
+		const input = zip.getInputStream(entry)
+		const output = new FileOutputStream(tempManifest)
+		output.write(input.readBytes())
+		output.flush()
+		output.close()
+		input.close()
+		const text = tempManifest.readText(UTF8_CHARSET)
+		tempManifest.delete()
+		return text
+	} catch (_e: any) {
+		try {
+			tempManifest.delete()
+		} catch (_deleteError: any) {
+		}
+		return ''
+	}
+}
+
+function getWorkspacePrefix(zipPath: string): string {
+	if (zipPath.startsWith('agent-workspaces/')) {
+		return 'agent-workspaces/'
+	}
+	if (zipPath.startsWith('group-workspaces/')) {
+		return 'group-workspaces/'
+	}
+	if (zipPath.startsWith('user-files/')) {
+		return 'user-files/'
+	}
+	return ''
+}
+
+function getWorkspaceStageTarget(stageRoot: File, zipPath: string): File | null {
+	const prefix = getWorkspacePrefix(zipPath)
+	if (prefix == '' || isSafeExtractPath(zipPath) == false) {
+		return null
+	}
+	const relative = zipPath.substring(prefix.length)
+	let stageName = ''
+	if (prefix == 'agent-workspaces/') {
+		stageName = 'agents'
+	} else if (prefix == 'group-workspaces/') {
+		stageName = 'group-workspaces'
+	} else {
+		stageName = 'user'
+	}
+	if (relative == '') {
+		return new File(stageRoot.absolutePath + '/' + stageName)
+	}
+	return new File(stageRoot.absolutePath + '/' + stageName + '/' + relative)
+}
+
+/**
+ * 校验 manifest.files 中声明的 ZIP 条目确实存在且类型一致。
+ * 这一步覆盖所有文件条目，而不只校验三个工作区前缀，避免截断包
+ * 在资源或数据库条目缺失时仍进入后续覆盖流程。
+ */
+function validateManifestZipEntries(zip: ZipFile, manifestJson: string): string {
+	if (manifestJson == '') {
+		return '备份包缺少 export.json 清单'
+	}
+	try {
+		const root = JSON.parse(manifestJson) as UTSJSONObject
+		const rawFiles = root['files'] as UTSJSONObject[] | null
+		if (rawFiles == null) {
+			return '备份清单缺少 files 字段'
+		}
+		for (let i = 0; i < rawFiles.length; i++) {
+			const spec = rawFiles[i]
+			const zipPath = spec['zipPath'] as string | null
+			if (zipPath == null || zipPath == '' || isSafeExtractPath(zipPath) == false) {
+				return '备份清单包含非法文件路径'
+			}
+			const entry = zip.getEntry(zipPath)
+			if (entry == null) {
+				return '备份包缺少清单条目：' + zipPath
+			}
+			const kind = spec['kind'] as string | null
+			if (kind == 'directory') {
+				if (entry.isDirectory() == false) {
+					return '备份清单目录条目类型错误：' + zipPath
+				}
+			} else if (entry.isDirectory() == true) {
+				return '备份清单文件条目类型错误：' + zipPath
+			}
+		}
+		return ''
+	} catch (_e: any) {
+		return '备份清单解析失败'
+	}
+}
+
+function validateWorkspaceRoots(zip: ZipFile): string {
+	const prefixes = ['agent-workspaces/', 'group-workspaces/', 'user-files/']
+	for (let i = 0; i < prefixes.length; i++) {
+		const prefix = prefixes[i]
+		const rootEntry = zip.getEntry(prefix)
+		if (rootEntry == null || rootEntry.isDirectory() == false) {
+			return '备份包缺少必需工作区根目录：' + prefix
+		}
+	}
+	return ''
+}
+
+/** 确认工作区清单中的文件在本次解压后确实落到了 stage。 */
+function validateStagedWorkspaceEntries(stageRoot: File, zip: ZipFile, manifestJson: string): string {
+	try {
+		const root = JSON.parse(manifestJson) as UTSJSONObject
+		const rawFiles = root['files'] as UTSJSONObject[] | null
+		if (rawFiles == null) {
+			return '备份清单缺少 files 字段'
+		}
+		for (let i = 0; i < rawFiles.length; i++) {
+			const spec = rawFiles[i]
+			const zipPath = spec['zipPath'] as string | null
+			if (zipPath == null || getWorkspacePrefix(zipPath) == '') {
+				continue
+			}
+			const entry = zip.getEntry(zipPath)
+			if (entry == null) {
+				return '工作区清单条目未解压：' + zipPath
+			}
+			const target = getWorkspaceStageTarget(stageRoot, zipPath)
+			if (target == null || target.exists() == false) {
+				return '工作区清单条目未解压：' + zipPath
+			}
+			const kind = spec['kind'] as string | null
+			if (kind == 'directory' && target.isDirectory() == false) {
+				return '工作区目录条目未正确解压：' + zipPath
+			}
+			if (kind != 'directory' && target.isDirectory() == true) {
+				return '工作区文件条目未正确解压：' + zipPath
+			}
+		}
+		return ''
+	} catch (_e: any) {
+		return '工作区清单校验失败'
+	}
+}
+
 function getImportedAssetsRoot(): File | null {
 	const context = UTSAndroid.getAppContext()
 	if (context == null) {
@@ -638,25 +829,367 @@ function extractUserWorkspaceEntry(zip: ZipFile, entry: ZipEntry, userRoot: File
 	input.close()
 	return 1
 }
+
+const IMPORT_TRANSACTION_DIR_NAME = 'data-import-transaction'
+const IMPORT_STAGE_DIR_NAME = 'stage'
+const IMPORT_BACKUP_DIR_NAME = 'backup'
+const IMPORT_MARKER_DIR_NAME = 'markers'
+
+function getImportTransactionRoot(): File | null {
+	const importRoot = getImportRoot()
+	if (importRoot == null) { return null }
+	return new File(importRoot.absolutePath + '/' + IMPORT_TRANSACTION_DIR_NAME)
+}
+
+function getImportTransactionRootByToken(token: string): File | null {
+	if (token == '') { return null }
+	const expected = getImportTransactionRoot()
+	if (expected == null) { return null }
+	try {
+		const candidate = new File(token)
+		if (candidate.canonicalPath != expected.canonicalPath) { return null }
+		return candidate
+	} catch (_e: any) {
+		return null
+	}
+}
+
+function isNativeSymbolicLink(file: File): boolean {
+	try {
+		const parent = file.parentFile
+		if (parent == null) { return false }
+		const expected = new File(parent.canonicalFile, file.name)
+		return file.canonicalPath != expected.absolutePath
+	} catch (_e: any) {
+		return true
+	}
+}
+
+function copyDirectorySnapshot(source: File, target: File): boolean {
+	if (source.exists() == false) {
+		return ensureDirectory(target) != null
+	}
+	if (isNativeSymbolicLink(source) == true) { return false }
+	if (source.isDirectory()) {
+		if (ensureDirectory(target) == null) { return false }
+		const names = source.list()
+		if (names == null) { return false }
+		let idx = 0 as Int
+		while (idx < names.size) {
+			if (copyDirectorySnapshot(new File(source.absolutePath + '/' + names[idx]), new File(target.absolutePath + '/' + names[idx])) == false) {
+				return false
+			}
+			idx++
+		}
+		return true
+	}
+	const parent = target.parentFile
+	if (parent != null && ensureDirectory(parent) == null) { return false }
+	try {
+		source.copyTo(target)
+		return true
+	} catch (_e: any) {
+		return false
+	}
+}
+
+function getImportTargetDirectory(name: string): File | null {
+	const context = UTSAndroid.getAppContext()
+	if (context == null) { return null }
+	const filesDir = (context.filesDir as File).absolutePath
+	if (name == 'imported-assets') { return new File(filesDir + '/imported-assets') }
+	if (name == 'agents') { return new File(filesDir + '/agents') }
+	if (name == 'group-workspaces') { return new File(filesDir + '/group-workspaces') }
+	if (name == 'user') { return new File(filesDir + '/user') }
+	return null
+}
+
+function getImportTransactionNames(): string[] {
+	return ['imported-assets', 'agents', 'group-workspaces', 'user']
+}
+
+function prepareImportTransactionAndroid(zipPath: string, assets: UTSJSONObject[], includeWorkspaces: boolean): UTSJSONObject {
+	const result: UTSJSONObject = {
+		ok: false,
+		token: '',
+		assetMap: {} as UTSJSONObject,
+		agentWorkspaceCount: 0,
+		groupWorkspaceCount: 0,
+		userWorkspaceCount: 0,
+		error: '导入暂存失败',
+	}
+	const transactionRoot = getImportTransactionRoot()
+	if (transactionRoot == null) { return result }
+	if (resetDirectory(transactionRoot) == false) { return result }
+	const stageRoot = new File(transactionRoot.absolutePath + '/' + IMPORT_STAGE_DIR_NAME)
+	if (ensureDirectory(stageRoot) == null) {
+		deleteRecursive(transactionRoot)
+		return result
+	}
+	// 全量导入必须显式准备三个工作区 stage。即使 ZIP 中目录为空，
+	// commit 也要用空目录替换旧目录，不能因缺少 stage 而静默保留本机数据。
+	if (includeWorkspaces == true) {
+		const requiredStageNames = ['agents', 'group-workspaces', 'user']
+		for (let i = 0; i < requiredStageNames.length; i++) {
+			const requiredStage = new File(stageRoot.absolutePath + '/' + requiredStageNames[i])
+			if (ensureDirectory(requiredStage) == null) {
+				deleteRecursive(transactionRoot)
+				return result
+			}
+		}
+	}
+	let zip: ZipFile | null = null
+	try {
+		const zipFile = prepareImportZipFile(zipPath)
+		if (zipFile == null) { throw new Error('无法读取导入 ZIP') }
+		const activeZip = new ZipFile(zipFile)
+		zip = activeZip
+		let manifestJson = ''
+		if (includeWorkspaces == true) {
+			const rootError = validateWorkspaceRoots(activeZip)
+			if (rootError != '') { throw new Error(rootError) }
+			manifestJson = readZipManifestJson(activeZip)
+			const manifestError = validateManifestZipEntries(activeZip, manifestJson)
+			if (manifestError != '') { throw new Error(manifestError) }
+		}
+		const assetMap: UTSJSONObject = {}
+		if (assets.length > 0) {
+			const assetTarget = getImportTargetDirectory('imported-assets')
+			if (assetTarget == null) { throw new Error('资源目录不可用') }
+			const assetStage = new File(stageRoot.absolutePath + '/imported-assets')
+			if (copyDirectorySnapshot(assetTarget, assetStage) == false) { throw new Error('资源快照创建失败') }
+			for (let i = 0; i < assets.length; i++) {
+				const asset = assets[i]
+				const ref = asset['ref'] as string | null
+				const zipPathValue = asset['zipPath'] as string | null
+				if (ref != null && ref != '' && zipPathValue != null && zipPathValue != '' && isSafeExtractPath(zipPathValue)) {
+					const entry = activeZip.getEntry(zipPathValue)
+					if (entry != null) {
+						const stagedTarget = new File(assetStage.absolutePath + '/' + zipPathValue)
+						const saved = extractAssetEntry(activeZip, entry, stagedTarget)
+						if (saved != '') {
+							assetMap[ref] = assetTarget.absolutePath + '/' + zipPathValue
+						}
+					}
+				}
+			}
+		}
+
+		let agentCount = 0
+		let groupCount = 0
+		let userCount = 0
+		if (includeWorkspaces == true) {
+			const agentStage = new File(stageRoot.absolutePath + '/agents')
+			const agentEntries = activeZip.entries()
+			while (agentEntries.hasMoreElements()) {
+				agentCount = agentCount + extractAgentWorkspaceEntry(activeZip, agentEntries.nextElement() as ZipEntry, agentStage)
+			}
+			const groupStage = new File(stageRoot.absolutePath + '/group-workspaces')
+			const groupEntries = activeZip.entries()
+			while (groupEntries.hasMoreElements()) {
+				groupCount = groupCount + extractGroupWorkspaceEntry(activeZip, groupEntries.nextElement() as ZipEntry, groupStage)
+			}
+			const userStage = new File(stageRoot.absolutePath + '/user')
+			const userEntries = activeZip.entries()
+			while (userEntries.hasMoreElements()) {
+				userCount = userCount + extractUserWorkspaceEntry(activeZip, userEntries.nextElement() as ZipEntry, userStage)
+			}
+			const stagedError = validateStagedWorkspaceEntries(stageRoot, activeZip, manifestJson)
+			if (stagedError != '') {
+				throw new Error(stagedError)
+			}
+		}
+		activeZip.close()
+		zip = null
+		result['ok'] = true
+		result['token'] = transactionRoot.absolutePath
+		result['assetMap'] = assetMap
+		result['agentWorkspaceCount'] = agentCount
+		result['groupWorkspaceCount'] = groupCount
+		result['userWorkspaceCount'] = userCount
+		result['error'] = ''
+		return result
+	} catch (e: any) {
+		if (zip != null) {
+			try {
+				zip.close()
+			} catch (_closeError: any) {
+			}
+		}
+		deleteRecursive(transactionRoot)
+		result['error'] = '' + e
+		return result
+	}
+}
+
+function rollbackImportDirectorySwap(transactionRoot: File, name: string): boolean {
+	const marker = new File(transactionRoot.absolutePath + '/' + IMPORT_MARKER_DIR_NAME + '/' + name)
+	if (marker.exists() == false) { return true }
+	const target = getImportTargetDirectory(name)
+	if (target == null) { return false }
+	const stage = new File(transactionRoot.absolutePath + '/' + IMPORT_STAGE_DIR_NAME + '/' + name)
+	const backup = new File(transactionRoot.absolutePath + '/' + IMPORT_BACKUP_DIR_NAME + '/' + name)
+	let hadTarget = false
+	try {
+		hadTarget = marker.readText(UTF8_CHARSET) == '1'
+	} catch (_e: any) {
+		return false
+	}
+	if (hadTarget == true) {
+		// backup 不存在表示崩溃发生在正式目录移动前，原目录仍在原位。
+		if (backup.exists() == true) {
+			if (target.exists() && deleteRecursive(target) == false) { return false }
+			if (backup.renameTo(target) == false) { return false }
+		}
+	} else if (stage.exists() == false && target.exists() == true) {
+		// 原目标不存在且 stage 已移走，说明目标是本次提交的新目录。
+		if (deleteRecursive(target) == false) { return false }
+	}
+	marker.delete()
+	return true
+}
+
+function rollbackImportFileTransactionAndroid(transactionRoot: File): boolean {
+	const names = getImportTransactionNames()
+	let ok = true
+	let index = names.length - 1
+	while (index >= 0) {
+		if (rollbackImportDirectorySwap(transactionRoot, names[index]) == false) { ok = false }
+		index--
+	}
+	if (ok == true) {
+		ok = deleteRecursive(transactionRoot)
+	}
+	return ok
+}
+
+function writeImportSwapMarker(marker: File, hadTarget: boolean): boolean {
+	let output: FileOutputStream | null = null
+	try {
+		output = new FileOutputStream(marker)
+		output.write((hadTarget == true ? '1' : '0').toByteArray(UTF8_CHARSET))
+		output.flush()
+		output.fd.sync()
+		output.close()
+		return true
+	} catch (_e: any) {
+		if (output != null) {
+			try {
+				output.close()
+			} catch (_closeError: any) {
+			}
+		}
+		marker.delete()
+		return false
+	}
+}
+
+function commitImportDirectorySwap(transactionRoot: File, name: string): boolean {
+	const stage = new File(transactionRoot.absolutePath + '/' + IMPORT_STAGE_DIR_NAME + '/' + name)
+	if (stage.exists() == false) { return true }
+	const target = getImportTargetDirectory(name)
+	if (target == null) { return false }
+	const backup = new File(transactionRoot.absolutePath + '/' + IMPORT_BACKUP_DIR_NAME + '/' + name)
+	const backupParent = backup.parentFile
+	const marker = new File(transactionRoot.absolutePath + '/' + IMPORT_MARKER_DIR_NAME + '/' + name)
+	const markerParent = marker.parentFile
+	if (backupParent == null || markerParent == null || ensureDirectory(backupParent) == null || ensureDirectory(markerParent) == null) {
+		return false
+	}
+	if (backup.exists() && deleteRecursive(backup) == false) { return false }
+	const hadTarget = target.exists()
+	// marker 必须先于任何正式目录移动落盘，进程中断时恢复器才能判定交换进度。
+	if (writeImportSwapMarker(marker, hadTarget) == false) {
+		return false
+	}
+	if (hadTarget == true && target.renameTo(backup) == false) { return false }
+	if (stage.renameTo(target) == false) {
+		return false
+	}
+	return true
+}
+
+function commitImportFileTransactionAndroid(transactionRoot: File): boolean {
+	const names = getImportTransactionNames()
+	for (let i = 0; i < names.length; i++) {
+		if (commitImportDirectorySwap(transactionRoot, names[i]) == false) {
+			rollbackImportFileTransactionAndroid(transactionRoot)
+			return false
+		}
+	}
+	return true
+}
 // #endif
+
+/** 将资源与工作区完整解压到 staging，不修改正式目录。 */
+export function prepareImportFileTransaction(zipPath: string, assets: UTSJSONObject[], includeWorkspaces: boolean): UTSJSONObject {
+	// #ifdef APP-ANDROID
+	return prepareImportTransactionAndroid(zipPath, assets, includeWorkspaces)
+	// #endif
+	return {
+		ok: false,
+		token: '',
+		assetMap: {} as UTSJSONObject,
+		agentWorkspaceCount: 0,
+		groupWorkspaceCount: 0,
+		userWorkspaceCount: 0,
+		error: '当前平台不支持事务化数据文件导入',
+	} as UTSJSONObject
+}
+
+/** 统一交换已暂存目录，并保留旧目录供数据库失败时回滚。 */
+export function commitImportFileTransaction(token: string): boolean {
+	// #ifdef APP-ANDROID
+	const transactionRoot = getImportTransactionRootByToken(token)
+	if (transactionRoot == null) { return false }
+	return commitImportFileTransactionAndroid(transactionRoot)
+	// #endif
+	return false
+}
+
+/** 恢复事务开始前的资源和工作区目录。 */
+export function rollbackImportFileTransaction(token: string): boolean {
+	// #ifdef APP-ANDROID
+	const transactionRoot = getImportTransactionRootByToken(token)
+	if (transactionRoot == null) { return false }
+	if (transactionRoot.exists() == false) { return true }
+	return rollbackImportFileTransactionAndroid(transactionRoot)
+	// #endif
+	return false
+}
+
+/** 导入成功后清理旧目录快照；提交前也可用于丢弃 staging。 */
+export function finalizeImportFileTransaction(token: string): boolean {
+	// #ifdef APP-ANDROID
+	const transactionRoot = getImportTransactionRootByToken(token)
+	if (transactionRoot == null) { return false }
+	if (transactionRoot.exists() == false) { return true }
+	return deleteRecursive(transactionRoot)
+	// #endif
+	return false
+}
 
 /** 读取导入 ZIP 的 export.json 清单。 */
 export function readImportManifest(zipPath: string): string {
+	clearDataArchiveError()
 	// #ifdef APP-ANDROID
 	try {
 		const file = prepareImportZipFile(zipPath)
 		if (file == null) {
+			setDataArchiveError('备份 ZIP 不存在或不可读取', null)
 			return ''
 		}
 		const zip = new ZipFile(file)
 		const entry = zip.getEntry('export.json')
 		if (entry == null) {
 			zip.close()
+			setDataArchiveError('备份 ZIP 缺少 export.json', null)
 			return ''
 		}
 		const root = getImportRoot()
 		if (root == null) {
 			zip.close()
+			setDataArchiveError('无法创建导入暂存目录', null)
 			return ''
 		}
 		const input = zip.getInputStream(entry)
@@ -667,11 +1200,17 @@ export function readImportManifest(zipPath: string): string {
 		input.close()
 		zip.close()
 		return text
-	} catch (_e: any) {
+	} catch (e: any) {
+		setDataArchiveError('读取备份清单失败', e)
 		return ''
 	}
 	// #endif
+	setDataArchiveError('当前平台不支持原生 ZIP 导入', null)
 	return ''
+}
+
+export function getLastDataArchiveError(): string {
+	return lastDataArchiveError
 }
 
 /** 解压导入 ZIP 中的 Agent 工作区文件。 */

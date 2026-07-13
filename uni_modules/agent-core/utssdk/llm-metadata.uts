@@ -5,7 +5,7 @@
  * 使用 models.dev/models.json（扁平结构，~130KB）替代 api.json（嵌套，~2.3MB）
  * 模型能力数据缓存到 SQLite app_settings
  */
-import { getAppSetting, setAppSetting } from '@/utils/database.uts'
+import { getAppSetting, setAppSettings } from '@/utils/database.uts'
 
 /**
  * 模型能力描述
@@ -14,6 +14,7 @@ export type ModelCapabilities = {
 	supportsVision: boolean
 	supportsToolCall: boolean
 	supportsReasoning: boolean
+	found: boolean
 }
 
 /** 缓存过期时间（7天） */
@@ -44,13 +45,15 @@ export function ensureMetadataCache(): void {
  * 获取模型能力
  * 从 models.dev 元数据缓存中查询（扁平结构，直接下标访问，无需动态枚举）
  * @param modelId 模型 ID（例如 "openai/gpt-4o"、"deepseek/deepseek-chat"）
+ * @param providerId 短模型名所属提供商；传入后不再猜测其他提供商，避免同名误匹配
  * @returns 模型能力对象，所有字段默认为 false
  */
-export function getModelCapabilities(modelId: string): ModelCapabilities {
+export function getModelCapabilities(modelId: string, providerId: string = ''): ModelCapabilities {
 	const result: ModelCapabilities = {
 		supportsVision: false,
 		supportsToolCall: false,
 		supportsReasoning: false,
+		found: false,
 	}
 
 	// 确保缓存已加载到内存
@@ -61,9 +64,12 @@ export function getModelCapabilities(modelId: string): ModelCapabilities {
 	// 先从精确匹配开始，失败则尝试常见前缀
 	if (cache != null) {
 		let modelData = cache[modelId] as UTSJSONObject | null
+		if (modelData == null && providerId != '' && modelId.indexOf('/') < 0) {
+			modelData = cache[providerId + '/' + modelId] as UTSJSONObject | null
+		}
 
 		// 短名称回退：尝试加常见 provider 前缀
-		if (modelData == null && modelId.indexOf('/') < 0) {
+		if (modelData == null && providerId == '' && modelId.indexOf('/') < 0) {
 			const prefixes: string[] = ['openai/', 'deepseek/', 'anthropic/', 'google/', 'xai/',
 				'mistral/', 'alibaba/', 'meta/', 'cohere/', 'zhipuai/',
 				'moonshotai/', 'minimax/', 'stepfun/', 'nvidia/', 'perplexity/', 'xiaomi/', 'tencent/', 'sarvam/']
@@ -77,6 +83,7 @@ export function getModelCapabilities(modelId: string): ModelCapabilities {
 		}
 
 		if (modelData != null) {
+			result.found = true
 			const reasoning = modelData['reasoning'] as boolean | null
 			const toolCall = modelData['tool_call'] as boolean | null
 			const modalities = modelData['modalities'] as UTSJSONObject | null
@@ -117,10 +124,17 @@ export function refreshMetadataCache(): Promise<boolean> {
 					try {
 						const raw = JSON.stringify(res.data)
 						const newCache = JSON.parse(raw) as UTSJSONObject
+						const nextTimestamp = Date.now()
+						if (setAppSettings(
+							['llm_metadata_cache', 'llm_metadata_cache_time'],
+							[raw, nextTimestamp + ''],
+						) == false) {
+							console.log('[LLM-Meta] 元数据缓存持久化失败')
+							resolve(false)
+							return
+						}
 						metadataCache = newCache
-						cacheTimestamp = Date.now()
-						setAppSetting('llm_metadata_cache', raw)
-						setAppSetting('llm_metadata_cache_time', cacheTimestamp + '')
+						cacheTimestamp = nextTimestamp
 						console.log('[LLM-Meta] 元数据缓存已刷新')
 						resolve(true)
 					} catch (_e: any) {

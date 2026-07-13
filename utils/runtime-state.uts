@@ -3,7 +3,7 @@
  *
  * 新路由参数统一写 SQLite，避免继续把临时状态散落到 uni.storage。
  */
-import { consumeRuntimeState, deleteRuntimeState, getRuntimeState, setRuntimeState } from '@/utils/database.uts'
+import { consumeRuntimeState, deleteRuntimeState, getRuntimeState, setRuntimeState, setRuntimeStatePair } from '@/utils/database.uts'
 
 export const RUNTIME_ACTIVE_AGENT_ID_KEY = 'active_agent_id'
 export const RUNTIME_ACTIVE_CONVERSATION_ID_KEY = 'active_conversation_id'
@@ -15,8 +15,24 @@ export const RUNTIME_NYX_FLOAT_VOICE_TEXT_KEY = 'nyx_float_voice_text'
 export const RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY = 'nyx_float_voice_context'
 export const RUNTIME_NYX_FLOAT_POSITION_KEY = 'nyx_float_position'
 
-export function setContextPreviewPayload(value: string): void {
-	setRuntimeState(RUNTIME_CONTEXT_PREVIEW_PAYLOAD_KEY, value)
+function saveRuntimeStateValue(key: string, value: string): boolean {
+	try {
+		return setRuntimeState(key, value)
+	} catch (_e: any) {
+		return false
+	}
+}
+
+function removeRuntimeStateValue(key: string): boolean {
+	try {
+		return deleteRuntimeState(key)
+	} catch (_e: any) {
+		return false
+	}
+}
+
+export function setContextPreviewPayload(value: string): boolean {
+	return saveRuntimeStateValue(RUNTIME_CONTEXT_PREVIEW_PAYLOAD_KEY, value)
 }
 
 export function consumeContextPreviewPayload(): string {
@@ -24,8 +40,8 @@ export function consumeContextPreviewPayload(): string {
 	return value
 }
 
-export function setFilesInitialPath(value: string): void {
-	setRuntimeState(RUNTIME_FILES_INITIAL_PATH_KEY, value)
+export function setFilesInitialPath(value: string): boolean {
+	return saveRuntimeStateValue(RUNTIME_FILES_INITIAL_PATH_KEY, value)
 }
 
 export function consumeFilesInitialPath(): string {
@@ -33,9 +49,12 @@ export function consumeFilesInitialPath(): string {
 	return value
 }
 
-export function setMemoryRouteState(agentId: string, conversationId: string): void {
-	setRuntimeState(RUNTIME_MEMORY_AGENT_ID_KEY, agentId)
-	setRuntimeState(RUNTIME_MEMORY_CONVERSATION_ID_KEY, conversationId)
+export function setMemoryRouteState(agentId: string, conversationId: string): boolean {
+	try {
+		return setRuntimeStatePair(RUNTIME_MEMORY_AGENT_ID_KEY, agentId, RUNTIME_MEMORY_CONVERSATION_ID_KEY, conversationId)
+	} catch (_e: any) {
+		return false
+	}
 }
 
 export function consumeMemoryRouteAgentId(): string {
@@ -48,12 +67,12 @@ export function consumeMemoryRouteConversationId(): string {
 	return value
 }
 
-export function setActiveConversationRuntimeId(value: string): void {
-	setRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY, value)
+export function setActiveConversationRuntimeId(value: string): boolean {
+	return saveRuntimeStateValue(RUNTIME_ACTIVE_CONVERSATION_ID_KEY, value)
 }
 
-export function clearActiveConversationRuntimeId(): void {
-	deleteRuntimeState(RUNTIME_ACTIVE_CONVERSATION_ID_KEY)
+export function clearActiveConversationRuntimeId(): boolean {
+	return removeRuntimeStateValue(RUNTIME_ACTIVE_CONVERSATION_ID_KEY)
 }
 
 export function consumeActiveConversationRuntimeId(): string {
@@ -66,12 +85,12 @@ export function getActiveAgentRuntimeId(): string {
 	return value
 }
 
-export function setActiveAgentRuntimeId(value: string): void {
-	setRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY, value)
+export function setActiveAgentRuntimeId(value: string): boolean {
+	return saveRuntimeStateValue(RUNTIME_ACTIVE_AGENT_ID_KEY, value)
 }
 
-export function clearActiveAgentRuntimeId(): void {
-	deleteRuntimeState(RUNTIME_ACTIVE_AGENT_ID_KEY)
+export function clearActiveAgentRuntimeId(): boolean {
+	return removeRuntimeStateValue(RUNTIME_ACTIVE_AGENT_ID_KEY)
 }
 
 export function getActiveConversationRuntimeId(): string {
@@ -79,31 +98,45 @@ export function getActiveConversationRuntimeId(): string {
 	return value
 }
 
-export function setNyxFloatVoiceText(value: string): void {
-	setRuntimeState(RUNTIME_NYX_FLOAT_VOICE_TEXT_KEY, value)
+export function setActiveChatRouteState(agentId: string, conversationId: string): boolean {
+	try {
+		return setRuntimeStatePair(RUNTIME_ACTIVE_AGENT_ID_KEY, agentId, RUNTIME_ACTIVE_CONVERSATION_ID_KEY, conversationId)
+	} catch (_e: any) {
+		return false
+	}
+}
+
+export function setNyxFloatVoiceText(value: string): boolean {
+	return saveRuntimeStateValue(RUNTIME_NYX_FLOAT_VOICE_TEXT_KEY, value)
 }
 
 export function consumeNyxFloatVoiceText(): string {
 	return consumeRuntimeState(RUNTIME_NYX_FLOAT_VOICE_TEXT_KEY)
 }
 
-export function setNyxFloatVoiceContext(value: string): void {
-	setRuntimeState(RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY, value)
+export function setNyxFloatVoiceContext(value: string): boolean {
+	return saveRuntimeStateValue(RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY, value)
 }
 
 export function getNyxFloatVoiceContext(): string {
 	return getRuntimeState(RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY)
 }
 
-export function clearNyxFloatVoiceContext(value: string): void {
-	const current = getRuntimeState(RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY)
-	if (current == value) {
-		deleteRuntimeState(RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY)
+export function clearNyxFloatVoiceContext(value: string): boolean {
+	let current = ''
+	try {
+		current = getRuntimeState(RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY)
+	} catch (_e: any) {
+		return false
 	}
+	if (current == value) {
+		return removeRuntimeStateValue(RUNTIME_NYX_FLOAT_VOICE_CONTEXT_KEY)
+	}
+	return true
 }
 
-export function setNyxFloatPosition(value: string): void {
-	setRuntimeState(RUNTIME_NYX_FLOAT_POSITION_KEY, value)
+export function setNyxFloatPosition(value: string): boolean {
+	return saveRuntimeStateValue(RUNTIME_NYX_FLOAT_POSITION_KEY, value)
 }
 
 export function getNyxFloatPosition(): string {

@@ -42,8 +42,8 @@ import { wrapUserContentForAgent, makeAgentContextBlock, renderAgentContextBlock
 import { appendResponseToSnapshot as appendResponseToSnapshotDiagnostic, readLastLLMPreviewState, readLastLLMRequestSnapshot as readLastLLMRequestSnapshotDiagnostic, saveLastLLMCall } from './llm-diagnostics'
 import { getMessageApiText, hasAssistantToolCalls } from './llm-message-utils'
 import { buildDroppedMessagesPreview, buildMemoryManagerMessages, buildMemoryManagerSystemPrompt, clearMemoryCompactionRunning, collectUncompactedMemoryCandidates, findLatestMessageTimestamp, getContextMessageScore, isMemoryCompactionRunning, markMemoryCompactionRunning, registerMemoryManagerLoopStarter, startMemoryOrganization } from './llm-memory-organizer'
-import { buildImageUserMessageContent, getModelReasoningEnabled, getModelVisionSupport } from './llm-vision-utils'
-import { buildOpenAIMessages, callChatAPI, callChatAPIStream, callImageCaptionAPI, type ToolCallInfo } from './llm-api-client'
+import { buildImageUserMessageContent } from './llm-vision-utils'
+import { buildOpenAIMessages, callChatAPIWithProviderRuntime, callChatAPIStreamWithProviderRuntimeCancelable, callImageCaptionAPIWithProviderRuntimeTask, LLMRequestController, type ToolCallInfo } from './llm-api-client'
 import { getAppSetting } from '@/utils/database.uts'
 export * from './llm-api-client'
 export * from './llm-memory-organizer'
@@ -127,12 +127,12 @@ function appendDirectContextBlock(blocks: AgentContextBlock[], msg: UTSJSONObjec
 
 function buildUserPrefixContextBlocks(msg: UTSJSONObject): AgentContextBlock[] {
 	const blocks: AgentContextBlock[] = []
-	appendDirectContextBlock(blocks, msg, 'agent_current_time_context', 'current_time')
 	const storedBlocks = buildStoredContextBlocks(msg, 'agent_context_before', 'agent_context_before_label')
 	for (let i = 0; i < storedBlocks.length; i++) {
 		blocks.push(storedBlocks[i])
 	}
 	appendDirectContextBlock(blocks, msg, 'agent_group_environment_context', 'group_environment')
+	appendDirectContextBlock(blocks, msg, 'agent_current_time_context', 'current_time')
 	appendDirectContextBlock(blocks, msg, 'agent_interaction_rules_context', 'interaction_rules')
 	return blocks
 }
@@ -150,20 +150,24 @@ function buildUserMessageForAgent(msg: UTSJSONObject, suffixBlocks: AgentContext
 	const rawMessageTag = msg['agent_message_tag'] as string | null
 	const messageTag = rawMessageTag != null ? rawMessageTag : 'user_message'
 	const requiresSemanticWrap = messageTag == 'group_member_message' || messageTag == 'private_user_message' || messageTag == 'group_turn_anchor'
-	const mergedSuffixBlocks: AgentContextBlock[] = []
-	for (let i = 0; i < storedSuffixBlocks.length; i++) {
-		mergedSuffixBlocks.push(storedSuffixBlocks[i])
-	}
+	const orderedContextBlocks: AgentContextBlock[] = []
+	// 资料与记忆相对稳定，先放；时间、临时规则和用户原文保持在消息尾部以提高前缀缓存命中。
 	for (let i = 0; i < suffixBlocks.length; i++) {
-		mergedSuffixBlocks.push(suffixBlocks[i])
+		orderedContextBlocks.push(suffixBlocks[i])
 	}
-	if (prefixBlocks.length == 0 && mergedSuffixBlocks.length == 0 && requiresSemanticWrap == false) {
+	for (let i = 0; i < storedSuffixBlocks.length; i++) {
+		orderedContextBlocks.push(storedSuffixBlocks[i])
+	}
+	for (let i = 0; i < prefixBlocks.length; i++) {
+		orderedContextBlocks.push(prefixBlocks[i])
+	}
+	if (orderedContextBlocks.length == 0 && requiresSemanticWrap == false) {
 		return msg
 	}
 	const raw = JSON.stringify(msg)
 	const cloned = JSON.parse(raw) as UTSJSONObject
 	cloned['role'] = 'user'
-	cloned['agent_text_override'] = wrapUserContentForAgent(baseContent, prefixBlocks, mergedSuffixBlocks, messageTag)
+	cloned['agent_text_override'] = wrapUserContentForAgent(baseContent, orderedContextBlocks, [] as AgentContextBlock[], messageTag)
 	cloned['content'] = cloned['agent_text_override']
 	return cloned
 }
@@ -217,12 +221,13 @@ function prepareAgentContext(
 	workspaceRoot: string = '',
 	disableTools: boolean = false,
 	controlPlaneMode: boolean = false,
-	extraTools: AgentTool[] | null = null
+	extraTools: AgentTool[] | null = null,
+	includeUserProfile: boolean = true
 ): PreparedAgentContext {
 	const workingMessages: UTSJSONObject[] = []
 	const droppedMessages: UTSJSONObject[] = []
 	const agent = getAgentById(agentId)
-	const userProfileInjection = controlPlaneMode == false && allowCoreMemoryWrite == false && agent != null ? buildUserProfileInjection() : ''
+	const userProfileInjection = controlPlaneMode == false && includeUserProfile == true && agent != null ? buildUserProfileInjection() : ''
 	if (systemPrompt != '') {
 		workingMessages.push({
 			role: 'system',
@@ -376,6 +381,7 @@ function runAgentLoop(
 	conversationId: string,
 	allowCoreMemoryWrite: boolean = false,
 	enableMemoryManager: boolean = true,
+	includeUserProfile: boolean = true,
 	workspaceRoot: string = '',
 	disableTools: boolean = false,
 	controlPlaneMode: boolean = false,
@@ -398,10 +404,11 @@ function runAgentLoop(
 	const apiKey = config.apiKey
 	let baseUrl = config.baseUrl
 	const mdl = config.model
+	const modelRuntime = config.modelRuntime
 	baseUrl = normalizeBaseUrl(baseUrl)
 
 	// 上下文截断和记忆管理递归开关解耦：管理 Agent 不递归整理，但仍需要正常截断。
-	const prepared = prepareAgentContext(messages, systemPrompt, agentId, conversationId, allowCoreMemoryWrite, true, workspaceRoot, disableTools, controlPlaneMode, extraTools)
+	const prepared = prepareAgentContext(messages, systemPrompt, agentId, conversationId, allowCoreMemoryWrite, true, workspaceRoot, disableTools, controlPlaneMode, extraTools, includeUserProfile)
 	const workingMessages = prepared.workingMessages
 	const personId = 'default'
 	const tools = buildRuntimeAgentTools(agentId, conversationId, personId, allowCoreMemoryWrite, workspaceRoot, disableTools, extraTools)
@@ -447,7 +454,7 @@ function runAgentLoop(
 	// ReAct 循环
 	let iteration = 0
 	let runLoop: (() => void) | null = null
-	let activeTask: RequestTask | null = null
+		let activeTask: LLMRequestController | null = null
 	stream.setAbortHandler((): void => {
 		const task = activeTask
 		if (task != null) {
@@ -492,13 +499,15 @@ function runAgentLoop(
 			}
 		}
 
-		const currentModelVision = getModelVisionSupport(mdl)
-		const currentModelReasoning = getModelReasoningEnabled(mdl)
-		activeTask = callChatAPIStream(baseUrl, apiKey, mdl, '', workingMessages, toolDefs, settings, currentModelReasoning,
+		const currentModelVision = modelRuntime.supportsVision
+		const currentModelReasoning = modelRuntime.supportsReasoning
+		let requestToolDefs: UTSJSONObject[] = []
+		if (modelRuntime.supportsToolCall == true) { requestToolDefs = toolDefs }
+			activeTask = callChatAPIStreamWithProviderRuntimeCancelable(baseUrl, apiKey, mdl, '', workingMessages, requestToolDefs, settings, currentModelReasoning,
 			// onChunk
 			chunkHandler,
 			// done
-			(text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null, errorMessage: string | null) => {
+			(text: string | null, toolCalls: ToolCallInfo[] | null, thinking: string | null, thinkingSignature: string | null, errorMessage: string | null) => {
 				activeTask = null
 				if (stream.aborted == true) return
 				if (errorMessage != null && errorMessage != '') {
@@ -523,7 +532,9 @@ function runAgentLoop(
 				// 构建包含 tool_calls 的 assistant 消息：运行时也统一写 message parts。
 				const assistantParts: UTSJSONObject[] = []
 				if (thinking != null && thinking != '') {
-					assistantParts.push({ type: 'think', think: thinking } as UTSJSONObject)
+					const thinkingPart: UTSJSONObject = { type: 'think', think: thinking } as UTSJSONObject
+					if (thinkingSignature != null && thinkingSignature != '') { thinkingPart['signature'] = thinkingSignature }
+					assistantParts.push(thinkingPart)
 				}
 				if (text != null && text != '') {
 					assistantParts.push({ type: 'plain', text: text } as UTSJSONObject)
@@ -675,10 +686,15 @@ function runAgentLoop(
 			thinkingHandler,
 			toolCallDeltaHandler,
 			conversationId,
-				currentModelVision,
-				allowCoreMemoryWrite == true ? '' : agentId,
-				workspaceRoot,
-				sensitiveMode
+			currentModelVision,
+			allowCoreMemoryWrite == true ? '' : agentId,
+			workspaceRoot,
+			sensitiveMode,
+			modelRuntime.maxTokens,
+			modelRuntime.params,
+			config.adapter,
+			modelRuntime.supportsToolCall,
+			modelRuntime.supportsReasoning
 			)
 	}
 	continueLoop()
@@ -753,7 +769,7 @@ registerMemoryManagerLoopStarter((allMessages: UTSJSONObject[], providerId: stri
 		}
 	})
 	setTimeout(() => {
-		runAgentLoop(managerMessages, managerSystemPrompt, managerProviderId, managerModel, agentId, settings, managerStream, conversationId, true, false, '')
+		runAgentLoop(managerMessages, managerSystemPrompt, managerProviderId, managerModel, agentId, settings, managerStream, conversationId, true, false, false, '')
 	}, 0)
 	return true
 })
@@ -836,8 +852,23 @@ export function buildAgentContextPreview(
 	} as UTSJSONObject
 }
 
-export function captionImage(imagePath: string, prompt: string = ''): Promise<string | null> {
-	return new Promise<string | null>((resolve) => {
+export class CaptionImageRequest {
+	promise: Promise<string | null>
+	private controller: LLMRequestController
+
+	constructor(promise: Promise<string | null>, controller: LLMRequestController) {
+		this.promise = promise
+		this.controller = controller
+	}
+
+	abort(): void {
+		this.controller.abort()
+	}
+}
+
+export function captionImageCancelable(imagePath: string, prompt: string = ''): CaptionImageRequest {
+	const controller = new LLMRequestController()
+	const promise = new Promise<string | null>((resolve) => {
 		try {
 			if (imagePath == '') {
 				resolve(null)
@@ -876,19 +907,26 @@ export function captionImage(imagePath: string, prompt: string = ''): Promise<st
 			} as UTSJSONObject]
 			const baseUrl = normalizeBaseUrl(config.baseUrl)
 			const settings = getGlobalGenerationSettings()
-			callImageCaptionAPI(baseUrl, config.apiKey, config.model, messages, settings, (text: string | null) => {
+			const task = callImageCaptionAPIWithProviderRuntimeTask(baseUrl, config.apiKey, config.model, messages, settings, (text: string | null) => {
+				controller.clearActiveTask()
 				if (text == null) {
 					resolve(null)
 					return
 				}
 				const cleaned = text.trim()
 				resolve(cleaned != '' ? cleaned : null)
-			})
+			}, config.modelRuntime.maxTokens, config.modelRuntime.params, config.adapter, (): boolean => controller.isAborted())
+			controller.attachTask(task)
 		} catch (_e: any) {
 			console.log('[LLM] 图片转述异常: ' + _e)
 			resolve(null)
 		}
 	})
+	return new CaptionImageRequest(promise, controller)
+}
+
+export function captionImage(imagePath: string, prompt: string = ''): Promise<string | null> {
+	return captionImageCancelable(imagePath, prompt).promise
 }
 
 /**
@@ -921,9 +959,9 @@ export function chatWithLLM(
 		const settings = getGlobalGenerationSettings()
 
 		// 构建 API 请求并发送
-		callChatAPI(baseUrl, apiKey, mdl, systemPrompt, messages, [], settings, false, (text, toolCalls, errorMessage) => {
+		callChatAPIWithProviderRuntime(baseUrl, apiKey, mdl, systemPrompt, messages, [], settings, config.modelRuntime.supportsReasoning, (text, toolCalls, errorMessage) => {
 			resolve(errorMessage == null && text != null ? text : null)
-		})
+		}, '', '', '', config.modelRuntime.maxTokens, config.modelRuntime.params, config.adapter, config.modelRuntime.supportsVision, config.modelRuntime.supportsToolCall, config.modelRuntime.supportsReasoning)
 	})
 }
 
@@ -963,7 +1001,7 @@ export function agentChat(
 
 	// 异步执行 Agent 循环
 	setTimeout(() => {
-		runAgentLoop(messages, systemPrompt, providerId, model, agentId, settings, stream, conversationId, false, isolatedMode == false, workspaceRoot, isolatedMode, controlPlaneMode, extraTools, sensitiveMode)
+		runAgentLoop(messages, systemPrompt, providerId, model, agentId, settings, stream, conversationId, false, isolatedMode == false, true, workspaceRoot, isolatedMode, controlPlaneMode, extraTools, sensitiveMode)
 	}, 0)
 
 	return stream

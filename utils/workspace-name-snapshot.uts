@@ -16,12 +16,24 @@ type WorkspaceNameMetadata = {
 
 const AGENT_WORKSPACE_NAME_SNAPSHOTS_KEY = 'agent_workspace_name_snapshots'
 const GROUP_WORKSPACE_NAME_SNAPSHOTS_KEY = 'group_workspace_name_snapshots'
+const AGENT_CONVERSATION_NAME_SNAPSHOTS_KEY = 'agent_conversation_name_snapshots'
+const GROUP_SESSION_NAME_SNAPSHOTS_KEY = 'group_session_name_snapshots'
 const agentSnapshotCache: Map<string, string> = new Map<string, string>()
 const groupSnapshotCache: Map<string, string> = new Map<string, string>()
+const agentConversationSnapshotCache: Map<string, string> = new Map<string, string>()
+const groupSessionSnapshotCache: Map<string, string> = new Map<string, string>()
 const metadataNameCache: Map<string, string> = new Map<string, string>()
 
 function getSnapshotCache(key: string): Map<string, string> {
-	return key == AGENT_WORKSPACE_NAME_SNAPSHOTS_KEY ? agentSnapshotCache : groupSnapshotCache
+	if (key == AGENT_WORKSPACE_NAME_SNAPSHOTS_KEY) { return agentSnapshotCache }
+	if (key == GROUP_WORKSPACE_NAME_SNAPSHOTS_KEY) { return groupSnapshotCache }
+	if (key == AGENT_CONVERSATION_NAME_SNAPSHOTS_KEY) { return agentConversationSnapshotCache }
+	return groupSessionSnapshotCache
+}
+
+function buildNestedWorkspaceSnapshotId(parentId: string, childId: string): string {
+	if (parentId == '' || childId == '') { return '' }
+	return parentId + '\n' + childId
 }
 
 function isSafeWorkspaceId(id: string): boolean {
@@ -59,12 +71,12 @@ function readWorkspaceNameMetadata(filesDir: string, kind: string, id: string): 
 	return ''
 }
 
-function writeWorkspaceNameMetadata(filesDir: string, kind: string, id: string, name: string): void {
+function writeWorkspaceNameMetadata(filesDir: string, kind: string, id: string, name: string): boolean {
 	const cleanName = name.trim()
-	if (filesDir == '' || kind == '' || id == '' || cleanName == '') { return }
+	if (filesDir == '' || kind == '' || id == '' || cleanName == '') { return false }
 	const metadataPath = buildWorkspaceNameMetadataPath(filesDir, kind, id, true)
-	if (metadataPath == '') { return }
-	if (readWorkspaceNameMetadata(filesDir, kind, id) == cleanName) { return }
+	if (metadataPath == '') { return false }
+	if (readWorkspaceNameMetadata(filesDir, kind, id) == cleanName) { return true }
 	const metadata: WorkspaceNameMetadata = {
 		kind: kind,
 		id: id,
@@ -73,7 +85,9 @@ function writeWorkspaceNameMetadata(filesDir: string, kind: string, id: string, 
 	}
 	if (writeContent(metadataPath, JSON.stringify(metadata)).ok == true) {
 		metadataNameCache.set(metadataPath, cleanName)
+		return true
 	}
+	return false
 }
 
 function getBuiltInAgentWorkspaceName(agentId: string): string {
@@ -108,8 +122,8 @@ function readWorkspaceNameSnapshots(key: string): WorkspaceNameSnapshot[] {
 	return result
 }
 
-function rememberWorkspaceNames(key: string, candidates: WorkspaceNameSnapshot[]): void {
-	if (candidates.length == 0) { return }
+function rememberWorkspaceNames(key: string, candidates: WorkspaceNameSnapshot[]): boolean {
+	if (candidates.length == 0) { return true }
 	const cache = getSnapshotCache(key)
 	let allCached = true
 	for (let i = 0; i < candidates.length; i++) {
@@ -119,7 +133,7 @@ function rememberWorkspaceNames(key: string, candidates: WorkspaceNameSnapshot[]
 			break
 		}
 	}
-	if (allCached == true) { return }
+	if (allCached == true) { return true }
 	const snapshots = readWorkspaceNameSnapshots(key)
 	let changed = false
 	for (let i = 0; i < candidates.length; i++) {
@@ -140,11 +154,17 @@ function rememberWorkspaceNames(key: string, candidates: WorkspaceNameSnapshot[]
 			snapshots.push({ id: candidate.id, name: candidate.name } as WorkspaceNameSnapshot)
 			changed = true
 		}
-		cache.set(candidate.id, candidate.name)
 	}
 	if (changed == true) {
-		setAppSetting(key, JSON.stringify(snapshots))
+		if (setAppSetting(key, JSON.stringify(snapshots)) == false) { return false }
 	}
+	for (let i = 0; i < candidates.length; i++) {
+		const candidate = candidates[i]
+		if (candidate.id != '' && candidate.name != '') {
+			cache.set(candidate.id, candidate.name)
+		}
+	}
+	return true
 }
 
 function getWorkspaceNameSnapshot(key: string, id: string): string {
@@ -173,36 +193,54 @@ function buildWorkspaceNameCandidates(items: UTSJSONObject[]): WorkspaceNameSnap
 	return result
 }
 
-export function rememberAgentWorkspaceNames(agents: UTSJSONObject[]): void {
-	rememberWorkspaceNames(AGENT_WORKSPACE_NAME_SNAPSHOTS_KEY, buildWorkspaceNameCandidates(agents))
+export function rememberAgentWorkspaceNames(agents: UTSJSONObject[]): boolean {
+	return rememberWorkspaceNames(AGENT_WORKSPACE_NAME_SNAPSHOTS_KEY, buildWorkspaceNameCandidates(agents))
 }
 
-export function rememberAgentWorkspaceName(agentId: string, agentName: string): void {
+export function rememberAgentWorkspaceName(agentId: string, agentName: string): boolean {
 	const name = agentName.trim()
-	if (agentId == '' || name == '') { return }
+	if (agentId == '' || name == '') { return false }
 	const candidates: WorkspaceNameSnapshot[] = []
 	candidates.push({ id: agentId, name: name } as WorkspaceNameSnapshot)
-	rememberWorkspaceNames(AGENT_WORKSPACE_NAME_SNAPSHOTS_KEY, candidates)
+	return rememberWorkspaceNames(AGENT_WORKSPACE_NAME_SNAPSHOTS_KEY, candidates)
 }
 
-export function rememberGroupWorkspaceNames(rows: UTSJSONObject[]): void {
-	rememberWorkspaceNames(GROUP_WORKSPACE_NAME_SNAPSHOTS_KEY, buildWorkspaceNameCandidates(rows))
+export function rememberGroupWorkspaceNames(rows: UTSJSONObject[]): boolean {
+	return rememberWorkspaceNames(GROUP_WORKSPACE_NAME_SNAPSHOTS_KEY, buildWorkspaceNameCandidates(rows))
 }
 
-export function rememberGroupWorkspaceName(groupId: string, groupName: string): void {
+export function rememberGroupWorkspaceName(groupId: string, groupName: string): boolean {
 	const name = groupName.trim()
-	if (groupId == '' || name == '') { return }
+	if (groupId == '' || name == '') { return false }
 	const candidates: WorkspaceNameSnapshot[] = []
 	candidates.push({ id: groupId, name: name } as WorkspaceNameSnapshot)
-	rememberWorkspaceNames(GROUP_WORKSPACE_NAME_SNAPSHOTS_KEY, candidates)
+	return rememberWorkspaceNames(GROUP_WORKSPACE_NAME_SNAPSHOTS_KEY, candidates)
 }
 
-export function writeAgentWorkspaceNameMetadata(filesDir: string, agentId: string, agentName: string): void {
-	writeWorkspaceNameMetadata(filesDir, 'agent', agentId, agentName)
+export function rememberAgentConversationWorkspaceName(agentId: string, conversationId: string, title: string): boolean {
+	const id = buildNestedWorkspaceSnapshotId(agentId, conversationId)
+	const name = title.trim()
+	if (id == '' || name == '') { return false }
+	const candidates: WorkspaceNameSnapshot[] = []
+	candidates.push({ id: id, name: name } as WorkspaceNameSnapshot)
+	return rememberWorkspaceNames(AGENT_CONVERSATION_NAME_SNAPSHOTS_KEY, candidates)
 }
 
-export function writeGroupWorkspaceNameMetadata(filesDir: string, groupId: string, groupName: string): void {
-	writeWorkspaceNameMetadata(filesDir, 'group', groupId, groupName)
+export function rememberGroupSessionWorkspaceName(groupId: string, sessionId: string, title: string): boolean {
+	const id = buildNestedWorkspaceSnapshotId(groupId, sessionId)
+	const name = title.trim()
+	if (id == '' || name == '') { return false }
+	const candidates: WorkspaceNameSnapshot[] = []
+	candidates.push({ id: id, name: name } as WorkspaceNameSnapshot)
+	return rememberWorkspaceNames(GROUP_SESSION_NAME_SNAPSHOTS_KEY, candidates)
+}
+
+export function writeAgentWorkspaceNameMetadata(filesDir: string, agentId: string, agentName: string): boolean {
+	return writeWorkspaceNameMetadata(filesDir, 'agent', agentId, agentName)
+}
+
+export function writeGroupWorkspaceNameMetadata(filesDir: string, groupId: string, groupName: string): boolean {
+	return writeWorkspaceNameMetadata(filesDir, 'group', groupId, groupName)
 }
 
 export function resolveAgentWorkspaceName(filesDir: string, agentId: string): string {
@@ -217,4 +255,14 @@ export function resolveGroupWorkspaceName(filesDir: string, groupId: string): st
 	const metadataName = readWorkspaceNameMetadata(filesDir, 'group', groupId)
 	if (metadataName != '') { return metadataName }
 	return getWorkspaceNameSnapshot(GROUP_WORKSPACE_NAME_SNAPSHOTS_KEY, groupId)
+}
+
+export function resolveAgentConversationWorkspaceName(agentId: string, conversationId: string): string {
+	const id = buildNestedWorkspaceSnapshotId(agentId, conversationId)
+	return id != '' ? getWorkspaceNameSnapshot(AGENT_CONVERSATION_NAME_SNAPSHOTS_KEY, id) : ''
+}
+
+export function resolveGroupSessionWorkspaceName(groupId: string, sessionId: string): string {
+	const id = buildNestedWorkspaceSnapshotId(groupId, sessionId)
+	return id != '' ? getWorkspaceNameSnapshot(GROUP_SESSION_NAME_SNAPSHOTS_KEY, id) : ''
 }

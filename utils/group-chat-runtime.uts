@@ -186,26 +186,29 @@ export function getVisibleGroupMessages(messages: UTSJSONObject[]): UTSJSONObjec
 	return getPublicGroupMessages(messages)
 }
 
+export function isGroupMessageVisibleToUser(msg: UTSJSONObject): boolean {
+	const senderType = msg['senderType'] as string | null
+	if (isInternalGroupSenderType(senderType) == true) { return false }
+	const visible = msg['visible'] as boolean | null
+	if (visible == false) { return false }
+	const visibility = msg['visibility'] as string | null
+	if (visibility == null || visibility == '' || visibility == GROUP_MESSAGE_VISIBILITY_PUBLIC) {
+		return true
+	}
+	const audience = msg['audience'] as string | null
+	if (visibility == GROUP_MESSAGE_VISIBILITY_PRIVATE && audience == GROUP_MESSAGE_AUDIENCE_USER) {
+		return true
+	}
+	// 用户始终可以看到自己发出的群内私聊，目标 Agent 由 visibleAgentIds 单独控制。
+	return visibility == GROUP_MESSAGE_VISIBILITY_PRIVATE
+		&& audience == GROUP_MESSAGE_AUDIENCE_AGENT
+		&& senderType == GROUP_MESSAGE_SENDER_USER
+}
+
 export function getGroupMessagesVisibleToUser(messages: UTSJSONObject[]): UTSJSONObject[] {
 	const result: UTSJSONObject[] = []
 	for (let i = 0; i < messages.length; i++) {
-		const msg = messages[i]
-		const senderType = msg['senderType'] as string | null
-		if (isInternalGroupSenderType(senderType) == true) { continue }
-		const visible = msg['visible'] as boolean | null
-		if (visible == false) { continue }
-		const visibility = msg['visibility'] as string | null
-		if (visibility == null || visibility == '' || visibility == GROUP_MESSAGE_VISIBILITY_PUBLIC) {
-			result.push(msg)
-			continue
-		}
-			const audience = msg['audience'] as string | null
-			if (visibility == GROUP_MESSAGE_VISIBILITY_PRIVATE && audience == GROUP_MESSAGE_AUDIENCE_USER) {
-				result.push(msg)
-			} else if (visibility == GROUP_MESSAGE_VISIBILITY_PRIVATE && audience == GROUP_MESSAGE_AUDIENCE_AGENT && senderType == GROUP_MESSAGE_SENDER_USER) {
-				// 用户始终可以看到自己发出的群内私聊，目标 Agent 由 visibleAgentIds 单独控制。
-				result.push(msg)
-			}
+		if (isGroupMessageVisibleToUser(messages[i]) == true) { result.push(messages[i]) }
 	}
 	return result
 }

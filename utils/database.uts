@@ -97,8 +97,12 @@ export function initDatabase(): void {
 		'role TEXT NOT NULL,' +
 		'content TEXT NOT NULL DEFAULT \'\',' +
 		'timestamp INTEGER NOT NULL,' +
-		'extra TEXT NOT NULL DEFAULT \'{}\')'
+			'extra TEXT NOT NULL DEFAULT \'{}\')'
 	), '创建消息表失败')
+	assertSqlSuccess(
+		db.run('CREATE INDEX IF NOT EXISTS idx_messages_conversation_order ON messages(conversation_id, timestamp, id)'),
+		'创建对话消息顺序索引失败',
+	)
 
 	ensureConversationTokenUsageStatsTable(db)
 	ensureMemoryCompactionStateTable(db)
@@ -236,16 +240,31 @@ export function importDatabaseTables(
 
 	for (let i = 0; i < messages.length; i++) {
 		const item = messages[i]
-		runSqlOrThrow(db,
-			'INSERT INTO messages (conversation_id, role, content, timestamp, extra) VALUES (?, ?, ?, ?, ?)',
-			[
-				readStringField(item, 'conversation_id'),
-				readStringField(item, 'role'),
-				readStringField(item, 'content'),
-				readNumberField(item, 'timestamp'),
-				readStringField(item, 'extra'),
-			]
-		)
+		const messageId = readNumberField(item, 'id')
+		if (messageId > 0) {
+			runSqlOrThrow(db,
+				'INSERT INTO messages (id, conversation_id, role, content, timestamp, extra) VALUES (?, ?, ?, ?, ?, ?)',
+				[
+					messageId,
+					readStringField(item, 'conversation_id'),
+					readStringField(item, 'role'),
+					readStringField(item, 'content'),
+					readNumberField(item, 'timestamp'),
+					readStringField(item, 'extra'),
+				]
+			)
+		} else {
+			runSqlOrThrow(db,
+				'INSERT INTO messages (conversation_id, role, content, timestamp, extra) VALUES (?, ?, ?, ?, ?)',
+				[
+					readStringField(item, 'conversation_id'),
+					readStringField(item, 'role'),
+					readStringField(item, 'content'),
+					readNumberField(item, 'timestamp'),
+					readStringField(item, 'extra'),
+				]
+			)
+		}
 	}
 
 	for (let i = 0; i < appSettings.length; i++) {

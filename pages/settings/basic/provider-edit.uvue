@@ -158,18 +158,18 @@
 							<input class="detail-field-input detail-params-input" type="text" v-model="m.params" placeholder='{"key": "value"}' placeholder-class="ph" @blur="autoSaveProvider" />
 							<text class="detail-field-hint">额外的 API 参数，例如温度、top_p 等</text>
 						</view>
-					<view class="detail-field model-vision-row">
-						<text class="detail-field-label">支持识图</text>
-						<rice-switch v-model="m.supportsVision" @change="autoSaveProvider" />
-					</view>
-					<view class="detail-field model-vision-row">
-						<text class="detail-field-label">支持工具调用</text>
-						<rice-switch v-model="m.supportsToolCall" @change="autoSaveProvider" />
-					</view>
-					<view class="detail-field model-vision-row">
-						<text class="detail-field-label">支持思维链</text>
-						<rice-switch v-model="m.supportsReasoning" @change="autoSaveProvider" />
-					</view>
+						<view class="detail-field model-vision-row">
+							<text class="detail-field-label">支持识图</text>
+							<rice-switch v-model="m.supportsVision" @change="onModelCapabilityChange(mi)" />
+						</view>
+						<view class="detail-field model-vision-row">
+							<text class="detail-field-label">支持工具调用</text>
+							<rice-switch v-model="m.supportsToolCall" @change="onModelCapabilityChange(mi)" />
+						</view>
+						<view class="detail-field model-vision-row">
+							<text class="detail-field-label">支持思维链</text>
+							<rice-switch v-model="m.supportsReasoning" @change="onModelCapabilityChange(mi)" />
+						</view>
 				</view>
 				</view>
 
@@ -188,9 +188,9 @@
 </template>
 
 <script lang="uts">
-	import { saveProvider, fetchProviderModelsDetailed, parseModels, ModelInfo, getDefaultTaskModel, getProviderById, getDefaultProviderApiBase, setActiveProvider, setDefaultChatTaskModel } from '@/uni_modules/agent-core/utssdk/provider.uts'
+	import { saveProvider, saveFirstRunProviderConfiguration, fetchProviderModelsDetailedForProvider, parseModels, ModelInfo, getDefaultTaskModel, getProviderById, getDefaultProviderApiBase } from '@/uni_modules/agent-core/utssdk/provider.uts'
 	import { refreshMetadataCacheInBackground, ensureMetadataCache } from '@/uni_modules/agent-core/utssdk/llm-metadata.uts'
-	import { consumeRuntimeState, setAppSetting } from '@/utils/database.uts'
+	import { consumeRuntimeState } from '@/utils/database.uts'
 	import { APP_ERROR_CATEGORY_NETWORK, formatAppErrorForUser, reportAppErrorFromCause } from '@/utils/app-error.uts'
 	import {
 		appendSelectedProviderModels,
@@ -212,7 +212,10 @@
 	const PROVIDER_EDIT_SOURCE_KEY = 'provider_edit_source'
 	const PROVIDER_EDIT_SOURCE_FIRST_RUN = 'first_run_guide'
 	const PROVIDER_EDIT_PRESET_KEY = 'provider_edit_preset'
-	const FIRST_RUN_GUIDE_DONE_KEY = 'first_run_model_guide_done'
+
+	function cloneProviderEditModels(models: ModelInfo[]): ModelInfo[] {
+		return JSON.parse(JSON.stringify(models)) as ModelInfo[]
+	}
 
 	export default {
 		data() {
@@ -232,6 +235,12 @@
 				selectedModelIndexes: [] as boolean[],
 				pickerSearchText: '' as string,
 				firstRunDefaultModelId: '' as string,
+				savedEditName: '' as string,
+				savedEditApiKey: '' as string,
+				savedEditApiBase: '' as string,
+				savedEditEnabled: true as boolean,
+				savedEditModels: [] as ModelInfo[],
+				savedFirstRunDefaultModelId: '' as string,
 				pageActive: false as boolean,
 				navigationTimer: -1 as number,
 			}
@@ -280,6 +289,24 @@
 			},
 		},
 		methods: {
+			captureSavedProviderState(): void {
+				this.savedEditName = this.editName
+				this.savedEditApiKey = this.editApiKey
+				this.savedEditApiBase = this.editApiBase
+				this.savedEditEnabled = this.editEnabled
+				this.savedEditModels = cloneProviderEditModels(this.editModels)
+				this.savedFirstRunDefaultModelId = this.firstRunDefaultModelId
+			},
+
+			restoreSavedProviderState(): void {
+				if (this.isNew == true) { return }
+				this.editName = this.savedEditName
+				this.editApiKey = this.savedEditApiKey
+				this.editApiBase = this.savedEditApiBase
+				this.editEnabled = this.savedEditEnabled
+				this.editModels = cloneProviderEditModels(this.savedEditModels)
+				this.firstRunDefaultModelId = this.savedFirstRunDefaultModelId
+			},
 			goBack() {
 				uni.navigateBack()
 			},
@@ -290,7 +317,7 @@
 
 			appendModelIfMissing(modelId: string): void {
 				if (hasProviderEditModel(this.editModels, modelId) == true) { return }
-				this.editModels.push(createProviderEditModelInfo(modelId, false))
+				this.editModels.push(createProviderEditModelInfo(modelId, false, this.editId))
 			},
 
 			applyProviderPreset(presetJson: string, overrideIdentity: boolean): void {
@@ -325,18 +352,19 @@
 				const rawApiKey = data['api_key'] as string | null
 				const rawApiBase = data['api_base'] as string | null
 				const rawEnabled = data['enabled'] as number | null
-				this.editName = rawName != null ? rawName : ''
-				this.editApiKey = rawApiKey != null ? rawApiKey : ''
-				this.editApiBase = rawApiBase != null ? rawApiBase : ''
-				this.editEnabled = rawEnabled == 1
-				if (this.editApiBase == '') {
-					this.editApiBase = getDefaultProviderApiBase(id)
-				}
-				const modelsStr = data['models'] as string | null
-				if (modelsStr != null) {
-					this.editModels = parseModels(modelsStr)
-				}
-			},
+					this.editName = rawName != null ? rawName : ''
+					this.editApiKey = rawApiKey != null ? rawApiKey : ''
+					this.editApiBase = rawApiBase != null ? rawApiBase : ''
+					this.editEnabled = rawEnabled == 1
+					if (this.editApiBase == '') {
+						this.editApiBase = getDefaultProviderApiBase(id)
+					}
+					const modelsStr = data['models'] as string | null
+					if (modelsStr != null) {
+						this.editModels = parseModels(modelsStr)
+					}
+					this.captureSavedProviderState()
+				},
 
 			getModelSummary(m: ModelInfo): string {
 				return buildProviderModelSummary(m)
@@ -350,7 +378,7 @@
 			},
 
 			addModel() {
-				this.editModels.push(createProviderEditModelInfo('', true))
+				this.editModels.push(createProviderEditModelInfo('', true, this.editId))
 				this.autoSaveProvider()
 			},
 
@@ -381,7 +409,7 @@
 					return
 				}
 				this.fetchingModels = true
-				const result = await fetchProviderModelsDetailed(this.editApiBase, this.editApiKey)
+				const result = await fetchProviderModelsDetailedForProvider(this.editApiBase, this.editApiKey, this.editId)
 				this.fetchingModels = false
 				if (this.pageActive == false) { return }
 				if (result.ok == false) {
@@ -412,6 +440,13 @@
 				this.selectedModelIndexes = buildProviderModelSelectionFlags(this.selectedModelIndexes.length, select)
 			},
 
+			onModelCapabilityChange(index: number): void {
+				if (index < 0 || index >= this.editModels.length) { return }
+				// 手工开关即代表用户明确声明能力，不能继续按旧模型的未知状态序列化。
+				this.editModels[index].capabilitiesKnown = true
+				this.autoSaveProvider()
+			},
+
 			toggleModelSelection(index: number) {
 				if (index >= 0 && index < this.selectedModelIndexes.length) {
 					this.selectedModelIndexes[index] = !this.selectedModelIndexes[index]
@@ -430,7 +465,7 @@
 			},
 
 			confirmAddModels() {
-				const addedCount = appendSelectedProviderModels(this.editModels, this.fetchedModelIds, this.selectedModelIndexes)
+				const addedCount = appendSelectedProviderModels(this.editModels, this.fetchedModelIds, this.selectedModelIndexes, this.editId)
 				this.showModelPicker = false
 				this.fetchedModelIds = []
 				this.selectedModelIndexes = []
@@ -491,26 +526,26 @@
 						}
 						if (firstRunDefaultModel == '') {
 							uni.showToast({ position: 'bottom', title: '多个模型中请选择一个默认对话模型', icon: 'none' })
-								return false
-							}
+							return false
 						}
 					}
-					const providerSaved = saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, this.editEnabled)
-				if (providerSaved == false) {
-					uni.showToast({ position: 'bottom', title: '保存提供商失败，请重试', icon: 'none' })
-					return false
 				}
+				let providerSaved = false
+				if (this.fromFirstRunGuide == true && navigateAfterSave == true) {
+					providerSaved = saveFirstRunProviderConfiguration(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, firstRunDefaultModel)
+				} else {
+					providerSaved = saveProvider(this.editId, this.editName, this.editApiBase, this.editApiKey, validModels, this.editEnabled)
+				}
+					if (providerSaved == false) {
+						this.restoreSavedProviderState()
+						uni.showToast({ position: 'bottom', title: '保存提供商失败，请重试', icon: 'none' })
+						return false
+					}
+					this.captureSavedProviderState()
 				if (navigateAfterSave == false) {
 					return true
 				}
 				if (this.fromFirstRunGuide == true) {
-					const activeSaved = setActiveProvider(this.editId)
-					const defaultSaved = setDefaultChatTaskModel(this.editId, firstRunDefaultModel)
-					const guideSaved = setAppSetting(FIRST_RUN_GUIDE_DONE_KEY, 'true')
-					if (activeSaved == false || defaultSaved == false || guideSaved == false) {
-						uni.showToast({ position: 'bottom', title: '模型配置保存不完整，请重试', icon: 'none' })
-						return false
-					}
 					uni.showToast({ position: 'bottom',  title: '已接入，可以开始聊天', icon: 'success' })
 					if (this.navigationTimer != -1) {
 						clearTimeout(this.navigationTimer)

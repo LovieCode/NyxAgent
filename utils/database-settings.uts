@@ -56,6 +56,147 @@ function parseSettingObject(value: string): UTSJSONObject | null {
 	}
 }
 
+function parseSettingObjectArray(value: string): UTSJSONObject[] | null {
+	try {
+		return JSON.parse(value) as UTSJSONObject[]
+	} catch (_e: any) {
+		return null
+	}
+}
+
+function parseProviderModelIds(value: string): string[] {
+	const result: string[] = []
+	if (value == '') { return result }
+	try {
+		const raw = JSON.parse(value) as any[]
+		for (let i = 0; i < raw.length; i++) {
+			const item = raw[i]
+			if (typeof item == 'string') {
+				result.push(item as string)
+				continue
+			}
+			if (typeof item == 'object' && item != null) {
+				const obj = item as UTSJSONObject
+				const id = obj['id'] as string | null
+				if (id != null && id != '') { result.push(id) }
+			}
+		}
+	} catch (_e: any) {
+	}
+	return result
+}
+
+function stringListContains(list: string[], value: string): boolean {
+	for (let i = 0; i < list.length; i++) {
+		if (list[i] == value) { return true }
+	}
+	return false
+}
+
+function providerModelReferenceMatches(rawModel: string, providerId: string, modelIds: string[] | null, clearAll: boolean, defaultProviderId: string): boolean {
+	if (rawModel == '') { return false }
+	let referencedProvider = ''
+	let referencedModel = rawModel
+	const separator = '||'
+	const separatorIndex = rawModel.indexOf(separator)
+	if (separatorIndex >= 0) {
+		referencedProvider = rawModel.substring(0, separatorIndex)
+		referencedModel = rawModel.substring(separatorIndex + separator.length)
+	} else {
+		// 旧裸模型只在它仍由该 Provider 作为默认聊天 Provider 解释时清理。
+		referencedProvider = defaultProviderId
+	}
+	if (referencedProvider != providerId) { return false }
+	if (clearAll == true || modelIds == null) { return true }
+	return stringListContains(modelIds, referencedModel)
+}
+
+function readDefaultProviderIdFromDb(db: xSqlite): string {
+	const result = db.query('SELECT value FROM app_settings WHERE key = ? LIMIT 1', ['default_task_chat'])
+	assertSqlSuccess(result, '读取默认聊天提供商')
+	const rows = rowsToObjects(result)
+	if (rows.length == 0) { return '' }
+	const value = rows[0]['value'] as string | null
+	if (value == null || value == '') { return '' }
+	const config = parseSettingObject(value)
+	if (config == null) { return '' }
+	const providerId = config['providerId'] as string | null
+	return providerId != null ? providerId : ''
+}
+
+/** 在当前事务内清除 Provider/模型被删除后的默认任务和 Agent 引用。 */
+function clearProviderReferencesInTransaction(db: xSqlite, providerId: string, modelIds: string[] | null, clearAll: boolean): void {
+	const defaultProviderId = readDefaultProviderIdFromDb(db)
+	const taskKeys = [
+		'default_task_chat',
+		'default_task_memory_organize',
+		'default_task_vision',
+		'default_task_stt',
+		'default_task_tts',
+	]
+	for (let i = 0; i < taskKeys.length; i++) {
+		const key = taskKeys[i]
+		const result = db.query('SELECT value FROM app_settings WHERE key = ? LIMIT 1', [key])
+		assertSqlSuccess(result, '读取默认任务模型引用')
+		const rows = rowsToObjects(result)
+		if (rows.length == 0) { continue }
+		const value = rows[0]['value'] as string | null
+		if (value == null || value == '') { continue }
+		const config = parseSettingObject(value)
+		if (config == null) { continue }
+		const refProvider = config['providerId'] as string | null
+		const refModel = config['model'] as string | null
+		if (refProvider == null || refModel == null || refProvider != providerId) { continue }
+		if (clearAll == false && modelIds != null && stringListContains(modelIds, refModel) == false) { continue }
+		if (key == 'default_task_tts') {
+			config['providerId'] = ''
+			config['model'] = ''
+			runSqlOrThrow(db, 'UPDATE app_settings SET value = ? WHERE key = ?', [JSON.stringify(config), key])
+		} else {
+			runSqlOrThrow(db, 'UPDATE app_settings SET value = ? WHERE key = ?', ['', key])
+		}
+	}
+
+	const searchResult = db.query('SELECT value FROM app_settings WHERE key = ? LIMIT 1', ['settings_web_search_provider_id'])
+	assertSqlSuccess(searchResult, '读取联网搜索模型提供商引用')
+	const searchRows = rowsToObjects(searchResult)
+	if (searchRows.length > 0) {
+		const searchProvider = searchRows[0]['value'] as string | null
+		if (searchProvider == providerId) {
+			const searchModelResult = db.query('SELECT value FROM app_settings WHERE key = ? LIMIT 1', ['settings_web_search_model'])
+			assertSqlSuccess(searchModelResult, '读取联网搜索模型引用')
+			const searchModelRows = rowsToObjects(searchModelResult)
+			const searchModel = searchModelRows.length > 0 ? searchModelRows[0]['value'] as string | null : null
+			if (clearAll == true || modelIds == null || (searchModel != null && stringListContains(modelIds, searchModel))) {
+				runSqlOrThrow(db, 'UPDATE app_settings SET value = ? WHERE key IN (?, ?)', ['', 'settings_web_search_provider_id', 'settings_web_search_model'])
+			}
+		}
+	}
+
+	const agentResult = db.query('SELECT value FROM app_settings WHERE key = ? LIMIT 1', ['agent_list'])
+	assertSqlSuccess(agentResult, '读取智能体模型引用')
+	const agentRows = rowsToObjects(agentResult)
+	if (agentRows.length > 0) {
+		const agentValue = agentRows[0]['value'] as string | null
+		if (agentValue != null && agentValue != '') {
+			const agents = parseSettingObjectArray(agentValue)
+			if (agents != null) {
+				let changed = false
+				for (let i = 0; i < agents.length; i++) {
+					const rawModel = agents[i]['model'] as string | null
+					if (rawModel != null && providerModelReferenceMatches(rawModel, providerId, modelIds, clearAll, defaultProviderId) == true) {
+						agents[i]['model'] = ''
+						changed = true
+					}
+				}
+				if (changed == true) {
+					runSqlOrThrow(db, 'UPDATE app_settings SET value = ? WHERE key = ?', [JSON.stringify(agents), 'agent_list'])
+				}
+			}
+		}
+	}
+}
+
 function clearDeletedProviderTaskSettings(db: xSqlite, providerId: string): void {
 	const taskKeys = [
 		'default_task_chat',
@@ -90,31 +231,6 @@ function clearDeletedProviderTaskSettings(db: xSqlite, providerId: string): void
 	}
 }
 
-function clearDeletedProviderFlatSettings(db: xSqlite, providerId: string): void {
-	const legacyResult = db.query('SELECT value FROM app_settings WHERE key = ? LIMIT 1', ['settings_provider_id'])
-	assertSqlSuccess(legacyResult, '读取旧版默认模型提供商')
-	const legacyRows = rowsToObjects(legacyResult)
-	if (legacyRows.length > 0) {
-		const legacyProviderId = legacyRows[0]['value'] as string | null
-		if (legacyProviderId == providerId) {
-			runSqlOrThrow(
-				db,
-				'UPDATE app_settings SET value = ? WHERE key IN (?, ?, ?, ?)',
-				['', 'settings_provider_id', 'settings_model', 'settings_api_key', 'settings_base_url'],
-			)
-		}
-	}
-	const searchResult = db.query('SELECT value FROM app_settings WHERE key = ? LIMIT 1', ['settings_web_search_provider_id'])
-	assertSqlSuccess(searchResult, '读取联网搜索模型提供商')
-	const searchRows = rowsToObjects(searchResult)
-	if (searchRows.length > 0) {
-		const searchProviderId = searchRows[0]['value'] as string | null
-		if (searchProviderId == providerId) {
-			runSqlOrThrow(db, 'UPDATE app_settings SET value = ? WHERE key IN (?, ?)', ['', 'settings_web_search_provider_id', 'settings_web_search_model'])
-		}
-	}
-}
-
 /** 仅覆盖导入配置类表，不触碰对话、消息、记忆和群聊数据。 */
 export function importSettingsTables(providers: UTSJSONObject[], appSettings: UTSJSONObject[], preserveEmptyApiKeys: boolean): void {
 	const db = getDb()
@@ -124,7 +240,7 @@ export function importSettingsTables(providers: UTSJSONObject[], appSettings: UT
 	let oldApiSettings: UTSJSONObject[] = []
 	if (preserveEmptyApiKeys == true) {
 		const providerKeysResult = db.query('SELECT id, api_key FROM providers')
-		const apiSettingsResult = db.query('SELECT key, value FROM app_settings WHERE key IN (?, ?)', ['settings_api_key', 'settings_astrbot_api_key'])
+		const apiSettingsResult = db.query('SELECT key, value FROM app_settings WHERE key = ?', ['settings_astrbot_api_key'])
 		try {
 			assertSqlSuccess(providerKeysResult, '读取现有提供商密钥')
 			assertSqlSuccess(apiSettingsResult, '读取现有兼容密钥')
@@ -166,7 +282,7 @@ export function importSettingsTables(providers: UTSJSONObject[], appSettings: UT
 			const item = appSettings[i]
 			const key = readStringField(item, 'key')
 			let value = readStringField(item, 'value')
-			if (preserveEmptyApiKeys == true && (key == 'settings_api_key' || key == 'settings_astrbot_api_key') && value == '') {
+			if (preserveEmptyApiKeys == true && key == 'settings_astrbot_api_key' && value == '') {
 				value = findSettingValueInRows(oldApiSettings, key)
 			}
 			runSqlOrThrow(db,
@@ -273,9 +389,19 @@ export function saveProvider(
 ): boolean {
 	const db = getDb()
 	ensureProvidersTable(db)
+	ensureAppSettingsTable(db)
 	const now = Date.now()
 	let success = true
 	try {
+		assertSqlSuccess(db.beginTransaction(), '开始保存模型提供商')
+		const previousResult = db.query('SELECT models FROM providers WHERE id = ? LIMIT 1', [id])
+		assertSqlSuccess(previousResult, '读取旧模型列表')
+		const previousRows = rowsToObjects(previousResult)
+		let previousModels = ''
+		if (previousRows.length > 0) {
+			const rawPrevious = previousRows[0]['models'] as string | null
+			previousModels = rawPrevious != null ? rawPrevious : ''
+		}
 		assertSqlSuccess(
 			db.run(
 			'INSERT OR REPLACE INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -283,7 +409,53 @@ export function saveProvider(
 			),
 			'保存提供商',
 		)
+		const oldIds = parseProviderModelIds(previousModels)
+		const nextIds = parseProviderModelIds(models)
+		const removedIds: string[] = []
+		for (let i = 0; i < oldIds.length; i++) {
+			if (stringListContains(nextIds, oldIds[i]) == false) {
+				removedIds.push(oldIds[i])
+			}
+		}
+		if (removedIds.length > 0) {
+			clearProviderReferencesInTransaction(db, id, removedIds, false)
+		}
+		assertSqlSuccess(db.commit(), '提交模型提供商')
 	} catch (_e: any) {
+		db.rollback()
+		success = false
+	}
+	db.close()
+	return success
+}
+
+/** 首次引导专用原子配置：Provider、启用态、默认聊天模型和完成标记必须同事务提交。 */
+export function saveFirstRunProviderConfiguration(id: string, name: string, apiBase: string, apiKey: string, models: string, defaultModel: string): boolean {
+	if (id == '' || apiKey == '' || models == '' || defaultModel == '') { return false }
+	const db = getDb()
+	ensureProvidersTable(db)
+	ensureAppSettingsTable(db)
+	let success = true
+	try {
+		assertSqlSuccess(db.beginTransaction(), '开始首次引导配置事务')
+		const now = Date.now()
+		assertSqlSuccess(db.run(
+			'INSERT OR REPLACE INTO providers (id, name, api_base, api_key, models, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+			[id, name, apiBase, apiKey, models, 1, now, now],
+		), '保存首次引导提供商')
+		assertSqlSuccess(db.run(
+			'UPDATE providers SET enabled=CASE WHEN id=? THEN 1 ELSE 0 END, updated_at=?',
+			[id, now],
+		), '启用首次引导提供商')
+		const defaultConfig = JSON.stringify({ providerId: id, model: defaultModel })
+		const keys = ['default_task_chat', 'first_run_model_guide_done']
+		const values = [defaultConfig, 'true']
+		for (let i = 0; i < keys.length; i++) {
+			assertSqlSuccess(db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [keys[i], values[i]]), '保存首次引导状态')
+		}
+		assertSqlSuccess(db.commit(), '提交首次引导配置事务')
+	} catch (_e: any) {
+		db.rollback()
 		success = false
 	}
 	db.close()
@@ -307,8 +479,7 @@ export function deleteProvider(id: string): boolean {
 		if (changes == null || changes <= 0) {
 			throw new Error('提供商不存在')
 		}
-		clearDeletedProviderTaskSettings(db, id)
-		clearDeletedProviderFlatSettings(db, id)
+		clearProviderReferencesInTransaction(db, id, null, true)
 		assertSqlSuccess(db.commit(), '提交删除提供商事务')
 	} catch (_e: any) {
 		db.rollback()
@@ -322,14 +493,23 @@ export function deleteProvider(id: string): boolean {
  * 切换提供商启用状态
  */
 export function toggleProvider(id: string, enabled: boolean): boolean {
+	if (id == '') { return false }
 	const db = getDb()
+	ensureProvidersTable(db)
+	ensureAppSettingsTable(db)
 	let success = true
 	try {
+		assertSqlSuccess(db.beginTransaction(), '开始更新提供商状态')
 		const result = db.run('UPDATE providers SET enabled=?, updated_at=? WHERE id=?', [enabled ? 1 : 0, Date.now(), id])
 		assertSqlSuccess(result, '更新提供商状态')
 		const changes = result.changes
-		success = changes != null && changes > 0
+		if (changes == null || changes <= 0) { throw new Error('提供商不存在') }
+		if (enabled == false) {
+			clearProviderReferencesInTransaction(db, id, null, true)
+		}
+		assertSqlSuccess(db.commit(), '提交提供商状态事务')
 	} catch (_e: any) {
+		db.rollback()
 		success = false
 	}
 	db.close()

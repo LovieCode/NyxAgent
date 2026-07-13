@@ -1,4 +1,4 @@
-import { getAllGroupTaskRows, getGroupMemberRows, getGroupMessageRows, getGroupTaskRows, saveGroupTaskRow } from '@/utils/database.uts'
+import { getAllGroupSpeakIntentTaskRows, getGroupMemberRows, getGroupMessageRows, getGroupSpeakIntentTaskRows, getGroupTaskRowById, saveGroupTaskRow } from '@/utils/database.uts'
 import { getAgentById } from '@/utils/agent.uts'
 import { createId, dbRowToGroupMember, dbRowToGroupMessage, GROUP_MESSAGE_SENDER_AGENT } from '@/utils/group-chat-models.uts'
 import { AgentTool, ToolResult } from '@/uni_modules/agent-core/utssdk/tools/agent-tool-types.uts'
@@ -27,6 +27,17 @@ export type GroupSpeakIntentClaimResult = {
 	claimed: GroupSpeakIntentClaim[]
 	claimFailedAgentIds: string[]
 	terminalWriteFailedIntents: GroupSpeakIntentSettlement[]
+	cleanupSaved: boolean
+}
+
+export type GroupSpeakIntentTargetListResult = {
+	targets: UTSJSONObject[]
+	cleanupSaved: boolean
+}
+
+type GroupPendingSpeakIntentResult = {
+	intents: UTSJSONObject[]
+	cleanupSaved: boolean
 }
 
 export type GroupSpeakIntentExecutionGuard = () => boolean
@@ -116,7 +127,8 @@ function saveIntentCancellationTombstone(payload: UTSJSONObject, outcome: string
 export function saveGroupSpeakIntentSessionCancellationTombstone(groupId: string, sessionId: string, outcome: string, cutoffAt: number): boolean {
 	if (groupId == '' || sessionId == '' || cutoffAt <= 0) { return false }
 	const record = {
-		id: 'gspeak-session-tombstone-' + groupId + '-' + sessionId + '-' + cutoffAt,
+		// 同一会话只保留最新取消边界，避免每次停止都永久追加一条 tombstone。
+		id: 'gspeak-session-tombstone-' + groupId + '::' + sessionId,
 		kind: GROUP_SPEAK_INTENT_TOMBSTONE_KIND,
 		scope: 'session',
 		groupId: groupId,
@@ -253,11 +265,12 @@ function isPendingIntent(payload: UTSJSONObject, sourceUserMessageId: string, no
 	return dueOnly == false || readIntentWakeAt(payload) <= now
 }
 
-function collectPendingIntents(groupId: string, sessionId: string, sourceUserMessageId: string, dueOnly: boolean): UTSJSONObject[] {
-	const rows = getGroupTaskRows(groupId, sessionId)
+function collectPendingIntents(groupId: string, sessionId: string, sourceUserMessageId: string, dueOnly: boolean): GroupPendingSpeakIntentResult {
+	const rows = getGroupSpeakIntentTaskRows(groupId, sessionId)
 	const tombstonedIntentIds = collectIntentTombstoneIds(rows)
 	const sessionCancellationCutoff = readSessionCancellationCutoff(rows, groupId, sessionId)
 	const result: UTSJSONObject[] = []
+	let cleanupSaved = true
 	const now = Date.now()
 	for (let i = 0; i < rows.length; i++) {
 		const payload = readTaskPayload(rows[i])
@@ -277,39 +290,39 @@ function collectPendingIntents(groupId: string, sessionId: string, sourceUserMes
 		const reasonRaw = payload['reasonCode'] as string | null
 		const reasonCode = reasonRaw != null ? reasonRaw : ''
 		if (expiresAt != null && expiresAt <= now) {
-			saveTerminalIntentStatus(payload, 'cancelled', 'expired')
+			if (saveTerminalIntentStatus(payload, 'cancelled', 'expired') == false) { cleanupSaved = false }
 			continue
 		}
 		if (sourceId == '') {
-			saveTerminalIntentStatus(payload, 'cancelled', 'invalid_payload')
+			if (saveTerminalIntentStatus(payload, 'cancelled', 'invalid_payload') == false) { cleanupSaved = false }
 			continue
 		}
 		if (sourceId != sourceUserMessageId) {
 			continue
 		}
 		if (isActiveGroupMember(groupId, agentId) == false) {
-			saveTerminalIntentStatus(payload, 'cancelled', 'agent_unavailable')
+			if (saveTerminalIntentStatus(payload, 'cancelled', 'agent_unavailable') == false) { cleanupSaved = false }
 			continue
 		}
 		if (isValidIntentMode(groupId, payload, agentId, trigger) == false) {
-			saveTerminalIntentStatus(payload, 'cancelled', 'invalid_handoff')
+			if (saveTerminalIntentStatus(payload, 'cancelled', 'invalid_handoff') == false) { cleanupSaved = false }
 			continue
 		}
 		if ((trigger != GROUP_SPEAK_INTENT_TRIGGER && trigger != GROUP_SPEAK_INTENT_DELAY_TRIGGER) || isValidReasonCode(reasonCode) == false || readIntentWakeAt(payload) <= 0) {
-			saveTerminalIntentStatus(payload, 'cancelled', 'invalid_payload')
+			if (saveTerminalIntentStatus(payload, 'cancelled', 'invalid_payload') == false) { cleanupSaved = false }
 			continue
 		}
 		if (isPendingIntent(payload, sourceUserMessageId, now, dueOnly) == true) {
 			result.push(payload)
 		}
 	}
-	return result
+	return { intents: result, cleanupSaved: cleanupSaved } as GroupPendingSpeakIntentResult
 }
 
 /** 同一 Agent 流内只保留一次申请；不同回合可以无限续谈。 */
 function hasOpenIntentForRequestTurn(groupId: string, sessionId: string, requestTurnId: string): boolean {
 	if (requestTurnId == '') { return true }
-	const rows = getGroupTaskRows(groupId, sessionId)
+	const rows = getGroupSpeakIntentTaskRows(groupId, sessionId)
 	for (let i = 0; i < rows.length; i++) {
 		const payload = readTaskPayload(rows[i])
 		if (payload == null) { continue }
@@ -323,7 +336,7 @@ function hasOpenIntentForRequestTurn(groupId: string, sessionId: string, request
 
 class GroupRequestSpeakTool implements AgentTool {
 	name: string = 'group_request_speak'
-	description: string = '申请在当前群聊的下一次调度周期或短暂延迟后，沿当前公开或私聊送达范围获得一次后续发言机会。公开的立即申请可用 next_agent_id 建议另一位成员接续你的公开发言；这仍需调度器批准，不能直接唤醒对方。它只登记固定元数据，不能保证获准，也不能绕过调度器；禁止传入聊天正文。'
+	description: string = '申请在当前群聊的下一次调度周期或短暂延迟后获得一次后续发言机会。delivery_mode 可明确选择公开群聊或仅向用户私发；省略则继承当前范围。公开的立即申请可用 next_agent_id 建议另一位成员接续公开发言；这仍需调度器批准。只登记固定元数据，禁止传入聊天正文。'
 	parameters: UTSJSONObject = {
 		'type': 'object',
 		'properties': {
@@ -344,6 +357,11 @@ class GroupRequestSpeakTool implements AgentTool {
 			'next_agent_id': {
 				'type': 'string',
 				'description': '仅公开且 trigger=next_scheduler_cycle 时可填写群成员 Agent ID，表示建议该成员接续你的公开发言。私聊、延迟唤醒、自己续讲时省略。'
+			},
+			'delivery_mode': {
+				'type': 'string',
+				'enum': ['public', 'user_private'],
+				'description': '后续发言的送达范围。public 为公开群聊，user_private 为仅向用户私发；省略时继承当前范围。'
 			}
 		},
 		'required': ['trigger', 'reason_code']
@@ -377,9 +395,14 @@ class GroupRequestSpeakTool implements AgentTool {
 			const reasonRaw = args['reason_code'] as string | null
 			const delayRaw = args['delay_seconds'] as number | null
 			const nextAgentRaw = args['next_agent_id'] as string | null
+			const deliveryModeRaw = args['delivery_mode'] as string | null
 			const trigger = triggerRaw != null ? triggerRaw : ''
 			const reasonCode = reasonRaw != null ? reasonRaw : ''
 			const nextAgentId = nextAgentRaw != null ? nextAgentRaw.trim() : ''
+			let requestedDeliveryMode = this.deliveryMode
+			if (deliveryModeRaw == 'public' || deliveryModeRaw == 'user_private') {
+				requestedDeliveryMode = deliveryModeRaw
+			}
 			const delayed = trigger == GROUP_SPEAK_INTENT_DELAY_TRIGGER
 			const validTrigger = trigger == GROUP_SPEAK_INTENT_TRIGGER || delayed == true
 			const delaySeconds = delayRaw != null ? delayRaw : (delayed == true ? 30 : 0)
@@ -395,7 +418,7 @@ class GroupRequestSpeakTool implements AgentTool {
 			let ownerAgentId = this.agentId
 			let intentMode = 'self_followup'
 			if (nextAgentId != '') {
-				if (this.deliveryMode != 'public' || delayed == true || nextAgentId == this.agentId || isActiveGroupMember(this.groupId, nextAgentId) == false) {
+				if (this.deliveryMode != 'public' || requestedDeliveryMode != 'public' || delayed == true || nextAgentId == this.agentId || isActiveGroupMember(this.groupId, nextAgentId) == false) {
 					resolve({ content: '公开交接申请无效：只能立即建议另一位在群成员接续。', isError: true } as ToolResult)
 					return
 				}
@@ -426,7 +449,7 @@ class GroupRequestSpeakTool implements AgentTool {
 				sourceUserMessageId: this.sourceUserMessageId,
 				trigger: trigger,
 				reasonCode: reasonCode,
-				deliveryMode: this.deliveryMode,
+				deliveryMode: requestedDeliveryMode,
 				createdAt: now,
 				wakeAt: wakeAt,
 			} as UTSJSONObject
@@ -436,7 +459,9 @@ class GroupRequestSpeakTool implements AgentTool {
 			}
 			const resultText = intentMode == 'handoff'
 				? '公开交接申请已提交，是否由对方接续仍由下一次调度决定。'
-				: (delayed == true ? '延迟发言申请已登记，到时会唤醒调度器决定是否发言。' : '发言申请已提交，是否获准由下一次调度决定。')
+				: (delayed == true
+					? (requestedDeliveryMode == 'user_private' ? '延迟私发申请已登记，到时会唤醒调度器决定是否发言。' : '延迟公开发言申请已登记，到时会唤醒调度器决定是否发言。')
+					: (requestedDeliveryMode == 'user_private' ? '私发申请已提交，是否获准由下一次调度决定。' : '公开发言申请已提交，是否获准由下一次调度决定。'))
 			resolve({ content: resultText, isError: false } as ToolResult)
 		})
 	}
@@ -448,14 +473,19 @@ export function createGroupRequestSpeakTool(groupId: string, sessionId: string, 
 
 export function hasPendingGroupSpeakIntent(groupId: string, sessionId: string, sourceUserMessageId: string): boolean {
 	if (sourceUserMessageId == '') { return false }
-	return collectPendingIntents(groupId, sessionId, sourceUserMessageId, true).length > 0
+	const collected = collectPendingIntents(groupId, sessionId, sourceUserMessageId, true)
+	return collected.intents.length > 0 || collected.cleanupSaved == false
 }
 
 export function buildPendingGroupSpeakIntentSummary(groupId: string, sessionId: string, sourceUserMessageId: string): string {
 	if (sourceUserMessageId == '') { return '(暂无待决发言申请)' }
-	const intents = collectPendingIntents(groupId, sessionId, sourceUserMessageId, true)
-	if (intents.length == 0) { return '(暂无待决发言申请)' }
+	const collected = collectPendingIntents(groupId, sessionId, sourceUserMessageId, true)
+	const intents = collected.intents
+	if (intents.length == 0) {
+		return collected.cleanupSaved == true ? '(暂无待决发言申请)' : '(发言申请状态清理失败，稍后重试)'
+	}
 	const lines: string[] = []
+	if (collected.cleanupSaved == false) { lines.push('- 部分无效申请状态清理失败，稍后重试') }
 	for (let i = 0; i < intents.length; i++) {
 		const ownerRaw = intents[i]['ownerAgentId'] as string | null
 		const requesterAgentId = readIntentRequesterAgentId(intents[i])
@@ -476,24 +506,21 @@ export function buildPendingGroupSpeakIntentSummary(groupId: string, sessionId: 
  */
 export function settleGroupSpeakIntent(groupId: string, sessionId: string, intentId: string, claimId: string, outcome: string): boolean {
 	if (intentId == '') { return true }
-	const rows = getGroupTaskRows(groupId, sessionId)
-	for (let i = 0; i < rows.length; i++) {
-		const payload = readTaskPayload(rows[i])
-		if (payload == null) { continue }
-		const kind = payload['kind'] as string | null
-		const status = payload['status'] as string | null
-		const savedId = readIntentId(payload)
-		const savedClaimId = payload['claimId'] as string | null
-		if (kind != GROUP_SPEAK_INTENT_KIND || savedId != intentId) { continue }
-		if (status == 'done' || status == 'cancelled') { return true }
-		if (claimId == '') {
-			if (status != 'open') { return true }
-		} else if (status != 'claimed' || savedClaimId != claimId) {
-			return true
-		}
-		return saveTerminalIntentStatus(payload, 'done', outcome)
+	const row = getGroupTaskRowById(groupId, sessionId, intentId)
+	if (row == null) { return true }
+	const payload = readTaskPayload(row)
+	if (payload == null) { return true }
+	const kind = payload['kind'] as string | null
+	const status = payload['status'] as string | null
+	const savedClaimId = payload['claimId'] as string | null
+	if (kind != GROUP_SPEAK_INTENT_KIND || readIntentId(payload) != intentId) { return true }
+	if (status == 'done' || status == 'cancelled') { return true }
+	if (claimId == '') {
+		if (status != 'open') { return true }
+	} else if (status != 'claimed' || savedClaimId != claimId) {
+		return true
 	}
-	return true
+	return saveTerminalIntentStatus(payload, 'done', outcome)
 }
 
 /**
@@ -505,9 +532,12 @@ export function claimPendingGroupSpeakIntents(groupId: string, sessionId: string
 		claimed: [] as GroupSpeakIntentClaim[],
 		claimFailedAgentIds: [] as string[],
 		terminalWriteFailedIntents: [] as GroupSpeakIntentSettlement[],
+		cleanupSaved: true,
 	}
 	if (sourceUserMessageId == '') { return result }
-	const intents = collectPendingIntents(groupId, sessionId, sourceUserMessageId, true)
+	const collected = collectPendingIntents(groupId, sessionId, sourceUserMessageId, true)
+	const intents = collected.intents
+	result.cleanupSaved = collected.cleanupSaved
 	const claimedAgentIds: string[] = []
 	for (let i = 0; i < intents.length; i++) {
 		const ownerRaw = intents[i]['ownerAgentId'] as string | null
@@ -552,7 +582,7 @@ export function claimPendingGroupSpeakIntents(groupId: string, sessionId: string
 
 export function resolvePendingGroupSpeakIntentDeliveryMode(groupId: string, sessionId: string, sourceUserMessageId: string): string {
 	if (sourceUserMessageId == '') { return 'public' }
-	const intents = collectPendingIntents(groupId, sessionId, sourceUserMessageId, true)
+	const intents = collectPendingIntents(groupId, sessionId, sourceUserMessageId, true).intents
 	for (let i = 0; i < intents.length; i++) {
 		const deliveryMode = intents[i]['deliveryMode'] as string | null
 		if (deliveryMode == 'user_private') { return 'user_private' }
@@ -562,8 +592,9 @@ export function resolvePendingGroupSpeakIntentDeliveryMode(groupId: string, sess
 
 export function getNextGroupSpeakIntentDelay(groupId: string, sessionId: string, sourceUserMessageId: string): number {
 	if (sourceUserMessageId == '') { return -1 }
-	const intents = collectPendingIntents(groupId, sessionId, sourceUserMessageId, false)
-	if (intents.length == 0) { return -1 }
+	const collected = collectPendingIntents(groupId, sessionId, sourceUserMessageId, false)
+	const intents = collected.intents
+	if (intents.length == 0) { return collected.cleanupSaved == true ? -1 : 5000 }
 	const now = Date.now()
 	let delay = -1
 	for (let i = 0; i < intents.length; i++) {
@@ -576,8 +607,9 @@ export function getNextGroupSpeakIntentDelay(groupId: string, sessionId: string,
 
 export function cancelPendingGroupSpeakIntents(groupId: string, sessionId: string, sourceUserMessageId: string, outcome: string): boolean {
 	if (sourceUserMessageId == '') { return true }
-	const intents = collectPendingIntents(groupId, sessionId, sourceUserMessageId, false)
-	let saved = true
+	const collected = collectPendingIntents(groupId, sessionId, sourceUserMessageId, false)
+	const intents = collected.intents
+	let saved = collected.cleanupSaved
 	for (let i = 0; i < intents.length; i++) {
 		if (saveTerminalIntentStatus(intents[i], 'cancelled', outcome) == false) { saved = false }
 	}
@@ -586,7 +618,7 @@ export function cancelPendingGroupSpeakIntents(groupId: string, sessionId: strin
 
 export function cancelGroupSpeakIntentTarget(groupId: string, sessionId: string, sourceUserMessageId: string, ownerAgentId: string, outcome: string): boolean {
 	if (sourceUserMessageId == '' || ownerAgentId == '') { return true }
-	const rows = getGroupTaskRows(groupId, sessionId)
+	const rows = getGroupSpeakIntentTaskRows(groupId, sessionId)
 	let saved = true
 	for (let i = 0; i < rows.length; i++) {
 		const payload = readTaskPayload(rows[i])
@@ -604,7 +636,7 @@ export function cancelGroupSpeakIntentTarget(groupId: string, sessionId: string,
 
 export function cancelAllPendingGroupSpeakIntents(groupId: string, sessionId: string, outcome: string, cutoffAt: number): boolean {
 	const sessionTombstoneSaved = saveGroupSpeakIntentSessionCancellationTombstone(groupId, sessionId, outcome, cutoffAt)
-	const rows = getGroupTaskRows(groupId, sessionId)
+	const rows = getGroupSpeakIntentTaskRows(groupId, sessionId)
 	let saved = true
 	for (let i = 0; i < rows.length; i++) {
 		const payload = readTaskPayload(rows[i])
@@ -627,7 +659,7 @@ export function cancelAllPendingGroupSpeakIntents(groupId: string, sessionId: st
 export function recoverInterruptedGroupSpeakIntents(protectedSessionKeys: string[]): boolean {
 	let rows: UTSJSONObject[] = [] as UTSJSONObject[]
 	try {
-		rows = getAllGroupTaskRows()
+		rows = getAllGroupSpeakIntentTaskRows()
 	} catch (_e: any) {
 		return false
 	}
@@ -685,11 +717,12 @@ export function recoverInterruptedGroupSpeakIntents(protectedSessionKeys: string
 	return allSaved
 }
 
-export function listOpenGroupSpeakIntentTargets(): UTSJSONObject[] {
-	const rows = getAllGroupTaskRows()
+export function listOpenGroupSpeakIntentTargetsDetailed(): GroupSpeakIntentTargetListResult {
+	const rows = getAllGroupSpeakIntentTaskRows()
 	const tombstonedIntentIds = collectIntentTombstoneIds(rows)
 	const now = Date.now()
 	const result: UTSJSONObject[] = []
+	let cleanupSaved = true
 	for (let i = 0; i < rows.length; i++) {
 		const payload = readTaskPayload(rows[i])
 		if (payload == null) { continue }
@@ -699,7 +732,7 @@ export function listOpenGroupSpeakIntentTargets(): UTSJSONObject[] {
 		if (kind != GROUP_SPEAK_INTENT_KIND || status != 'open') { continue }
 		if (tombstonedIntentIds.indexOf(readIntentId(payload)) >= 0) { continue }
 		if (expiresAt != null && expiresAt <= now) {
-			saveTerminalIntentStatus(payload, 'cancelled', 'expired')
+			if (saveTerminalIntentStatus(payload, 'cancelled', 'expired') == false) { cleanupSaved = false }
 			continue
 		}
 		const groupIdRaw = payload['groupId'] as string | null
@@ -720,15 +753,15 @@ export function listOpenGroupSpeakIntentTargets(): UTSJSONObject[] {
 		const sessionCancellationCutoff = readSessionCancellationCutoff(rows, groupId, sessionId)
 		if (isIntentSuppressedBySessionTombstone(payload, sessionCancellationCutoff) == true) { continue }
 		if (groupId == '' || sessionId == '' || sourceUserMessageId == '' || ownerAgentId == '' || wakeAt <= 0 || validTrigger == false || isValidReasonCode(reasonCode) == false) {
-			saveTerminalIntentStatus(payload, 'cancelled', 'invalid_payload')
+			if (saveTerminalIntentStatus(payload, 'cancelled', 'invalid_payload') == false) { cleanupSaved = false }
 			continue
 		}
 		if (isActiveGroupMember(groupId, ownerAgentId) == false) {
-			saveTerminalIntentStatus(payload, 'cancelled', 'agent_unavailable')
+			if (saveTerminalIntentStatus(payload, 'cancelled', 'agent_unavailable') == false) { cleanupSaved = false }
 			continue
 		}
 		if (isValidIntentMode(groupId, payload, ownerAgentId, trigger) == false) {
-			saveTerminalIntentStatus(payload, 'cancelled', 'invalid_handoff')
+			if (saveTerminalIntentStatus(payload, 'cancelled', 'invalid_handoff') == false) { cleanupSaved = false }
 			continue
 		}
 		result.push({
@@ -740,5 +773,10 @@ export function listOpenGroupSpeakIntentTargets(): UTSJSONObject[] {
 			delayMs: wakeAt > now ? wakeAt - now : 0,
 		} as UTSJSONObject)
 	}
-	return result
+	return { targets: result, cleanupSaved: cleanupSaved } as GroupSpeakIntentTargetListResult
+}
+
+/** 保留旧导出签名，避免 Android 增量产物引用失效。 */
+export function listOpenGroupSpeakIntentTargets(): UTSJSONObject[] {
+	return listOpenGroupSpeakIntentTargetsDetailed().targets
 }
